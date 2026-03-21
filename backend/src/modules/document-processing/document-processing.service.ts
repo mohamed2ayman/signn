@@ -1,0 +1,419 @@
+import {
+  Injectable,
+  NotFoundException,
+  Logger,
+} from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import {
+  DocumentUpload,
+  DocumentProcessingStatus,
+  Clause,
+  ClauseSource,
+  ClauseReviewStatus,
+  ContractClause,
+  Contract,
+} from '../../database/entities';
+import { StorageService, UploadedFile } from '../storage/storage.service';
+import { AiService } from '../ai/ai.service';
+
+@Injectable()
+export class DocumentProcessingService {
+  private readonly logger = new Logger(DocumentProcessingService.name);
+
+  constructor(
+    @InjectRepository(DocumentUpload)
+    private readonly documentUploadRepository: Repository<DocumentUpload>,
+    @InjectRepository(Clause)
+    private readonly clauseRepository: Repository<Clause>,
+    @InjectRepository(ContractClause)
+    private readonly contractClauseRepository: Repository<ContractClause>,
+    @InjectRepository(Contract)
+    private readonly contractRepository: Repository<Contract>,
+    private readonly storageService: StorageService,
+    private readonly aiService: AiService,
+  ) {}
+
+  /**
+   * Upload a document and start the processing pipeline.
+   */
+  async uploadAndProcess(
+    contractId: string,
+    file: UploadedFile,
+    userId: string,
+    orgId: string,
+    options?: { document_label?: string; document_priority?: number },
+  ): Promise<DocumentUpload> {
+    // Verify contract exists
+    const contract = await this.contractRepository.findOne({
+      where: { id: contractId },
+    });
+    if (!contract) {
+      throw new NotFoundException('Contract not found');
+    }
+
+    // Upload file to storage
+    const uploadResult = await this.storageService.uploadFile(file, 'contracts');
+
+    // Create document record
+    const doc = this.documentUploadRepository.create({
+      contract_id: contractId,
+      organization_id: orgId,
+      file_url: uploadResult.file_url,
+      file_name: uploadResult.file_name,
+      original_name: file.originalname,
+      file_size: file.size,
+      mime_type: file.mimetype,
+      document_label: options?.document_label || null,
+      document_priority: options?.document_priority ?? 0,
+      processing_status: DocumentProcessingStatus.UPLOADED,
+      uploaded_by: userId,
+    });
+
+    const saved = await this.documentUploadRepository.save(doc);
+    this.logger.log(`Document uploaded: ${saved.id} for contract ${contractId}`);
+
+    // Start text extraction
+    await this.startTextExtraction(saved);
+
+    return saved;
+  }
+
+  /**
+   * Trigger text extraction for a document.
+   */
+  private async startTextExtraction(doc: DocumentUpload): Promise<void> {
+    try {
+      // Get the local file path from the URL
+      const filePath = this.getLocalFilePath(doc.file_url);
+
+      const result = await this.aiService.triggerExtractText({
+        file_path: filePath,
+        mime_type: doc.mime_type || 'application/octet-stream',
+      });
+
+      doc.processing_status = DocumentProcessingStatus.EXTRACTING_TEXT;
+      doc.processing_job_id = result.job_id;
+      await this.documentUploadRepository.save(doc);
+    } catch (error) {
+      doc.processing_status = DocumentProcessingStatus.FAILED;
+      doc.error_message = `Text extraction failed to start: ${error.message}`;
+      await this.documentUploadRepository.save(doc);
+    }
+  }
+
+  /**
+   * Poll the current job and advance the pipeline if complete.
+   */
+  async pollAndAdvance(docId: string): Promise<DocumentUpload> {
+    const doc = await this.documentUploadRepository.findOne({
+      where: { id: docId },
+    });
+
+    if (!doc) {
+      throw new NotFoundException('Document not found');
+    }
+
+    if (
+      doc.processing_status === DocumentProcessingStatus.CLAUSES_EXTRACTED ||
+      doc.processing_status === DocumentProcessingStatus.FAILED
+    ) {
+      return doc;
+    }
+
+    if (!doc.processing_job_id) {
+      return doc;
+    }
+
+    const jobStatus = await this.aiService.getJobStatus(doc.processing_job_id);
+
+    if (jobStatus.status === 'failed') {
+      doc.processing_status = DocumentProcessingStatus.FAILED;
+      doc.error_message = jobStatus.error || 'Processing failed';
+      doc.processing_job_id = null;
+      await this.documentUploadRepository.save(doc);
+      return doc;
+    }
+
+    if (jobStatus.status !== 'completed') {
+      // Still processing
+      return doc;
+    }
+
+    // Job completed — advance pipeline
+    if (doc.processing_status === DocumentProcessingStatus.EXTRACTING_TEXT) {
+      // Text extraction complete
+      const textResult = jobStatus.result?.result || jobStatus.result;
+      doc.extracted_text = textResult?.text || '';
+      doc.page_count = textResult?.page_count || 0;
+      doc.processing_status = DocumentProcessingStatus.TEXT_EXTRACTED;
+      doc.processing_job_id = null;
+      await this.documentUploadRepository.save(doc);
+
+      // Immediately trigger clause extraction
+      await this.startClauseExtraction(doc);
+    } else if (
+      doc.processing_status === DocumentProcessingStatus.EXTRACTING_CLAUSES
+    ) {
+      // Clause extraction complete
+      const clauseResult = jobStatus.result?.result || jobStatus.result;
+      const extractedClauses = clauseResult?.clauses || [];
+
+      // Create clause records in DB
+      await this.createClausesFromExtraction(
+        extractedClauses,
+        doc.contract_id,
+        doc.id,
+        doc.uploaded_by,
+        doc.organization_id,
+      );
+
+      doc.processing_status = DocumentProcessingStatus.CLAUSES_EXTRACTED;
+      doc.processing_job_id = null;
+      await this.documentUploadRepository.save(doc);
+    }
+
+    return doc;
+  }
+
+  /**
+   * Trigger clause extraction for a document with extracted text.
+   */
+  private async startClauseExtraction(doc: DocumentUpload): Promise<void> {
+    try {
+      const contract = await this.contractRepository.findOne({
+        where: { id: doc.contract_id },
+      });
+
+      const result = await this.aiService.triggerExtractClauses({
+        contract_id: doc.contract_id,
+        full_text: doc.extracted_text || '',
+        contract_type: contract?.contract_type,
+        org_id: doc.organization_id,
+      });
+
+      doc.processing_status = DocumentProcessingStatus.EXTRACTING_CLAUSES;
+      doc.processing_job_id = result.job_id;
+      await this.documentUploadRepository.save(doc);
+    } catch (error) {
+      doc.processing_status = DocumentProcessingStatus.FAILED;
+      doc.error_message = `Clause extraction failed to start: ${error.message}`;
+      await this.documentUploadRepository.save(doc);
+    }
+  }
+
+  /**
+   * Create Clause and ContractClause records from extracted data.
+   */
+  private async createClausesFromExtraction(
+    extractedClauses: Array<{
+      title: string;
+      content: string;
+      clause_type: string;
+      section_number?: string;
+      confidence: number;
+    }>,
+    contractId: string,
+    documentId: string,
+    userId: string,
+    orgId: string,
+  ): Promise<void> {
+    for (let i = 0; i < extractedClauses.length; i++) {
+      const ec = extractedClauses[i];
+
+      // Create the clause record
+      const clause = this.clauseRepository.create({
+        organization_id: orgId,
+        title: ec.title,
+        content: ec.content,
+        clause_type: ec.clause_type,
+        version: 1,
+        is_active: true,
+        source: ClauseSource.AI_EXTRACTED,
+        source_document_id: documentId,
+        confidence_score: ec.confidence,
+        review_status: ClauseReviewStatus.PENDING_REVIEW,
+        created_by: userId,
+      });
+
+      const savedClause = await this.clauseRepository.save(clause);
+
+      // Create the contract-clause junction
+      const contractClause = this.contractClauseRepository.create({
+        contract_id: contractId,
+        clause_id: savedClause.id,
+        section_number: ec.section_number || null,
+        order_index: i,
+      });
+
+      await this.contractClauseRepository.save(contractClause);
+    }
+
+    this.logger.log(
+      `Created ${extractedClauses.length} clauses for contract ${contractId} from document ${documentId}`,
+    );
+  }
+
+  /**
+   * Get all documents for a contract.
+   */
+  async getDocuments(contractId: string): Promise<DocumentUpload[]> {
+    return this.documentUploadRepository.find({
+      where: { contract_id: contractId },
+      order: { document_priority: 'DESC', created_at: 'ASC' },
+    });
+  }
+
+  /**
+   * Get a single document with status info.
+   */
+  async getDocumentStatus(docId: string): Promise<DocumentUpload> {
+    const doc = await this.documentUploadRepository.findOne({
+      where: { id: docId },
+    });
+    if (!doc) {
+      throw new NotFoundException('Document not found');
+    }
+    return doc;
+  }
+
+  /**
+   * Reprocess a failed document.
+   */
+  async reprocess(docId: string): Promise<DocumentUpload> {
+    const doc = await this.documentUploadRepository.findOne({
+      where: { id: docId },
+    });
+    if (!doc) {
+      throw new NotFoundException('Document not found');
+    }
+
+    doc.processing_status = DocumentProcessingStatus.UPLOADED;
+    doc.error_message = null;
+    doc.processing_job_id = null;
+    await this.documentUploadRepository.save(doc);
+
+    await this.startTextExtraction(doc);
+    return doc;
+  }
+
+  /**
+   * Get clauses pending review for a contract.
+   */
+  async getClausesForReview(contractId: string) {
+    return this.contractClauseRepository
+      .createQueryBuilder('cc')
+      .leftJoinAndSelect('cc.clause', 'clause')
+      .leftJoinAndSelect('clause.source_document', 'source_doc')
+      .where('cc.contract_id = :contractId', { contractId })
+      .andWhere('clause.source = :source', { source: ClauseSource.AI_EXTRACTED })
+      .orderBy('source_doc.document_priority', 'DESC')
+      .addOrderBy('cc.order_index', 'ASC')
+      .getMany();
+  }
+
+  /**
+   * Update a clause's review status.
+   */
+  async updateClauseReview(
+    clauseId: string,
+    data: {
+      review_status: ClauseReviewStatus;
+      title?: string;
+      content?: string;
+      clause_type?: string;
+    },
+    userId: string,
+  ): Promise<Clause> {
+    const clause = await this.clauseRepository.findOne({
+      where: { id: clauseId },
+    });
+    if (!clause) {
+      throw new NotFoundException('Clause not found');
+    }
+
+    clause.review_status = data.review_status;
+    clause.reviewed_by = userId;
+    clause.reviewed_at = new Date();
+
+    if (data.title !== undefined) clause.title = data.title;
+    if (data.content !== undefined) clause.content = data.content;
+    if (data.clause_type !== undefined) clause.clause_type = data.clause_type;
+
+    return this.clauseRepository.save(clause);
+  }
+
+  /**
+   * Bulk approve clauses.
+   */
+  async bulkApproveReview(
+    clauseIds: string[],
+    userId: string,
+  ): Promise<void> {
+    await this.clauseRepository
+      .createQueryBuilder()
+      .update(Clause)
+      .set({
+        review_status: ClauseReviewStatus.APPROVED,
+        reviewed_by: userId,
+        reviewed_at: new Date(),
+      })
+      .whereInIds(clauseIds)
+      .execute();
+  }
+
+  /**
+   * Finalize the review process for a contract.
+   * Triggers risk analysis and obligation extraction on approved clauses.
+   */
+  async finalizeReview(
+    contractId: string,
+    orgId: string,
+  ): Promise<{ risk_job_id: string; obligations_job_id: string }> {
+    // Get all approved clauses
+    const contractClauses = await this.contractClauseRepository
+      .createQueryBuilder('cc')
+      .leftJoinAndSelect('cc.clause', 'clause')
+      .where('cc.contract_id = :contractId', { contractId })
+      .andWhere('clause.review_status IN (:...statuses)', {
+        statuses: [ClauseReviewStatus.APPROVED, ClauseReviewStatus.EDITED],
+      })
+      .getMany();
+
+    const clausesForAi = contractClauses.map((cc) => ({
+      id: cc.clause.id,
+      text: cc.clause.content,
+    }));
+
+    // Trigger risk analysis
+    const riskResult = await this.aiService.triggerRiskAnalysis({
+      contract_id: contractId,
+      clauses: clausesForAi,
+      org_id: orgId,
+    });
+
+    // Trigger obligation extraction
+    const obligationsResult = await this.aiService.triggerExtractObligations({
+      contract_id: contractId,
+      clauses: clausesForAi,
+    });
+
+    return {
+      risk_job_id: riskResult.job_id,
+      obligations_job_id: obligationsResult.job_id,
+    };
+  }
+
+  /**
+   * Convert a file_url to a local file path.
+   */
+  private getLocalFilePath(fileUrl: string): string {
+    // fileUrl format: http://localhost:3000/uploads/contracts/uuid.ext
+    // Extract the relative path after /uploads/
+    const uploadsIndex = fileUrl.indexOf('/uploads/');
+    if (uploadsIndex !== -1) {
+      return '.' + fileUrl.substring(uploadsIndex);
+    }
+    return fileUrl;
+  }
+}
