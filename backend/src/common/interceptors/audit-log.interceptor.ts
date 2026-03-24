@@ -28,12 +28,12 @@ export class AuditLogInterceptor implements NestInterceptor {
       tap(async () => {
         try {
           const auditLog = this.auditLogRepository.create({
-            user_id: user?.id ?? null,
-            organization_id: user?.organization_id ?? null,
+            user_id: user?.id ?? undefined,
+            organization_id: user?.organization_id ?? undefined,
             action: `${method} ${url}`,
             entity_type: entityType,
-            ip_address: ip || request.headers['x-forwarded-for'] || null,
-          });
+            ip_address: ip || (request.headers['x-forwarded-for'] as string) || undefined,
+          } as any);
 
           await this.auditLogRepository.save(auditLog);
         } catch {

@@ -12,10 +12,12 @@ import type { DocumentUpload } from '@/types';
 
 const DOCUMENT_LABELS = [
   { value: '', label: 'No label' },
+  { value: 'Contract Agreement', label: 'Contract Agreement' },
   { value: 'General Conditions', label: 'General Conditions' },
-  { value: 'Special Conditions', label: 'Special Conditions' },
   { value: 'Particular Conditions', label: 'Particular Conditions' },
   { value: 'Appendix', label: 'Appendix' },
+  { value: 'Amendment', label: 'Amendment' },
+  { value: 'Addendum', label: 'Addendum' },
   { value: 'Schedule', label: 'Schedule' },
   { value: 'Bill of Quantities', label: 'Bill of Quantities' },
   { value: 'Specifications', label: 'Specifications' },
@@ -383,8 +385,8 @@ export default function ProjectCreationPage() {
                 Document Hierarchy (Optional)
               </h3>
               <p className="mt-0.5 text-xs text-gray-400">
-                Label your documents to define priority. Special Conditions
-                override General Conditions, etc.
+                Label your documents to define priority. Amendments and
+                addenda override general conditions, etc.
               </p>
               <div className="mt-3 space-y-3">
                 {filesWithMeta.map((fm, index) => (

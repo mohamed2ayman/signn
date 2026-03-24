@@ -159,7 +159,7 @@ export class AuthService {
     if (!isPasswordValid) {
       // Increment failed login attempts
       const failedAttempts = user.failed_login_attempts + 1;
-      const updateData: Partial<User> = {
+      const updateData: Record<string, any> = {
         failed_login_attempts: failedAttempts,
       };
 
@@ -173,7 +173,7 @@ export class AuthService {
         );
       }
 
-      await this.userRepository.update(user.id, updateData);
+      await this.userRepository.update(user.id, updateData as any);
       throw new UnauthorizedException('Invalid email or password');
     }
 

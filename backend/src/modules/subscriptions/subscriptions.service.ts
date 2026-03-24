@@ -243,9 +243,9 @@ export class SubscriptionsService {
       start_date: startDate,
       end_date: endDate,
       paymob_subscription_id: paymobId ?? null,
-    });
+    } as any);
 
-    return this.organizationSubscriptionRepository.save(subscription);
+    return this.organizationSubscriptionRepository.save(subscription as any);
   }
 
   async handlePaymobWebhook(

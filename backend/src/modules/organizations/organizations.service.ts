@@ -78,8 +78,8 @@ export class OrganizationsService {
       file_url: fileUrl,
       file_name: file.originalname,
       created_by: userId,
-    });
+    } as any);
 
-    return this.knowledgeAssetRepository.save(knowledgeAsset);
+    return this.knowledgeAssetRepository.save(knowledgeAsset as any) as any;
   }
 }

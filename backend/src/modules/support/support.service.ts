@@ -21,15 +21,15 @@ export class SupportService {
   ): Promise<SupportTicket> {
     const ticket = this.ticketRepository.create({
       user_id: userId,
-      organization_id: organizationId,
+      organization_id: organizationId as any,
       category: data.category,
       priority: data.priority,
       subject: data.subject,
       description: data.description,
       status: 'OPEN',
-    });
+    } as any);
 
-    const saved = await this.ticketRepository.save(ticket);
+    const saved: SupportTicket = await this.ticketRepository.save(ticket as any) as any;
     this.logger.log(`Support ticket created: ${saved.id} by user ${userId}`);
     return saved;
   }

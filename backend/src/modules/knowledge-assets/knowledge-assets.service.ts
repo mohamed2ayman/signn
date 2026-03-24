@@ -103,9 +103,9 @@ export class KnowledgeAssetsService {
         ? AssetReviewStatus.PENDING_REVIEW
         : AssetReviewStatus.AUTO_APPROVED,
       embedding_status: 'PENDING',
-    });
+    } as any);
 
-    const saved = await this.knowledgeAssetRepository.save(asset);
+    const saved: KnowledgeAsset = await this.knowledgeAssetRepository.save(asset as any) as any;
 
     this.logger.log(`Knowledge asset created: ${saved.id} by user ${userId}`);
 

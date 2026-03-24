@@ -48,15 +48,15 @@ export class ContractSharingService {
       shared_with_email: params.sharedWithEmail,
       permission: params.permission || 'view',
       token,
-      expires_at: expiresAt,
+      expires_at: expiresAt as any,
       is_active: true,
-    });
+    } as any);
 
-    const saved = await this.shareRepository.save(share);
+    const saved = await this.shareRepository.save(share as any);
     this.logger.log(
       `Contract ${params.contractId} shared with ${params.sharedWithEmail} by user ${params.sharedBy}`,
     );
-    return saved;
+    return saved as any;
   }
 
   async getSharesByContract(contractId: string): Promise<ContractShare[]> {

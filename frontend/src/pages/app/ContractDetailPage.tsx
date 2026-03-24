@@ -1,10 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { contractService } from '@/services/api/contractService';
 import { clauseService } from '@/services/api/clauseService';
 import { riskAnalysisService } from '@/services/api/riskAnalysisService';
+import { exportService } from '@/services/api/exportService';
+import { contractSharingService } from '@/services/api/contractSharingService';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
-import type { Contract, ContractClause, Clause, ContractComment, RiskAnalysis } from '@/types';
+import type { Contract, ContractClause, Clause, ContractComment, RiskAnalysis, ContractShare } from '@/types';
 
 /* ── Status Badge ─────────────────────────────────────────────── */
 const statusStyles: Record<string, { bg: string; text: string; dot: string }> = {
@@ -79,6 +81,18 @@ export default function ContractDetailPage() {
   const [newComment, setNewComment] = useState('');
   const [selectedClauseId, setSelectedClauseId] = useState<string | null>(null);
 
+  // Export & Share state
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [shareEmail, setShareEmail] = useState('');
+  const [sharePermission, setSharePermission] = useState('view');
+  const [shareExpiry, setShareExpiry] = useState('7');
+  const [shares, setShares] = useState<ContractShare[]>([]);
+  const [loadingShares, setLoadingShares] = useState(false);
+  const [exporting, setExporting] = useState<string | null>(null);
+  const [shareSuccess, setShareSuccess] = useState('');
+  const exportMenuRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     if (id) loadContract();
   }, [id]);
@@ -150,6 +164,79 @@ export default function ContractDetailPage() {
     }
   };
 
+  // Close export menu on click outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(event.target as Node)) {
+        setShowExportMenu(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Export handlers
+  const handleExport = async (type: 'pdf' | 'risk' | 'summary') => {
+    if (!id) return;
+    setExporting(type);
+    try {
+      if (type === 'pdf') await exportService.downloadContractPdf(id);
+      else if (type === 'risk') await exportService.downloadRiskReport(id);
+      else await exportService.downloadSummary(id, 'pdf');
+    } catch (err) {
+      console.error('Export failed:', err);
+    } finally {
+      setExporting(null);
+      setShowExportMenu(false);
+    }
+  };
+
+  // Share handlers
+  const loadShares = async () => {
+    if (!id) return;
+    setLoadingShares(true);
+    try {
+      const data = await contractSharingService.getSharesByContract(id);
+      setShares(data);
+    } catch (err) {
+      console.error('Failed to load shares:', err);
+    } finally {
+      setLoadingShares(false);
+    }
+  };
+
+  const handleShareContract = async () => {
+    if (!id || !shareEmail.trim()) return;
+    try {
+      await contractSharingService.createShare({
+        contract_id: id,
+        shared_with_email: shareEmail.trim(),
+        permission: sharePermission,
+        expires_in_days: shareExpiry ? parseInt(shareExpiry) : undefined,
+      });
+      setShareEmail('');
+      setShareSuccess('Share link sent successfully!');
+      setTimeout(() => setShareSuccess(''), 3000);
+      loadShares();
+    } catch (err) {
+      console.error('Failed to share:', err);
+    }
+  };
+
+  const handleRevokeShare = async (shareId: string) => {
+    try {
+      await contractSharingService.revokeShare(shareId);
+      setShares(shares.filter(s => s.id !== shareId));
+    } catch (err) {
+      console.error('Failed to revoke share:', err);
+    }
+  };
+
+  const openShareModal = () => {
+    setShowShareModal(true);
+    loadShares();
+  };
+
   const loadAvailableClauses = async () => {
     try {
       const data = await clauseService.getAll();
@@ -210,6 +297,68 @@ export default function ContractDetailPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {/* Share Button */}
+            <button
+              onClick={openShareModal}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3.5 py-2 text-sm font-medium text-gray-700 transition hover:border-gray-300 hover:bg-gray-50"
+            >
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M7.217 10.907a2.25 2.25 0 100 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186l9.566-5.314m-9.566 7.5l9.566 5.314m0 0a2.25 2.25 0 103.935 2.186 2.25 2.25 0 00-3.935-2.186zm0-12.814a2.25 2.25 0 103.933-2.185 2.25 2.25 0 00-3.933 2.185z" />
+              </svg>
+              Share
+            </button>
+
+            {/* Export Dropdown */}
+            <div className="relative" ref={exportMenuRef}>
+              <button
+                onClick={() => setShowExportMenu(!showExportMenu)}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3.5 py-2 text-sm font-medium text-gray-700 transition hover:border-gray-300 hover:bg-gray-50"
+              >
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                </svg>
+                Export
+                <svg className="h-3.5 w-3.5 text-gray-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              {showExportMenu && (
+                <div className="absolute right-0 z-20 mt-1.5 w-56 rounded-xl border border-gray-200 bg-white py-1.5 shadow-lg">
+                  <button
+                    onClick={() => handleExport('pdf')}
+                    disabled={exporting === 'pdf'}
+                    className="flex w-full items-center gap-2.5 px-4 py-2.5 text-sm text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    <svg className="h-4 w-4 text-red-500" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6zM6 20V4h7v5h5v11H6z" />
+                    </svg>
+                    {exporting === 'pdf' ? 'Exporting...' : 'Contract PDF'}
+                  </button>
+                  <button
+                    onClick={() => handleExport('risk')}
+                    disabled={exporting === 'risk'}
+                    className="flex w-full items-center gap-2.5 px-4 py-2.5 text-sm text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    <svg className="h-4 w-4 text-amber-500" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126z" />
+                    </svg>
+                    {exporting === 'risk' ? 'Exporting...' : 'Risk Analysis Report'}
+                  </button>
+                  <button
+                    onClick={() => handleExport('summary')}
+                    disabled={exporting === 'summary'}
+                    className="flex w-full items-center gap-2.5 px-4 py-2.5 text-sm text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    <svg className="h-4 w-4 text-blue-500" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 9.776c.112-.017.227-.026.344-.026h15.812c.117 0 .232.009.344.026m-16.5 0a2.25 2.25 0 00-1.883 2.542l.857 6a2.25 2.25 0 002.227 1.932H19.05a2.25 2.25 0 002.227-1.932l.857-6a2.25 2.25 0 00-1.883-2.542m-16.5 0V6A2.25 2.25 0 016 3.75h3.879a1.5 1.5 0 011.06.44l2.122 2.12a1.5 1.5 0 001.06.44H18A2.25 2.25 0 0120.25 9v.776" />
+                    </svg>
+                    {exporting === 'summary' ? 'Exporting...' : 'Summary Report'}
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Status Actions */}
             {contract.status === 'DRAFT' && (
               <button
                 onClick={() => handleStatusChange('PENDING_APPROVAL')}
@@ -623,6 +772,143 @@ export default function ContractDetailPage() {
                 </div>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Share Contract Modal ───────────────────────────────────── */}
+      {showShareModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-navy-900/40 backdrop-blur-sm">
+          <div className="w-full max-w-lg rounded-2xl border border-gray-200/50 bg-white shadow-elevated">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
+                  <svg className="h-5 w-5 text-primary" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M7.217 10.907a2.25 2.25 0 100 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186l9.566-5.314m-9.566 7.5l9.566 5.314m0 0a2.25 2.25 0 103.935 2.186 2.25 2.25 0 00-3.935-2.186zm0-12.814a2.25 2.25 0 103.933-2.185 2.25 2.25 0 00-3.933 2.185z" />
+                  </svg>
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900">Share Contract</h2>
+                  <p className="text-sm text-gray-400">Send a secure link to collaborate</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowShareModal(false)}
+                className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+              >
+                <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Share Form */}
+            <div className="px-6 py-5 space-y-4">
+              {shareSuccess && (
+                <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-700">
+                  <svg className="h-4 w-4 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                  </svg>
+                  {shareSuccess}
+                </div>
+              )}
+
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-gray-700">Email address</label>
+                <input
+                  type="email"
+                  value={shareEmail}
+                  onChange={(e) => setShareEmail(e.target.value)}
+                  placeholder="colleague@company.com"
+                  className="w-full rounded-lg border border-gray-200 px-3.5 py-2.5 text-sm transition-colors placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-gray-700">Permission</label>
+                  <select
+                    value={sharePermission}
+                    onChange={(e) => setSharePermission(e.target.value)}
+                    className="w-full rounded-lg border border-gray-200 px-3.5 py-2.5 text-sm transition-colors focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  >
+                    <option value="view">View only</option>
+                    <option value="comment">Can comment</option>
+                    <option value="edit">Can edit</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-gray-700">Expires in</label>
+                  <select
+                    value={shareExpiry}
+                    onChange={(e) => setShareExpiry(e.target.value)}
+                    className="w-full rounded-lg border border-gray-200 px-3.5 py-2.5 text-sm transition-colors focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  >
+                    <option value="1">1 day</option>
+                    <option value="7">7 days</option>
+                    <option value="30">30 days</option>
+                    <option value="90">90 days</option>
+                    <option value="">Never</option>
+                  </select>
+                </div>
+              </div>
+
+              <button
+                onClick={handleShareContract}
+                disabled={!shareEmail.trim()}
+                className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-primary-600 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
+                </svg>
+                Send Share Link
+              </button>
+            </div>
+
+            {/* Active Shares */}
+            {shares.length > 0 && (
+              <div className="border-t border-gray-100 px-6 py-4">
+                <h3 className="mb-3 text-sm font-semibold text-gray-700">Active Shares</h3>
+                <div className="space-y-2.5">
+                  {shares.map((share) => (
+                    <div key={share.id} className="flex items-center justify-between rounded-lg bg-gray-50 px-3.5 py-2.5">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
+                          {share.shared_with_email?.charAt(0).toUpperCase()}
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-gray-800">{share.shared_with_email}</p>
+                          <div className="flex items-center gap-2 text-xs text-gray-400">
+                            <span className="capitalize">{share.permission}</span>
+                            {share.expires_at && (
+                              <>
+                                <span>&middot;</span>
+                                <span>Expires {new Date(share.expires_at).toLocaleDateString()}</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => handleRevokeShare(share.id)}
+                        className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-red-50 hover:text-red-500"
+                        title="Revoke access"
+                      >
+                        <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {loadingShares && (
+              <div className="border-t border-gray-100 px-6 py-4 text-center">
+                <LoadingSpinner size="sm" />
+              </div>
+            )}
           </div>
         </div>
       )}

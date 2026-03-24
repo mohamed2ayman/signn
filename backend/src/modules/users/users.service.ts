@@ -78,13 +78,13 @@ export class UsersService {
       throw new NotFoundException('User not found');
     }
 
-    const updateData: Partial<User> = {};
+    const updateData: Record<string, any> = {};
     if (dto.first_name !== undefined) updateData.first_name = dto.first_name;
     if (dto.last_name !== undefined) updateData.last_name = dto.last_name;
     if (dto.preferred_language !== undefined)
       updateData.preferred_language = dto.preferred_language;
 
-    await this.userRepository.update(userId, updateData);
+    await this.userRepository.update(userId, updateData as any);
 
     return this.getProfile(userId);
   }
