@@ -1,4 +1,5 @@
-import { IsUUID, IsOptional, IsString } from 'class-validator';
+import { IsUUID, IsOptional, IsString, IsEnum } from 'class-validator';
+import { PermissionLevel } from '../../../database/entities';
 
 export class AddMemberDto {
   @IsUUID()
@@ -7,4 +8,8 @@ export class AddMemberDto {
   @IsOptional()
   @IsString()
   role?: string;
+
+  @IsOptional()
+  @IsEnum(PermissionLevel)
+  permission_level?: PermissionLevel;
 }

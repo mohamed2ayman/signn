@@ -17,7 +17,7 @@ import { OrganizationId } from '../../common/decorators/organization.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { User, UserRole } from '../../database/entities';
 import { ProjectsService } from './projects.service';
-import { CreateProjectDto, UpdateProjectDto, AddMemberDto } from './dto';
+import { CreateProjectDto, UpdateProjectDto, AddMemberDto, UpdateMemberPermissionDto } from './dto';
 
 @Controller('projects')
 @UseGuards(JwtAuthGuard)
@@ -72,6 +72,26 @@ export class ProjectsController {
     @Body() dto: AddMemberDto,
   ) {
     return this.projectsService.addMember(id, orgId, dto);
+  }
+
+  @Get(':id/members')
+  async getMembers(
+    @Param('id', ParseUUIDPipe) id: string,
+    @OrganizationId() orgId: string,
+  ) {
+    return this.projectsService.getMembers(id, orgId);
+  }
+
+  @Put(':id/members/:userId/permission')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.OWNER_ADMIN, UserRole.SYSTEM_ADMIN)
+  async updateMemberPermission(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @OrganizationId() orgId: string,
+    @Body() dto: UpdateMemberPermissionDto,
+  ) {
+    return this.projectsService.updateMemberPermission(id, userId, orgId, dto);
   }
 
   @Delete(':id/members/:userId')

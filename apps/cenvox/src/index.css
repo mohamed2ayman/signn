@@ -1,0 +1,244 @@
+@import '@cenvox/tokens/cenvox.css';
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Base resets ────────────────────────────────────────────────── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: var(--cx-font-body);
+  background: var(--cx-void);
+  color: var(--cx-white);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+}
+
+/* ── Custom cursor ─────────────────────────────────────────────── */
+.cx-cursor-dot {
+  position: fixed;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #FF4D1C;
+  pointer-events: none;
+  z-index: 9999;
+  left: -100px;
+  top: -100px;
+  transform: translate(-50%, -50%);
+  transition: transform 0.1s ease;
+}
+
+.cx-cursor-ring {
+  position: fixed;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255, 77, 28, 0.5);
+  pointer-events: none;
+  z-index: 9998;
+  left: -100px;
+  top: -100px;
+  transform: translate(-50%, -50%);
+  opacity: 0;
+  transition: width 0.25s ease, height 0.25s ease,
+              border-color 0.25s ease, opacity 0.3s ease;
+}
+
+.cx-cursor-ring.active {
+  opacity: 1;
+}
+
+.cx-cursor-ring.hovered {
+  width: 52px;
+  height: 52px;
+  border-color: rgba(255, 77, 28, 0.8);
+}
+
+@media (pointer: coarse) {
+  .cx-cursor-dot,
+  .cx-cursor-ring {
+    display: none;
+  }
+  body {
+    cursor: auto !important;
+  }
+}
+
+@media (pointer: fine) {
+  body { cursor: none; }
+  a, button, [role="button"], .product-card, [data-hoverable] { cursor: none; }
+}
+
+/* ── Noise grain overlay ───────────────────────────────────────── */
+.noise-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 100;
+  opacity: 0.028;
+}
+
+/* ── Scroll reveal ─────────────────────────────────────────────── */
+.reveal {
+  opacity: 0;
+  transform: translateY(30px);
+  transition: opacity 0.7s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.reveal.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ── Hero entrance stagger ─────────────────────────────────────── */
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.hero-stagger > * {
+  opacity: 0;
+  animation: fadeUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.hero-stagger > *:nth-child(1) { animation-delay: 0.1s; }
+.hero-stagger > *:nth-child(2) { animation-delay: 0.3s; }
+.hero-stagger > *:nth-child(3) { animation-delay: 0.5s; }
+.hero-stagger > *:nth-child(4) { animation-delay: 0.7s; }
+.hero-stagger > *:nth-child(5) { animation-delay: 0.9s; }
+.hero-stagger > *:nth-child(6) { animation-delay: 1.1s; }
+.hero-stagger > *:nth-child(7) { animation-delay: 1.3s; }
+
+/* ── Stats ticker ──────────────────────────────────────────────── */
+@keyframes ticker {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+.ticker-track {
+  animation: ticker 30s linear infinite;
+}
+
+/* ── Rising lines ──────────────────────────────────────────────── */
+@keyframes riseLine {
+  0% {
+    opacity: 0;
+    transform: translateY(100vh);
+  }
+  10% {
+    opacity: 0.4;
+  }
+  90% {
+    opacity: 0.4;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-20vh);
+  }
+}
+
+.rising-line {
+  position: absolute;
+  bottom: 0;
+  width: 1px;
+  height: 120px;
+  background: linear-gradient(to top, transparent, var(--cx-fire), transparent);
+  animation: riseLine var(--duration, 6s) var(--delay, 0s) linear infinite;
+}
+
+/* ── Orbital animation ─────────────────────────────────────────── */
+@keyframes orbitOuter {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes orbitInner {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(-360deg); }
+}
+
+.orbit-outer {
+  animation: orbitOuter 40s linear infinite;
+}
+
+.orbit-inner {
+  animation: orbitInner 25s linear infinite;
+}
+
+.orbit-node {
+  animation: orbitInner 40s linear infinite;
+}
+
+.orbit-node-inner {
+  animation: orbitOuter 25s linear infinite;
+}
+
+/* ── Scroll indicator ──────────────────────────────────────────── */
+@keyframes scrollDrop {
+  0%, 100% { transform: translateY(0); opacity: 0; }
+  30% { opacity: 1; }
+  100% { transform: translateY(24px); opacity: 0; }
+}
+
+.scroll-dot {
+  animation: scrollDrop 2s ease-in-out infinite;
+}
+
+/* ── Product card border animation ─────────────────────────────── */
+.product-border {
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.product-card:hover .product-border {
+  transform: scaleX(1);
+}
+
+/* ── Reduced motion ────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .hero-stagger > * {
+    animation: none;
+    opacity: 1;
+  }
+  .ticker-track {
+    animation: none;
+  }
+  .rising-line {
+    animation: none;
+    display: none;
+  }
+  .orbit-outer,
+  .orbit-inner,
+  .orbit-node,
+  .orbit-node-inner {
+    animation: none;
+  }
+  .scroll-dot {
+    animation: none;
+  }
+  .reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}

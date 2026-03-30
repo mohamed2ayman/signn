@@ -1,0 +1,116 @@
+/* ═══════════════════════════════════════════════════════════════════
+   CENVOX Design Tokens
+   Shared design system for all CENVOX products (SIGN, VENDRIX, etc.)
+   ═══════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ── CENVOX Core Palette ──────────────────────────────────────── */
+  --cx-void: #06060A;
+  --cx-void2: #0C0C14;
+  --cx-surface: #11111C;
+  --cx-border: rgba(255, 255, 255, 0.07);
+  --cx-border2: rgba(255, 255, 255, 0.12);
+  --cx-white: #FAFAF8;
+  --cx-muted: rgba(250, 250, 248, 0.38);
+  --cx-mid: rgba(250, 250, 248, 0.62);
+  --cx-fire: #FF4D1C;
+  --cx-ember: #FF7A45;
+
+  /* ── Product Colors ───────────────────────────────────────────── */
+  --color-sign: #4F6EF7;
+  --color-sign-light: rgba(79, 110, 247, 0.12);
+  --color-sign-glow: rgba(79, 110, 247, 0.25);
+  --color-vendrix: #FF8C42;
+  --color-spantec: #38BDF8;
+  --color-claimx: #A855F7;
+  --color-guardia: #22C55E;
+  --color-doxen: #EAB308;
+
+  /* ── SIGN App Extended Palette (used by apps/sign) ────────────── */
+  --cx-brand-primary: #0D6EFD;
+  --cx-brand-primary-50: #EBF2FF;
+  --cx-brand-primary-100: #D6E4FF;
+  --cx-brand-primary-200: #ADC8FF;
+  --cx-brand-primary-300: #84ADFF;
+  --cx-brand-primary-400: #5B91FF;
+  --cx-brand-primary-500: #0D6EFD;
+  --cx-brand-primary-600: #0B5ED7;
+  --cx-brand-primary-700: #084DB1;
+  --cx-brand-primary-800: #063D8B;
+  --cx-brand-primary-900: #042C65;
+
+  --cx-brand-accent: #E86C29;
+  --cx-brand-accent-50: #FDF0E9;
+  --cx-brand-accent-100: #FBE1D3;
+  --cx-brand-accent-200: #F7C3A7;
+  --cx-brand-accent-300: #F3A57B;
+  --cx-brand-accent-400: #EF874F;
+  --cx-brand-accent-500: #E86C29;
+  --cx-brand-accent-600: #BA5621;
+  --cx-brand-accent-700: #8B4119;
+  --cx-brand-accent-800: #5D2B10;
+  --cx-brand-accent-900: #2E1608;
+
+  /* ── Neutrals (Navy) ──────────────────────────────────────────── */
+  --cx-navy-50: #F8FAFC;
+  --cx-navy-100: #F1F5F9;
+  --cx-navy-200: #E2E8F0;
+  --cx-navy-300: #CBD5E1;
+  --cx-navy-400: #94A3B8;
+  --cx-navy-500: #64748B;
+  --cx-navy-600: #475569;
+  --cx-navy-700: #334155;
+  --cx-navy-800: #1E293B;
+  --cx-navy-900: #0F172A;
+  --cx-navy-950: #020617;
+
+  /* ── Semantic Colors ──────────────────────────────────────────── */
+  --cx-success: #10B981;
+  --cx-success-light: #D1FAE5;
+  --cx-warning: #F59E0B;
+  --cx-warning-light: #FEF3C7;
+  --cx-danger: #EF4444;
+  --cx-danger-light: #FEE2E2;
+
+  /* ── Typography ───────────────────────────────────────────────── */
+  --cx-font-display: 'Syne', system-ui, sans-serif;
+  --cx-font-body: 'Instrument Sans', system-ui, sans-serif;
+  --cx-font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --cx-font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --cx-font-arabic: 'Cairo', system-ui, sans-serif;
+
+  /* ── CENVOX Typography Aliases (used by brand elements) ──────── */
+  --font-display: 'Syne', sans-serif;
+  --font-body: 'Instrument Sans', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  /* ── Spacing Scale ────────────────────────────────────────────── */
+  --cx-space-1: 0.25rem;
+  --cx-space-2: 0.5rem;
+  --cx-space-3: 0.75rem;
+  --cx-space-4: 1rem;
+  --cx-space-6: 1.5rem;
+  --cx-space-8: 2rem;
+  --cx-space-12: 3rem;
+  --cx-space-16: 4rem;
+  --cx-space-24: 6rem;
+
+  /* ── Border Radius ────────────────────────────────────────────── */
+  --cx-radius-sm: 0.375rem;
+  --cx-radius-md: 0.5rem;
+  --cx-radius-lg: 0.75rem;
+  --cx-radius-xl: 1rem;
+  --cx-radius-2xl: 1.5rem;
+  --cx-radius-full: 9999px;
+
+  /* ── Shadows ──────────────────────────────────────────────────── */
+  --cx-shadow-card: 0 1px 3px 0 rgb(0 0 0 / 0.04), 0 1px 2px -1px rgb(0 0 0 / 0.04);
+  --cx-shadow-card-hover: 0 4px 6px -1px rgb(0 0 0 / 0.06), 0 2px 4px -2px rgb(0 0 0 / 0.06);
+  --cx-shadow-elevated: 0 10px 15px -3px rgb(0 0 0 / 0.06), 0 4px 6px -4px rgb(0 0 0 / 0.06);
+  --cx-shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+
+  /* ── Transitions ──────────────────────────────────────────────── */
+  --cx-transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --cx-transition-base: 300ms cubic-bezier(0.4, 0, 0.2, 1);
+  --cx-transition-slow: 500ms cubic-bezier(0.4, 0, 0.2, 1);
+}

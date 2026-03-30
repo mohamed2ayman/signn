@@ -83,6 +83,7 @@ export class UsersService {
     if (dto.last_name !== undefined) updateData.last_name = dto.last_name;
     if (dto.preferred_language !== undefined)
       updateData.preferred_language = dto.preferred_language;
+    if (dto.job_title !== undefined) updateData.job_title = dto.job_title;
 
     await this.userRepository.update(userId, updateData as any);
 
@@ -131,6 +132,7 @@ export class UsersService {
         'first_name',
         'last_name',
         'role',
+        'job_title',
         'is_active',
         'is_email_verified',
         'last_login_at',
@@ -171,6 +173,7 @@ export class UsersService {
       first_name: '',
       last_name: '',
       role: dto.role,
+      job_title: dto.job_title || null,
       organization_id: organizationId,
       is_active: false,
       is_email_verified: false,
@@ -187,6 +190,7 @@ export class UsersService {
       id: savedUser.id,
       email: savedUser.email,
       role: savedUser.role,
+      job_title: savedUser.job_title,
       invitation_sent: true,
     };
   }

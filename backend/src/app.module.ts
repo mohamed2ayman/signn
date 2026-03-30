@@ -21,6 +21,7 @@ import { DashboardAnalyticsModule } from './modules/dashboard-analytics/dashboar
 import { ExportModule } from './modules/export/export.module';
 import { SupportModule } from './modules/support/support.module';
 import { ContractSharingModule } from './modules/contract-sharing/contract-sharing.module';
+import { PermissionDefaultsModule } from './modules/permission-defaults/permission-defaults.module';
 import { dataSourceOptions } from './config/data-source';
 
 @Module({
@@ -63,6 +64,7 @@ import { dataSourceOptions } from './config/data-source';
     ExportModule,
     SupportModule,
     ContractSharingModule,
+    PermissionDefaultsModule,
   ],
 })
 export class AppModule {}

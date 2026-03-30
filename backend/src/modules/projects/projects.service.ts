@@ -18,6 +18,7 @@ import {
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
 import { AddMemberDto } from './dto/add-member.dto';
+import { UpdateMemberPermissionDto } from './dto/update-member-permission.dto';
 
 @Injectable()
 export class ProjectsService {
@@ -207,8 +208,36 @@ export class ProjectsService {
       project_id: projectId,
       user_id: dto.user_id,
       role: dto.role ?? 'MEMBER',
+      permission_level: dto.permission_level ?? null,
     });
 
+    return this.projectMemberRepository.save(member);
+  }
+
+  async updateMemberPermission(
+    projectId: string,
+    userId: string,
+    orgId: string,
+    dto: UpdateMemberPermissionDto,
+  ): Promise<ProjectMember> {
+    const project = await this.projectRepository.findOne({
+      where: { id: projectId, organization_id: orgId },
+    });
+
+    if (!project) {
+      throw new NotFoundException('Project not found');
+    }
+
+    const member = await this.projectMemberRepository.findOne({
+      where: { project_id: projectId, user_id: userId },
+      relations: ['user'],
+    });
+
+    if (!member) {
+      throw new NotFoundException('Member not found in this project');
+    }
+
+    member.permission_level = dto.permission_level;
     return this.projectMemberRepository.save(member);
   }
 

@@ -1,5 +1,5 @@
 export { Organization } from './organization.entity';
-export { User, UserRole } from './user.entity';
+export { User, UserRole, JobTitle, PermissionLevel, JOB_TITLE_DEFAULT_PERMISSION } from './user.entity';
 export { SubscriptionPlan } from './subscription-plan.entity';
 export { OrganizationSubscription, SubscriptionStatus } from './organization-subscription.entity';
 export { Project } from './project.entity';
@@ -22,3 +22,4 @@ export { RiskCategory } from './risk-category.entity';
 export { SupportTicket } from './support-ticket.entity';
 export { SupportTicketReply } from './support-ticket-reply.entity';
 export { ContractShare } from './contract-share.entity';
+export { PermissionDefault } from './permission-default.entity';
