@@ -24,6 +24,7 @@ import NotificationsPage from '@/pages/app/NotificationsPage';
 import OnboardingPage from '@/pages/app/OnboardingPage';
 import SupportPage from '@/pages/app/SupportPage';
 import BillingPage from '@/pages/app/BillingPage';
+import ProfilePage from '@/pages/app/ProfilePage';
 
 // Admin portal pages
 import AdminDashboardPage from '@/pages/admin/AdminDashboardPage';
@@ -128,6 +129,7 @@ function App() {
         <Route path="notifications" element={<NotificationsPage />} />
         <Route path="onboarding" element={<OnboardingPage />} />
         <Route path="support" element={<SupportPage />} />
+        <Route path="profile" element={<ProfilePage />} />
         <Route path="settings/billing" element={<BillingPage />} />
       </Route>
 
