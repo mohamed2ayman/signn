@@ -75,7 +75,8 @@
       "Bash(grep -E \"\\\\.tsx$\")",
       "Bash(find /Users/youssefhazem/Desktop/SIGN PLATFORM/backend -maxdepth 3 -type f \\\\\\(-name data-source* -o -name .env* -o -name ormconfig* -o -name package.json \\\\\\))",
       "Bash(PGPASSWORD=sign_password psql -h localhost -U sign_user -d sign_db -c \"SELECT column_name, data_type, is_nullable FROM information_schema.columns WHERE table_name = ''users'' AND column_name = ''job_title'';\")",
-      "Bash(node -e \":*)"
+      "Bash(node -e \":*)",
+      "Bash(docker-compose build:*)"
     ]
   }
 }
