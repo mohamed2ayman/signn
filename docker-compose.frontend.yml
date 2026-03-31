@@ -1,0 +1,26 @@
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: apps/sign/Dockerfile
+    container_name: sign-frontend
+    ports:
+      - '5173:5173'
+    restart: unless-stopped
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/apps/sign/node_modules
+
+  cenvox:
+    build:
+      context: .
+      dockerfile: apps/cenvox/Dockerfile
+    container_name: sign-cenvox
+    ports:
+      - '5174:5174'
+    restart: unless-stopped
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/apps/cenvox/node_modules
