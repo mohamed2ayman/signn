@@ -13,6 +13,10 @@ export class InviteUserDto {
   job_title?: string;
 
   @IsOptional()
+  @IsString()
+  default_permission_level?: string;
+
+  @IsOptional()
   @IsArray()
   @IsUUID('4', { each: true })
   project_ids?: string[];

@@ -1,10 +1,11 @@
 import api from './axios';
-import { User, KnowledgeAsset, SubscriptionPlan, UserRole } from '@/types';
+import { User, KnowledgeAsset, SubscriptionPlan, UserRole, PermissionLevel } from '@/types';
 
 export interface InviteUserRequest {
   email: string;
   role: UserRole;
   job_title?: string;
+  default_permission_level?: PermissionLevel;
   project_ids?: string[];
 }
 

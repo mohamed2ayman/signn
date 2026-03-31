@@ -174,6 +174,7 @@ export class UsersService {
       last_name: '',
       role: dto.role,
       job_title: dto.job_title || null,
+      default_permission_level: dto.default_permission_level || null,
       organization_id: organizationId,
       is_active: false,
       is_email_verified: false,

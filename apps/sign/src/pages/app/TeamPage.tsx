@@ -2,12 +2,51 @@ import { useState, useEffect } from 'react';
 import { adminService } from '@/services/api/adminService';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
 import type { User, UserRole } from '@/types';
-import { JOB_TITLES } from '@/types';
+import { JOB_TITLES, JOB_TITLE_DEFAULT_PERMISSION, PermissionLevel } from '@/types';
 
-const INVITABLE_ROLES: { value: string; label: string }[] = [
-  { value: 'OWNER_CREATOR', label: 'Owner Creator' },
-  { value: 'OWNER_REVIEWER', label: 'Owner Reviewer' },
-  { value: 'OWNER_ADMIN', label: 'Owner Admin' },
+const INVITABLE_ROLES: { value: string; label: string; description: string }[] = [
+  {
+    value: 'OWNER_ADMIN',
+    label: 'Organization Admin',
+    description: 'Full access to manage team, projects, and settings',
+  },
+  {
+    value: 'OWNER_CREATOR',
+    label: 'Contract Creator',
+    description: 'Can create, edit, and manage contracts within assigned projects',
+  },
+  {
+    value: 'OWNER_REVIEWER',
+    label: 'Contract Reviewer',
+    description: 'Can review and comment on contracts within assigned projects',
+  },
+];
+
+const PERMISSION_LEVELS: {
+  value: PermissionLevel;
+  label: string;
+  description: string;
+}[] = [
+  {
+    value: PermissionLevel.VIEWER,
+    label: 'Viewer',
+    description: 'Can view contracts and documents (read-only)',
+  },
+  {
+    value: PermissionLevel.COMMENTER,
+    label: 'Commenter',
+    description: 'Can view and add comments on contracts',
+  },
+  {
+    value: PermissionLevel.EDITOR,
+    label: 'Editor',
+    description: 'Can create, edit, and manage contract content',
+  },
+  {
+    value: PermissionLevel.APPROVER,
+    label: 'Approver',
+    description: 'Full access including final approval of contracts',
+  },
 ];
 
 export default function TeamPage() {
@@ -18,6 +57,7 @@ export default function TeamPage() {
     email: '',
     role: 'OWNER_CREATOR' as string,
     job_title: '',
+    default_permission_level: '' as string,
   });
   const [inviting, setInviting] = useState(false);
   const [error, setError] = useState('');
@@ -31,6 +71,19 @@ export default function TeamPage() {
       .finally(() => setLoading(false));
   }, []);
 
+  /** When job title changes, auto-select the default permission level */
+  const handleJobTitleChange = (jobTitle: string) => {
+    const defaultPermission =
+      jobTitle && JOB_TITLE_DEFAULT_PERMISSION[jobTitle]
+        ? JOB_TITLE_DEFAULT_PERMISSION[jobTitle]
+        : '';
+    setInviteForm((prev) => ({
+      ...prev,
+      job_title: jobTitle,
+      default_permission_level: defaultPermission,
+    }));
+  };
+
   const handleInvite = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inviteForm.email) return;
@@ -42,9 +95,16 @@ export default function TeamPage() {
         email: inviteForm.email,
         role: inviteForm.role as UserRole,
         job_title: inviteForm.job_title || undefined,
+        default_permission_level:
+          (inviteForm.default_permission_level as PermissionLevel) || undefined,
       });
       setSuccess(`Invitation sent to ${inviteForm.email}`);
-      setInviteForm({ email: '', role: 'OWNER_CREATOR', job_title: '' });
+      setInviteForm({
+        email: '',
+        role: 'OWNER_CREATOR',
+        job_title: '',
+        default_permission_level: '',
+      });
       setShowInvite(false);
       // Refresh list
       const updated = await adminService.getUsers();
@@ -122,6 +182,9 @@ export default function TeamPage() {
                   System Role
                 </th>
                 <th className="px-6 py-3 text-left font-medium text-gray-500">
+                  Permission Level
+                </th>
+                <th className="px-6 py-3 text-left font-medium text-gray-500">
                   Status
                 </th>
                 <th className="px-6 py-3 text-left font-medium text-gray-500">
@@ -152,8 +215,18 @@ export default function TeamPage() {
                   </td>
                   <td className="px-6 py-3.5">
                     <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
-                      {user.role.replace(/_/g, ' ')}
+                      {INVITABLE_ROLES.find((r) => r.value === user.role)
+                        ?.label || user.role.replace(/_/g, ' ')}
                     </span>
+                  </td>
+                  <td className="px-6 py-3.5">
+                    {user.default_permission_level ? (
+                      <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-600">
+                        {user.default_permission_level}
+                      </span>
+                    ) : (
+                      <span className="text-gray-300 text-xs">Not set</span>
+                    )}
                   </td>
                   <td className="px-6 py-3.5">
                     {user.is_active ? (
@@ -190,7 +263,7 @@ export default function TeamPage() {
                   Invite Team Member
                 </h2>
                 <p className="mt-0.5 text-sm text-gray-400">
-                  Send an invitation with role and job title
+                  Send an invitation with role, job title, and permission level
                 </p>
               </div>
               <button
@@ -213,6 +286,7 @@ export default function TeamPage() {
               </button>
             </div>
             <form onSubmit={handleInvite} className="space-y-4">
+              {/* Email */}
               <div>
                 <label className="mb-1.5 block text-sm font-medium text-gray-700">
                   Email Address *
@@ -228,6 +302,8 @@ export default function TeamPage() {
                   placeholder="colleague@company.com"
                 />
               </div>
+
+              {/* System Role */}
               <div>
                 <label className="mb-1.5 block text-sm font-medium text-gray-700">
                   System Role *
@@ -245,16 +321,20 @@ export default function TeamPage() {
                     </option>
                   ))}
                 </select>
+                <p className="mt-1 text-xs text-gray-400">
+                  {INVITABLE_ROLES.find((r) => r.value === inviteForm.role)
+                    ?.description}
+                </p>
               </div>
+
+              {/* Job Title */}
               <div>
                 <label className="mb-1.5 block text-sm font-medium text-gray-700">
                   Job Title
                 </label>
                 <select
                   value={inviteForm.job_title}
-                  onChange={(e) =>
-                    setInviteForm({ ...inviteForm, job_title: e.target.value })
-                  }
+                  onChange={(e) => handleJobTitleChange(e.target.value)}
                   className="w-full rounded-lg border border-gray-200 bg-white px-3.5 py-2.5 text-sm transition-colors focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
                 >
                   <option value="">Select a job title...</option>
@@ -268,6 +348,52 @@ export default function TeamPage() {
                   Determines the default permission level when added to projects
                 </p>
               </div>
+
+              {/* Permission Level */}
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-gray-700">
+                  Default Permission Level
+                </label>
+                <select
+                  value={inviteForm.default_permission_level}
+                  onChange={(e) =>
+                    setInviteForm({
+                      ...inviteForm,
+                      default_permission_level: e.target.value,
+                    })
+                  }
+                  className="w-full rounded-lg border border-gray-200 bg-white px-3.5 py-2.5 text-sm transition-colors focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                >
+                  <option value="">Select permission level...</option>
+                  {PERMISSION_LEVELS.map((pl) => (
+                    <option key={pl.value} value={pl.value}>
+                      {pl.label} — {pl.description}
+                    </option>
+                  ))}
+                </select>
+                {inviteForm.default_permission_level && (
+                  <p className="mt-1 text-xs text-gray-400">
+                    {
+                      PERMISSION_LEVELS.find(
+                        (pl) =>
+                          pl.value === inviteForm.default_permission_level,
+                      )?.description
+                    }
+                  </p>
+                )}
+                {inviteForm.job_title &&
+                  inviteForm.default_permission_level &&
+                  JOB_TITLE_DEFAULT_PERMISSION[inviteForm.job_title] &&
+                  inviteForm.default_permission_level !==
+                    JOB_TITLE_DEFAULT_PERMISSION[inviteForm.job_title] && (
+                    <p className="mt-1 text-xs text-amber-500">
+                      Note: This overrides the default (
+                      {JOB_TITLE_DEFAULT_PERMISSION[inviteForm.job_title]}) for
+                      the selected job title.
+                    </p>
+                  )}
+              </div>
+
               <div className="flex justify-end gap-2.5 border-t border-gray-100 pt-4">
                 <button
                   type="button"

@@ -109,6 +109,9 @@ export class User {
   @Column({ type: 'varchar', length: 100, nullable: true })
   job_title: string | null;
 
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  default_permission_level: string | null;
+
   @Column({ type: 'boolean', default: true })
   is_active: boolean;
 

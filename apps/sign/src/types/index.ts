@@ -22,27 +22,39 @@ export enum PermissionLevel {
 }
 
 export const JOB_TITLES = [
+  'CEO',
+  'CFO',
+  'COO',
   'Contract Administrator',
-  'Contracts Manager',
-  'Contracts Director',
   'Contracts & Claims Team Leader',
-  'Senior Contracts and Claims Engineer',
+  'Contracts Director',
+  'Contracts Manager',
   'Junior Contracts Engineer',
+  'Legal Counsel',
+  'Managing Director',
   'Project Director',
   'Project Manager',
-  'Legal Counsel',
-  'Chief Operating Officer (CEO)',
-  'Chief Financial Officer (CFO)',
-  'Chief Operating Officer (COO)',
-  'Managing Director',
+  'Senior Contracts and Claims Engineer',
   'Tendering Manager',
-  'Technical Office Manager',
-  'Procurement Manager',
-  'Cost Control Manager',
-  'Commercial Director',
-  'Operations Director',
-  'Forensic Planner',
 ] as const;
+
+/** Maps each job title to its default permission level */
+export const JOB_TITLE_DEFAULT_PERMISSION: Record<string, PermissionLevel> = {
+  'CEO': PermissionLevel.APPROVER,
+  'CFO': PermissionLevel.APPROVER,
+  'COO': PermissionLevel.APPROVER,
+  'Managing Director': PermissionLevel.APPROVER,
+  'Contracts Director': PermissionLevel.APPROVER,
+  'Project Director': PermissionLevel.APPROVER,
+  'Contracts Manager': PermissionLevel.EDITOR,
+  'Tendering Manager': PermissionLevel.EDITOR,
+  'Project Manager': PermissionLevel.EDITOR,
+  'Legal Counsel': PermissionLevel.EDITOR,
+  'Contracts & Claims Team Leader': PermissionLevel.EDITOR,
+  'Senior Contracts and Claims Engineer': PermissionLevel.EDITOR,
+  'Contract Administrator': PermissionLevel.EDITOR,
+  'Junior Contracts Engineer': PermissionLevel.COMMENTER,
+};
 
 export type JobTitle = (typeof JOB_TITLES)[number];
 
@@ -173,6 +185,7 @@ export interface User {
   last_name: string;
   role: UserRole;
   job_title: string | null;
+  default_permission_level: PermissionLevel | null;
   is_active: boolean;
   is_email_verified: boolean;
   mfa_enabled: boolean;
