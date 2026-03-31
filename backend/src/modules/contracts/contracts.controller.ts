@@ -12,9 +12,11 @@ import {
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
+import { PermissionLevelGuard } from '../../common/guards/permission-level.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { RequirePermission } from '../../common/decorators/require-permission.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { UserRole } from '../../database/entities';
+import { UserRole, PermissionLevel } from '../../database/entities';
 import { ContractsService } from './contracts.service';
 import {
   CreateContractDto,
@@ -26,13 +28,14 @@ import {
 } from './dto';
 
 @Controller('contracts')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, PermissionLevelGuard)
 export class ContractsController {
   constructor(private readonly contractsService: ContractsService) {}
 
   // ─── Contract CRUD ─────────────────────────────────────────
 
   @Get()
+  @RequirePermission(PermissionLevel.VIEWER)
   async findAll(
     @Query('project_id', ParseUUIDPipe) projectId: string,
     @Query('status') status?: string,
@@ -52,6 +55,7 @@ export class ContractsController {
   }
 
   @Post()
+  @RequirePermission(PermissionLevel.EDITOR)
   async create(
     @Body() dto: CreateContractDto,
     @CurrentUser() user: any,
@@ -60,6 +64,7 @@ export class ContractsController {
   }
 
   @Put(':id')
+  @RequirePermission(PermissionLevel.EDITOR)
   async update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateContractDto,
@@ -68,6 +73,7 @@ export class ContractsController {
   }
 
   @Put(':id/status')
+  @RequirePermission(PermissionLevel.APPROVER)
   async updateStatus(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateStatusDto,
@@ -77,6 +83,7 @@ export class ContractsController {
   }
 
   @Delete(':id')
+  @RequirePermission(PermissionLevel.EDITOR)
   async delete(@Param('id', ParseUUIDPipe) id: string) {
     await this.contractsService.delete(id);
     return { message: 'Contract deleted successfully' };
@@ -90,6 +97,7 @@ export class ContractsController {
   }
 
   @Post(':id/clauses')
+  @RequirePermission(PermissionLevel.EDITOR)
   async addClause(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: AddClauseDto,
@@ -98,6 +106,7 @@ export class ContractsController {
   }
 
   @Put(':id/clauses/:clauseId')
+  @RequirePermission(PermissionLevel.EDITOR)
   async updateContractClause(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('clauseId', ParseUUIDPipe) clauseId: string,
@@ -107,6 +116,7 @@ export class ContractsController {
   }
 
   @Delete(':id/clauses/:clauseId')
+  @RequirePermission(PermissionLevel.EDITOR)
   async removeClause(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('clauseId', ParseUUIDPipe) clauseId: string,
@@ -116,6 +126,7 @@ export class ContractsController {
   }
 
   @Put(':id/clauses/reorder')
+  @RequirePermission(PermissionLevel.EDITOR)
   async reorderClauses(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: { clauses: { id: string; order_index: number }[] },
@@ -140,6 +151,7 @@ export class ContractsController {
   }
 
   @Post(':id/versions')
+  @RequirePermission(PermissionLevel.EDITOR)
   async saveNewVersion(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: { change_summary: string },
@@ -163,6 +175,7 @@ export class ContractsController {
   }
 
   @Post(':id/comments')
+  @RequirePermission(PermissionLevel.COMMENTER)
   async addComment(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: AddCommentDto,
@@ -172,6 +185,7 @@ export class ContractsController {
   }
 
   @Put(':id/comments/:commentId/resolve')
+  @RequirePermission(PermissionLevel.EDITOR)
   async resolveComment(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('commentId', ParseUUIDPipe) commentId: string,

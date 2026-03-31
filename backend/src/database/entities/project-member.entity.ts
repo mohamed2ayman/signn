@@ -7,7 +7,7 @@ import {
   JoinColumn,
 } from 'typeorm';
 import { Project } from './project.entity';
-import { User } from './user.entity';
+import { User, PermissionLevel } from './user.entity';
 
 @Entity('project_members')
 export class ProjectMember {
@@ -30,6 +30,9 @@ export class ProjectMember {
 
   @Column({ type: 'varchar', length: 50, nullable: true })
   role: string;
+
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  permission_level: PermissionLevel | null;
 
   @CreateDateColumn({ name: 'added_at', type: 'timestamptz' })
   added_at: Date;

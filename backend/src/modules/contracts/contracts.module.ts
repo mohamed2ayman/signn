@@ -7,9 +7,12 @@ import {
   ContractVersion,
   ContractComment,
   ContractorResponse,
+  ProjectMember,
+  PermissionDefault,
 } from '../../database/entities';
 import { ContractsController } from './contracts.controller';
 import { ContractsService } from './contracts.service';
+import { PermissionLevelGuard } from '../../common/guards/permission-level.guard';
 
 @Module({
   imports: [
@@ -19,10 +22,12 @@ import { ContractsService } from './contracts.service';
       ContractVersion,
       ContractComment,
       ContractorResponse,
+      ProjectMember,
+      PermissionDefault,
     ]),
   ],
   controllers: [ContractsController],
-  providers: [ContractsService],
+  providers: [ContractsService, PermissionLevelGuard],
   exports: [ContractsService],
 })
 export class ContractsModule {}

@@ -14,4 +14,8 @@ export class UpdateProfileDto {
   @IsOptional()
   @IsString()
   preferred_language?: string;
+
+  @IsOptional()
+  @IsString()
+  job_title?: string;
 }

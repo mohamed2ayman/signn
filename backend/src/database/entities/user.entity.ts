@@ -25,6 +25,60 @@ export enum UserRole {
   CONTRACTOR_TENDERING = 'CONTRACTOR_TENDERING',
 }
 
+export enum JobTitle {
+  CONTRACT_ADMINISTRATOR = 'Contract Administrator',
+  CONTRACTS_MANAGER = 'Contracts Manager',
+  CONTRACTS_DIRECTOR = 'Contracts Director',
+  CONTRACTS_CLAIMS_TEAM_LEADER = 'Contracts & Claims Team Leader',
+  SENIOR_CONTRACTS_CLAIMS_ENGINEER = 'Senior Contracts and Claims Engineer',
+  JUNIOR_CONTRACTS_ENGINEER = 'Junior Contracts Engineer',
+  PROJECT_DIRECTOR = 'Project Director',
+  PROJECT_MANAGER = 'Project Manager',
+  LEGAL_COUNSEL = 'Legal Counsel',
+  CEO = 'Chief Operating Officer (CEO)',
+  CFO = 'Chief Financial Officer (CFO)',
+  COO = 'Chief Operating Officer (COO)',
+  MANAGING_DIRECTOR = 'Managing Director',
+  TENDERING_MANAGER = 'Tendering Manager',
+  TECHNICAL_OFFICE_MANAGER = 'Technical Office Manager',
+  PROCUREMENT_MANAGER = 'Procurement Manager',
+  COST_CONTROL_MANAGER = 'Cost Control Manager',
+  COMMERCIAL_DIRECTOR = 'Commercial Director',
+  OPERATIONS_DIRECTOR = 'Operations Director',
+  FORENSIC_PLANNER = 'Forensic Planner',
+}
+
+export enum PermissionLevel {
+  VIEWER = 'VIEWER',
+  COMMENTER = 'COMMENTER',
+  EDITOR = 'EDITOR',
+  APPROVER = 'APPROVER',
+}
+
+/** Default permission level for each job title (can be overridden per user per project) */
+export const JOB_TITLE_DEFAULT_PERMISSION: Record<JobTitle, PermissionLevel> = {
+  [JobTitle.CEO]: PermissionLevel.APPROVER,
+  [JobTitle.CFO]: PermissionLevel.APPROVER,
+  [JobTitle.COO]: PermissionLevel.APPROVER,
+  [JobTitle.MANAGING_DIRECTOR]: PermissionLevel.APPROVER,
+  [JobTitle.CONTRACTS_DIRECTOR]: PermissionLevel.APPROVER,
+  [JobTitle.PROJECT_DIRECTOR]: PermissionLevel.APPROVER,
+  [JobTitle.CONTRACTS_MANAGER]: PermissionLevel.EDITOR,
+  [JobTitle.TENDERING_MANAGER]: PermissionLevel.EDITOR,
+  [JobTitle.PROJECT_MANAGER]: PermissionLevel.EDITOR,
+  [JobTitle.LEGAL_COUNSEL]: PermissionLevel.EDITOR,
+  [JobTitle.CONTRACTS_CLAIMS_TEAM_LEADER]: PermissionLevel.EDITOR,
+  [JobTitle.SENIOR_CONTRACTS_CLAIMS_ENGINEER]: PermissionLevel.EDITOR,
+  [JobTitle.CONTRACT_ADMINISTRATOR]: PermissionLevel.EDITOR,
+  [JobTitle.JUNIOR_CONTRACTS_ENGINEER]: PermissionLevel.EDITOR,
+  [JobTitle.TECHNICAL_OFFICE_MANAGER]: PermissionLevel.VIEWER,
+  [JobTitle.PROCUREMENT_MANAGER]: PermissionLevel.VIEWER,
+  [JobTitle.COST_CONTROL_MANAGER]: PermissionLevel.VIEWER,
+  [JobTitle.COMMERCIAL_DIRECTOR]: PermissionLevel.VIEWER,
+  [JobTitle.OPERATIONS_DIRECTOR]: PermissionLevel.VIEWER,
+  [JobTitle.FORENSIC_PLANNER]: PermissionLevel.VIEWER,
+};
+
 @Entity('users')
 export class User {
   @PrimaryGeneratedColumn('uuid')
@@ -51,6 +105,12 @@ export class User {
 
   @Column({ type: 'enum', enum: UserRole })
   role: UserRole;
+
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  job_title: string | null;
+
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  default_permission_level: string | null;
 
   @Column({ type: 'boolean', default: true })
   is_active: boolean;

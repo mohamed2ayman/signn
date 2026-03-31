@@ -1,0 +1,134 @@
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=Instrument+Sans:wght@300;400;500&family=JetBrains+Mono:wght@300;400&display=swap');
+@import '@cenvox/tokens/cenvox.css';
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    @apply scroll-smooth antialiased;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    @apply min-h-screen bg-background text-text;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  }
+
+  /* RTL support for Arabic */
+  [dir='rtl'] {
+    font-family: 'Cairo', system-ui, sans-serif;
+  }
+
+  /* Smoother scrollbars */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply rounded-full bg-gray-300;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-gray-400;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply inline-flex items-center justify-center rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white transition-all hover:bg-primary-600 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 shadow-sm;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center rounded-lg bg-secondary px-4 py-2 text-sm font-semibold text-white transition-all hover:bg-secondary-600 focus:outline-none focus:ring-2 focus:ring-secondary/30 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .btn-outline {
+    @apply inline-flex items-center justify-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-all hover:bg-gray-50 hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .card {
+    @apply rounded-xl border border-gray-200/80 bg-white p-6 shadow-card transition-shadow;
+  }
+
+  .card-hover {
+    @apply rounded-xl border border-gray-200/80 bg-white p-6 shadow-card transition-all hover:shadow-card-hover hover:border-gray-300;
+  }
+
+  .input {
+    @apply w-full rounded-lg border border-gray-300 px-3 py-2 text-sm transition-all placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed disabled:bg-gray-50;
+  }
+}
+
+/* ── CENVOX Parent Brand Elements ─────────────────────────────── */
+
+.cenvox-backlink {
+  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(255, 77, 28, 0.6);
+  text-decoration: none;
+  padding: 4px 10px;
+  border: 1px solid rgba(255, 77, 28, 0.2);
+  border-radius: 4px;
+  margin-right: 16px;
+  transition: color 0.2s ease, border-color 0.2s ease;
+  white-space: nowrap;
+}
+
+.cenvox-backlink:hover {
+  color: #FF4D1C;
+  border-color: rgba(255, 77, 28, 0.5);
+}
+
+@media (max-width: 768px) {
+  .cenvox-backlink { display: none; }
+}
+
+.cenvox-attribution {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(100, 116, 139, 0.5);
+}
+
+.cenvox-attribution-link {
+  color: rgba(255, 77, 28, 0.5);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+
+.cenvox-attribution-link:hover {
+  color: #FF4D1C;
+}
+
+.sign-parent-tag {
+  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+  font-size: 10px;
+  font-weight: 300;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(100, 116, 139, 0.6);
+  margin-top: 6px;
+  text-align: center;
+}
+
+.sign-parent-link {
+  color: rgba(255, 77, 28, 0.55);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+
+.sign-parent-link:hover {
+  color: #FF4D1C;
+}

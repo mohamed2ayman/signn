@@ -58,7 +58,24 @@
       "Bash(ls \"/Users/youssefhazem/Desktop/SIGN PLATFORM/frontend/src/services/\"*.ts)",
       "Bash(npm install pdfmake)",
       "Bash(lsof -ti:3000,5173)",
-      "Bash(lsof -i :3000 -i :5173)"
+      "Bash(lsof -i :3000 -i :5173)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(lsof -ti:5173,5174)",
+      "Bash(xargs kill:*)",
+      "Bash(lsof -ti:5173)",
+      "Bash(npm --version)",
+      "Bash(npx -w @cenvox/landing vite build)",
+      "Bash(npx vite:*)",
+      "Bash(npx tsc:*)",
+      "Bash(find /Users/youssefhazem/Desktop/SIGN PLATFORM/apps/sign -type f \\\\\\(-name *.ts -o -name *.tsx -o -name *.js -o -name *.jsx \\\\\\))",
+      "Bash(find /Users/youssefhazem/Desktop/SIGN PLATFORM/backend/src -type f \\\\\\(-name *.ts \\\\\\))",
+      "Bash(ls -1 /Users/youssefhazem/Desktop/SIGN PLATFORM/backend/src/modules/*/*.service.ts)",
+      "Bash(xargs basename:*)",
+      "Bash(grep -E \"\\\\.\\(tsx|ts\\)$\")",
+      "Bash(grep -E \"\\\\.tsx$\")",
+      "Bash(find /Users/youssefhazem/Desktop/SIGN PLATFORM/backend -maxdepth 3 -type f \\\\\\(-name data-source* -o -name .env* -o -name ormconfig* -o -name package.json \\\\\\))",
+      "Bash(PGPASSWORD=sign_password psql -h localhost -U sign_user -d sign_db -c \"SELECT column_name, data_type, is_nullable FROM information_schema.columns WHERE table_name = ''users'' AND column_name = ''job_title'';\")",
+      "Bash(node -e \":*)"
     ]
   }
 }

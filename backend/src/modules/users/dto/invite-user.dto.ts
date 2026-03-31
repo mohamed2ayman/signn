@@ -1,4 +1,4 @@
-import { IsEmail, IsEnum, IsOptional, IsArray, IsUUID } from 'class-validator';
+import { IsEmail, IsEnum, IsOptional, IsArray, IsUUID, IsString } from 'class-validator';
 import { UserRole } from '../../../database/entities';
 
 export class InviteUserDto {
@@ -7,6 +7,14 @@ export class InviteUserDto {
 
   @IsEnum(UserRole)
   role: UserRole;
+
+  @IsOptional()
+  @IsString()
+  job_title?: string;
+
+  @IsOptional()
+  @IsString()
+  default_permission_level?: string;
 
   @IsOptional()
   @IsArray()

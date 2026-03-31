@@ -1,0 +1,7 @@
+{
+  "name": "@cenvox/tokens",
+  "version": "1.0.0",
+  "private": true,
+  "main": "cenvox.css",
+  "files": ["cenvox.css"]
+}
