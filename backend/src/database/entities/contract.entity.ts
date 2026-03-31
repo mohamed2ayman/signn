@@ -33,6 +33,12 @@ export enum ContractStatus {
   TERMINATED = 'TERMINATED',
 }
 
+export enum SignatureStatus {
+  PENDING_SIGNATURE = 'PENDING_SIGNATURE',
+  AWAITING_COUNTERPARTY = 'AWAITING_COUNTERPARTY',
+  FULLY_EXECUTED = 'FULLY_EXECUTED',
+}
+
 export enum ContractType {
   FIDIC_RED = 'FIDIC_RED',
   FIDIC_YELLOW = 'FIDIC_YELLOW',
@@ -89,6 +95,23 @@ export class Contract {
 
   @Column({ type: 'timestamptz', nullable: true })
   shared_at: Date;
+
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  docusign_envelope_id: string | null;
+
+  @Column({ type: 'varchar', length: 30, nullable: true })
+  signature_status: SignatureStatus | null;
+
+  @Column({ type: 'jsonb', nullable: true })
+  signature_signers: Array<{
+    email: string;
+    name: string;
+    status: string;
+    signed_at?: string;
+  }> | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  executed_at: Date | null;
 
   @CreateDateColumn({ type: 'timestamptz' })
   created_at: Date;

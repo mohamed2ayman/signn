@@ -6,7 +6,7 @@ export { Project } from './project.entity';
 export { ProjectMember } from './project-member.entity';
 export { ProjectParty, PartyType, PARTY_TYPE_PERMISSIONS } from './project-party.entity';
 export { Clause, ClauseSource, ClauseReviewStatus } from './clause.entity';
-export { Contract, ContractStatus, ContractType } from './contract.entity';
+export { Contract, ContractStatus, ContractType, SignatureStatus } from './contract.entity';
 export { DocumentUpload, DocumentProcessingStatus } from './document-upload.entity';
 export { ContractClause } from './contract-clause.entity';
 export { ContractVersion } from './contract-version.entity';
