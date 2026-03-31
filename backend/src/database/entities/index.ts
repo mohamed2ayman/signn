@@ -23,3 +23,5 @@ export { SupportTicket } from './support-ticket.entity';
 export { SupportTicketReply } from './support-ticket-reply.entity';
 export { ContractShare } from './contract-share.entity';
 export { PermissionDefault } from './permission-default.entity';
+export { ChatSession } from './chat-session.entity';
+export { ChatMessage, ChatMessageRole } from './chat-message.entity';

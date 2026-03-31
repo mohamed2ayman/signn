@@ -6,6 +6,7 @@ import { riskAnalysisService } from '@/services/api/riskAnalysisService';
 import { exportService } from '@/services/api/exportService';
 import { contractSharingService } from '@/services/api/contractSharingService';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
+import ChatPanel from '@/components/chat/ChatPanel';
 import type { Contract, ContractClause, Clause, ContractComment, RiskAnalysis, ContractShare } from '@/types';
 
 /* ── Status Badge ─────────────────────────────────────────────── */
@@ -91,6 +92,7 @@ export default function ContractDetailPage() {
   const [loadingShares, setLoadingShares] = useState(false);
   const [exporting, setExporting] = useState<string | null>(null);
   const [shareSuccess, setShareSuccess] = useState('');
+  const [chatOpen, setChatOpen] = useState(false);
   const exportMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -306,6 +308,21 @@ export default function ContractDetailPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" d="M7.217 10.907a2.25 2.25 0 100 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186l9.566-5.314m-9.566 7.5l9.566 5.314m0 0a2.25 2.25 0 103.935 2.186 2.25 2.25 0 00-3.935-2.186zm0-12.814a2.25 2.25 0 103.933-2.185 2.25 2.25 0 00-3.933 2.185z" />
               </svg>
               Share
+            </button>
+
+            {/* AI Assistant Button */}
+            <button
+              onClick={() => setChatOpen(!chatOpen)}
+              className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-medium transition ${
+                chatOpen
+                  ? 'bg-primary text-white shadow-sm hover:bg-primary-600'
+                  : 'border border-primary/30 bg-primary/5 text-primary hover:bg-primary/10'
+              }`}
+            >
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456z" />
+              </svg>
+              AI Assistant
             </button>
 
             {/* Export Dropdown */}
@@ -911,6 +928,15 @@ export default function ContractDetailPage() {
             )}
           </div>
         </div>
+      )}
+
+      {/* AI Chat Panel */}
+      {id && (
+        <ChatPanel
+          contractId={id}
+          isOpen={chatOpen}
+          onClose={() => setChatOpen(false)}
+        />
       )}
     </div>
   );
