@@ -74,19 +74,21 @@ services:
 
   frontend:
     build:
-      context: ./frontend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: apps/sign/Dockerfile
     container_name: sign-frontend
     restart: unless-stopped
     ports:
       - '5173:5173'
     env_file:
-      - ./frontend/.env
+      - ./apps/sign/.env
     depends_on:
       - backend
     volumes:
-      - ./frontend:/app
+      - ./apps/sign:/app/apps/sign
+      - ./packages:/app/packages
       - /app/node_modules
+      - /app/apps/sign/node_modules
 
 volumes:
   postgres_data:
