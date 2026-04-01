@@ -6,7 +6,8 @@ import { riskAnalysisService } from '@/services/api/riskAnalysisService';
 import { exportService } from '@/services/api/exportService';
 import { contractSharingService } from '@/services/api/contractSharingService';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
-import type { Contract, ContractClause, Clause, ContractComment, RiskAnalysis, ContractShare } from '@/types';
+import ChatPanel from '@/components/chat/ChatPanel';
+import type { Contract, ContractClause, Clause, ContractComment, RiskAnalysis, ContractShare, SignatureSigner } from '@/types';
 
 /* ── Status Badge ─────────────────────────────────────────────── */
 const statusStyles: Record<string, { bg: string; text: string; dot: string }> = {
@@ -91,6 +92,13 @@ export default function ContractDetailPage() {
   const [loadingShares, setLoadingShares] = useState(false);
   const [exporting, setExporting] = useState<string | null>(null);
   const [shareSuccess, setShareSuccess] = useState('');
+  const [chatOpen, setChatOpen] = useState(false);
+
+  // Signature state
+  const [showSignModal, setShowSignModal] = useState(false);
+  const [signSigners, setSignSigners] = useState([{ email: '', name: '' }]);
+  const [signingLoading, setSigningLoading] = useState(false);
+  const [signatureSigners, setSignatureSigners] = useState<SignatureSigner[]>([]);
   const exportMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -237,6 +245,53 @@ export default function ContractDetailPage() {
     loadShares();
   };
 
+  // Signature handlers
+  const loadSignatureStatus = async () => {
+    if (!id) return;
+    try {
+      const data = await contractService.getSignatureStatus(id);
+      setSignatureSigners(data.signers || []);
+      // Refresh contract if status changed
+      if (data.signature_status === 'FULLY_EXECUTED' && contract?.status !== 'ACTIVE') {
+        const updated = await contractService.getById(id);
+        setContract(updated);
+      }
+    } catch {
+      // silently fail
+    }
+  };
+
+  const handleInitiateSignature = async () => {
+    if (!id) return;
+    const validSigners = signSigners.filter(s => s.email.trim() && s.name.trim());
+    if (validSigners.length === 0) return;
+
+    setSigningLoading(true);
+    try {
+      const { signingUrl } = await contractService.initiateSignature(id, validSigners);
+      setShowSignModal(false);
+      // Refresh contract to show signature_status
+      const updated = await contractService.getById(id);
+      setContract(updated);
+      loadSignatureStatus();
+      // Open DocuSign signing in a new window
+      if (signingUrl) {
+        window.open(signingUrl, '_blank', 'width=1000,height=800');
+      }
+    } catch (err) {
+      console.error('Failed to initiate signature:', err);
+    } finally {
+      setSigningLoading(false);
+    }
+  };
+
+  // Load signature status when contract has an envelope
+  useEffect(() => {
+    if (contract?.docusign_envelope_id) {
+      loadSignatureStatus();
+    }
+  }, [contract?.docusign_envelope_id]);
+
   const loadAvailableClauses = async () => {
     try {
       const data = await clauseService.getAll();
@@ -306,6 +361,21 @@ export default function ContractDetailPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" d="M7.217 10.907a2.25 2.25 0 100 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186l9.566-5.314m-9.566 7.5l9.566 5.314m0 0a2.25 2.25 0 103.935 2.186 2.25 2.25 0 00-3.935-2.186zm0-12.814a2.25 2.25 0 103.933-2.185 2.25 2.25 0 00-3.933 2.185z" />
               </svg>
               Share
+            </button>
+
+            {/* AI Assistant Button */}
+            <button
+              onClick={() => setChatOpen(!chatOpen)}
+              className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-medium transition ${
+                chatOpen
+                  ? 'bg-primary text-white shadow-sm hover:bg-primary-600'
+                  : 'border border-primary/30 bg-primary/5 text-primary hover:bg-primary/10'
+              }`}
+            >
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456z" />
+              </svg>
+              AI Assistant
             </button>
 
             {/* Export Dropdown */}
@@ -381,8 +451,91 @@ export default function ContractDetailPage() {
                 Approve
               </button>
             )}
+            {contract.status === 'APPROVED' && !contract.signature_status && (
+              <button
+                onClick={() => setShowSignModal(true)}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700"
+              >
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
+                </svg>
+                Send for Signature
+              </button>
+            )}
+            {contract.signature_status && (
+              <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${
+                contract.signature_status === 'FULLY_EXECUTED'
+                  ? 'bg-emerald-50 text-emerald-700'
+                  : 'bg-amber-50 text-amber-700'
+              }`}>
+                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z" />
+                </svg>
+                {contract.signature_status === 'FULLY_EXECUTED' ? 'Fully Executed' : contract.signature_status === 'AWAITING_COUNTERPARTY' ? 'Awaiting Counterparty' : 'Pending Signature'}
+              </span>
+            )}
           </div>
         </div>
+
+        {/* Signature Status Section */}
+        {contract.signature_status && signatureSigners.length > 0 && (
+          <div className="mt-5 rounded-lg border border-indigo-100 bg-indigo-50/30 px-4 py-3">
+            <div className="mb-2 flex items-center gap-2">
+              <svg className="h-4 w-4 text-indigo-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z" />
+              </svg>
+              <span className="text-sm font-semibold text-indigo-900">Signature Status</span>
+              {contract.executed_at && (
+                <span className="text-xs text-indigo-500">
+                  Executed {new Date(contract.executed_at).toLocaleDateString()}
+                </span>
+              )}
+            </div>
+            <div className="space-y-1.5">
+              {signatureSigners.map((signer, i) => (
+                <div key={i} className="flex items-center gap-3 rounded-md bg-white px-3 py-2">
+                  <div className={`flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-bold text-white ${
+                    signer.status === 'completed' || signer.status === 'signed'
+                      ? 'bg-emerald-500'
+                      : 'bg-gray-300'
+                  }`}>
+                    {signer.status === 'completed' || signer.status === 'signed' ? (
+                      <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                      </svg>
+                    ) : (
+                      <span>{i + 1}</span>
+                    )}
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-gray-800">{signer.name}</p>
+                    <p className="text-xs text-gray-400">{signer.email}</p>
+                  </div>
+                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                    signer.status === 'completed' || signer.status === 'signed'
+                      ? 'bg-emerald-50 text-emerald-600'
+                      : signer.status === 'sent' || signer.status === 'delivered'
+                        ? 'bg-amber-50 text-amber-600'
+                        : 'bg-gray-100 text-gray-500'
+                  }`}>
+                    {signer.status === 'completed' || signer.status === 'signed'
+                      ? 'Signed'
+                      : signer.status === 'sent'
+                        ? 'Sent'
+                        : signer.status === 'delivered'
+                          ? 'Viewed'
+                          : signer.status}
+                  </span>
+                  {signer.signed_at && (
+                    <span className="text-[10px] text-gray-400">
+                      {new Date(signer.signed_at).toLocaleDateString()}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* AI Insights Bar */}
         {(highRisks.length > 0 || openRisks.length > 0) && (
@@ -911,6 +1064,103 @@ export default function ContractDetailPage() {
             )}
           </div>
         </div>
+      )}
+
+      {/* Send for Signature Modal */}
+      {showSignModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-navy-900/40 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border border-gray-200/50 bg-white p-6 shadow-elevated">
+            <div className="mb-5 flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Send for Signature</h2>
+                <p className="mt-0.5 text-sm text-gray-400">Add signers who need to sign this contract</p>
+              </div>
+              <button onClick={() => setShowSignModal(false)} className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600">
+                <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              {signSigners.map((signer, i) => (
+                <div key={i} className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="Full name"
+                    value={signer.name}
+                    onChange={(e) => {
+                      const updated = [...signSigners];
+                      updated[i] = { ...updated[i], name: e.target.value };
+                      setSignSigners(updated);
+                    }}
+                    className="flex-1 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  />
+                  <input
+                    type="email"
+                    placeholder="Email address"
+                    value={signer.email}
+                    onChange={(e) => {
+                      const updated = [...signSigners];
+                      updated[i] = { ...updated[i], email: e.target.value };
+                      setSignSigners(updated);
+                    }}
+                    className="flex-1 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  />
+                  {signSigners.length > 1 && (
+                    <button
+                      onClick={() => setSignSigners(signSigners.filter((_, j) => j !== i))}
+                      className="rounded-lg p-2 text-gray-400 hover:bg-red-50 hover:text-red-500"
+                    >
+                      <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
+              ))}
+
+              <button
+                onClick={() => setSignSigners([...signSigners, { email: '', name: '' }])}
+                className="inline-flex items-center gap-1.5 text-sm font-medium text-primary transition hover:text-primary-600"
+              >
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                </svg>
+                Add another signer
+              </button>
+            </div>
+
+            <div className="mt-5 flex justify-end gap-2.5 border-t border-gray-100 pt-4">
+              <button
+                onClick={() => setShowSignModal(false)}
+                className="rounded-lg border border-gray-200 px-4 py-2.5 text-sm font-medium text-gray-700 transition hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleInitiateSignature}
+                disabled={signingLoading || signSigners.every(s => !s.email.trim() || !s.name.trim())}
+                className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:opacity-50"
+              >
+                {signingLoading && <LoadingSpinner size="sm" />}
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
+                </svg>
+                Send for Signature
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* AI Chat Panel */}
+      {id && (
+        <ChatPanel
+          contractId={id}
+          isOpen={chatOpen}
+          onClose={() => setChatOpen(false)}
+        />
       )}
     </div>
   );

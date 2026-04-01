@@ -1,4 +1,4 @@
-node_modules
+**/node_modules
 .git
 .gitignore
 *.md
@@ -6,7 +6,8 @@ node_modules
 .env.*
 .vscode
 .idea
-dist
-build
-coverage
+**/dist
+**/build
+**/coverage
 *.log
+.claude

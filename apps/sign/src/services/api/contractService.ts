@@ -1,5 +1,5 @@
 import api from './axios';
-import { Contract, ContractClause, ContractVersion, ContractComment, ContractorResponse } from '@/types';
+import { Contract, ContractClause, ContractVersion, ContractComment, ContractorResponse, SignatureSigner } from '@/types';
 
 export const contractService = {
   // Contract CRUD
@@ -60,4 +60,14 @@ export const contractService = {
   // Contractor Responses
   getResponses: (contractId: string) =>
     api.get<ContractorResponse[]>(`/contracts/${contractId}/responses`).then(r => r.data),
+
+  // DocuSign Signature
+  initiateSignature: (contractId: string, signers: { email: string; name: string }[]) =>
+    api.post<{ envelopeId: string; signingUrl: string }>(`/contracts/${contractId}/initiate-signature`, { signers }).then(r => r.data),
+
+  getSigningUrl: (contractId: string) =>
+    api.get<{ signingUrl: string | null; message?: string }>(`/contracts/${contractId}/signing-url`).then(r => r.data),
+
+  getSignatureStatus: (contractId: string) =>
+    api.get<{ signature_status: string | null; signers: SignatureSigner[]; envelope_status?: string; executed_at?: string | null }>(`/contracts/${contractId}/signature-status`).then(r => r.data),
 };

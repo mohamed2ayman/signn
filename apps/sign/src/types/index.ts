@@ -79,6 +79,19 @@ export enum ContractStatus {
   TERMINATED = 'TERMINATED',
 }
 
+export enum SignatureStatus {
+  PENDING_SIGNATURE = 'PENDING_SIGNATURE',
+  AWAITING_COUNTERPARTY = 'AWAITING_COUNTERPARTY',
+  FULLY_EXECUTED = 'FULLY_EXECUTED',
+}
+
+export interface SignatureSigner {
+  email: string;
+  name: string;
+  status: string;
+  signed_at?: string | null;
+}
+
 export enum ContractType {
   FIDIC_RED = 'FIDIC_RED',
   FIDIC_YELLOW = 'FIDIC_YELLOW',
@@ -275,6 +288,10 @@ export interface Contract {
   approved_by: string | null;
   approved_at: string | null;
   shared_at: string | null;
+  docusign_envelope_id?: string | null;
+  signature_status?: SignatureStatus | null;
+  signature_signers?: SignatureSigner[] | null;
+  executed_at?: string | null;
   created_at: string;
   updated_at: string;
   project?: Project;

@@ -22,6 +22,8 @@ import { ExportModule } from './modules/export/export.module';
 import { SupportModule } from './modules/support/support.module';
 import { ContractSharingModule } from './modules/contract-sharing/contract-sharing.module';
 import { PermissionDefaultsModule } from './modules/permission-defaults/permission-defaults.module';
+import { ChatModule } from './modules/chat/chat.module';
+import { DocuSignModule } from './modules/docusign/docusign.module';
 import { dataSourceOptions } from './config/data-source';
 
 @Module({
@@ -65,6 +67,8 @@ import { dataSourceOptions } from './config/data-source';
     SupportModule,
     ContractSharingModule,
     PermissionDefaultsModule,
+    ChatModule,
+    DocuSignModule,
   ],
 })
 export class AppModule {}

@@ -10,6 +10,7 @@
   "scripts": {
     "dev:sign": "npm -w @cenvox/sign run dev",
     "dev:cenvox": "npm -w @cenvox/landing run dev",
+    "dev:all": "concurrently -n sign,cenvox -c blue,magenta \"npm run dev:sign\" \"npm run dev:cenvox\"",
     "build:sign": "npm -w @cenvox/sign run build",
     "build:cenvox": "npm -w @cenvox/landing run build"
   },
@@ -23,5 +24,8 @@
   "bugs": {
     "url": "https://github.com/mohamed2ayman/signn/issues"
   },
-  "homepage": "https://github.com/mohamed2ayman/signn#readme"
+  "homepage": "https://github.com/mohamed2ayman/signn#readme",
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
 }
