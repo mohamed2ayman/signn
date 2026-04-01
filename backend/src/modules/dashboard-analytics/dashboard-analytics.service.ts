@@ -42,6 +42,20 @@ export class DashboardAnalyticsService {
    * Supports loss-aversion metrics and habit-forming insights.
    */
   async getDashboardAnalytics(orgId: string) {
+    const safeQuery = async <T>(fn: () => Promise<T>, fallback: T, label: string): Promise<T> => {
+      try {
+        return await fn();
+      } catch (err: any) {
+        this.logger.warn(`Dashboard query "${label}" failed for org ${orgId}: ${err.message}`);
+        return fallback;
+      }
+    };
+
+    const defaultRiskStats = { total: 0, by_level: { HIGH: 0, MEDIUM: 0, LOW: 0 }, by_status: {}, high_unresolved: 0 };
+    const defaultObligationStats = { total: 0, overdue: 0, due_this_week: 0, due_this_month: 0, completed: 0, pending: 0, by_status: {}, completion_rate: 0 };
+    const defaultClauseStats = { total: 0, ai_extracted: 0, manually_created: 0, pending_review: 0, approved: 0 };
+    const defaultDocumentStats = { total: 0, processed: 0, total_pages: 0 };
+
     const [
       projectStats,
       contractStats,
@@ -52,14 +66,14 @@ export class DashboardAnalyticsService {
       recentActivity,
       upcomingObligations,
     ] = await Promise.all([
-      this.getProjectStats(orgId),
-      this.getContractStats(orgId),
-      this.getRiskStats(orgId),
-      this.getObligationStats(orgId),
-      this.getClauseStats(orgId),
-      this.getDocumentStats(orgId),
-      this.getRecentActivity(orgId),
-      this.getUpcomingObligations(orgId),
+      safeQuery(() => this.getProjectStats(orgId), { total: 0 }, 'projectStats'),
+      safeQuery(() => this.getContractStats(orgId), { total: 0, by_status: {} }, 'contractStats'),
+      safeQuery(() => this.getRiskStats(orgId), defaultRiskStats, 'riskStats'),
+      safeQuery(() => this.getObligationStats(orgId), defaultObligationStats, 'obligationStats'),
+      safeQuery(() => this.getClauseStats(orgId), defaultClauseStats, 'clauseStats'),
+      safeQuery(() => this.getDocumentStats(orgId), defaultDocumentStats, 'documentStats'),
+      safeQuery(() => this.getRecentActivity(orgId), { recent_documents: [], recent_risks: [] }, 'recentActivity'),
+      safeQuery(() => this.getUpcomingObligations(orgId), [], 'upcomingObligations'),
     ]);
 
     // Calculate derived loss-aversion metrics
@@ -116,9 +130,9 @@ export class DashboardAnalyticsService {
       .select('r.risk_level', 'risk_level')
       .addSelect('r.status', 'status')
       .addSelect('COUNT(*)', 'count')
-      .innerJoin('r.contract_clause', 'cc')
-      .innerJoin('cc.clause', 'clause')
-      .where('(clause.organization_id = :orgId OR clause.organization_id IS NULL)', { orgId })
+      .innerJoin('r.contract', 'c')
+      .innerJoin('c.project', 'p')
+      .where('p.organization_id = :orgId', { orgId })
       .groupBy('r.risk_level')
       .addGroupBy('r.status')
       .getRawMany();
@@ -311,8 +325,7 @@ export class DashboardAnalyticsService {
     // Get the 5 most recent risk findings
     const recentRisks = await this.riskAnalysisRepository
       .createQueryBuilder('r')
-      .innerJoin('r.contract_clause', 'cc')
-      .innerJoin('cc.contract', 'c')
+      .innerJoin('r.contract', 'c')
       .innerJoin('c.project', 'p')
       .where('p.organization_id = :orgId', { orgId })
       .orderBy('r.created_at', 'DESC')

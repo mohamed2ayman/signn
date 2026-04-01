@@ -21,7 +21,8 @@
     "analytics": "Analytics",
     "subscriptions": "Subscriptions",
     "riskRules": "Risk Rules",
-    "profile": "Profile"
+    "profile": "Profile",
+    "team": "Team"
   },
   "auth": {
     "login": "Login",

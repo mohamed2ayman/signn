@@ -80,6 +80,7 @@ function getIconKey(label: string): string {
     'nav.contracts': 'contracts',
     'nav.subscriptions': 'subscriptions',
     'nav.users': 'users',
+    'nav.team': 'users',
     'nav.riskRules': 'riskRules',
   };
   return mapping[label] || 'dashboard';

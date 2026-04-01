@@ -21,7 +21,8 @@
     "analytics": "التحليلات",
     "subscriptions": "الاشتراكات",
     "riskRules": "قواعد المخاطر",
-    "profile": "الملف الشخصي"
+    "profile": "الملف الشخصي",
+    "team": "الفريق"
   },
   "auth": {
     "login": "تسجيل الدخول",
