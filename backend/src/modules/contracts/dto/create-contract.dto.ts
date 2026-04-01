@@ -1,5 +1,5 @@
-import { IsString, IsEnum, IsUUID, IsOptional, MaxLength } from 'class-validator';
-import { ContractType } from '../../../database/entities';
+import { IsString, IsEnum, IsUUID, IsOptional, IsBoolean, MaxLength } from 'class-validator';
+import { ContractType, LicenseOrganization } from '../../../database/entities';
 
 export class CreateContractDto {
   @IsUUID()
@@ -16,4 +16,12 @@ export class CreateContractDto {
   @IsString()
   @MaxLength(50)
   party_type?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  license_acknowledged?: boolean;
+
+  @IsOptional()
+  @IsEnum(LicenseOrganization)
+  license_organization?: LicenseOrganization;
 }

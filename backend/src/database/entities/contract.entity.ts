@@ -39,9 +39,63 @@ export enum SignatureStatus {
   FULLY_EXECUTED = 'FULLY_EXECUTED',
 }
 
+export enum LicenseOrganization {
+  FIDIC = 'FIDIC',
+  NEC = 'NEC',
+  OTHER = 'OTHER',
+}
+
 export enum ContractType {
-  FIDIC_RED = 'FIDIC_RED',
-  FIDIC_YELLOW = 'FIDIC_YELLOW',
+  // ─── FIDIC 2nd Edition (Rainbow Suite 2017) ─────────────
+  FIDIC_RED_BOOK_2017 = 'FIDIC_RED_BOOK_2017',
+  FIDIC_YELLOW_BOOK_2017 = 'FIDIC_YELLOW_BOOK_2017',
+  FIDIC_SILVER_BOOK_2017 = 'FIDIC_SILVER_BOOK_2017',
+  FIDIC_WHITE_BOOK_2017 = 'FIDIC_WHITE_BOOK_2017',
+  FIDIC_GREEN_BOOK_2021 = 'FIDIC_GREEN_BOOK_2021',
+  FIDIC_EMERALD_BOOK_2019 = 'FIDIC_EMERALD_BOOK_2019',
+
+  // ─── FIDIC 1st Edition (Rainbow Suite 1999) ────────────
+  FIDIC_RED_BOOK_1999 = 'FIDIC_RED_BOOK_1999',
+  FIDIC_YELLOW_BOOK_1999 = 'FIDIC_YELLOW_BOOK_1999',
+  FIDIC_SILVER_BOOK_1999 = 'FIDIC_SILVER_BOOK_1999',
+
+  // ─── FIDIC Subcontracts ────────────────────────────────
+  FIDIC_SUBCONTRACT_YELLOW_2019 = 'FIDIC_SUBCONTRACT_YELLOW_2019',
+
+  // ─── FIDIC MDB Harmonised ─────────────────────────────
+  FIDIC_PINK_BOOK = 'FIDIC_PINK_BOOK',
+
+  // ─── FIDIC Dredging ───────────────────────────────────
+  FIDIC_BLUE_GREEN_BOOK_2016 = 'FIDIC_BLUE_GREEN_BOOK_2016',
+
+  // ─── NEC4 Suite (June 2017, revised Jan 2023) ─────────
+  NEC4_ECC = 'NEC4_ECC',
+  NEC4_PSC = 'NEC4_PSC',
+  NEC4_TSC = 'NEC4_TSC',
+  NEC4_SC = 'NEC4_SC',
+  NEC4_FC = 'NEC4_FC',
+  NEC4_DBOC = 'NEC4_DBOC',
+  NEC4_FMC = 'NEC4_FMC',
+  NEC4_ALC = 'NEC4_ALC',
+  NEC4_DRSC = 'NEC4_DRSC',
+
+  // ─── NEC3 Suite (April 2013) ──────────────────────────
+  NEC3_ECC = 'NEC3_ECC',
+  NEC3_PSC = 'NEC3_PSC',
+  NEC3_TSC = 'NEC3_TSC',
+  NEC3_SC = 'NEC3_SC',
+  NEC3_FC = 'NEC3_FC',
+  NEC3_AC = 'NEC3_AC',
+
+  // ─── NEC HK Edition ───────────────────────────────────
+  NEC_ECC_HK = 'NEC_ECC_HK',
+  NEC_TSC_HK = 'NEC_TSC_HK',
+
+  // ─── NEC FAC/TAC ──────────────────────────────────────
+  FAC_1 = 'FAC_1',
+  TAC_1 = 'TAC_1',
+
+  // ─── Ad-hoc ───────────────────────────────────────────
   ADHOC = 'ADHOC',
   UPLOADED = 'UPLOADED',
 }
@@ -61,7 +115,7 @@ export class Contract {
   @Column({ type: 'varchar', length: 500 })
   name: string;
 
-  @Column({ type: 'enum', enum: ContractType })
+  @Column({ type: 'varchar', length: 50 })
   contract_type: ContractType;
 
   @Column({ type: 'enum', enum: ContractStatus, default: ContractStatus.DRAFT })
@@ -75,6 +129,12 @@ export class Contract {
 
   @Column({ type: 'varchar', length: 50, nullable: true })
   party_type: string;
+
+  @Column({ type: 'boolean', default: false })
+  license_acknowledged: boolean;
+
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  license_organization: LicenseOrganization | null;
 
   @Column({ type: 'uuid' })
   created_by: string;

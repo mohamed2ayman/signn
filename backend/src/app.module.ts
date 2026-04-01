@@ -24,6 +24,8 @@ import { ContractSharingModule } from './modules/contract-sharing/contract-shari
 import { PermissionDefaultsModule } from './modules/permission-defaults/permission-defaults.module';
 import { ChatModule } from './modules/chat/chat.module';
 import { DocuSignModule } from './modules/docusign/docusign.module';
+import { CollaborationModule } from './modules/collaboration/collaboration.module';
+import { ContractTemplatesModule } from './modules/contract-templates/contract-templates.module';
 import { dataSourceOptions } from './config/data-source';
 
 @Module({
@@ -69,6 +71,8 @@ import { dataSourceOptions } from './config/data-source';
     PermissionDefaultsModule,
     ChatModule,
     DocuSignModule,
+    CollaborationModule,
+    ContractTemplatesModule,
   ],
 })
 export class AppModule {}

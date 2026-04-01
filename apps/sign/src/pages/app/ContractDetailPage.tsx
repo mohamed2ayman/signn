@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { contractService } from '@/services/api/contractService';
 import { clauseService } from '@/services/api/clauseService';
@@ -7,6 +7,7 @@ import { exportService } from '@/services/api/exportService';
 import { contractSharingService } from '@/services/api/contractSharingService';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
 import ChatPanel from '@/components/chat/ChatPanel';
+import { useCollaboration } from '@/hooks/useCollaboration';
 import type { Contract, ContractClause, Clause, ContractComment, RiskAnalysis, ContractShare, SignatureSigner } from '@/types';
 
 /* ── Status Badge ─────────────────────────────────────────────── */
@@ -124,6 +125,35 @@ export default function ContractDetailPage() {
       setLoading(false);
     }
   };
+
+  // ── Real-time collaboration ──
+  const reloadClauses = useCallback(() => {
+    if (id) contractService.getClauses(id).then(setClauses).catch(() => {});
+  }, [id]);
+
+  const reloadComments = useCallback(() => {
+    if (id) contractService.getComments(id).then(setComments).catch(() => {});
+  }, [id]);
+
+  const reloadRisks = useCallback(() => {
+    if (id) riskAnalysisService.getByContract(id).then(setRisks).catch(() => {});
+  }, [id]);
+
+  const handleRealtimeStatusChange = useCallback(
+    (_payload: { oldStatus: string; newStatus: string }) => {
+      // Reload the full contract to get updated data
+      if (id) contractService.getById(id).then(setContract).catch(() => {});
+    },
+    [id],
+  );
+
+  const { liveUsers, toasts, dismissToast } = useCollaboration({
+    contractId: id,
+    onClausesChanged: reloadClauses,
+    onCommentsChanged: reloadComments,
+    onStatusChanged: handleRealtimeStatusChange,
+    onRisksChanged: reloadRisks,
+  });
 
   const handleAddClause = async (clauseId: string) => {
     if (!id) return;
@@ -323,6 +353,41 @@ export default function ContractDetailPage() {
 
   return (
     <div className="space-y-6">
+      {/* ── Toast Notifications ── */}
+      {toasts.length > 0 && (
+        <div className="fixed top-4 right-4 z-50 flex flex-col gap-2">
+          {toasts.map((toast) => (
+            <div
+              key={toast.id}
+              className={`flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium shadow-lg backdrop-blur-sm transition-all animate-in slide-in-from-right ${
+                toast.type === 'success'
+                  ? 'bg-emerald-50/95 text-emerald-800 border border-emerald-200'
+                  : toast.type === 'warning'
+                  ? 'bg-amber-50/95 text-amber-800 border border-amber-200'
+                  : 'bg-blue-50/95 text-blue-800 border border-blue-200'
+              }`}
+            >
+              {toast.type === 'success' && (
+                <svg className="h-4 w-4 text-emerald-500 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+              )}
+              {toast.type === 'warning' && (
+                <svg className="h-4 w-4 text-amber-500 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" /></svg>
+              )}
+              {toast.type === 'info' && (
+                <svg className="h-4 w-4 text-blue-500 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" /></svg>
+              )}
+              <span>{toast.message}</span>
+              <button
+                onClick={() => dismissToast(toast.id)}
+                className="ml-2 rounded p-0.5 hover:bg-black/5"
+              >
+                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Breadcrumb */}
       <nav className="flex items-center gap-2 text-sm text-gray-400">
         <button onClick={() => navigate('/app/projects')} className="transition-colors hover:text-primary">Projects</button>
@@ -331,6 +396,44 @@ export default function ContractDetailPage() {
         <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
         <span className="font-medium text-gray-700 truncate max-w-[200px]">{contract.name}</span>
       </nav>
+
+      {/* ── Live Collaboration Presence Bar ── */}
+      {liveUsers.length > 1 && (
+        <div className="flex items-center gap-2 rounded-lg border border-blue-100 bg-blue-50/50 px-3 py-2 text-sm">
+          <div className="flex items-center gap-1 text-blue-600">
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-400 opacity-75" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-blue-500" />
+            </span>
+            <span className="font-medium">{liveUsers.length} collaborators online</span>
+          </div>
+          <div className="flex -space-x-2">
+            {liveUsers.slice(0, 5).map((u) => (
+              <div
+                key={u.id}
+                title={u.name || u.email}
+                className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-white bg-primary text-[10px] font-bold text-white shadow-sm"
+              >
+                {(u.name || u.email).charAt(0).toUpperCase()}
+              </div>
+            ))}
+            {liveUsers.length > 5 && (
+              <div className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-white bg-gray-200 text-[10px] font-bold text-gray-600 shadow-sm">
+                +{liveUsers.length - 5}
+              </div>
+            )}
+          </div>
+          <div className="ml-1 flex flex-wrap gap-1 text-xs text-gray-500">
+            {liveUsers.slice(0, 3).map((u, i) => (
+              <span key={u.id}>
+                {u.name || u.email.split('@')[0]}
+                {i < Math.min(liveUsers.length, 3) - 1 ? ',' : ''}
+              </span>
+            ))}
+            {liveUsers.length > 3 && <span>and {liveUsers.length - 3} more</span>}
+          </div>
+        </div>
+      )}
 
       {/* Contract Header */}
       <div className="rounded-xl border border-gray-200/80 bg-white p-6 shadow-card">
@@ -610,8 +713,32 @@ export default function ContractDetailPage() {
       {/* ── Clauses Tab ──────────────────────────────────────────── */}
       {activeTab === 'clauses' && (
         <div className="space-y-4">
+          {/* Standard form helper banner */}
+          {contract.contract_type !== 'ADHOC' && contract.contract_type !== 'UPLOADED' && (
+            <div className="flex items-center gap-3 rounded-lg border border-gray-100 bg-gray-50/70 px-4 py-3 text-sm">
+              <div className="flex items-center gap-2">
+                {(contract.contract_type as string).startsWith('FIDIC_') ? (
+                  <span className="rounded bg-orange-100 px-2 py-0.5 text-xs font-bold text-orange-700">FIDIC</span>
+                ) : (
+                  <span className="rounded bg-teal-100 px-2 py-0.5 text-xs font-bold text-teal-700">NEC</span>
+                )}
+                <span className="text-gray-600">
+                  {(contract.contract_type as string).startsWith('FIDIC_')
+                    ? 'General Conditions populated from FIDIC standard form'
+                    : 'Core Clauses populated from NEC standard form'}
+                </span>
+              </div>
+              <div className="relative ml-auto group">
+                <svg className="h-4 w-4 text-gray-400 cursor-help" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827m0 0v.75m0-2.577c0-.828.705-1.466 1.45-1.827.24-.116.467-.263.67-.442 1.172-1.025 1.172-2.687 0-3.712-1.171-1.025-3.071-1.025-4.242 0" /></svg>
+                <div className="absolute bottom-full right-0 mb-2 hidden w-72 rounded-lg border border-gray-200 bg-white p-3 text-xs text-gray-600 shadow-lg group-hover:block z-10">
+                  Standard forms provide the internationally recognized clause structure. Customize using {(contract.contract_type as string).startsWith('FIDIC_') ? 'Particular Conditions' : 'Contract Data / Secondary Option Clauses'} without modifying the General Conditions.
+                </div>
+              </div>
+            </div>
+          )}
+
           {contract.status === 'DRAFT' && (
-            <div className="flex justify-end">
+            <div className="flex justify-end gap-2">
               <button
                 onClick={loadAvailableClauses}
                 className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3.5 py-2 text-sm font-medium text-gray-700 transition hover:border-gray-300 hover:bg-gray-50"
@@ -619,7 +746,11 @@ export default function ContractDetailPage() {
                 <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
                 </svg>
-                Add Clause
+                {contract.contract_type !== 'ADHOC' && contract.contract_type !== 'UPLOADED'
+                  ? (contract.contract_type as string).startsWith('FIDIC_')
+                    ? 'Add Particular Conditions'
+                    : 'Add Contract Data / Secondary Option Clause'
+                  : 'Add Clause'}
               </button>
             </div>
           )}
@@ -635,8 +766,19 @@ export default function ContractDetailPage() {
                       {cc.section_number || index + 1}
                     </span>
                     <div>
-                      <h3 className="text-sm font-semibold text-gray-900">{cc.clause?.title}</h3>
-                      {cc.clause?.clause_type && (
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-sm font-semibold text-gray-900">{cc.clause?.title}</h3>
+                        {(cc.customizations as any)?.source_organization === 'FIDIC' && (
+                          <span className="shrink-0 rounded bg-orange-100 px-1.5 py-0.5 text-[10px] font-bold text-orange-700">FIDIC</span>
+                        )}
+                        {(cc.customizations as any)?.source_organization === 'NEC' && (
+                          <span className="shrink-0 rounded bg-teal-100 px-1.5 py-0.5 text-[10px] font-bold text-teal-700">NEC</span>
+                        )}
+                        {(cc.customizations as any)?.is_general_condition && (
+                          <span className="shrink-0 rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500">General</span>
+                        )}
+                      </div>
+                      {cc.clause?.clause_type && !(cc.customizations as any)?.source_organization && (
                         <span className="text-xs text-gray-400">{cc.clause.clause_type}</span>
                       )}
                     </div>

@@ -7,6 +7,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { RiskAnalysis, RiskRule, RiskCategory } from '../../database/entities';
 import { CreateRiskRuleDto, UpdateRiskStatusDto } from './dto';
+import { CollaborationGateway } from '../collaboration/collaboration.gateway';
 
 @Injectable()
 export class RiskAnalysisService {
@@ -19,6 +20,7 @@ export class RiskAnalysisService {
     private readonly riskRuleRepository: Repository<RiskRule>,
     @InjectRepository(RiskCategory)
     private readonly riskCategoryRepository: Repository<RiskCategory>,
+    private readonly collaborationGateway: CollaborationGateway,
   ) {}
 
   // ─── Risk Analyses ────────────────────────────────────────
@@ -56,7 +58,17 @@ export class RiskAnalysisService {
     risk.handled_by = userId;
     risk.handled_at = new Date();
 
-    return this.riskAnalysisRepository.save(risk);
+    const saved = await this.riskAnalysisRepository.save(risk);
+
+    // Emit real-time event
+    if (risk.contract_id) {
+      this.collaborationGateway.emitRiskUpdated(risk.contract_id, {
+        contractId: risk.contract_id,
+        risk: saved,
+      });
+    }
+
+    return saved;
   }
 
   async getRiskSummary(contractId: string): Promise<{

@@ -68,6 +68,9 @@ export class KnowledgeAsset {
   @Column({ type: 'boolean', default: false })
   include_in_citations: boolean;
 
+  @Column({ type: 'jsonb', nullable: true })
+  content: Record<string, unknown> | null;
+
   @Column({ type: 'varchar', length: 50, default: 'PENDING' })
   embedding_status: string;
 

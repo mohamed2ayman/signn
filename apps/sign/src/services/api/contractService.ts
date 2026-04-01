@@ -9,7 +9,7 @@ export const contractService = {
   getById: (id: string) =>
     api.get<Contract>(`/contracts/${id}`).then(r => r.data),
 
-  create: (data: { project_id: string; name: string; contract_type: string; party_type?: string }) =>
+  create: (data: { project_id: string; name: string; contract_type: string; party_type?: string; license_acknowledged?: boolean; license_organization?: string }) =>
     api.post<Contract>('/contracts', data).then(r => r.data),
 
   update: (id: string, data: { name?: string; party_type?: string }) =>

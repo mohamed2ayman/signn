@@ -23,6 +23,8 @@ import {
   AddCommentDto,
   UpdateStatusDto,
 } from './dto';
+import { CollaborationGateway } from '../collaboration/collaboration.gateway';
+import { ContractTemplatesService, isStandardForm, getLicenseOrg } from '../contract-templates/contract-templates.service';
 
 @Injectable()
 export class ContractsService {
@@ -39,6 +41,8 @@ export class ContractsService {
     private readonly contractCommentRepository: Repository<ContractComment>,
     @InjectRepository(ContractorResponse)
     private readonly contractorResponseRepository: Repository<ContractorResponse>,
+    private readonly collaborationGateway: CollaborationGateway,
+    private readonly contractTemplatesService: ContractTemplatesService,
   ) {}
 
   // ─── Contract CRUD ─────────────────────────────────────────
@@ -105,14 +109,47 @@ export class ContractsService {
     dto: CreateContractDto,
     userId: string,
   ): Promise<Contract> {
+    // Enforce license acknowledgment for standard forms
+    if (isStandardForm(dto.contract_type)) {
+      if (!dto.license_acknowledged) {
+        throw new BadRequestException(
+          'License acknowledgment is required for standard form contracts',
+        );
+      }
+    }
+
     const contract = this.contractRepository.create({
-      ...dto,
+      project_id: dto.project_id,
+      name: dto.name,
+      contract_type: dto.contract_type,
+      party_type: dto.party_type,
+      license_acknowledged: dto.license_acknowledged || false,
+      license_organization: isStandardForm(dto.contract_type)
+        ? getLicenseOrg(dto.contract_type)
+        : null,
       created_by: userId,
       status: ContractStatus.DRAFT,
       current_version: 1,
     });
 
     const saved = await this.contractRepository.save(contract);
+
+    // Auto-instantiate template for standard form contracts
+    if (isStandardForm(dto.contract_type)) {
+      try {
+        await this.contractTemplatesService.instantiateTemplate(
+          saved.id,
+          dto.contract_type,
+        );
+        this.logger.log(
+          `Template instantiated for contract ${saved.id} (${dto.contract_type})`,
+        );
+      } catch (err: any) {
+        this.logger.warn(
+          `Template instantiation failed for ${dto.contract_type}: ${err?.message}. Contract created without clauses.`,
+        );
+      }
+    }
 
     // Create initial version snapshot
     await this.createVersionSnapshot(saved.id, userId, 'Initial draft');
@@ -166,6 +203,14 @@ export class ContractsService {
       `Contract ${id} status changed: ${oldStatus} -> ${newStatus} by ${userId}`,
     );
 
+    // Emit real-time event
+    this.collaborationGateway.emitStatusChanged(id, {
+      contractId: id,
+      oldStatus,
+      newStatus,
+      updatedBy: userId,
+    });
+
     return this.findById(id);
   }
 
@@ -206,7 +251,15 @@ export class ContractsService {
       customizations: dto.customizations,
     });
 
-    return this.contractClauseRepository.save(contractClause);
+    const saved = await this.contractClauseRepository.save(contractClause);
+
+    // Emit real-time event
+    this.collaborationGateway.emitClauseAdded(contractId, {
+      contractId,
+      clause: saved,
+    });
+
+    return saved;
   }
 
   async updateContractClause(
@@ -226,7 +279,15 @@ export class ContractsService {
     if (dto.section_number !== undefined) cc.section_number = dto.section_number;
     if (dto.customizations !== undefined) cc.customizations = dto.customizations;
 
-    return this.contractClauseRepository.save(cc);
+    const saved = await this.contractClauseRepository.save(cc);
+
+    // Emit real-time event
+    this.collaborationGateway.emitClauseUpdated(contractId, {
+      contractId,
+      clause: saved,
+    });
+
+    return saved;
   }
 
   async removeClause(
@@ -242,6 +303,12 @@ export class ContractsService {
     }
 
     await this.contractClauseRepository.remove(cc);
+
+    // Emit real-time event
+    this.collaborationGateway.emitClauseRemoved(contractId, {
+      contractId,
+      clauseId: contractClauseId,
+    });
   }
 
   async reorderClauses(
@@ -360,7 +427,15 @@ export class ContractsService {
       parent_comment_id: dto.parent_comment_id,
     });
 
-    return this.contractCommentRepository.save(comment);
+    const saved = await this.contractCommentRepository.save(comment);
+
+    // Emit real-time event
+    this.collaborationGateway.emitCommentAdded(contractId, {
+      contractId,
+      comment: saved,
+    });
+
+    return saved;
   }
 
   async getComments(
@@ -398,7 +473,15 @@ export class ContractsService {
     }
 
     comment.is_resolved = true;
-    return this.contractCommentRepository.save(comment);
+    const saved = await this.contractCommentRepository.save(comment);
+
+    // Emit real-time event
+    this.collaborationGateway.emitCommentResolved(contractId, {
+      contractId,
+      commentId,
+    });
+
+    return saved;
   }
 
   // ─── Contractor Responses ──────────────────────────────────

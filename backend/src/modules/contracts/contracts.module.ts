@@ -13,6 +13,7 @@ import {
 import { ContractsController } from './contracts.controller';
 import { ContractsService } from './contracts.service';
 import { PermissionLevelGuard } from '../../common/guards/permission-level.guard';
+import { ContractTemplatesModule } from '../contract-templates/contract-templates.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { PermissionLevelGuard } from '../../common/guards/permission-level.guard
       ProjectMember,
       PermissionDefault,
     ]),
+    ContractTemplatesModule,
   ],
   controllers: [ContractsController],
   providers: [ContractsService, PermissionLevelGuard],
