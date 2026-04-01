@@ -39,17 +39,29 @@ export default function ProjectDetailPage() {
   const [contractForm, setContractForm] = useState({ name: '', party_type: '' });
   const [creating, setCreating] = useState(false);
 
+  const [error, setError] = useState<string | null>(null);
+
   useEffect(() => {
-    if (id) {
-      Promise.all([
-        projectService.getById(id),
-        contractService.getAll(id),
-      ]).then(([proj, conts]) => {
-        setProject(proj);
-        setContracts(conts);
-        setLoading(false);
-      }).catch(() => setLoading(false));
-    }
+    if (!id) return;
+
+    // Fetch project and contracts independently so a failure in one
+    // doesn't prevent the other from rendering
+    projectService
+      .getById(id)
+      .then(setProject)
+      .catch((err) => {
+        console.error('Failed to load project:', err);
+        setError('project');
+      })
+      .finally(() => setLoading(false));
+
+    contractService
+      .getAll(id)
+      .then(setContracts)
+      .catch((err) => {
+        console.error('Failed to load contracts:', err);
+        // Contracts stay as empty array — page still renders
+      });
   }, [id]);
 
   const isStandardForm = (ct: ContractType) => ct !== ContractType.ADHOC && ct !== ContractType.UPLOADED;
@@ -102,8 +114,14 @@ export default function ProjectDetailPage() {
         <svg className="mb-3 h-12 w-12" fill="none" stroke="currentColor" strokeWidth={1.2} viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z" />
         </svg>
-        <p className="text-sm font-medium">Project not found</p>
-        <p className="mt-1 text-xs text-gray-400">This project may have been deleted or you don't have access.</p>
+        <p className="text-sm font-medium">
+          {error ? 'Failed to load project' : 'Project not found'}
+        </p>
+        <p className="mt-1 text-xs text-gray-400">
+          {error
+            ? 'There was an error loading this project. Please try again or go back to your projects.'
+            : 'This project may have been deleted or you don\'t have access.'}
+        </p>
         <button
           onClick={() => navigate('/app/projects')}
           className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-primary-600"
@@ -189,7 +207,7 @@ export default function ProjectDetailPage() {
         </div>
 
         {/* Quick Stats */}
-        <div className="mt-6 grid grid-cols-3 gap-4 border-t border-gray-100 pt-5">
+        <div className="mt-6 grid grid-cols-4 gap-4 border-t border-gray-100 pt-5">
           <div>
             <p className="text-xs font-medium uppercase tracking-wider text-gray-400">Total Contracts</p>
             <p className="mt-1 text-2xl font-bold text-gray-900">{contracts.length}</p>
@@ -201,6 +219,10 @@ export default function ProjectDetailPage() {
           <div>
             <p className="text-xs font-medium uppercase tracking-wider text-gray-400">Drafts</p>
             <p className="mt-1 text-2xl font-bold text-gray-500">{contractsByStatus.draft.length}</p>
+          </div>
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wider text-gray-400">Team Members</p>
+            <p className="mt-1 text-2xl font-bold text-blue-600">{project.members?.length ?? 0}</p>
           </div>
         </div>
       </div>

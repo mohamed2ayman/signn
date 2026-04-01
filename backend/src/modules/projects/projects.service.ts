@@ -48,10 +48,23 @@ export class ProjectsService {
   }
 
   async findById(id: string, orgId: string): Promise<Project> {
-    const project = await this.projectRepository.findOne({
-      where: { id, organization_id: orgId },
-      relations: ['members', 'members.user', 'creator'],
-    });
+    // Try loading with full relations first; fall back to basic query
+    // if a relation fails (e.g. missing FK reference)
+    let project: Project | null = null;
+    try {
+      project = await this.projectRepository.findOne({
+        where: { id, organization_id: orgId },
+        relations: ['members', 'members.user', 'creator'],
+      });
+    } catch {
+      // Relation loading failed — retry without nested relations
+      project = await this.projectRepository.findOne({
+        where: { id, organization_id: orgId },
+      });
+      if (project) {
+        project.members = [];
+      }
+    }
 
     if (!project) {
       throw new NotFoundException('Project not found');
