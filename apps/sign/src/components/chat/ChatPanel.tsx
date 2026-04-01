@@ -231,7 +231,7 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
 
 /* ── Main Chat Panel ────────────────────────────────────────── */
 interface ChatPanelProps {
-  contractId: string;
+  contractId?: string;
   isOpen: boolean;
   onClose: () => void;
 }
@@ -253,25 +253,31 @@ export default function ChatPanel({
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, []);
 
-  // Load or create session for this contract
+  // Load or create session for this contract (or general session)
   useEffect(() => {
-    if (!isOpen || !contractId) return;
+    if (!isOpen) return;
 
     let cancelled = false;
 
     const init = async () => {
       setLoadingHistory(true);
       try {
-        // Check for existing session
-        const existing =
-          await chatService.findSessionByContract(contractId);
-        if (cancelled) return;
+        if (contractId) {
+          // Check for existing session scoped to this contract
+          const existing =
+            await chatService.findSessionByContract(contractId);
+          if (cancelled) return;
 
-        if (existing) {
-          setSessionId(existing.id);
-          const msgs = await chatService.getMessages(existing.id);
-          if (!cancelled) setMessages(msgs);
+          if (existing) {
+            setSessionId(existing.id);
+            const msgs = await chatService.getMessages(existing.id);
+            if (!cancelled) setMessages(msgs);
+          } else {
+            setSessionId(null);
+            setMessages([]);
+          }
         } else {
+          // No contract context — start with empty state
           setSessionId(null);
           setMessages([]);
         }
@@ -319,7 +325,7 @@ export default function ChatPanel({
     const optimisticMsg: ChatMessage = {
       id: `temp-${Date.now()}`,
       session_id: sessionId || '',
-      contract_id: contractId,
+      contract_id: contractId || null,
       user_id: '',
       org_id: '',
       role: 'USER',
