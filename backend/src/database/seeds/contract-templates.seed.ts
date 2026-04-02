@@ -35,52 +35,8 @@ interface TemplateRecord {
   edition: string;
   color_name: string | null;
   description: string;
-  image_url: string | null;
   clause_structure: ClauseStructure[];
 }
-
-// ─── Official Book Cover Image URLs ────────────────────────
-// Images are the intellectual property of FIDIC and NEC respectively.
-// Displayed only for informational/referral purposes consistent with
-// fair use for product identification. Always loaded from original source.
-const IMAGE_URLS: Record<string, string> = {
-  // FIDIC
-  FIDIC_RED_BOOK_2017: 'https://fidic.org/sites/default/files/styles/bookshop_homepage/public/book-images/RED_reprint_3D_NO_LABEL_0.png',
-  FIDIC_YELLOW_BOOK_2017: 'https://fidic.org/sites/default/files/styles/bookshop_homepage/public/book-images/YELLOW_reprint_3D_NO_LABEL.png',
-  FIDIC_SILVER_BOOK_2017: 'https://fidic.org/sites/default/files/styles/bookshop_homepage/public/book-images/SILVER_reprint_3D_NO_LABEL.png',
-  FIDIC_WHITE_BOOK_2017: 'https://fidic.org/sites/default/files/styles/bookshop_homepage/public/book-images/WB5-cover-3D-2.png',
-  FIDIC_GREEN_BOOK_2021: 'https://fidic.org/sites/default/files/styles/bookshop_homepage/public/book-images/2021_green_book_2_3D_NO%20LABEL.png',
-  FIDIC_EMERALD_BOOK_2019: 'https://fidic.org/sites/default/files/styles/bookshop_homepage/public/book-images/emerald_2023_reprint_3D_2labels.png',
-  FIDIC_RED_BOOK_1999: 'https://fidic.org/sites/default/files/styles/bookshop_homepage/public/book-images/RED_reprint_3D_NO_LABEL_0.png',
-  FIDIC_YELLOW_BOOK_1999: 'https://fidic.org/sites/default/files/styles/bookshop_homepage/public/book-images/YELLOW_reprint_3D_NO_LABEL.png',
-  FIDIC_SILVER_BOOK_1999: 'https://fidic.org/sites/default/files/styles/bookshop_homepage/public/book-images/SILVER_reprint_3D_NO_LABEL.png',
-  FIDIC_SUBCONTRACT_YELLOW_2019: 'https://fidic.org/sites/default/files/styles/bookshop_homepage/public/book-images/subcontract_3D_0.png',
-  FIDIC_PINK_BOOK: 'https://fidic.org/sites/default/files/styles/bookshop_homepage/public/book-images/RED_reprint_3D_NO_LABEL_0.png',
-  FIDIC_BLUE_GREEN_BOOK_2016: 'https://fidic.org/sites/default/files/styles/bookshop_homepage/public/book-images/RED_reprint_3D_NO_LABEL_0.png',
-  // NEC4
-  NEC4_ECC: 'https://chpxyzyeka.cloudimg.io/https://www.neccontract.com:443/getmedia/40839106-7ba5-4bf7-9584-70f75222de24/NEC4-ECC.jpg?width=234',
-  NEC4_PSC: 'https://chpxyzyeka.cloudimg.io/https://www.neccontract.com:443/getmedia/e96d4e53-a21b-4ba6-a224-fc8061fc8d8f/NEC4-PSC.jpg?width=234',
-  NEC4_TSC: 'https://chpxyzyeka.cloudimg.io/https://www.neccontract.com:443/getmedia/039e4640-8dfa-4c4d-ab2b-ad8a52e94f8d/NEC4-TSC.jpg?width=234',
-  NEC4_SC: 'https://chpxyzyeka.cloudimg.io/https://www.neccontract.com:443/getmedia/0ee1e75e-2d90-467a-a9bc-0ea0f01598e6/NEC4-SC.jpg?width=234',
-  NEC4_FC: 'https://chpxyzyeka.cloudimg.io/https://www.neccontract.com:443/getmedia/5115d192-5c25-4525-be40-e9cbce6f375a/NEC4-FC.jpg?width=234',
-  NEC4_DBOC: 'https://chpxyzyeka.cloudimg.io/https://www.neccontract.com:443/getmedia/bbd74f95-6fb9-48fc-93e5-c8d83660bed2/NEC4-DBOC.jpg?width=234',
-  NEC4_FMC: 'https://chpxyzyeka.cloudimg.io/https://www.neccontract.com:443/getmedia/9508474e-91a1-4b6f-8996-43a14c461f05/Front-cover-FMC.jpg?width=234',
-  NEC4_ALC: 'https://chpxyzyeka.cloudimg.io/https://www.neccontract.com:443/getmedia/9d1f7d6e-148a-49df-974c-4960ea43708f/NEC4-ALC.jpg?width=234',
-  NEC4_DRSC: 'https://chpxyzyeka.cloudimg.io/https://www.neccontract.com:443/getmedia/94c5d3d0-e920-4cf2-ae84-324fdebfad81/NEC4-DRSC.jpg?width=234',
-  // NEC3
-  NEC3_ECC: 'https://chpxyzyeka.cloudimg.io/https://www.neccontract.com:443/getmedia/d3f26b9a-78f6-416e-a5ac-47856ed89c53/ECC-2013AW.jpg?width=234',
-  NEC3_PSC: 'https://chpxyzyeka.cloudimg.io/https://www.neccontract.com:443/getmedia/b23b41ef-8790-4c53-a20f-f76959a7a3cd/PSC-2013AW.jpg?width=234',
-  NEC3_TSC: 'https://chpxyzyeka.cloudimg.io/https://www.neccontract.com:443/getmedia/5c2a49bf-91e5-4c42-bcd6-f29ce0a40017/TSC-2013AW.jpg?width=234',
-  NEC3_SC: 'https://chpxyzyeka.cloudimg.io/https://www.neccontract.com:443/getmedia/b78a7ac9-b692-4bd9-916d-a1d37092357c/SC-2013AW.jpg?width=234',
-  NEC3_FC: 'https://chpxyzyeka.cloudimg.io/https://www.neccontract.com:443/getmedia/2d2bbb3b-a133-4c57-affc-71707a050de2/FC-2013AW.jpg?width=234',
-  NEC3_AC: 'https://chpxyzyeka.cloudimg.io/https://www.neccontract.com:443/getmedia/5619ed58-5542-4cb4-b201-04a238e4db88/AC-2013AW.jpg?width=234',
-  // NEC HK
-  NEC_ECC_HK: 'https://chpxyzyeka.cloudimg.io/https://www.neccontract.com:443/getmedia/d3f26b9a-78f6-416e-a5ac-47856ed89c53/ECC-2013AW.jpg?width=234',
-  NEC_TSC_HK: 'https://chpxyzyeka.cloudimg.io/https://www.neccontract.com:443/getmedia/5c2a49bf-91e5-4c42-bcd6-f29ce0a40017/TSC-2013AW.jpg?width=234',
-  // FAC/TAC
-  FAC_1: 'https://chpxyzyeka.cloudimg.io/https://www.neccontract.com:443/getattachment/d539b43f-aed1-468d-bc28-8a3ec0ae024b/FAC1-1.jpg?width=234',
-  TAC_1: 'https://chpxyzyeka.cloudimg.io/https://www.neccontract.com:443/getattachment/d539b43f-aed1-468d-bc28-8a3ec0ae024b/FAC1-1.jpg?width=234',
-};
 
 // ─────────────────────────────────────────────────────────────
 // FIDIC Red Book 2017 — Conditions of Contract for Construction
@@ -92,7 +48,6 @@ const FIDIC_RED_2017: TemplateRecord = {
   edition: '2nd Edition 2017',
   color_name: 'Red Book',
   description: 'For building and engineering works designed by the Employer (or by the Engineer).',
-  image_url: IMAGE_URLS.FIDIC_RED_BOOK_2017,
   clause_structure: [
     { clause_number: '1', clause_title: 'General Provisions', text: '', sub_clauses: [
       { sub_clause_number: '1.1', sub_clause_title: 'Definitions', text: LICENSED_TEXT_NOTE },
@@ -559,7 +514,6 @@ export const CONTRACT_TEMPLATES: TemplateRecord[] = [
     edition: '2nd Edition 2017',
     color_name: 'Yellow Book',
     description: 'For electrical and mechanical plant and for building and engineering works designed by the Contractor.',
-    image_url: IMAGE_URLS.FIDIC_YELLOW_BOOK_2017,
   }),
   createFidicStructure({
     title: 'Conditions of Contract for EPC/Turnkey Projects',
@@ -567,7 +521,6 @@ export const CONTRACT_TEMPLATES: TemplateRecord[] = [
     edition: '2nd Edition 2017',
     color_name: 'Silver Book',
     description: 'For EPC/Turnkey projects where the Contractor takes total responsibility for design and execution.',
-    image_url: IMAGE_URLS.FIDIC_SILVER_BOOK_2017,
   }),
   {
     title: 'Client/Consultant Model Services Agreement',
@@ -576,7 +529,6 @@ export const CONTRACT_TEMPLATES: TemplateRecord[] = [
     edition: '5th Edition 2017',
     color_name: 'White Book',
     description: 'For pre-investment and feasibility studies, designs and administration of construction contracts.',
-    image_url: IMAGE_URLS.FIDIC_WHITE_BOOK_2017,
     clause_structure: [
       { clause_number: 'A', clause_title: 'General Provisions', text: '', sub_clauses: [
         { sub_clause_number: 'A.1', sub_clause_title: 'Definitions', text: LICENSED_TEXT_NOTE },
@@ -623,7 +575,6 @@ export const CONTRACT_TEMPLATES: TemplateRecord[] = [
     edition: '2nd Edition 2021',
     color_name: 'Green Book',
     description: 'For building and engineering works of relatively small capital value or short duration without complex specialist sub-contract work.',
-    image_url: IMAGE_URLS.FIDIC_GREEN_BOOK_2021,
     clause_structure: FIDIC_GREEN_STRUCTURE,
   },
   createFidicStructure({
@@ -632,7 +583,6 @@ export const CONTRACT_TEMPLATES: TemplateRecord[] = [
     edition: '1st Edition 2019',
     color_name: 'Emerald Book',
     description: 'For tunnelling and underground works including caverns, shafts and associated surface works.',
-    image_url: IMAGE_URLS.FIDIC_EMERALD_BOOK_2019,
   }),
   // FIDIC 1999 Rainbow Suite
   {
@@ -642,7 +592,6 @@ export const CONTRACT_TEMPLATES: TemplateRecord[] = [
     edition: '1st Edition 1999',
     color_name: 'Red Book',
     description: 'For building and engineering works designed by the Employer (legacy 1999 edition).',
-    image_url: IMAGE_URLS.FIDIC_RED_BOOK_1999,
     clause_structure: FIDIC_1999_STRUCTURE,
   },
   {
@@ -652,7 +601,6 @@ export const CONTRACT_TEMPLATES: TemplateRecord[] = [
     edition: '1st Edition 1999',
     color_name: 'Yellow Book',
     description: 'For plant and design-build projects where the Contractor designs and provides the works (legacy 1999 edition).',
-    image_url: IMAGE_URLS.FIDIC_YELLOW_BOOK_1999,
     clause_structure: FIDIC_1999_STRUCTURE,
   },
   {
@@ -662,7 +610,6 @@ export const CONTRACT_TEMPLATES: TemplateRecord[] = [
     edition: '1st Edition 1999',
     color_name: 'Silver Book',
     description: 'For EPC/Turnkey projects with greater risk allocation to the Contractor (legacy 1999 edition).',
-    image_url: IMAGE_URLS.FIDIC_SILVER_BOOK_1999,
     clause_structure: FIDIC_1999_STRUCTURE,
   },
   // FIDIC Subcontracts
@@ -672,7 +619,6 @@ export const CONTRACT_TEMPLATES: TemplateRecord[] = [
     edition: '1st Edition 2019',
     color_name: null,
     description: 'Subcontract conditions for use with the FIDIC Yellow Book (1999) as the main contract.',
-    image_url: IMAGE_URLS.FIDIC_SUBCONTRACT_YELLOW_2019,
   }),
   // FIDIC MDB
   createFidicStructure({
@@ -681,7 +627,6 @@ export const CONTRACT_TEMPLATES: TemplateRecord[] = [
     edition: 'MDB Harmonised Edition',
     color_name: 'Pink Book',
     description: 'Multilateral Development Banks harmonised edition for construction works funded by MDBs.',
-    image_url: IMAGE_URLS.FIDIC_PINK_BOOK,
   }),
   // FIDIC Dredging
   {
@@ -691,7 +636,6 @@ export const CONTRACT_TEMPLATES: TemplateRecord[] = [
     edition: '2nd Edition 2016',
     color_name: 'Blue-Green Book',
     description: 'For dredging and reclamation works in marine and inland waterway environments.',
-    image_url: IMAGE_URLS.FIDIC_BLUE_GREEN_BOOK_2016,
     clause_structure: FIDIC_GREEN_STRUCTURE,
   },
   // NEC4 Suite
@@ -702,7 +646,6 @@ export const CONTRACT_TEMPLATES: TemplateRecord[] = [
     edition: 'June 2017 (revised January 2023)',
     color_name: null,
     description: 'The primary NEC contract for major engineering and construction works with flexible payment options.',
-    image_url: IMAGE_URLS.NEC4_ECC,
     clause_structure: NEC4_ECC_STRUCTURE,
   },
   {
@@ -712,7 +655,6 @@ export const CONTRACT_TEMPLATES: TemplateRecord[] = [
     edition: 'June 2017 (revised January 2023)',
     color_name: null,
     description: 'For the appointment of professional service providers such as engineers, architects and surveyors.',
-    image_url: IMAGE_URLS.NEC4_PSC,
     clause_structure: NEC_PSC_STRUCTURE,
   },
   {
@@ -722,7 +664,6 @@ export const CONTRACT_TEMPLATES: TemplateRecord[] = [
     edition: 'June 2017 (revised January 2023)',
     color_name: null,
     description: 'For appointing a contractor for a period of time to manage and provide a service.',
-    image_url: IMAGE_URLS.NEC4_TSC,
     clause_structure: NEC_PSC_STRUCTURE,
   },
   {
@@ -732,7 +673,6 @@ export const CONTRACT_TEMPLATES: TemplateRecord[] = [
     edition: 'June 2017 (revised January 2023)',
     color_name: null,
     description: 'For procuring high-value goods, materials and related services.',
-    image_url: IMAGE_URLS.NEC4_SC,
     clause_structure: NEC_SHORT_STRUCTURE,
   },
   {
@@ -742,7 +682,6 @@ export const CONTRACT_TEMPLATES: TemplateRecord[] = [
     edition: 'June 2017 (revised January 2023)',
     color_name: null,
     description: 'For establishing a framework agreement under which packages of work are ordered over time.',
-    image_url: IMAGE_URLS.NEC4_FC,
     clause_structure: NEC_SHORT_STRUCTURE,
   },
   {
@@ -752,7 +691,6 @@ export const CONTRACT_TEMPLATES: TemplateRecord[] = [
     edition: 'June 2017 (revised January 2023)',
     color_name: null,
     description: 'For projects where a single contractor designs, builds and subsequently operates the works.',
-    image_url: IMAGE_URLS.NEC4_DBOC,
     clause_structure: NEC4_ECC_STRUCTURE,
   },
   {
@@ -762,7 +700,6 @@ export const CONTRACT_TEMPLATES: TemplateRecord[] = [
     edition: 'June 2017 (revised January 2023)',
     color_name: null,
     description: 'For the management and provision of facilities management services.',
-    image_url: IMAGE_URLS.NEC4_FMC,
     clause_structure: NEC_PSC_STRUCTURE,
   },
   {
@@ -772,7 +709,6 @@ export const CONTRACT_TEMPLATES: TemplateRecord[] = [
     edition: 'June 2017 (revised January 2023)',
     color_name: null,
     description: 'For multi-party alliance arrangements enabling collaborative working between client and partners.',
-    image_url: IMAGE_URLS.NEC4_ALC,
     clause_structure: NEC_SHORT_STRUCTURE,
   },
   {
@@ -782,7 +718,6 @@ export const CONTRACT_TEMPLATES: TemplateRecord[] = [
     edition: 'June 2017 (revised January 2023)',
     color_name: null,
     description: 'For appointing dispute resolution professionals including adjudicators and dispute avoidance panels.',
-    image_url: IMAGE_URLS.NEC4_DRSC,
     clause_structure: NEC_SHORT_STRUCTURE,
   },
   // NEC3 Suite
@@ -793,7 +728,6 @@ export const CONTRACT_TEMPLATES: TemplateRecord[] = [
     edition: 'April 2013',
     color_name: null,
     description: 'The legacy NEC3 primary contract for engineering and construction works.',
-    image_url: IMAGE_URLS.NEC3_ECC,
     clause_structure: NEC4_ECC_STRUCTURE,
   },
   {
@@ -803,7 +737,6 @@ export const CONTRACT_TEMPLATES: TemplateRecord[] = [
     edition: 'April 2013',
     color_name: null,
     description: 'Legacy NEC3 contract for appointing professional service providers.',
-    image_url: IMAGE_URLS.NEC3_PSC,
     clause_structure: NEC_PSC_STRUCTURE,
   },
   {
@@ -813,7 +746,6 @@ export const CONTRACT_TEMPLATES: TemplateRecord[] = [
     edition: 'April 2013',
     color_name: null,
     description: 'Legacy NEC3 contract for term service arrangements.',
-    image_url: IMAGE_URLS.NEC3_TSC,
     clause_structure: NEC_PSC_STRUCTURE,
   },
   {
@@ -823,7 +755,6 @@ export const CONTRACT_TEMPLATES: TemplateRecord[] = [
     edition: 'April 2013',
     color_name: null,
     description: 'Legacy NEC3 contract for supply of goods and materials.',
-    image_url: IMAGE_URLS.NEC3_SC,
     clause_structure: NEC_SHORT_STRUCTURE,
   },
   {
@@ -833,7 +764,6 @@ export const CONTRACT_TEMPLATES: TemplateRecord[] = [
     edition: 'April 2013',
     color_name: null,
     description: 'Legacy NEC3 contract for framework agreements.',
-    image_url: IMAGE_URLS.NEC3_FC,
     clause_structure: NEC_SHORT_STRUCTURE,
   },
   {
@@ -843,7 +773,6 @@ export const CONTRACT_TEMPLATES: TemplateRecord[] = [
     edition: 'April 2013',
     color_name: null,
     description: 'Legacy NEC3 contract for appointing an adjudicator for dispute resolution.',
-    image_url: IMAGE_URLS.NEC3_AC,
     clause_structure: NEC_SHORT_STRUCTURE,
   },
   // NEC HK Edition
@@ -854,7 +783,6 @@ export const CONTRACT_TEMPLATES: TemplateRecord[] = [
     edition: 'Hong Kong Edition',
     color_name: null,
     description: 'NEC ECC adapted for Hong Kong construction law and practice.',
-    image_url: IMAGE_URLS.NEC_ECC_HK,
     clause_structure: NEC4_ECC_STRUCTURE,
   },
   {
@@ -864,7 +792,6 @@ export const CONTRACT_TEMPLATES: TemplateRecord[] = [
     edition: 'Hong Kong Edition',
     color_name: null,
     description: 'NEC TSC adapted for Hong Kong term service arrangements.',
-    image_url: IMAGE_URLS.NEC_TSC_HK,
     clause_structure: NEC_PSC_STRUCTURE,
   },
   // FAC/TAC
@@ -875,7 +802,6 @@ export const CONTRACT_TEMPLATES: TemplateRecord[] = [
     edition: '1st Edition',
     color_name: null,
     description: 'Multi-party framework alliance contract for collaborative procurement across multiple projects.',
-    image_url: IMAGE_URLS.FAC_1,
     clause_structure: NEC_SHORT_STRUCTURE,
   },
   {
@@ -885,7 +811,6 @@ export const CONTRACT_TEMPLATES: TemplateRecord[] = [
     edition: '1st Edition',
     color_name: null,
     description: 'Multi-party term alliance contract for collaborative delivery of ongoing works and services.',
-    image_url: IMAGE_URLS.TAC_1,
     clause_structure: NEC_SHORT_STRUCTURE,
   },
 ];
@@ -912,7 +837,6 @@ export async function seedContractTemplates(dataSource: DataSource): Promise<voi
         contract_type_code: template.contract_type_code,
         edition: template.edition,
         color_name: template.color_name,
-        image_url: template.image_url,
         clause_structure: template.clause_structure,
       };
       existing.description = template.description;
@@ -935,7 +859,6 @@ export async function seedContractTemplates(dataSource: DataSource): Promise<voi
         contract_type_code: template.contract_type_code,
         edition: template.edition,
         color_name: template.color_name,
-        image_url: template.image_url,
         clause_structure: template.clause_structure,
       } as any,
     });

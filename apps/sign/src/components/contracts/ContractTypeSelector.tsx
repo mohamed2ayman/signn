@@ -10,108 +10,61 @@ interface ContractTypeInfo {
   colorName?: string;
   edition: string;
   description: string;
-  imageUrl?: string;
-}
-
-// ─── Official Book Cover Image URLs ────────────────────────
-// Images are the intellectual property of FIDIC and NEC respectively.
-// Displayed only for informational/referral purposes. Always loaded
-// from the original source URLs — never cached, compressed, or re-hosted.
-
-const FIDIC_IMAGES: Record<string, string> = {
-  FIDIC_RED_BOOK_2017: 'https://fidic.org/sites/default/files/styles/bookshop_homepage/public/book-images/RED_reprint_3D_NO_LABEL_0.png',
-  FIDIC_YELLOW_BOOK_2017: 'https://fidic.org/sites/default/files/styles/bookshop_homepage/public/book-images/YELLOW_reprint_3D_NO_LABEL.png',
-  FIDIC_SILVER_BOOK_2017: 'https://fidic.org/sites/default/files/styles/bookshop_homepage/public/book-images/SILVER_reprint_3D_NO_LABEL.png',
-  FIDIC_WHITE_BOOK_2017: 'https://fidic.org/sites/default/files/styles/bookshop_homepage/public/book-images/WB5-cover-3D-2.png',
-  FIDIC_GREEN_BOOK_2021: 'https://fidic.org/sites/default/files/styles/bookshop_homepage/public/book-images/2021_green_book_2_3D_NO%20LABEL.png',
-  FIDIC_EMERALD_BOOK_2019: 'https://fidic.org/sites/default/files/styles/bookshop_homepage/public/book-images/emerald_2023_reprint_3D_2labels.png',
-  FIDIC_RED_BOOK_1999: 'https://fidic.org/sites/default/files/styles/bookshop_homepage/public/book-images/RED_reprint_3D_NO_LABEL_0.png',
-  FIDIC_YELLOW_BOOK_1999: 'https://fidic.org/sites/default/files/styles/bookshop_homepage/public/book-images/YELLOW_reprint_3D_NO_LABEL.png',
-  FIDIC_SILVER_BOOK_1999: 'https://fidic.org/sites/default/files/styles/bookshop_homepage/public/book-images/SILVER_reprint_3D_NO_LABEL.png',
-  FIDIC_SUBCONTRACT_YELLOW_2019: 'https://fidic.org/sites/default/files/styles/bookshop_homepage/public/book-images/subcontract_3D_0.png',
-  FIDIC_PINK_BOOK: 'https://fidic.org/sites/default/files/styles/bookshop_homepage/public/book-images/RED_reprint_3D_NO_LABEL_0.png',
-  FIDIC_BLUE_GREEN_BOOK_2016: 'https://fidic.org/sites/default/files/styles/bookshop_homepage/public/book-images/RED_reprint_3D_NO_LABEL_0.png',
-};
-
-const NEC_IMAGES: Record<string, string> = {
-  NEC4_ECC: 'https://chpxyzyeka.cloudimg.io/https://www.neccontract.com:443/getmedia/40839106-7ba5-4bf7-9584-70f75222de24/NEC4-ECC.jpg?width=234',
-  NEC4_PSC: 'https://chpxyzyeka.cloudimg.io/https://www.neccontract.com:443/getmedia/e96d4e53-a21b-4ba6-a224-fc8061fc8d8f/NEC4-PSC.jpg?width=234',
-  NEC4_TSC: 'https://chpxyzyeka.cloudimg.io/https://www.neccontract.com:443/getmedia/039e4640-8dfa-4c4d-ab2b-ad8a52e94f8d/NEC4-TSC.jpg?width=234',
-  NEC4_SC: 'https://chpxyzyeka.cloudimg.io/https://www.neccontract.com:443/getmedia/0ee1e75e-2d90-467a-a9bc-0ea0f01598e6/NEC4-SC.jpg?width=234',
-  NEC4_FC: 'https://chpxyzyeka.cloudimg.io/https://www.neccontract.com:443/getmedia/5115d192-5c25-4525-be40-e9cbce6f375a/NEC4-FC.jpg?width=234',
-  NEC4_DBOC: 'https://chpxyzyeka.cloudimg.io/https://www.neccontract.com:443/getmedia/bbd74f95-6fb9-48fc-93e5-c8d83660bed2/NEC4-DBOC.jpg?width=234',
-  NEC4_FMC: 'https://chpxyzyeka.cloudimg.io/https://www.neccontract.com:443/getmedia/9508474e-91a1-4b6f-8996-43a14c461f05/Front-cover-FMC.jpg?width=234',
-  NEC4_ALC: 'https://chpxyzyeka.cloudimg.io/https://www.neccontract.com:443/getmedia/9d1f7d6e-148a-49df-974c-4960ea43708f/NEC4-ALC.jpg?width=234',
-  NEC4_DRSC: 'https://chpxyzyeka.cloudimg.io/https://www.neccontract.com:443/getmedia/94c5d3d0-e920-4cf2-ae84-324fdebfad81/NEC4-DRSC.jpg?width=234',
-  NEC3_ECC: 'https://chpxyzyeka.cloudimg.io/https://www.neccontract.com:443/getmedia/d3f26b9a-78f6-416e-a5ac-47856ed89c53/ECC-2013AW.jpg?width=234',
-  NEC3_PSC: 'https://chpxyzyeka.cloudimg.io/https://www.neccontract.com:443/getmedia/b23b41ef-8790-4c53-a20f-f76959a7a3cd/PSC-2013AW.jpg?width=234',
-  NEC3_TSC: 'https://chpxyzyeka.cloudimg.io/https://www.neccontract.com:443/getmedia/5c2a49bf-91e5-4c42-bcd6-f29ce0a40017/TSC-2013AW.jpg?width=234',
-  NEC3_SC: 'https://chpxyzyeka.cloudimg.io/https://www.neccontract.com:443/getmedia/b78a7ac9-b692-4bd9-916d-a1d37092357c/SC-2013AW.jpg?width=234',
-  NEC3_FC: 'https://chpxyzyeka.cloudimg.io/https://www.neccontract.com:443/getmedia/2d2bbb3b-a133-4c57-affc-71707a050de2/FC-2013AW.jpg?width=234',
-  NEC3_AC: 'https://chpxyzyeka.cloudimg.io/https://www.neccontract.com:443/getmedia/5619ed58-5542-4cb4-b201-04a238e4db88/AC-2013AW.jpg?width=234',
-  NEC_ECC_HK: 'https://chpxyzyeka.cloudimg.io/https://www.neccontract.com:443/getmedia/d3f26b9a-78f6-416e-a5ac-47856ed89c53/ECC-2013AW.jpg?width=234',
-  NEC_TSC_HK: 'https://chpxyzyeka.cloudimg.io/https://www.neccontract.com:443/getmedia/5c2a49bf-91e5-4c42-bcd6-f29ce0a40017/TSC-2013AW.jpg?width=234',
-  FAC_1: 'https://chpxyzyeka.cloudimg.io/https://www.neccontract.com:443/getattachment/d539b43f-aed1-468d-bc28-8a3ec0ae024b/FAC1-1.jpg?width=234',
-  TAC_1: 'https://chpxyzyeka.cloudimg.io/https://www.neccontract.com:443/getattachment/d539b43f-aed1-468d-bc28-8a3ec0ae024b/FAC1-1.jpg?width=234',
-};
-
-function getImageUrl(code: string): string | undefined {
-  return FIDIC_IMAGES[code] || NEC_IMAGES[code];
 }
 
 const FIDIC_2017: ContractTypeInfo[] = [
-  { code: ContractType.FIDIC_RED_BOOK_2017, title: 'Construction Contract', abbreviation: 'Red Book', colorName: 'Red Book', edition: '2nd Ed 2017', description: 'Works designed by the Employer', imageUrl: FIDIC_IMAGES.FIDIC_RED_BOOK_2017 },
-  { code: ContractType.FIDIC_YELLOW_BOOK_2017, title: 'Plant and Design-Build Contract', abbreviation: 'Yellow Book', colorName: 'Yellow Book', edition: '2nd Ed 2017', description: 'Works designed by the Contractor', imageUrl: FIDIC_IMAGES.FIDIC_YELLOW_BOOK_2017 },
-  { code: ContractType.FIDIC_SILVER_BOOK_2017, title: 'EPC/Turnkey Contract', abbreviation: 'Silver Book', colorName: 'Silver Book', edition: '2nd Ed 2017', description: 'Total Contractor responsibility', imageUrl: FIDIC_IMAGES.FIDIC_SILVER_BOOK_2017 },
-  { code: ContractType.FIDIC_WHITE_BOOK_2017, title: 'Client/Consultant Model Services Agreement', abbreviation: 'White Book', colorName: 'White Book', edition: '5th Ed 2017', description: 'Consultant services and feasibility', imageUrl: FIDIC_IMAGES.FIDIC_WHITE_BOOK_2017 },
-  { code: ContractType.FIDIC_GREEN_BOOK_2021, title: 'Short Form of Contract', abbreviation: 'Green Book', colorName: 'Green Book', edition: '2nd Ed 2021', description: 'Small value or short duration works', imageUrl: FIDIC_IMAGES.FIDIC_GREEN_BOOK_2021 },
-  { code: ContractType.FIDIC_EMERALD_BOOK_2019, title: 'Underground Works Contract', abbreviation: 'Emerald Book', colorName: 'Emerald Book', edition: '1st Ed 2019', description: 'Tunnelling and underground works', imageUrl: FIDIC_IMAGES.FIDIC_EMERALD_BOOK_2019 },
+  { code: ContractType.FIDIC_RED_BOOK_2017, title: 'Construction Contract', abbreviation: 'Red Book', colorName: 'Red Book', edition: '2nd Ed 2017', description: 'Works designed by the Employer' },
+  { code: ContractType.FIDIC_YELLOW_BOOK_2017, title: 'Plant and Design-Build Contract', abbreviation: 'Yellow Book', colorName: 'Yellow Book', edition: '2nd Ed 2017', description: 'Works designed by the Contractor' },
+  { code: ContractType.FIDIC_SILVER_BOOK_2017, title: 'EPC/Turnkey Contract', abbreviation: 'Silver Book', colorName: 'Silver Book', edition: '2nd Ed 2017', description: 'Total Contractor responsibility' },
+  { code: ContractType.FIDIC_WHITE_BOOK_2017, title: 'Client/Consultant Model Services Agreement', abbreviation: 'White Book', colorName: 'White Book', edition: '5th Ed 2017', description: 'Consultant services and feasibility' },
+  { code: ContractType.FIDIC_GREEN_BOOK_2021, title: 'Short Form of Contract', abbreviation: 'Green Book', colorName: 'Green Book', edition: '2nd Ed 2021', description: 'Small value or short duration works' },
+  { code: ContractType.FIDIC_EMERALD_BOOK_2019, title: 'Underground Works Contract', abbreviation: 'Emerald Book', colorName: 'Emerald Book', edition: '1st Ed 2019', description: 'Tunnelling and underground works' },
 ];
 
 const FIDIC_1999: ContractTypeInfo[] = [
-  { code: ContractType.FIDIC_RED_BOOK_1999, title: 'Construction Contract', abbreviation: 'Red Book', colorName: 'Red Book', edition: '1st Ed 1999', description: 'Works designed by the Employer (legacy)', imageUrl: FIDIC_IMAGES.FIDIC_RED_BOOK_1999 },
-  { code: ContractType.FIDIC_YELLOW_BOOK_1999, title: 'Plant and Design-Build Contract', abbreviation: 'Yellow Book', colorName: 'Yellow Book', edition: '1st Ed 1999', description: 'Works designed by the Contractor (legacy)', imageUrl: FIDIC_IMAGES.FIDIC_YELLOW_BOOK_1999 },
-  { code: ContractType.FIDIC_SILVER_BOOK_1999, title: 'EPC/Turnkey Contract', abbreviation: 'Silver Book', colorName: 'Silver Book', edition: '1st Ed 1999', description: 'Total Contractor responsibility (legacy)', imageUrl: FIDIC_IMAGES.FIDIC_SILVER_BOOK_1999 },
+  { code: ContractType.FIDIC_RED_BOOK_1999, title: 'Construction Contract', abbreviation: 'Red Book', colorName: 'Red Book', edition: '1st Ed 1999', description: 'Works designed by the Employer (legacy)' },
+  { code: ContractType.FIDIC_YELLOW_BOOK_1999, title: 'Plant and Design-Build Contract', abbreviation: 'Yellow Book', colorName: 'Yellow Book', edition: '1st Ed 1999', description: 'Works designed by the Contractor (legacy)' },
+  { code: ContractType.FIDIC_SILVER_BOOK_1999, title: 'EPC/Turnkey Contract', abbreviation: 'Silver Book', colorName: 'Silver Book', edition: '1st Ed 1999', description: 'Total Contractor responsibility (legacy)' },
 ];
 
 const FIDIC_SUB_MDB: ContractTypeInfo[] = [
-  { code: ContractType.FIDIC_SUBCONTRACT_YELLOW_2019, title: 'Subcontract for Plant and Design-Build', abbreviation: 'Sub Yellow', edition: '1st Ed 2019', description: 'Subcontract for Yellow Book 1999 main contract', imageUrl: FIDIC_IMAGES.FIDIC_SUBCONTRACT_YELLOW_2019 },
-  { code: ContractType.FIDIC_PINK_BOOK, title: 'MDB Harmonised Edition', abbreviation: 'Pink Book', colorName: 'Pink Book', edition: 'MDB Edition', description: 'Multilateral Development Bank funded works', imageUrl: FIDIC_IMAGES.FIDIC_PINK_BOOK },
+  { code: ContractType.FIDIC_SUBCONTRACT_YELLOW_2019, title: 'Subcontract for Plant and Design-Build', abbreviation: 'Sub Yellow', edition: '1st Ed 2019', description: 'Subcontract for Yellow Book 1999 main contract' },
+  { code: ContractType.FIDIC_PINK_BOOK, title: 'MDB Harmonised Edition', abbreviation: 'Pink Book', colorName: 'Pink Book', edition: 'MDB Edition', description: 'Multilateral Development Bank funded works' },
 ];
 
 const FIDIC_DREDGING: ContractTypeInfo[] = [
-  { code: ContractType.FIDIC_BLUE_GREEN_BOOK_2016, title: 'Dredging and Reclamation Works', abbreviation: 'Blue-Green', colorName: 'Blue-Green Book', edition: '2nd Ed 2016', description: 'Marine and inland waterway dredging', imageUrl: FIDIC_IMAGES.FIDIC_BLUE_GREEN_BOOK_2016 },
+  { code: ContractType.FIDIC_BLUE_GREEN_BOOK_2016, title: 'Dredging and Reclamation Works', abbreviation: 'Blue-Green', colorName: 'Blue-Green Book', edition: '2nd Ed 2016', description: 'Marine and inland waterway dredging' },
 ];
 
 const NEC4: ContractTypeInfo[] = [
-  { code: ContractType.NEC4_ECC, title: 'Engineering and Construction Contract', abbreviation: 'ECC', edition: 'Jun 2017 (rev Jan 2023)', description: 'Primary contract for major works', imageUrl: NEC_IMAGES.NEC4_ECC },
-  { code: ContractType.NEC4_PSC, title: 'Professional Service Contract', abbreviation: 'PSC', edition: 'Jun 2017 (rev Jan 2023)', description: 'Professional service providers', imageUrl: NEC_IMAGES.NEC4_PSC },
-  { code: ContractType.NEC4_TSC, title: 'Term Service Contract', abbreviation: 'TSC', edition: 'Jun 2017 (rev Jan 2023)', description: 'Period-based service management', imageUrl: NEC_IMAGES.NEC4_TSC },
-  { code: ContractType.NEC4_SC, title: 'Supply Contract', abbreviation: 'SC', edition: 'Jun 2017 (rev Jan 2023)', description: 'High-value goods and materials', imageUrl: NEC_IMAGES.NEC4_SC },
-  { code: ContractType.NEC4_FC, title: 'Framework Contract', abbreviation: 'FC', edition: 'Jun 2017 (rev Jan 2023)', description: 'Framework agreements for work packages', imageUrl: NEC_IMAGES.NEC4_FC },
-  { code: ContractType.NEC4_DBOC, title: 'Design Build and Operate Contract', abbreviation: 'DBOC', edition: 'Jun 2017 (rev Jan 2023)', description: 'Design, build and operate combined', imageUrl: NEC_IMAGES.NEC4_DBOC },
-  { code: ContractType.NEC4_FMC, title: 'Facilities Management Contract', abbreviation: 'FMC', edition: 'Jun 2017 (rev Jan 2023)', description: 'Facilities management services', imageUrl: NEC_IMAGES.NEC4_FMC },
-  { code: ContractType.NEC4_ALC, title: 'Alliance Contract', abbreviation: 'ALC', edition: 'Jun 2017 (rev Jan 2023)', description: 'Multi-party alliance arrangements', imageUrl: NEC_IMAGES.NEC4_ALC },
-  { code: ContractType.NEC4_DRSC, title: 'Dispute Resolution Service Contract', abbreviation: 'DRSC', edition: 'Jun 2017 (rev Jan 2023)', description: 'Adjudicators and dispute panels', imageUrl: NEC_IMAGES.NEC4_DRSC },
+  { code: ContractType.NEC4_ECC, title: 'Engineering and Construction Contract', abbreviation: 'ECC', edition: 'Jun 2017 (rev Jan 2023)', description: 'Primary contract for major works' },
+  { code: ContractType.NEC4_PSC, title: 'Professional Service Contract', abbreviation: 'PSC', edition: 'Jun 2017 (rev Jan 2023)', description: 'Professional service providers' },
+  { code: ContractType.NEC4_TSC, title: 'Term Service Contract', abbreviation: 'TSC', edition: 'Jun 2017 (rev Jan 2023)', description: 'Period-based service management' },
+  { code: ContractType.NEC4_SC, title: 'Supply Contract', abbreviation: 'SC', edition: 'Jun 2017 (rev Jan 2023)', description: 'High-value goods and materials' },
+  { code: ContractType.NEC4_FC, title: 'Framework Contract', abbreviation: 'FC', edition: 'Jun 2017 (rev Jan 2023)', description: 'Framework agreements for work packages' },
+  { code: ContractType.NEC4_DBOC, title: 'Design Build and Operate Contract', abbreviation: 'DBOC', edition: 'Jun 2017 (rev Jan 2023)', description: 'Design, build and operate combined' },
+  { code: ContractType.NEC4_FMC, title: 'Facilities Management Contract', abbreviation: 'FMC', edition: 'Jun 2017 (rev Jan 2023)', description: 'Facilities management services' },
+  { code: ContractType.NEC4_ALC, title: 'Alliance Contract', abbreviation: 'ALC', edition: 'Jun 2017 (rev Jan 2023)', description: 'Multi-party alliance arrangements' },
+  { code: ContractType.NEC4_DRSC, title: 'Dispute Resolution Service Contract', abbreviation: 'DRSC', edition: 'Jun 2017 (rev Jan 2023)', description: 'Adjudicators and dispute panels' },
 ];
 
 const NEC3: ContractTypeInfo[] = [
-  { code: ContractType.NEC3_ECC, title: 'Engineering and Construction Contract', abbreviation: 'ECC', edition: 'Apr 2013', description: 'Legacy NEC3 primary contract', imageUrl: NEC_IMAGES.NEC3_ECC },
-  { code: ContractType.NEC3_PSC, title: 'Professional Service Contract', abbreviation: 'PSC', edition: 'Apr 2013', description: 'Legacy NEC3 professional services', imageUrl: NEC_IMAGES.NEC3_PSC },
-  { code: ContractType.NEC3_TSC, title: 'Term Service Contract', abbreviation: 'TSC', edition: 'Apr 2013', description: 'Legacy NEC3 term services', imageUrl: NEC_IMAGES.NEC3_TSC },
-  { code: ContractType.NEC3_SC, title: 'Supply Contract', abbreviation: 'SC', edition: 'Apr 2013', description: 'Legacy NEC3 supply contract', imageUrl: NEC_IMAGES.NEC3_SC },
-  { code: ContractType.NEC3_FC, title: 'Framework Contract', abbreviation: 'FC', edition: 'Apr 2013', description: 'Legacy NEC3 framework agreement', imageUrl: NEC_IMAGES.NEC3_FC },
-  { code: ContractType.NEC3_AC, title: 'Adjudicator\'s Contract', abbreviation: 'AC', edition: 'Apr 2013', description: 'Legacy NEC3 adjudicator appointment', imageUrl: NEC_IMAGES.NEC3_AC },
+  { code: ContractType.NEC3_ECC, title: 'Engineering and Construction Contract', abbreviation: 'ECC', edition: 'Apr 2013', description: 'Legacy NEC3 primary contract' },
+  { code: ContractType.NEC3_PSC, title: 'Professional Service Contract', abbreviation: 'PSC', edition: 'Apr 2013', description: 'Legacy NEC3 professional services' },
+  { code: ContractType.NEC3_TSC, title: 'Term Service Contract', abbreviation: 'TSC', edition: 'Apr 2013', description: 'Legacy NEC3 term services' },
+  { code: ContractType.NEC3_SC, title: 'Supply Contract', abbreviation: 'SC', edition: 'Apr 2013', description: 'Legacy NEC3 supply contract' },
+  { code: ContractType.NEC3_FC, title: 'Framework Contract', abbreviation: 'FC', edition: 'Apr 2013', description: 'Legacy NEC3 framework agreement' },
+  { code: ContractType.NEC3_AC, title: 'Adjudicator\'s Contract', abbreviation: 'AC', edition: 'Apr 2013', description: 'Legacy NEC3 adjudicator appointment' },
 ];
 
 const NEC_HK: ContractTypeInfo[] = [
-  { code: ContractType.NEC_ECC_HK, title: 'ECC Hong Kong Edition', abbreviation: 'ECC HK', edition: 'HK Edition', description: 'Adapted for Hong Kong construction law', imageUrl: NEC_IMAGES.NEC_ECC_HK },
-  { code: ContractType.NEC_TSC_HK, title: 'TSC Hong Kong Edition', abbreviation: 'TSC HK', edition: 'HK Edition', description: 'Adapted for Hong Kong term services', imageUrl: NEC_IMAGES.NEC_TSC_HK },
+  { code: ContractType.NEC_ECC_HK, title: 'ECC Hong Kong Edition', abbreviation: 'ECC HK', edition: 'HK Edition', description: 'Adapted for Hong Kong construction law' },
+  { code: ContractType.NEC_TSC_HK, title: 'TSC Hong Kong Edition', abbreviation: 'TSC HK', edition: 'HK Edition', description: 'Adapted for Hong Kong term services' },
 ];
 
 const NEC_FAC_TAC: ContractTypeInfo[] = [
-  { code: ContractType.FAC_1, title: 'Framework Alliance Contract', abbreviation: 'FAC-1', edition: '1st Edition', description: 'Multi-party framework alliance', imageUrl: NEC_IMAGES.FAC_1 },
-  { code: ContractType.TAC_1, title: 'Term Alliance Contract', abbreviation: 'TAC-1', edition: '1st Edition', description: 'Multi-party term alliance', imageUrl: NEC_IMAGES.TAC_1 },
+  { code: ContractType.FAC_1, title: 'Framework Alliance Contract', abbreviation: 'FAC-1', edition: '1st Edition', description: 'Multi-party framework alliance' },
+  { code: ContractType.TAC_1, title: 'Term Alliance Contract', abbreviation: 'TAC-1', edition: '1st Edition', description: 'Multi-party term alliance' },
 ];
 
 // Color mapping for FIDIC books
@@ -125,52 +78,6 @@ const FIDIC_COLORS: Record<string, string> = {
   'Pink Book': 'bg-pink-400',
   'Blue-Green Book': 'bg-teal-500',
 };
-
-// ─── Book Cover Image with Fallback ────────────────────────
-function BookCoverImage({
-  src,
-  alt,
-  colorName,
-  abbreviation,
-  size = 'sm',
-}: {
-  src?: string;
-  alt: string;
-  colorName?: string;
-  abbreviation: string;
-  size?: 'sm' | 'lg';
-}) {
-  const [failed, setFailed] = useState(false);
-  const dims = size === 'lg' ? 'w-[160px] h-[220px]' : 'w-[80px] h-[110px]';
-  const fallbackColor = colorName ? (FIDIC_COLORS[colorName] || 'bg-teal-600') : 'bg-teal-600';
-
-  if (!src || failed) {
-    return (
-      <div
-        className={`${dims} shrink-0 rounded-lg ${fallbackColor} flex items-center justify-center shadow-sm`}
-      >
-        <span className={`font-bold text-white drop-shadow-sm ${size === 'lg' ? 'text-lg' : 'text-[10px]'}`}>
-          {abbreviation}
-        </span>
-      </div>
-    );
-  }
-
-  return (
-    <img
-      src={src}
-      alt={alt}
-      className={`${dims} shrink-0 rounded-lg object-cover shadow-sm`}
-      onError={() => setFailed(true)}
-      referrerPolicy="no-referrer"
-      crossOrigin="anonymous"
-    />
-  );
-}
-
-// Also export the image URL lookup and component for use in detail pages
-export { getImageUrl, BookCoverImage };
-export type { ContractTypeInfo };
 
 type Family = 'FIDIC' | 'NEC' | 'ADHOC';
 type FidicTab = '2017' | '1999' | 'sub_mdb' | 'dredging';
@@ -316,20 +223,16 @@ export default function ContractTypeSelector({ onSelect }: Props) {
             </div>
 
             {/* Contract type cards */}
-            <div className="grid grid-cols-1 gap-2 max-h-[400px] overflow-y-auto pr-1">
+            <div className="grid grid-cols-1 gap-2 max-h-[300px] overflow-y-auto pr-1">
               {getFidicTypes().map((ct) => (
                 <button
                   key={ct.code}
                   onClick={() => handleTypeClick(ct.code)}
                   className="flex items-center gap-3 rounded-lg border border-gray-200 p-3 text-left transition-all hover:border-orange-300 hover:bg-orange-50/30 hover:shadow-sm"
                 >
-                  <BookCoverImage
-                    src={ct.imageUrl}
-                    alt={`${ct.title} — FIDIC ${ct.abbreviation} (${ct.edition})`}
-                    colorName={ct.colorName}
-                    abbreviation={ct.abbreviation}
-                    size="sm"
-                  />
+                  {ct.colorName && (
+                    <div className={`h-8 w-8 shrink-0 rounded-lg ${FIDIC_COLORS[ct.colorName] || 'bg-gray-300'}`} />
+                  )}
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <p className="text-sm font-semibold text-gray-900 truncate">{ct.title}</p>
@@ -378,19 +281,16 @@ export default function ContractTypeSelector({ onSelect }: Props) {
             </div>
 
             {/* Contract type cards */}
-            <div className="grid grid-cols-1 gap-2 max-h-[400px] overflow-y-auto pr-1">
+            <div className="grid grid-cols-1 gap-2 max-h-[300px] overflow-y-auto pr-1">
               {getNecTypes().map((ct) => (
                 <button
                   key={ct.code}
                   onClick={() => handleTypeClick(ct.code)}
                   className="flex items-center gap-3 rounded-lg border border-gray-200 p-3 text-left transition-all hover:border-teal-300 hover:bg-teal-50/30 hover:shadow-sm"
                 >
-                  <BookCoverImage
-                    src={ct.imageUrl}
-                    alt={`${ct.title} — NEC ${ct.abbreviation} (${ct.edition})`}
-                    abbreviation={ct.abbreviation}
-                    size="sm"
-                  />
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-teal-100 text-[10px] font-bold text-teal-700">
+                    {ct.abbreviation}
+                  </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <p className="text-sm font-semibold text-gray-900 truncate">{ct.title}</p>
