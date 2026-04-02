@@ -30,6 +30,8 @@ import BillingPage from '@/pages/app/BillingPage';
 import TeamPage from '@/pages/app/TeamPage';
 import ProfilePage from '@/pages/app/ProfilePage';
 import ProjectPermissionsPage from '@/pages/app/ProjectPermissionsPage';
+import ContractStorePage from '@/pages/app/ContractStorePage';
+import ContractStoreDetailPage from '@/pages/app/ContractStoreDetailPage';
 
 // Admin portal pages
 import AdminDashboardPage from '@/pages/admin/AdminDashboardPage';
@@ -80,6 +82,7 @@ const ownerNavItems = [
   { label: 'nav.obligations', path: '/app/obligations', icon: '📋' },
   { label: 'nav.notifications', path: '/app/notifications', icon: '🔔' },
   { label: 'nav.team', path: '/app/team', icon: '👥' },
+  { label: 'nav.store', path: '/app/store', icon: '🛒' },
   { label: 'nav.profile', path: '/app/profile', icon: '👤' },
   { label: 'nav.support', path: '/app/support', icon: '💬' },
 ];
@@ -140,6 +143,8 @@ function App() {
         <Route path="onboarding" element={<OnboardingPage />} />
         <Route path="support" element={<SupportPage />} />
         <Route path="team" element={<TeamPage />} />
+        <Route path="store" element={<ContractStorePage />} />
+        <Route path="store/contract/:id" element={<ContractStoreDetailPage />} />
         <Route path="profile" element={<ProfilePage />} />
         <Route path="settings/billing" element={<BillingPage />} />
       </Route>

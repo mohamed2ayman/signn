@@ -22,7 +22,8 @@
     "subscriptions": "Subscriptions",
     "riskRules": "Risk Rules",
     "profile": "Profile",
-    "team": "Team"
+    "team": "Team",
+    "store": "Contract Store"
   },
   "auth": {
     "login": "Login",
