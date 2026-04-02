@@ -7,6 +7,7 @@ import { exportService } from '@/services/api/exportService';
 import { contractSharingService } from '@/services/api/contractSharingService';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
 import ChatPanel from '@/components/chat/ChatPanel';
+import { getImageUrl, BookCoverImage } from '@/components/contracts/ContractTypeSelector';
 import { useCollaboration } from '@/hooks/useCollaboration';
 import type { Contract, ContractClause, Clause, ContractComment, RiskAnalysis, ContractShare, SignatureSigner } from '@/types';
 
@@ -439,11 +440,31 @@ export default function ContractDetailPage() {
       <div className="rounded-xl border border-gray-200/80 bg-white p-6 shadow-card">
         <div className="flex items-start justify-between">
           <div className="flex items-start gap-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-navy-50">
-              <svg className="h-6 w-6 text-navy-600" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
-              </svg>
-            </div>
+            {contract.contract_type !== 'ADHOC' && contract.contract_type !== 'UPLOADED' && getImageUrl(contract.contract_type) ? (
+              <BookCoverImage
+                src={getImageUrl(contract.contract_type)}
+                alt={`${contract.name} — ${contract.contract_type.replace(/_/g, ' ')}`}
+                colorName={
+                  (contract.contract_type as string).startsWith('FIDIC_RED') ? 'Red Book'
+                    : (contract.contract_type as string).startsWith('FIDIC_YELLOW') ? 'Yellow Book'
+                    : (contract.contract_type as string).startsWith('FIDIC_SILVER') ? 'Silver Book'
+                    : (contract.contract_type as string).startsWith('FIDIC_WHITE') ? 'White Book'
+                    : (contract.contract_type as string).startsWith('FIDIC_GREEN') ? 'Green Book'
+                    : (contract.contract_type as string).startsWith('FIDIC_EMERALD') ? 'Emerald Book'
+                    : (contract.contract_type as string).startsWith('FIDIC_PINK') ? 'Pink Book'
+                    : (contract.contract_type as string).startsWith('FIDIC_BLUE') ? 'Blue-Green Book'
+                    : undefined
+                }
+                abbreviation={contract.contract_type.replace(/_/g, ' ').split(' ').map(w => w[0]).join('')}
+                size="sm"
+              />
+            ) : (
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-navy-50">
+                <svg className="h-6 w-6 text-navy-600" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+                </svg>
+              </div>
+            )}
             <div>
               <div className="flex items-center gap-3">
                 <h1 className="text-xl font-bold text-gray-900">{contract.name}</h1>
