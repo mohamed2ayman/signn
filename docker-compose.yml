@@ -72,6 +72,23 @@ services:
     volumes:
       - ./ai-backend:/app
 
+  celery-worker:
+    build:
+      context: ./ai-backend
+      dockerfile: Dockerfile
+    container_name: sign-celery-worker
+    restart: unless-stopped
+    command: celery -A app.tasks worker --loglevel=info
+    env_file:
+      - ./ai-backend/.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - uploads_data:/app/uploads
+
   frontend:
     build:
       context: .

@@ -59,13 +59,17 @@ export class DocumentProcessingService {
     // Upload file to storage
     const uploadResult = await this.storageService.uploadFile(file, 'contracts');
 
+    // Multer delivers originalname as Latin-1 encoded bytes.
+    // Decode to UTF-8 so non-ASCII characters (e.g. Arabic) display correctly.
+    const decodedName = Buffer.from(file.originalname, 'latin1').toString('utf-8');
+
     // Create document record
     const doc = this.documentUploadRepository.create({
       contract_id: contractId,
       organization_id: orgId,
       file_url: uploadResult.file_url,
       file_name: uploadResult.file_name,
-      original_name: file.originalname,
+      original_name: decodedName,
       file_size: file.size,
       mime_type: file.mimetype,
       document_label: options?.document_label || null,

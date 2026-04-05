@@ -78,13 +78,17 @@ class TextExtractorService:
         return {"text": full_text, "page_count": self.last_page_count}
 
     def _ocr_pdf(self, path: str) -> str:
-        """Attempt OCR on a scanned PDF using pytesseract."""
-        try:
-            import pytesseract
-            from PIL import Image
+        """Attempt OCR on a scanned PDF.
 
-            # Convert PDF pages to images using built-in tools
-            # This is a best-effort fallback
+        Strategy:
+        1. Try ``pdftotext`` (poppler-utils) — fast, works for PDFs with
+           embedded text layers that PyPDF2 failed to read.
+        2. Fall back to ``pytesseract`` + ``pdf2image`` — renders each page
+           as an image and runs Tesseract OCR with Arabic + English support.
+        """
+
+        # --- Attempt 1: pdftotext (poppler) ---
+        try:
             result = subprocess.run(
                 ["pdftotext", path, "-"],
                 capture_output=True,
@@ -93,8 +97,30 @@ class TextExtractorService:
             )
             if result.returncode == 0 and result.stdout.strip():
                 return result.stdout
-        except (ImportError, FileNotFoundError, subprocess.TimeoutExpired):
+        except (FileNotFoundError, subprocess.TimeoutExpired):
             pass
+
+        # --- Attempt 2: pytesseract + pdf2image ---
+        try:
+            import pytesseract
+            from pdf2image import convert_from_path
+
+            images = convert_from_path(path, dpi=300)
+            pages_text: list[str] = []
+
+            for img in images:
+                # OCR with Arabic + English language support
+                text = pytesseract.image_to_string(img, lang="ara+eng")
+                if text.strip():
+                    pages_text.append(text)
+
+            if pages_text:
+                return "\n\n".join(pages_text)
+        except (ImportError, Exception) as exc:
+            # Log but don't crash — OCR is best-effort
+            import logging
+            logging.getLogger(__name__).warning("OCR fallback failed: %s", exc)
+
         return ""
 
     # ------------------------------------------------------------------

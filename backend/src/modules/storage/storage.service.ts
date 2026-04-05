@@ -52,7 +52,11 @@ export class StorageService {
     file: UploadedFile,
     folder: string = 'documents',
   ): Promise<StorageResult> {
-    const ext = path.extname(file.originalname);
+    // Multer delivers originalname as Latin-1 encoded bytes.
+    // Decode to UTF-8 so non-ASCII characters (e.g. Arabic) display correctly.
+    const decodedName = Buffer.from(file.originalname, 'latin1').toString('utf-8');
+
+    const ext = path.extname(decodedName);
     const fileName = `${uuidv4()}${ext}`;
     const filePath = path.join(this.uploadDir, folder, fileName);
 
@@ -62,7 +66,7 @@ export class StorageService {
 
     return {
       file_url: `${this.baseUrl}/uploads/${folder}/${fileName}`,
-      file_name: file.originalname,
+      file_name: decodedName,
       file_size: file.size,
       mime_type: file.mimetype,
     };
