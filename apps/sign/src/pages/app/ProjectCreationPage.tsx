@@ -166,13 +166,16 @@ export default function ProjectCreationPage() {
   // ─── Step 3: File Upload ────────────────────────────────────
 
   const handleFilesSelected = useCallback((files: File[]) => {
-    setFilesWithMeta(
-      files.map((file, i) => ({
-        file,
-        label: '',
-        priority: files.length - i, // First file = highest priority
-      })),
-    );
+    setFilesWithMeta((prev) => {
+      // Build a lookup of existing metadata by filename to preserve user edits
+      const existingByName = new Map(prev.map((fm) => [fm.file.name, fm]));
+      return files.map((file, i) => {
+        const existing = existingByName.get(file.name);
+        return existing
+          ? { ...existing, file } // Preserve label & priority for previously uploaded files
+          : { file, label: '', priority: i + 1 }; // Defaults for newly added files only
+      });
+    });
   }, []);
 
   const updateFileMeta = (index: number, field: 'label' | 'priority', value: string | number) => {
@@ -555,7 +558,19 @@ export default function ProjectCreationPage() {
                     key={`${fm.file.name}-${index}`}
                     className="flex items-center gap-3 rounded-lg border border-gray-100 bg-gray-50 px-4 py-3"
                   >
-                    <span className="flex-1 truncate text-sm text-gray-700">
+                    <span
+                      className="min-w-0 flex-1 text-sm text-gray-700"
+                      title={fm.file.name}
+                      style={{
+                        display: 'block',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        direction: 'rtl',
+                        textAlign: 'right',
+                        unicodeBidi: 'plaintext',
+                      }}
+                    >
                       {fm.file.name}
                     </span>
                     <select

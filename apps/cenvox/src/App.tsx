@@ -14,7 +14,6 @@ import OrbitalDiagram from './components/OrbitalDiagram';
    Wired navigation:
      - Nav "Sign in"              → SIGN_URL + /auth/login
      - Nav "Get started"          → SIGN_URL + /auth/register
-     - Hero "Start with SIGN →"   → SIGN_URL + /
      - SIGN product card          → SIGN_URL + /
      - Footer SIGN link           → SIGN_URL + /
 
@@ -597,15 +596,6 @@ export default function App() {
               </a>
             </div>
 
-            {/* Start with SIGN link — navigates to SIGN app landing page */}
-            <a
-              href={SIGN_HOME}
-              target="_self"
-              className="mt-4 font-body text-sm font-[400] transition-opacity hover:opacity-80"
-              style={{ color: 'var(--color-sign)' }}
-            >
-              Start with SIGN &rarr;
-            </a>
           </div>
 
           {/* Scroll indicator */}

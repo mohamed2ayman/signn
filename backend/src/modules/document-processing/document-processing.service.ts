@@ -13,6 +13,8 @@ import {
   ClauseReviewStatus,
   ContractClause,
   Contract,
+  RiskAnalysis,
+  RiskLevel,
 } from '../../database/entities';
 import { StorageService, UploadedFile } from '../storage/storage.service';
 import { AiService } from '../ai/ai.service';
@@ -30,6 +32,8 @@ export class DocumentProcessingService {
     private readonly contractClauseRepository: Repository<ContractClause>,
     @InjectRepository(Contract)
     private readonly contractRepository: Repository<Contract>,
+    @InjectRepository(RiskAnalysis)
+    private readonly riskAnalysisRepository: Repository<RiskAnalysis>,
     private readonly storageService: StorageService,
     private readonly aiService: AiService,
   ) {}
@@ -260,7 +264,7 @@ export class DocumentProcessingService {
   async getDocuments(contractId: string): Promise<DocumentUpload[]> {
     return this.documentUploadRepository.find({
       where: { contract_id: contractId },
-      order: { document_priority: 'DESC', created_at: 'ASC' },
+      order: { document_priority: 'ASC', created_at: 'ASC' },
     });
   }
 
@@ -307,7 +311,7 @@ export class DocumentProcessingService {
       .leftJoinAndSelect('clause.source_document', 'source_doc')
       .where('cc.contract_id = :contractId', { contractId })
       .andWhere('clause.source = :source', { source: ClauseSource.AI_EXTRACTED })
-      .orderBy('source_doc.document_priority', 'DESC')
+      .orderBy('source_doc.document_priority', 'ASC')
       .addOrderBy('cc.order_index', 'ASC')
       .getMany();
   }
@@ -369,39 +373,203 @@ export class DocumentProcessingService {
   async finalizeReview(
     contractId: string,
     orgId: string,
-  ): Promise<{ risk_job_id: string; obligations_job_id: string }> {
-    // Get all approved clauses
+  ): Promise<{
+    risk_job_id: string;
+    obligations_job_id: string;
+    conflict_job_id: string | null;
+  }> {
+    // Get all approved clauses with their source document metadata
     const contractClauses = await this.contractClauseRepository
       .createQueryBuilder('cc')
       .leftJoinAndSelect('cc.clause', 'clause')
+      .leftJoinAndSelect('clause.source_document', 'source_doc')
       .where('cc.contract_id = :contractId', { contractId })
       .andWhere('clause.review_status IN (:...statuses)', {
         statuses: [ClauseReviewStatus.APPROVED, ClauseReviewStatus.EDITED],
       })
       .getMany();
 
+    // Include document metadata so AI can detect cross-document conflicts
     const clausesForAi = contractClauses.map((cc) => ({
       id: cc.clause.id,
       text: cc.clause.content,
+      document_id: cc.clause.source_document?.id || null,
+      document_label: cc.clause.source_document?.document_label || null,
+      document_priority: cc.clause.source_document?.document_priority ?? 0,
     }));
 
-    // Trigger risk analysis
+    // Trigger risk analysis (with document priority for conflict detection)
     const riskResult = await this.aiService.triggerRiskAnalysis({
       contract_id: contractId,
       clauses: clausesForAi,
       org_id: orgId,
     });
 
-    // Trigger obligation extraction
+    // Trigger obligation extraction (with document priority awareness)
     const obligationsResult = await this.aiService.triggerExtractObligations({
       contract_id: contractId,
       clauses: clausesForAi,
     });
 
+    // Trigger conflict detection if clauses come from multiple documents
+    let conflict_job_id: string | null = null;
+    const uniqueDocIds = new Set(
+      clausesForAi
+        .map((c) => c.document_id)
+        .filter((id): id is string => id !== null),
+    );
+
+    if (uniqueDocIds.size >= 2) {
+      try {
+        const conflictResult = await this.aiService.triggerConflictDetection({
+          contract_id: contractId,
+          clauses: clausesForAi,
+        });
+        conflict_job_id = conflictResult.job_id;
+        this.logger.log(
+          `Conflict detection dispatched for contract ${contractId}: job_id=${conflict_job_id}`,
+        );
+
+        // Poll and save conflicts in background (non-blocking)
+        this.pollAndSaveConflicts(contractId, conflict_job_id).catch((err) => {
+          this.logger.error(
+            `Conflict detection background task failed for contract ${contractId}: ${err.message}`,
+          );
+        });
+      } catch (error) {
+        // Conflict detection failure must NOT break finalization
+        this.logger.warn(
+          `Conflict detection failed to start for contract ${contractId}: ${error.message}`,
+        );
+      }
+    }
+
     return {
       risk_job_id: riskResult.job_id,
       obligations_job_id: obligationsResult.job_id,
+      conflict_job_id,
     };
+  }
+
+  /**
+   * Poll the conflict detection job and save detected conflicts as risk records.
+   * Runs in the background — failures are logged but never thrown.
+   */
+  private async pollAndSaveConflicts(
+    contractId: string,
+    jobId: string,
+  ): Promise<void> {
+    const MAX_POLLS = 60;
+    const POLL_INTERVAL_MS = 3000;
+
+    for (let i = 0; i < MAX_POLLS; i++) {
+      await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+
+      const jobStatus = await this.aiService.getJobStatus(jobId);
+
+      if (jobStatus.status === 'failed') {
+        this.logger.warn(
+          `Conflict detection job ${jobId} failed: ${jobStatus.error}`,
+        );
+        return;
+      }
+
+      if (jobStatus.status === 'completed') {
+        const result = jobStatus.result?.result || jobStatus.result;
+        const conflicts = result?.conflicts || [];
+
+        if (conflicts.length === 0) {
+          this.logger.log(
+            `No conflicts found for contract ${contractId}`,
+          );
+          return;
+        }
+
+        // Save each conflict as a risk_analyses record
+        for (const conflict of conflicts) {
+          await this.saveConflictAsRisk(contractId, conflict);
+        }
+
+        this.logger.log(
+          `Saved ${conflicts.length} document conflicts as risks for contract ${contractId}`,
+        );
+        return;
+      }
+
+      // Still pending/processing — continue polling
+    }
+
+    this.logger.warn(
+      `Conflict detection job ${jobId} timed out after ${MAX_POLLS} polls`,
+    );
+  }
+
+  /**
+   * Convert a single conflict detection result into a risk_analyses record.
+   */
+  private async saveConflictAsRisk(
+    contractId: string,
+    conflict: {
+      conflict_id: string;
+      type: string;
+      description: string;
+      document_a: {
+        id: string;
+        label: string;
+        priority: number;
+        clause_text: string;
+        clause_id: string;
+      };
+      document_b: {
+        id: string;
+        label: string;
+        priority: number;
+        clause_text: string;
+        clause_id: string;
+      };
+      governing_value: string;
+      governing_reason: string;
+      overridden_value: string;
+      severity: string;
+      suggestion: string;
+    },
+  ): Promise<void> {
+    // Map conflict severity to RiskLevel enum
+    const severityMap: Record<string, RiskLevel> = {
+      high: RiskLevel.HIGH,
+      medium: RiskLevel.MEDIUM,
+      low: RiskLevel.LOW,
+    };
+    const riskLevel =
+      severityMap[conflict.severity?.toLowerCase()] || RiskLevel.MEDIUM;
+
+    // Store document_a details in citation_source (varchar 500 limit)
+    const citationSource = `[${conflict.document_a.label}] (priority: ${conflict.document_a.priority}) — Governing: "${conflict.governing_value}"`.substring(0, 500);
+
+    // Store document_b details in citation_excerpt (text, no limit)
+    const citationExcerpt = JSON.stringify({
+      conflict_id: conflict.conflict_id,
+      type: conflict.type,
+      document_a: conflict.document_a,
+      document_b: conflict.document_b,
+      governing_value: conflict.governing_value,
+      governing_reason: conflict.governing_reason,
+      overridden_value: conflict.overridden_value,
+    });
+
+    const risk = this.riskAnalysisRepository.create({
+      contract_id: contractId,
+      contract_clause_id: null,
+      risk_category: 'DOCUMENT_CONFLICT',
+      risk_level: riskLevel,
+      description: `${conflict.type.replace(/_/g, ' ').toUpperCase()}: ${conflict.description}`,
+      recommendation: conflict.suggestion,
+      citation_source: citationSource,
+      citation_excerpt: citationExcerpt,
+      status: 'OPEN',
+    });
+
+    await this.riskAnalysisRepository.save(risk);
   }
 
   /**

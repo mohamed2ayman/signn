@@ -63,6 +63,22 @@ export class AiController {
     return this.aiService.triggerExtractObligations(body);
   }
 
+  @Post('detect-conflicts')
+  async triggerConflictDetection(
+    @Body() body: {
+      contract_id: string;
+      clauses: Array<{
+        id: string;
+        text: string;
+        document_id?: string | null;
+        document_label?: string | null;
+        document_priority?: number;
+      }>;
+    },
+  ) {
+    return this.aiService.triggerConflictDetection(body);
+  }
+
   @Post('chat')
   async triggerChat(
     @Body() body: {

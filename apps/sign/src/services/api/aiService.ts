@@ -22,6 +22,18 @@ export const aiService = {
   getJobStatus: (jobId: string) =>
     api.get<{ job_id: string; status: string; result?: any; error?: string }>(`/ai/jobs/${jobId}`).then(r => r.data),
 
+  triggerConflictDetection: (data: {
+    contract_id: string;
+    clauses: Array<{
+      id: string;
+      text: string;
+      document_id?: string | null;
+      document_label?: string | null;
+      document_priority?: number;
+    }>;
+  }) =>
+    api.post<{ job_id: string; status: string }>('/ai/detect-conflicts', data).then(r => r.data),
+
   searchEmbeddings: (data: { query: string; filters?: Record<string, any>; top_k?: number }) =>
     api.post<{ results: any[] }>('/ai/embeddings/search', data).then(r => r.data),
 };

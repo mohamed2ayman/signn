@@ -37,7 +37,7 @@ export class RiskAnalysis {
   contract: Contract;
 
   @Column({ type: 'uuid', nullable: true })
-  contract_clause_id: string;
+  contract_clause_id: string | null;
 
   @ManyToOne(() => ContractClause, (cc) => cc.risk_analyses, { nullable: true })
   @JoinColumn({ name: 'contract_clause_id' })

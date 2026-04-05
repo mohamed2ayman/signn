@@ -19,6 +19,8 @@ from app.models.schemas import (
     ChatResponse,
     ClauseExtractionRequest,
     ClauseExtractionResponse,
+    ConflictDetectionRequest,
+    ConflictDetectionResponse,
     DiffRequest,
     DiffResponse,
     ObligationsRequest,
@@ -193,6 +195,26 @@ async def extract_clauses(request: ClauseExtractionRequest) -> AsyncJobResponse:
     job_id = str(uuid.uuid4())
     celery_app.send_task(
         "tasks.run_extract_clauses",
+        args=[request.model_dump()],
+        task_id=job_id,
+    )
+    return AsyncJobResponse(job_id=job_id, status="queued")
+
+
+# ---------------------------------------------------------------------------
+# Conflict Detection
+# ---------------------------------------------------------------------------
+
+@router.post(
+    "/detect-conflicts",
+    response_model=AsyncJobResponse,
+    summary="Detect conflicts between clauses from different documents",
+)
+async def detect_conflicts(request: ConflictDetectionRequest) -> AsyncJobResponse:
+    """Dispatch a conflict-detection task to the Celery worker."""
+    job_id = str(uuid.uuid4())
+    celery_app.send_task(
+        "tasks.run_conflict_detection",
         args=[request.model_dump()],
         task_id=job_id,
     )

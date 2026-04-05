@@ -484,6 +484,28 @@ export interface RiskAnalysis {
   handler?: User;
 }
 
+export interface ConflictDetail {
+  conflict_id: string;
+  type: string;
+  document_a: {
+    id: string;
+    label: string;
+    priority: number;
+    clause_text: string;
+    clause_id: string;
+  };
+  document_b: {
+    id: string;
+    label: string;
+    priority: number;
+    clause_text: string;
+    clause_id: string;
+  };
+  governing_value: string;
+  governing_reason: string;
+  overridden_value: string;
+}
+
 export interface KnowledgeAsset {
   id: string;
   organization_id: string | null;

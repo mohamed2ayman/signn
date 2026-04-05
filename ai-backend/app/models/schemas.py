@@ -17,7 +17,11 @@ class RiskAnalysisRequest(BaseModel):
     contract_id: str = Field(..., description="UUID of the contract being analysed.")
     clauses: list[dict[str, Any]] = Field(
         ...,
-        description="List of clause objects, each containing at least 'id' and 'text'.",
+        description=(
+            "List of clause objects, each containing at least 'id' and 'text'. "
+            "May also include 'document_id', 'document_label', and "
+            "'document_priority' for cross-document conflict detection."
+        ),
     )
     org_id: str = Field(..., description="Organisation UUID for scoping knowledge.")
     knowledge_context: Optional[str] = Field(
@@ -30,10 +34,17 @@ class RiskItem(BaseModel):
     """A single identified risk."""
 
     clause_id: str = Field(..., description="ID of the clause where the risk was found.")
-    risk_type: str = Field(..., description="Category of the risk (e.g. 'liability', 'termination').")
+    risk_type: str = Field(..., description="Category of the risk (e.g. 'liability', 'termination', 'document_conflict').")
     severity: str = Field(..., description="Risk severity: 'low', 'medium', 'high', or 'critical'.")
     description: str = Field(..., description="Human-readable explanation of the risk.")
     suggestion: str = Field(..., description="Recommended remediation or alternative language.")
+    document_id: Optional[str] = Field(None, description="Source document ID (for traceability).")
+    document_label: Optional[str] = Field(None, description="Source document label (e.g. 'Contract Agreement').")
+    conflicting_clause_id: Optional[str] = Field(None, description="ID of the conflicting clause (for document_conflict risks).")
+    conflicting_document_id: Optional[str] = Field(None, description="Document ID of the conflicting clause.")
+    conflicting_document_label: Optional[str] = Field(None, description="Document label of the conflicting clause.")
+    governing_value: Optional[str] = Field(None, description="The value selected based on document priority.")
+    overridden_value: Optional[str] = Field(None, description="The value overridden by the higher-priority document.")
 
 
 class RiskAnalysisResponse(BaseModel):
@@ -112,7 +123,12 @@ class ObligationsRequest(BaseModel):
 
     contract_id: str = Field(..., description="UUID of the contract.")
     clauses: list[dict[str, Any]] = Field(
-        ..., description="Clause objects to scan for obligations."
+        ...,
+        description=(
+            "Clause objects to scan for obligations. "
+            "May include 'document_id', 'document_label', and "
+            "'document_priority' for priority-aware extraction."
+        ),
     )
 
 
@@ -127,12 +143,75 @@ class ObligationItem(BaseModel):
     description: str = Field(..., description="Plain-language description of the obligation.")
     deadline: Optional[str] = Field(None, description="Due date or period, if specified.")
     recurrence: Optional[str] = Field(None, description="Recurrence pattern, if any.")
+    document_id: Optional[str] = Field(None, description="Source document ID.")
+    document_label: Optional[str] = Field(None, description="Source document label.")
+    document_priority: Optional[int] = Field(None, description="Priority of the source document.")
 
 
 class ObligationsResponse(BaseModel):
     """Response from the obligations extractor."""
 
     obligations: list[ObligationItem] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Conflict Detection
+# ---------------------------------------------------------------------------
+
+class ConflictDetectionRequest(BaseModel):
+    """Request body for the conflict detection agent."""
+
+    contract_id: str = Field(..., description="UUID of the contract.")
+    clauses: list[dict[str, Any]] = Field(
+        ...,
+        description=(
+            "Clause objects with document metadata: 'id', 'text', "
+            "'document_id', 'document_label', 'document_priority'."
+        ),
+    )
+
+
+class ConflictDocumentDetail(BaseModel):
+    """Details of one side of a document conflict."""
+
+    id: str = Field(..., description="Document ID.")
+    label: str = Field(..., description="Document label (e.g. 'Contract Agreement').")
+    priority: int = Field(..., description="Document priority number.")
+    clause_text: str = Field(..., description="The relevant clause text from this document.")
+    clause_id: str = Field(..., description="The clause identifier.")
+
+
+class ConflictItem(BaseModel):
+    """A single detected conflict between two documents."""
+
+    conflict_id: str = Field(..., description="Unique identifier for this conflict.")
+    type: str = Field(
+        ...,
+        description="Conflict type: 'deadline_conflict', 'value_conflict', 'scope_conflict', 'obligation_conflict'.",
+    )
+    description: str = Field(..., description="Clear explanation of the conflict.")
+    document_a: ConflictDocumentDetail = Field(..., description="Higher-priority document details.")
+    document_b: ConflictDocumentDetail = Field(..., description="Lower-priority document details.")
+    governing_value: str = Field(..., description="The value that takes precedence.")
+    governing_reason: str = Field(..., description="Why this value governs.")
+    overridden_value: str = Field(..., description="The value being overridden.")
+    severity: str = Field(..., description="Impact level: 'low', 'medium', 'high'.")
+    suggestion: str = Field(..., description="Recommendation on how to resolve the conflict.")
+
+
+class ConflictSummary(BaseModel):
+    """Aggregate summary of all detected conflicts."""
+
+    total: int = Field(..., description="Total number of conflicts found.")
+    by_severity: dict[str, int] = Field(default_factory=dict, description="Count of conflicts by severity level.")
+    by_type: dict[str, int] = Field(default_factory=dict, description="Count of conflicts by type.")
+
+
+class ConflictDetectionResponse(BaseModel):
+    """Response from the conflict detection agent."""
+
+    conflicts: list[ConflictItem] = Field(default_factory=list)
+    summary: ConflictSummary = Field(..., description="Aggregate conflict summary.")
 
 
 # ---------------------------------------------------------------------------

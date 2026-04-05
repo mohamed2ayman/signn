@@ -278,6 +278,20 @@ export class ProjectsService {
     await this.projectMemberRepository.remove(member);
   }
 
+  async deleteProject(id: string, orgId: string): Promise<void> {
+    const project = await this.projectRepository.findOne({
+      where: { id, organization_id: orgId },
+    });
+
+    if (!project) {
+      throw new NotFoundException('Project not found');
+    }
+
+    // All related data (contracts, clauses, risks, obligations, documents,
+    // comments, versions, etc.) is cascade-deleted by FK constraints.
+    await this.projectRepository.remove(project);
+  }
+
   async getMembers(
     projectId: string,
     orgId: string,

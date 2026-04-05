@@ -57,6 +57,10 @@ export const projectService = {
     return response.data;
   },
 
+  async delete(id: string): Promise<void> {
+    await api.delete(`/projects/${id}`);
+  },
+
   async getDashboard(id: string): Promise<ProjectDashboard> {
     const response = await api.get<ProjectDashboard>(`/projects/${id}/dashboard`);
     return response.data;

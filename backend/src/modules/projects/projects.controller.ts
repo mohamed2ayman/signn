@@ -94,6 +94,15 @@ export class ProjectsController {
     return this.projectsService.updateMemberPermission(id, userId, orgId, dto);
   }
 
+  @Delete(':id')
+  async deleteProject(
+    @Param('id', ParseUUIDPipe) id: string,
+    @OrganizationId() orgId: string,
+  ) {
+    await this.projectsService.deleteProject(id, orgId);
+    return { message: 'Project deleted successfully' };
+  }
+
   @Delete(':id/members/:userId')
   @UseGuards(RolesGuard)
   @Roles(UserRole.OWNER_ADMIN)

@@ -22,7 +22,13 @@ export class AiService {
 
   async triggerRiskAnalysis(data: {
     contract_id: string;
-    clauses: Array<{ id: string; text: string }>;
+    clauses: Array<{
+      id: string;
+      text: string;
+      document_id?: string | null;
+      document_label?: string | null;
+      document_priority?: number;
+    }>;
     org_id: string;
     knowledge_context?: string;
   }): Promise<{ job_id: string; status: string }> {
@@ -64,12 +70,37 @@ export class AiService {
 
   async triggerExtractObligations(data: {
     contract_id: string;
-    clauses: Array<{ id: string; text: string }>;
+    clauses: Array<{
+      id: string;
+      text: string;
+      document_id?: string | null;
+      document_label?: string | null;
+      document_priority?: number;
+    }>;
   }): Promise<{ job_id: string; status: string }> {
     const response = await firstValueFrom(
       this.httpService.post(`${this.aiBackendUrl}/agents/extract-obligations`, data),
     );
     this.logger.log(`Obligations extraction dispatched: job_id=${response.data.job_id}`);
+    return response.data;
+  }
+
+  // ─── Conflict Detection ────────────────────────────────────
+
+  async triggerConflictDetection(data: {
+    contract_id: string;
+    clauses: Array<{
+      id: string;
+      text: string;
+      document_id?: string | null;
+      document_label?: string | null;
+      document_priority?: number;
+    }>;
+  }): Promise<{ job_id: string; status: string }> {
+    const response = await firstValueFrom(
+      this.httpService.post(`${this.aiBackendUrl}/agents/detect-conflicts`, data),
+    );
+    this.logger.log(`Conflict detection dispatched: job_id=${response.data.job_id}`);
     return response.data;
   }
 

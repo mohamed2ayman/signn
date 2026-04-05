@@ -84,6 +84,19 @@ def run_extract_obligations(self, request_data: dict[str, Any]) -> dict[str, Any
         return {"status": "failed", "error": str(e)}
 
 
+@celery_app.task(name="tasks.run_conflict_detection", bind=True)
+def run_conflict_detection(self, request_data: dict[str, Any]) -> dict[str, Any]:
+    """Detect conflicts between clauses from different documents."""
+    from app.agents.conflict_detector import ConflictDetectorAgent
+
+    agent = ConflictDetectorAgent()
+    try:
+        result = agent.detect(clauses=request_data["clauses"])
+        return {"status": "completed", "result": result}
+    except Exception as e:
+        return {"status": "failed", "error": str(e)}
+
+
 @celery_app.task(name="tasks.run_chat", bind=True)
 def run_chat(self, request_data: dict[str, Any]) -> dict[str, Any]:
     """Run a conversational chat interaction."""
