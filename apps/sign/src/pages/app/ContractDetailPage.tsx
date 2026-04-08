@@ -8,7 +8,10 @@ import { contractSharingService } from '@/services/api/contractSharingService';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
 import ChatPanel from '@/components/chat/ChatPanel';
 import { useCollaboration } from '@/hooks/useCollaboration';
-import type { Contract, ContractClause, Clause, ContractComment, RiskAnalysis, ContractShare, SignatureSigner, ConflictDetail } from '@/types';
+import type { Contract, ContractClause, Clause, ContractComment, RiskAnalysis, ContractShare, SignatureSigner, ConflictDetail, ContractVersion } from '@/types';
+import VersionTimeline from '@/components/versions/VersionTimeline';
+import DiffViewerModal from '@/components/versions/DiffViewerModal';
+import VersionSnapshotModal from '@/components/versions/VersionSnapshotModal';
 
 /* ── Status Badge ─────────────────────────────────────────────── */
 const statusStyles: Record<string, { bg: string; text: string; dot: string }> = {
@@ -221,7 +224,7 @@ const tabConfig = [
   { key: 'clauses' as const, label: 'Clauses', icon: 'M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25z' },
   { key: 'comments' as const, label: 'Comments', icon: 'M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.129.166 2.27.293 3.423.379.35.026.67.21.865.501L12 21l2.755-4.133a1.14 1.14 0 01.865-.501 48.172 48.172 0 003.423-.379c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z' },
   { key: 'risks' as const, label: 'Risk Analysis', icon: 'M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z' },
-  { key: 'versions' as const, label: 'Versions', icon: 'M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z' },
+  { key: 'history' as const, label: 'History', icon: 'M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z' },
 ];
 
 /* ── Main Component ──────────────────────────────────────────── */
@@ -235,7 +238,9 @@ export default function ContractDetailPage() {
   const [risks, setRisks] = useState<RiskAnalysis[]>([]);
   const [availableClauses, setAvailableClauses] = useState<Clause[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'clauses' | 'comments' | 'risks' | 'versions'>('clauses');
+  const [activeTab, setActiveTab] = useState<'clauses' | 'comments' | 'risks' | 'history'>('clauses');
+  const [diffPair, setDiffPair] = useState<{ a: string; b: string } | null>(null);
+  const [snapshotVersion, setSnapshotVersion] = useState<ContractVersion | null>(null);
   const [showAddClause, setShowAddClause] = useState(false);
   const [newComment, setNewComment] = useState('');
   const [selectedClauseId, setSelectedClauseId] = useState<string | null>(null);
@@ -623,6 +628,12 @@ export default function ContractDetailPage() {
               <div className="flex items-center gap-3">
                 <h1 className="text-xl font-bold text-gray-900">{contract.name}</h1>
                 <StatusBadge status={contract.status} />
+                <button
+                  onClick={() => setActiveTab('history')}
+                  className="text-xs text-blue-600 hover:underline"
+                >
+                  View History
+                </button>
               </div>
               <p className="mt-1 text-sm text-gray-400">
                 {contract.contract_type.replace(/_/g, ' ')} · Version {contract.current_version}
@@ -1221,15 +1232,31 @@ export default function ContractDetailPage() {
         </div>
       )}
 
-      {/* ── Versions Tab ─────────────────────────────────────────── */}
-      {activeTab === 'versions' && (
-        <div className="rounded-xl border border-gray-200/80 bg-white p-8 text-center shadow-card">
-          <svg className="mx-auto h-10 w-10 text-gray-200" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          <p className="mt-3 text-sm font-medium text-gray-500">Version History</p>
-          <p className="mt-1 text-xs text-gray-400">Current version: v{contract.current_version}</p>
+      {/* ── History Tab ──────────────────────────────────────────── */}
+      {activeTab === 'history' && (
+        <div className="rounded-xl border border-gray-200/80 bg-white p-6 shadow-card">
+          <VersionTimeline
+            contractId={contract.id}
+            onCompare={(a, b) => setDiffPair({ a, b })}
+            onViewSnapshot={(v) => setSnapshotVersion(v)}
+          />
         </div>
+      )}
+
+      {diffPair && (
+        <DiffViewerModal
+          contractId={contract.id}
+          versionAId={diffPair.a}
+          versionBId={diffPair.b}
+          onClose={() => setDiffPair(null)}
+        />
+      )}
+
+      {snapshotVersion && (
+        <VersionSnapshotModal
+          version={snapshotVersion}
+          onClose={() => setSnapshotVersion(null)}
+        />
       )}
 
       {/* ── Add Clause Modal ─────────────────────────────────────── */}

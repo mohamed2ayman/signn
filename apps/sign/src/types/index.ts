@@ -413,15 +413,63 @@ export interface ContractClause {
   comments?: ContractComment[];
 }
 
+export enum ContractVersionEventType {
+  CREATED = 'CREATED',
+  EDITED = 'EDITED',
+  RISK_ANALYZED = 'RISK_ANALYZED',
+  SUBMITTED_FOR_APPROVAL = 'SUBMITTED_FOR_APPROVAL',
+  APPROVED = 'APPROVED',
+  CHANGES_REQUESTED = 'CHANGES_REQUESTED',
+  SHARED_WITH_COUNTERPARTY = 'SHARED_WITH_COUNTERPARTY',
+  COUNTERPARTY_RESPONSE_RECEIVED = 'COUNTERPARTY_RESPONSE_RECEIVED',
+  SUBMITTED_FOR_REVIEW = 'SUBMITTED_FOR_REVIEW',
+  REVIEWED_AND_RETURNED = 'REVIEWED_AND_RETURNED',
+  SUBMITTED_TO_COUNTERPARTY = 'SUBMITTED_TO_COUNTERPARTY',
+  CERTIFIED_BY_COUNTERPARTY = 'CERTIFIED_BY_COUNTERPARTY',
+  FORWARDED_TO_COUNTERPARTY = 'FORWARDED_TO_COUNTERPARTY',
+  NEGOTIATION_ROUND = 'NEGOTIATION_ROUND',
+  ESCALATED = 'ESCALATED',
+  EXECUTED = 'EXECUTED',
+  AMENDMENT_ADDED = 'AMENDMENT_ADDED',
+}
+
 export interface ContractVersion {
   id: string;
   contract_id: string;
   version_number: number;
+  version_label: string | null;
+  event_type: ContractVersionEventType | null;
+  event_description: string | null;
+  triggered_by: string | null;
+  triggered_by_role: string | null;
+  counterparty_role: string | null;
+  contract_status_at_version: string | null;
   snapshot: Record<string, unknown>;
+  clause_snapshot: Record<string, unknown> | null;
+  metadata: Record<string, unknown> | null;
+  is_milestone: boolean;
   change_summary: string | null;
   created_by: string | null;
   created_at: string;
   creator?: User;
+  triggered_by_user?: User;
+}
+
+export interface VersionDiffChange {
+  clauseId: string;
+  clauseNumber: string | null;
+  clauseTitle: string;
+  changeType: 'ADDED' | 'REMOVED' | 'MODIFIED' | 'UNCHANGED';
+  originalText: string | null;
+  newText: string | null;
+  wordLevelDiff: Array<{ value: string; added?: boolean; removed?: boolean }> | null;
+}
+
+export interface VersionComparisonResult {
+  versionA: ContractVersion;
+  versionB: ContractVersion;
+  summary: { added: number; removed: number; modified: number; unchanged: number };
+  changes: VersionDiffChange[];
 }
 
 export interface ProjectParty {

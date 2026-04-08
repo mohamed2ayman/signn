@@ -9,6 +9,7 @@ import {
   ContractorResponse,
   ProjectMember,
   PermissionDefault,
+  User,
 } from '../../database/entities';
 import { ContractsController } from './contracts.controller';
 import { ContractsService } from './contracts.service';
@@ -25,6 +26,7 @@ import { ContractTemplatesModule } from '../contract-templates/contract-template
       ContractorResponse,
       ProjectMember,
       PermissionDefault,
+      User,
     ]),
     ContractTemplatesModule,
   ],

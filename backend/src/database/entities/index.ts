@@ -9,7 +9,7 @@ export { Clause, ClauseSource, ClauseReviewStatus } from './clause.entity';
 export { Contract, ContractStatus, ContractType, LicenseOrganization, SignatureStatus } from './contract.entity';
 export { DocumentUpload, DocumentProcessingStatus } from './document-upload.entity';
 export { ContractClause } from './contract-clause.entity';
-export { ContractVersion } from './contract-version.entity';
+export { ContractVersion, ContractVersionEventType } from './contract-version.entity';
 export { ContractorResponse } from './contractor-response.entity';
 export { RiskAnalysis, RiskLevel, RiskAnalysisStatus } from './risk-analysis.entity';
 export { KnowledgeAsset, AssetType, AssetReviewStatus } from './knowledge-asset.entity';

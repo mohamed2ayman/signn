@@ -101,8 +101,9 @@ export class ContractsController {
   async addClause(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: AddClauseDto,
+    @CurrentUser() user: any,
   ) {
-    return this.contractsService.addClause(id, dto);
+    return this.contractsService.addClause(id, dto, user.id);
   }
 
   @Put(':id/clauses/:clauseId')
@@ -111,8 +112,9 @@ export class ContractsController {
     @Param('id', ParseUUIDPipe) id: string,
     @Param('clauseId', ParseUUIDPipe) clauseId: string,
     @Body() dto: UpdateClauseOrderDto,
+    @CurrentUser() user: any,
   ) {
-    return this.contractsService.updateContractClause(id, clauseId, dto);
+    return this.contractsService.updateContractClause(id, clauseId, dto, user.id);
   }
 
   @Delete(':id/clauses/:clauseId')
@@ -120,8 +122,9 @@ export class ContractsController {
   async removeClause(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('clauseId', ParseUUIDPipe) clauseId: string,
+    @CurrentUser() user: any,
   ) {
-    await this.contractsService.removeClause(id, clauseId);
+    await this.contractsService.removeClause(id, clauseId, user.id);
     return { message: 'Clause removed from contract' };
   }
 
@@ -140,6 +143,20 @@ export class ContractsController {
   @Get(':id/versions')
   async getVersions(@Param('id', ParseUUIDPipe) id: string) {
     return this.contractsService.getVersions(id);
+  }
+
+  @Get(':id/versions/milestones')
+  async getMilestoneVersions(@Param('id', ParseUUIDPipe) id: string) {
+    return this.contractsService.getMilestoneVersions(id);
+  }
+
+  @Get(':id/versions/:versionA/compare/:versionB')
+  async compareVersions(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('versionA', ParseUUIDPipe) versionA: string,
+    @Param('versionB', ParseUUIDPipe) versionB: string,
+  ) {
+    return this.contractsService.compareVersions(id, versionA, versionB);
   }
 
   @Get(':id/versions/:versionId')

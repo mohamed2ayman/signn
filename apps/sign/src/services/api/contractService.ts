@@ -1,5 +1,5 @@
 import api from './axios';
-import { Contract, ContractClause, ContractVersion, ContractComment, ContractorResponse, SignatureSigner } from '@/types';
+import { Contract, ContractClause, ContractVersion, ContractComment, ContractorResponse, SignatureSigner, VersionComparisonResult } from '@/types';
 
 export const contractService = {
   // Contract CRUD
@@ -43,6 +43,12 @@ export const contractService = {
 
   getVersion: (contractId: string, versionId: string) =>
     api.get<ContractVersion>(`/contracts/${contractId}/versions/${versionId}`).then(r => r.data),
+
+  getMilestoneVersions: (contractId: string) =>
+    api.get<ContractVersion[]>(`/contracts/${contractId}/versions/milestones`).then(r => r.data),
+
+  compareVersions: (contractId: string, versionA: string, versionB: string) =>
+    api.get<VersionComparisonResult>(`/contracts/${contractId}/versions/${versionA}/compare/${versionB}`).then(r => r.data),
 
   saveNewVersion: (contractId: string, changeSummary: string) =>
     api.post<ContractVersion>(`/contracts/${contractId}/versions`, { change_summary: changeSummary }).then(r => r.data),
