@@ -12,6 +12,9 @@ import type { Contract, ContractClause, Clause, ContractComment, RiskAnalysis, C
 import VersionTimeline from '@/components/versions/VersionTimeline';
 import DiffViewerModal from '@/components/versions/DiffViewerModal';
 import VersionSnapshotModal from '@/components/versions/VersionSnapshotModal';
+import ClaimsTab from '@/components/claims/ClaimsTab';
+import NoticesTab from '@/components/notices/NoticesTab';
+import SubContractsTab from '@/components/subcontracts/SubContractsTab';
 
 /* ── Status Badge ─────────────────────────────────────────────── */
 const statusStyles: Record<string, { bg: string; text: string; dot: string }> = {
@@ -224,6 +227,9 @@ const tabConfig = [
   { key: 'clauses' as const, label: 'Clauses', icon: 'M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25z' },
   { key: 'comments' as const, label: 'Comments', icon: 'M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.129.166 2.27.293 3.423.379.35.026.67.21.865.501L12 21l2.755-4.133a1.14 1.14 0 01.865-.501 48.172 48.172 0 003.423-.379c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z' },
   { key: 'risks' as const, label: 'Risk Analysis', icon: 'M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z' },
+  { key: 'claims' as const, label: 'Claims', icon: 'M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z', activeOnly: true },
+  { key: 'notices' as const, label: 'Notices', icon: 'M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0', activeOnly: true },
+  { key: 'subcontracts' as const, label: 'Sub-Contracts', icon: 'M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z', activeOnly: true },
   { key: 'history' as const, label: 'History', icon: 'M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z' },
 ];
 
@@ -238,7 +244,7 @@ export default function ContractDetailPage() {
   const [risks, setRisks] = useState<RiskAnalysis[]>([]);
   const [availableClauses, setAvailableClauses] = useState<Clause[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'clauses' | 'comments' | 'risks' | 'history'>('clauses');
+  const [activeTab, setActiveTab] = useState<'clauses' | 'comments' | 'risks' | 'claims' | 'notices' | 'subcontracts' | 'history'>('clauses');
   const [diffPair, setDiffPair] = useState<{ a: string; b: string } | null>(null);
   const [snapshotVersion, setSnapshotVersion] = useState<ContractVersion | null>(null);
   const [showAddClause, setShowAddClause] = useState(false);
@@ -870,29 +876,37 @@ export default function ContractDetailPage() {
       {/* Tabs */}
       <div className="border-b border-gray-200">
         <nav className="flex gap-1">
-          {tabConfig.map((tab) => (
-            <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
-              className={`inline-flex items-center gap-2 border-b-2 px-4 pb-3 pt-1 text-sm font-medium transition-colors ${
-                activeTab === tab.key
-                  ? 'border-primary text-primary'
-                  : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
-              }`}
-            >
-              <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d={tab.icon} />
-              </svg>
-              {tab.label}
-              {tab.key === 'clauses' && <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold text-gray-500">{clauses.length}</span>}
-              {tab.key === 'comments' && comments.length > 0 && <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold text-gray-500">{comments.length}</span>}
-              {tab.key === 'risks' && risks.length > 0 && (
-                <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${highRisks.length > 0 ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-500'}`}>
-                  {risks.length}
-                </span>
-              )}
-            </button>
-          ))}
+          {tabConfig.map((tab) => {
+            const isActiveOnly = 'activeOnly' in tab && tab.activeOnly;
+            const isContractActive = contract.status === 'ACTIVE';
+            const disabled = isActiveOnly && !isContractActive;
+            return (
+              <button
+                key={tab.key}
+                onClick={() => !disabled && setActiveTab(tab.key)}
+                title={disabled ? 'Available for Active contracts only' : undefined}
+                className={`inline-flex items-center gap-2 border-b-2 px-4 pb-3 pt-1 text-sm font-medium transition-colors ${
+                  disabled
+                    ? 'border-transparent text-gray-300 cursor-not-allowed'
+                    : activeTab === tab.key
+                      ? 'border-primary text-primary'
+                      : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
+                }`}
+              >
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d={tab.icon} />
+                </svg>
+                {tab.label}
+                {tab.key === 'clauses' && <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold text-gray-500">{clauses.length}</span>}
+                {tab.key === 'comments' && comments.length > 0 && <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold text-gray-500">{comments.length}</span>}
+                {tab.key === 'risks' && risks.length > 0 && (
+                  <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${highRisks.length > 0 ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-500'}`}>
+                    {risks.length}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </nav>
       </div>
 
@@ -1229,6 +1243,27 @@ export default function ContractDetailPage() {
               <p className="mt-1 text-xs text-gray-400">Risk analysis will appear here when clauses are analyzed</p>
             </div>
           )}
+        </div>
+      )}
+
+      {/* ── Claims Tab ───────────────────────────────────────────── */}
+      {activeTab === 'claims' && contract.status === 'ACTIVE' && (
+        <div className="rounded-xl border border-gray-200/80 bg-white p-6 shadow-card">
+          <ClaimsTab contractId={contract.id} />
+        </div>
+      )}
+
+      {/* ── Notices Tab ──────────────────────────────────────────── */}
+      {activeTab === 'notices' && contract.status === 'ACTIVE' && (
+        <div className="rounded-xl border border-gray-200/80 bg-white p-6 shadow-card">
+          <NoticesTab contractId={contract.id} />
+        </div>
+      )}
+
+      {/* ── Sub-Contracts Tab ────────────────────────────────────── */}
+      {activeTab === 'subcontracts' && contract.status === 'ACTIVE' && (
+        <div className="rounded-xl border border-gray-200/80 bg-white p-6 shadow-card">
+          <SubContractsTab contractId={contract.id} contractName={contract.name} />
         </div>
       )}
 

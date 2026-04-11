@@ -472,6 +472,257 @@ export interface VersionComparisonResult {
   changes: VersionDiffChange[];
 }
 
+// ─── Claims ──────────────────────────────────────────────
+
+export enum ClaimType {
+  COST = 'COST',
+  TIME_EXTENSION = 'TIME_EXTENSION',
+  VARIATION = 'VARIATION',
+  DISRUPTION = 'DISRUPTION',
+  LOSS_AND_EXPENSE = 'LOSS_AND_EXPENSE',
+  PROLONGATION = 'PROLONGATION',
+  ACCELERATION = 'ACCELERATION',
+  GENERAL_DISPUTE = 'GENERAL_DISPUTE',
+}
+
+export enum ClaimStatus {
+  DRAFT = 'DRAFT',
+  SUBMITTED = 'SUBMITTED',
+  ACKNOWLEDGED = 'ACKNOWLEDGED',
+  UNDER_ASSESSMENT = 'UNDER_ASSESSMENT',
+  RESPONDED = 'RESPONDED',
+  UNDER_NEGOTIATION = 'UNDER_NEGOTIATION',
+  SETTLED = 'SETTLED',
+  REJECTED = 'REJECTED',
+  ESCALATED = 'ESCALATED',
+  WITHDRAWN = 'WITHDRAWN',
+}
+
+export enum ClaimResponseType {
+  ACCEPTED = 'ACCEPTED',
+  PARTIAL_ACCEPTANCE = 'PARTIAL_ACCEPTANCE',
+  COUNTER_OFFER = 'COUNTER_OFFER',
+  REJECTED = 'REJECTED',
+  REQUEST_FOR_FURTHER_INFO = 'REQUEST_FOR_FURTHER_INFO',
+}
+
+export interface Claim {
+  id: string;
+  contract_id: string;
+  org_id: string;
+  submitted_by: string;
+  claim_reference: string;
+  claim_type: ClaimType;
+  title: string;
+  description: string;
+  contract_clause_references: Record<string, unknown>[] | null;
+  claimed_amount: number | null;
+  claimed_time_extension_days: number | null;
+  event_date: string;
+  status: ClaimStatus;
+  submitted_at: string | null;
+  acknowledged_at: string | null;
+  resolved_at: string | null;
+  created_at: string;
+  updated_at: string;
+  submitter?: User;
+  documents?: ClaimDocument[];
+  responses?: ClaimResponse[];
+  status_logs?: ClaimStatusLog[];
+  contract?: Contract;
+}
+
+export interface ClaimDocument {
+  id: string;
+  claim_id: string;
+  file_url: string;
+  file_name: string;
+  document_type: string | null;
+  uploaded_by: string;
+  uploaded_at: string;
+  uploader?: User;
+}
+
+export interface ClaimResponse {
+  id: string;
+  claim_id: string;
+  responded_by: string;
+  response_type: ClaimResponseType;
+  response_content: string;
+  counter_amount: number | null;
+  counter_time_days: number | null;
+  justification: string | null;
+  created_at: string;
+  responder?: User;
+}
+
+export interface ClaimStatusLog {
+  id: string;
+  claim_id: string;
+  changed_by: string;
+  previous_status: string;
+  new_status: string;
+  note: string | null;
+  changed_at: string;
+  changer?: User;
+}
+
+// ─── Notices ─────────────────────────────────────────────
+
+export enum NoticeType {
+  NOTICE_OF_DELAY = 'NOTICE_OF_DELAY',
+  NOTICE_OF_EXTENSION_OF_TIME = 'NOTICE_OF_EXTENSION_OF_TIME',
+  NOTICE_OF_COMPLETION = 'NOTICE_OF_COMPLETION',
+  NOTICE_OF_PRACTICAL_COMPLETION = 'NOTICE_OF_PRACTICAL_COMPLETION',
+  NOTICE_OF_SECTIONAL_COMPLETION = 'NOTICE_OF_SECTIONAL_COMPLETION',
+  NOTICE_OF_VARIATION = 'NOTICE_OF_VARIATION',
+  NOTICE_OF_CHANGE_IN_CONDITIONS = 'NOTICE_OF_CHANGE_IN_CONDITIONS',
+  NOTICE_OF_ACCELERATION = 'NOTICE_OF_ACCELERATION',
+  NOTICE_OF_SCOPE_CHANGE = 'NOTICE_OF_SCOPE_CHANGE',
+  NOTICE_TO_CORRECT = 'NOTICE_TO_CORRECT',
+  NOTICE_OF_DEFECTS = 'NOTICE_OF_DEFECTS',
+  NOTICE_OF_NON_CONFORMANCE = 'NOTICE_OF_NON_CONFORMANCE',
+  NOTICE_OF_REJECTION = 'NOTICE_OF_REJECTION',
+  NOTICE_OF_PAYMENT = 'NOTICE_OF_PAYMENT',
+  PAY_LESS_NOTICE = 'PAY_LESS_NOTICE',
+  NOTICE_OF_WITHHOLDING = 'NOTICE_OF_WITHHOLDING',
+  NOTICE_OF_LOSS_AND_EXPENSE = 'NOTICE_OF_LOSS_AND_EXPENSE',
+  NOTICE_OF_PRICE_ADJUSTMENT = 'NOTICE_OF_PRICE_ADJUSTMENT',
+  INTENT_TO_CLAIM = 'INTENT_TO_CLAIM',
+  NOTICE_OF_DISPUTE = 'NOTICE_OF_DISPUTE',
+  NOTICE_OF_ADJUDICATION = 'NOTICE_OF_ADJUDICATION',
+  NOTICE_OF_ARBITRATION = 'NOTICE_OF_ARBITRATION',
+  EARLY_WARNING_NOTICE = 'EARLY_WARNING_NOTICE',
+  RISK_REDUCTION_NOTICE = 'RISK_REDUCTION_NOTICE',
+  NOTICE_OF_SUSPENSION = 'NOTICE_OF_SUSPENSION',
+  NOTICE_OF_TERMINATION = 'NOTICE_OF_TERMINATION',
+  NOTICE_OF_TERMINATION_FOR_CONVENIENCE = 'NOTICE_OF_TERMINATION_FOR_CONVENIENCE',
+  NOTICE_OF_TERMINATION_FOR_CAUSE = 'NOTICE_OF_TERMINATION_FOR_CAUSE',
+  NOTICE_TO_SHOW_CAUSE = 'NOTICE_TO_SHOW_CAUSE',
+  NOTICE_OF_FORCE_MAJEURE = 'NOTICE_OF_FORCE_MAJEURE',
+  NOTICE_OF_EXCEPTIONAL_EVENT = 'NOTICE_OF_EXCEPTIONAL_EVENT',
+  NOTICE_OF_INSURANCE_CLAIM = 'NOTICE_OF_INSURANCE_CLAIM',
+  NOTICE_OF_INDEMNITY_CLAIM = 'NOTICE_OF_INDEMNITY_CLAIM',
+  NOTICE_OF_ACCESS = 'NOTICE_OF_ACCESS',
+  NOTICE_OF_POSSESSION = 'NOTICE_OF_POSSESSION',
+  NOTICE_OF_OBSTRUCTION = 'NOTICE_OF_OBSTRUCTION',
+  GENERAL_NOTICE = 'GENERAL_NOTICE',
+}
+
+export enum NoticeStatus {
+  DRAFT = 'DRAFT',
+  SUBMITTED = 'SUBMITTED',
+  DELIVERED = 'DELIVERED',
+  ACKNOWLEDGED = 'ACKNOWLEDGED',
+  RESPONDED = 'RESPONDED',
+  OVERDUE = 'OVERDUE',
+  CLOSED = 'CLOSED',
+  WITHDRAWN = 'WITHDRAWN',
+}
+
+export enum NoticeResponseType {
+  ACKNOWLEDGE_ACCEPT = 'ACKNOWLEDGE_ACCEPT',
+  ACKNOWLEDGE_DISPUTE = 'ACKNOWLEDGE_DISPUTE',
+  REQUEST_FOR_FURTHER_INFO = 'REQUEST_FOR_FURTHER_INFO',
+  COUNTER_NOTICE = 'COUNTER_NOTICE',
+  NO_RESPONSE_REQUIRED = 'NO_RESPONSE_REQUIRED',
+  COMPLY = 'COMPLY',
+  REJECT = 'REJECT',
+}
+
+export interface Notice {
+  id: string;
+  contract_id: string;
+  org_id: string;
+  submitted_by: string;
+  notice_reference: string;
+  notice_type: NoticeType;
+  title: string;
+  description: string;
+  contract_clause_references: Record<string, unknown>[] | null;
+  event_date: string;
+  response_required: boolean;
+  response_deadline: string | null;
+  status: NoticeStatus;
+  submitted_at: string | null;
+  acknowledged_at: string | null;
+  created_at: string;
+  updated_at: string;
+  submitter?: User;
+  documents?: NoticeDocument[];
+  responses?: NoticeResponse[];
+  status_logs?: NoticeStatusLog[];
+  contract?: Contract;
+}
+
+export interface NoticeDocument {
+  id: string;
+  notice_id: string;
+  file_url: string;
+  file_name: string;
+  document_type: string | null;
+  uploaded_by: string;
+  uploaded_at: string;
+  uploader?: User;
+}
+
+export interface NoticeResponse {
+  id: string;
+  notice_id: string;
+  responded_by: string;
+  response_type: NoticeResponseType;
+  response_content: string;
+  created_at: string;
+  responder?: User;
+}
+
+export interface NoticeStatusLog {
+  id: string;
+  notice_id: string;
+  changed_by: string;
+  previous_status: string;
+  new_status: string;
+  note: string | null;
+  changed_at: string;
+  changer?: User;
+}
+
+// ─── Sub-Contracts ───────────────────────────────────────
+
+export interface SubContract {
+  id: string;
+  main_contract_id: string;
+  subcontract_number: string;
+  title: string;
+  scope_description: string;
+  org_id: string;
+  created_by: string;
+  status: string;
+  subcontractor_name: string;
+  subcontractor_email: string;
+  subcontractor_company: string | null;
+  subcontractor_contact_phone: string | null;
+  contract_value: number | null;
+  start_date: string | null;
+  end_date: string | null;
+  created_at: string;
+  updated_at: string;
+  creator?: User;
+  mainContract?: Contract;
+  status_logs?: SubContractStatusLog[];
+}
+
+export interface SubContractStatusLog {
+  id: string;
+  sub_contract_id: string;
+  changed_by: string;
+  previous_status: string;
+  new_status: string;
+  note: string | null;
+  changed_at: string;
+  changer?: User;
+}
+
 export interface ProjectParty {
   id: string;
   project_id: string;

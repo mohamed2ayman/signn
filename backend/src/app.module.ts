@@ -26,6 +26,9 @@ import { ChatModule } from './modules/chat/chat.module';
 import { DocuSignModule } from './modules/docusign/docusign.module';
 import { CollaborationModule } from './modules/collaboration/collaboration.module';
 import { ContractTemplatesModule } from './modules/contract-templates/contract-templates.module';
+import { ClaimsModule } from './modules/claims/claims.module';
+import { NoticesModule } from './modules/notices/notices.module';
+import { SubContractsModule } from './modules/subcontracts/subcontracts.module';
 import { dataSourceOptions } from './config/data-source';
 
 @Module({
@@ -73,6 +76,9 @@ import { dataSourceOptions } from './config/data-source';
     DocuSignModule,
     CollaborationModule,
     ContractTemplatesModule,
+    ClaimsModule,
+    NoticesModule,
+    SubContractsModule,
   ],
 })
 export class AppModule {}
