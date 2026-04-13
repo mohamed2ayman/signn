@@ -293,6 +293,25 @@ export default function ClauseReviewPage() {
 
           {/* Document Text */}
           <div className="h-full overflow-y-auto p-6">
+            {/* Parties Section — shown for agreement documents only */}
+            {activeDocument?.extracted_text &&
+              (contract?.party_first_name || contract?.party_second_name) &&
+              (activeDocument.document_label || '').toLowerCase().match(/agreement|اتفاقية|عقد/) && (
+              <div className="mb-4 rounded-lg border border-blue-100 bg-blue-50/50 p-4 shadow-sm" dir="rtl">
+                <h3 className="mb-2 text-sm font-semibold text-blue-800">
+                  أطراف العقد
+                </h3>
+                <div className="space-y-1 text-sm text-gray-700">
+                  {contract.party_first_name && (
+                    <p><strong>الطرف الأول:</strong> {contract.party_first_name}</p>
+                  )}
+                  {contract.party_second_name && (
+                    <p><strong>الطرف الثاني:</strong> {contract.party_second_name}</p>
+                  )}
+                </div>
+              </div>
+            )}
+
             {activeDocument?.extracted_text ? (
               <div className="rounded-lg bg-white p-6 shadow-sm">
                 <div className="mb-4 flex items-center justify-between">
@@ -305,7 +324,11 @@ export default function ClauseReviewPage() {
                     </span>
                   )}
                 </div>
-                <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-gray-700">
+                <pre
+                  className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-gray-700"
+                  dir="auto"
+                  style={{ unicodeBidi: 'plaintext' }}
+                >
                   {activeDocument.extracted_text}
                 </pre>
               </div>

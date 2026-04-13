@@ -149,6 +149,7 @@ export class AiService {
     contract_id: string;
     full_text: string;
     contract_type?: string;
+    document_label?: string;
     org_id: string;
   }): Promise<{ job_id: string; status: string }> {
     const response = await firstValueFrom(

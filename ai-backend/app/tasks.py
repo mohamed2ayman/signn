@@ -157,6 +157,7 @@ def run_extract_clauses(self, request_data: dict[str, Any]) -> dict[str, Any]:
         clauses = agent.extract(
             full_text=request_data["full_text"],
             contract_type=request_data.get("contract_type"),
+            document_label=request_data.get("document_label"),
         )
         return {"status": "completed", "result": {"clauses": clauses}}
     except Exception as e:

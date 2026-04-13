@@ -270,6 +270,12 @@ export default function ContractDetailPage() {
   const [signatureSigners, setSignatureSigners] = useState<SignatureSigner[]>([]);
   const exportMenuRef = useRef<HTMLDivElement>(null);
 
+  // Party names editing state
+  const [editingParties, setEditingParties] = useState(false);
+  const [partyFirstDraft, setPartyFirstDraft] = useState('');
+  const [partySecondDraft, setPartySecondDraft] = useState('');
+  const [savingParties, setSavingParties] = useState(false);
+
   useEffect(() => {
     if (id) loadContract();
   }, [id]);
@@ -871,6 +877,104 @@ export default function ContractDetailPage() {
             <p className="mt-0.5 text-xs text-gray-400">Version</p>
           </div>
         </div>
+      </div>
+
+      {/* Contract Parties Card */}
+      <div className="rounded-xl border border-gray-200/80 bg-white p-5 shadow-card">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <svg className="h-5 w-5 text-gray-500" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
+            </svg>
+            <h3 className="text-sm font-semibold text-gray-800">أطراف العقد</h3>
+          </div>
+          {!editingParties && (
+            <button
+              onClick={() => {
+                setPartyFirstDraft(contract.party_first_name || '');
+                setPartySecondDraft(contract.party_second_name || '');
+                setEditingParties(true);
+              }}
+              className="text-xs font-medium text-primary hover:text-primary/80"
+            >
+              {contract.party_first_name || contract.party_second_name ? 'Edit' : 'Add Parties'}
+            </button>
+          )}
+        </div>
+
+        {editingParties ? (
+          <div className="space-y-3">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-500">الطرف الأول</label>
+              <input
+                type="text"
+                dir="auto"
+                value={partyFirstDraft}
+                onChange={(e) => setPartyFirstDraft(e.target.value)}
+                placeholder="Enter first party name..."
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-500">الطرف الثاني</label>
+              <input
+                type="text"
+                dir="auto"
+                value={partySecondDraft}
+                onChange={(e) => setPartySecondDraft(e.target.value)}
+                placeholder="Enter second party name..."
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+            </div>
+            <div className="flex items-center justify-end gap-2">
+              <button
+                onClick={() => setEditingParties(false)}
+                className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                disabled={savingParties}
+                onClick={async () => {
+                  if (!id) return;
+                  setSavingParties(true);
+                  try {
+                    const updated = await contractService.updateParties(id, {
+                      party_first_name: partyFirstDraft || null,
+                      party_second_name: partySecondDraft || null,
+                    });
+                    setContract(updated);
+                    setEditingParties(false);
+                  } catch (err) {
+                    console.error('Failed to save parties:', err);
+                  } finally {
+                    setSavingParties(false);
+                  }
+                }}
+                className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-white hover:bg-primary/90 disabled:opacity-50"
+              >
+                {savingParties ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+          </div>
+        ) : contract.party_first_name || contract.party_second_name ? (
+          <div className="space-y-2" dir="rtl">
+            {contract.party_first_name && (
+              <p className="text-sm text-gray-700">
+                <strong className="text-gray-600">الطرف الأول:</strong> {contract.party_first_name}
+              </p>
+            )}
+            {contract.party_second_name && (
+              <p className="text-sm text-gray-700">
+                <strong className="text-gray-600">الطرف الثاني:</strong> {contract.party_second_name}
+              </p>
+            )}
+          </div>
+        ) : (
+          <p className="text-xs text-gray-400 italic">
+            No parties extracted yet. Click "Add Parties" to enter manually, or upload a contract agreement document.
+          </p>
+        )}
       </div>
 
       {/* Tabs */}

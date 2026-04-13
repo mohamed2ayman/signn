@@ -339,6 +339,8 @@ export interface Contract {
   signature_status?: SignatureStatus | null;
   signature_signers?: SignatureSigner[] | null;
   executed_at?: string | null;
+  party_first_name?: string | null;
+  party_second_name?: string | null;
   created_at: string;
   updated_at: string;
   project?: Project;

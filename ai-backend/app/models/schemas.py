@@ -350,6 +350,7 @@ class ClauseExtractionRequest(BaseModel):
     contract_id: str = Field(..., description="UUID of the contract.")
     full_text: str = Field(..., description="Full document text to extract clauses from.")
     contract_type: Optional[str] = Field(None, description="Optional contract type hint.")
+    document_label: Optional[str] = Field(None, description="Document label (e.g. Contract Agreement, General Conditions).")
     org_id: str = Field(..., description="Organisation UUID.")
 
 

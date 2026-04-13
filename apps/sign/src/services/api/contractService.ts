@@ -21,6 +21,10 @@ export const contractService = {
   delete: (id: string) =>
     api.delete(`/contracts/${id}`).then(r => r.data),
 
+  // Party Names
+  updateParties: (id: string, data: { party_first_name?: string | null; party_second_name?: string | null }) =>
+    api.put<Contract>(`/contracts/${id}/parties`, data).then(r => r.data),
+
   // Clause Management
   getClauses: (contractId: string) =>
     api.get<ContractClause[]>(`/contracts/${contractId}/clauses`).then(r => r.data),

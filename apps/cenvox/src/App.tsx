@@ -606,7 +606,7 @@ export default function App() {
                 style={{ background: 'var(--cx-fire)' }}
               />
             </div>
-            <span className="font-mono text-[9px] uppercase tracking-[0.2em]" style={{ color: 'var(--cx-muted)' }}>
+            <span className="font-mono text-[9px] uppercase tracking-[0.2em]" style={{ color: 'transparent' }}>
               Scroll
             </span>
           </div>

@@ -254,6 +254,25 @@ export class ContractsService {
     await this.contractRepository.remove(contract);
   }
 
+  // ─── Party Names ────────────────────────────────────────────
+
+  async updateParties(
+    id: string,
+    data: { party_first_name?: string | null; party_second_name?: string | null },
+  ): Promise<Contract> {
+    const contract = await this.findById(id);
+
+    if (data.party_first_name !== undefined) {
+      contract.party_first_name = data.party_first_name || null;
+    }
+    if (data.party_second_name !== undefined) {
+      contract.party_second_name = data.party_second_name || null;
+    }
+
+    await this.contractRepository.save(contract);
+    return this.findById(id);
+  }
+
   // ─── Clause Management ─────────────────────────────────────
 
   async addClause(

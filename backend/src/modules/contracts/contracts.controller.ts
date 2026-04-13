@@ -89,6 +89,17 @@ export class ContractsController {
     return { message: 'Contract deleted successfully' };
   }
 
+  // ─── Party Names ────────────────────────────────────────────
+
+  @Put(':id/parties')
+  @RequirePermission(PermissionLevel.EDITOR)
+  async updateParties(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: { party_first_name?: string | null; party_second_name?: string | null },
+  ) {
+    return this.contractsService.updateParties(id, body);
+  }
+
   // ─── Clause Management ─────────────────────────────────────
 
   @Get(':id/clauses')

@@ -43,6 +43,12 @@ Important guidelines:
 6. For construction contracts, pay special attention to: scope of works, \
    variations, defects liability, time for completion, payment certificates, \
    retention, performance bonds, and dispute resolution
+7. SKIP cover pages, logos, table of contents, headers, footers, and any \
+   non-contractual preamble.  Only extract from the actual contract body. \
+   For Arabic contracts the body typically starts with a phrase like \
+   "إنه في يوم" or "تم الاتفاق بين كل من".  For conditions documents \
+   the body starts at the first numbered article or clause (e.g. \
+   "المادة 1", "البند 1", "Article 1", "Clause 1")
 
 Return your answer as a JSON array of clause objects.  Do NOT include any text \
 outside the JSON array.  If the document contains no identifiable clauses, \
@@ -61,6 +67,7 @@ class ClauseExtractorAgent:
         self,
         full_text: str,
         contract_type: str | None = None,
+        document_label: str | None = None,
     ) -> list[dict[str, Any]]:
         """Extract clauses from *full_text*.
 
@@ -70,6 +77,9 @@ class ClauseExtractorAgent:
             The complete text content of the contract document.
         contract_type:
             Optional hint about the contract type (e.g. "FIDIC_RED").
+        document_label:
+            Optional document label (e.g. "Contract Agreement",
+            "General Conditions") so the AI can tailor its extraction.
 
         Returns
         -------
@@ -79,6 +89,13 @@ class ClauseExtractorAgent:
         user_content = ""
         if contract_type:
             user_content += f"Contract type: {contract_type}\n\n"
+        if document_label:
+            user_content += (
+                f"Document label: {document_label}\n"
+                "Note: Skip any cover pages, table of contents, or headers "
+                "that may remain in the text. Extract only substantive "
+                "contract clauses.\n\n"
+            )
         user_content += (
             "Extract all clauses from the following contract document:\n\n"
             "---BEGIN DOCUMENT---\n"

@@ -170,6 +170,12 @@ export class Contract {
     signed_at?: string;
   }> | null;
 
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  party_first_name: string | null;
+
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  party_second_name: string | null;
+
   @Column({ type: 'timestamptz', nullable: true })
   executed_at: Date | null;
 
