@@ -71,6 +71,12 @@ services:
         condition: service_healthy
     volumes:
       - ./ai-backend:/app
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 512M
 
   celery-worker:
     build:
@@ -78,7 +84,7 @@ services:
       dockerfile: Dockerfile
     container_name: sign-celery-worker
     restart: unless-stopped
-    command: celery -A app.tasks worker --loglevel=info
+    command: celery -A app.tasks worker --loglevel=info --concurrency=1
     env_file:
       - ./ai-backend/.env
     depends_on:
@@ -88,6 +94,12 @@ services:
         condition: service_healthy
     volumes:
       - uploads_data:/app/uploads
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 512M
 
   frontend:
     build:

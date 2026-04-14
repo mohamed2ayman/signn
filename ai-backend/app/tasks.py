@@ -23,6 +23,9 @@ celery_app.conf.update(
     accept_content=["json"],
     result_expires=3600,  # Results expire after 1 hour
     task_track_started=True,
+    worker_max_memory_per_child=500_000,  # Restart worker after 500MB to reclaim leaked memory
+    task_soft_time_limit=300,  # 5 minute soft limit
+    task_time_limit=600,  # 10 minute hard limit
 )
 
 

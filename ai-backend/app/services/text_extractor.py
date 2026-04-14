@@ -100,19 +100,54 @@ class TextExtractorService:
         except (FileNotFoundError, subprocess.TimeoutExpired):
             pass
 
-        # --- Attempt 2: pytesseract + pdf2image ---
+        # --- Attempt 2: pytesseract + pdf2image (chunked) ---
         try:
+            import gc
+            import logging
             import pytesseract
-            from pdf2image import convert_from_path
+            from pdf2image import convert_from_path, pdfinfo_from_path
 
-            images = convert_from_path(path, dpi=300)
+            logger = logging.getLogger(__name__)
+
+            # Get total page count without loading images
+            try:
+                info = pdfinfo_from_path(path)
+                total_pages = info.get("Pages", 0)
+            except Exception:
+                total_pages = self.last_page_count or 50
+
             pages_text: list[str] = []
+            batch_size = 5  # Process 5 pages at a time to limit memory
 
-            for img in images:
-                # OCR with Arabic + English language support
-                text = pytesseract.image_to_string(img, lang="ara+eng")
-                if text.strip():
-                    pages_text.append(text)
+            for batch_start in range(1, total_pages + 1, batch_size):
+                batch_end = min(batch_start + batch_size - 1, total_pages)
+                try:
+                    images = convert_from_path(
+                        path,
+                        dpi=150,
+                        first_page=batch_start,
+                        last_page=batch_end,
+                    )
+                    for img in images:
+                        try:
+                            text = pytesseract.image_to_string(img, lang="ara+eng")
+                            if text.strip():
+                                pages_text.append(text)
+                        except Exception as page_exc:
+                            logger.warning(
+                                "OCR failed for page in batch %d-%d: %s",
+                                batch_start, batch_end, page_exc,
+                            )
+                        finally:
+                            img.close()
+                    del images
+                    gc.collect()
+                except Exception as batch_exc:
+                    logger.warning(
+                        "OCR batch %d-%d failed: %s",
+                        batch_start, batch_end, batch_exc,
+                    )
+                    continue
 
             if pages_text:
                 return "\n\n".join(pages_text)
