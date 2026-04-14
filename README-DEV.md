@@ -67,3 +67,26 @@ packages/tokens/  → Shared design tokens (@cenvox/tokens)
 backend/          → NestJS API (port 3000)
 ai-backend/       → Python AI service (port 8000)
 ```
+
+## Auto Startup
+
+All containers are configured with `restart: unless-stopped`.
+
+To enable fully automatic startup when your Mac boots:
+1. Open Docker Desktop
+2. Go to Settings → General
+3. Enable "Start Docker Desktop when you log in"
+
+After that, every time you turn on your Mac, Docker will start automatically
+and all containers (SIGN frontend, CENVOX, backend, AI backend, database,
+Redis, Celery worker) will come back up on their own with no manual commands needed.
+
+To manually start everything:
+```bash
+docker-compose up -d
+```
+
+To manually stop everything:
+```bash
+docker-compose down
+```
