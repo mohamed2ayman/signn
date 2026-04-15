@@ -71,6 +71,15 @@ export class DocumentProcessingController {
     return this.documentProcessingService.reprocess(docId);
   }
 
+  @Put('documents/:docId/extracted-text')
+  async updateExtractedText(
+    @Param('docId', ParseUUIDPipe) docId: string,
+    @Body() body: { text: string },
+    @OrganizationId() orgId: string,
+  ) {
+    return this.documentProcessingService.updateExtractedText(docId, orgId, body.text);
+  }
+
   // ─── Clause Review ────────────────────────────────────────
 
   @Get('review/clauses')

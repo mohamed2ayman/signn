@@ -23,6 +23,10 @@ export default function ClauseReviewPage() {
   const [selectedClauseId, setSelectedClauseId] = useState<string | null>(null);
   const [isFinalizing, setIsFinalizing] = useState(false);
   const [activeDocTab, setActiveDocTab] = useState<string | null>(null);
+  const [isEditingText, setIsEditingText] = useState(false);
+  const [editedText, setEditedText] = useState('');
+  const [isSavingText, setIsSavingText] = useState(false);
+  const [savedFlash, setSavedFlash] = useState(false);
 
   // Load data
   useEffect(() => {
@@ -315,22 +319,92 @@ export default function ClauseReviewPage() {
             {activeDocument?.extracted_text ? (
               <div className="rounded-lg bg-white p-6 shadow-sm">
                 <div className="mb-4 flex items-center justify-between">
-                  <h3 className="text-sm font-medium text-gray-700">
-                    Document Content
-                  </h3>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-medium text-gray-700">
+                      Document Content
+                    </h3>
+                    {!isEditingText && (
+                      <button
+                        onClick={() => {
+                          setEditedText(activeDocument.extracted_text ?? '');
+                          setIsEditingText(true);
+                        }}
+                        title="Edit document text"
+                        className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 012.828 0l.172.172a2 2 0 010 2.828L12 16H9v-3z" />
+                        </svg>
+                      </button>
+                    )}
+                    {isEditingText && (
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          disabled={isSavingText}
+                          onClick={async () => {
+                            if (!contractId || !activeDocument) return;
+                            setIsSavingText(true);
+                            try {
+                              const updated = await documentProcessingService.updateExtractedText(
+                                contractId,
+                                activeDocument.id,
+                                editedText,
+                              );
+                              setDocuments((prev) =>
+                                prev.map((d) => (d.id === updated.id ? updated : d)),
+                              );
+                              setIsEditingText(false);
+                              setEditedText('');
+                              setSavedFlash(true);
+                              setTimeout(() => setSavedFlash(false), 2000);
+                            } catch {
+                              setError('Failed to save document text. Please try again.');
+                            } finally {
+                              setIsSavingText(false);
+                            }
+                          }}
+                          className="rounded bg-primary px-2.5 py-0.5 text-xs font-medium text-white hover:bg-primary/90 disabled:opacity-60"
+                        >
+                          {isSavingText ? 'Saving...' : 'Save Changes'}
+                        </button>
+                        <button
+                          onClick={() => {
+                            setIsEditingText(false);
+                            setEditedText('');
+                          }}
+                          className="rounded px-2 py-0.5 text-xs font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    )}
+                    {savedFlash && !isEditingText && (
+                      <span className="text-xs font-medium text-green-600">Saved!</span>
+                    )}
+                  </div>
                   {activeDocument.page_count && (
                     <span className="text-xs text-gray-400">
                       {activeDocument.page_count} pages
                     </span>
                   )}
                 </div>
-                <pre
-                  className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-gray-700"
-                  dir="auto"
-                  style={{ unicodeBidi: 'plaintext' }}
-                >
-                  {activeDocument.extracted_text}
-                </pre>
+                {isEditingText ? (
+                  <textarea
+                    value={editedText}
+                    onChange={(e) => setEditedText(e.target.value)}
+                    dir="auto"
+                    style={{ unicodeBidi: 'plaintext', minHeight: '400px', padding: '0.5rem', resize: 'vertical' }}
+                    className="w-full rounded border border-gray-200 font-sans text-sm leading-relaxed text-gray-700 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                ) : (
+                  <pre
+                    className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-gray-700"
+                    dir="auto"
+                    style={{ unicodeBidi: 'plaintext' }}
+                  >
+                    {activeDocument.extracted_text}
+                  </pre>
+                )}
               </div>
             ) : (
               <div className="flex h-full items-center justify-center text-sm text-gray-400">
@@ -430,10 +504,30 @@ export default function ClauseReviewPage() {
           <div className="flex items-center gap-3">
             <Button
               variant="outline"
-              onClick={() =>
-                contract?.project_id &&
-                navigate(`/app/projects/${contract.project_id}`)
-              }
+              isLoading={isSavingText}
+              onClick={async () => {
+                if (isEditingText && activeDocument && contractId) {
+                  setIsSavingText(true);
+                  try {
+                    const updated = await documentProcessingService.updateExtractedText(
+                      contractId,
+                      activeDocument.id,
+                      editedText,
+                    );
+                    setDocuments((prev) =>
+                      prev.map((d) => (d.id === updated.id ? updated : d)),
+                    );
+                    setIsEditingText(false);
+                    setEditedText('');
+                  } catch {
+                    setError('Failed to save document text. Please try again.');
+                    return;
+                  } finally {
+                    setIsSavingText(false);
+                  }
+                }
+                if (contract?.project_id) navigate(`/app/projects/${contract.project_id}`);
+              }}
             >
               Save & Continue Later
             </Button>

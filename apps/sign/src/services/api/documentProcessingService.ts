@@ -33,6 +33,11 @@ export const documentProcessingService = {
     api
       .post<DocumentUpload>(`/contracts/${contractId}/documents/${docId}/reprocess`)
       .then((r) => r.data),
+
+  updateExtractedText: (contractId: string, docId: string, text: string) =>
+    api
+      .put<DocumentUpload>(`/contracts/${contractId}/documents/${docId}/extracted-text`, { text })
+      .then((r) => r.data),
 };
 
 export default documentProcessingService;

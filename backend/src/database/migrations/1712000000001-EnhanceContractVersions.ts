@@ -19,9 +19,15 @@ export class EnhanceContractVersions1712000000001 implements MigrationInterface 
     `);
 
     await queryRunner.query(`
-      ALTER TABLE "contract_versions"
-      ADD CONSTRAINT "FK_contract_versions_triggered_by"
-      FOREIGN KEY ("triggered_by") REFERENCES "users"("id") ON DELETE SET NULL
+      DO $$ BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_constraint WHERE conname = 'FK_contract_versions_triggered_by'
+        ) THEN
+          ALTER TABLE "contract_versions"
+          ADD CONSTRAINT "FK_contract_versions_triggered_by"
+          FOREIGN KEY ("triggered_by") REFERENCES "users"("id") ON DELETE SET NULL;
+        END IF;
+      END $$;
     `);
 
     // Backfill version_label for existing rows

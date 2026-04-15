@@ -163,29 +163,32 @@ export class DocumentProcessingService {
       doc.processing_job_id = null;
       await this.documentUploadRepository.save(doc);
 
-      // Extract party names from agreement-type documents
-      const docLabel = (doc.document_label || '').toLowerCase();
-      if (
-        docLabel.includes('agreement') ||
-        docLabel.includes('اتفاقية') ||
-        docLabel.includes('عقد')
-      ) {
-        try {
-          const parties = this.extractParties(doc.extracted_text || '');
-          if (parties.firstParty || parties.secondParty) {
-            await this.contractRepository.update(
-              { id: doc.contract_id },
-              {
-                party_first_name: parties.firstParty,
-                party_second_name: parties.secondParty,
-              },
-            );
-            this.logger.log(
-              `Extracted parties for contract ${doc.contract_id}: "${parties.firstParty}" / "${parties.secondParty}"`,
-            );
+      // Extract party names if the text contains contract party markers
+      const extractedText = doc.extracted_text || '';
+      const partyMarker = /(?:بين\s*كل\s*من|تم\s*الاتفاق\s*بين\s*كل\s*من|كل\s*من\s*:)/;
+      if (partyMarker.test(extractedText)) {
+        // Only extract if the contract doesn't already have parties
+        const currentContract = await this.contractRepository.findOne({
+          where: { id: doc.contract_id },
+        });
+        if (!currentContract?.party_first_name && !currentContract?.party_second_name) {
+          try {
+            const parties = this.extractParties(extractedText);
+            if (parties.firstParty || parties.secondParty) {
+              await this.contractRepository.update(
+                { id: doc.contract_id },
+                {
+                  party_first_name: parties.firstParty,
+                  party_second_name: parties.secondParty,
+                },
+              );
+              this.logger.log(
+                `Extracted parties for contract ${doc.contract_id}: "${parties.firstParty}" / "${parties.secondParty}"`,
+              );
+            }
+          } catch (err) {
+            this.logger.warn(`Party extraction failed for contract ${doc.contract_id}: ${err?.message}`);
           }
-        } catch (err) {
-          this.logger.warn(`Party extraction failed for contract ${doc.contract_id}: ${err?.message}`);
         }
       }
 
@@ -220,49 +223,34 @@ export class DocumentProcessingService {
    * extracted text so that only substantive contract content is sent to
    * clause extraction.  The trimming strategy depends on the document label.
    */
-  private trimCoverPages(text: string, documentLabel?: string | null): string {
-    if (!text || !documentLabel) return text;
+  private trimCoverPages(text: string, _documentLabel?: string | null): string {
+    if (!text) return text;
 
-    const label = documentLabel.toLowerCase();
-
-    // --- Contract Agreement documents ---
-    if (
-      label.includes('agreement') ||
-      label.includes('اتفاقية') ||
-      label.includes('عقد')
-    ) {
-      const patterns = [
-        /إنه في يوم/,
-        /تم الاتفاق بين كل من/,
-        /تم الاتفاق/,
-      ];
-      for (const pattern of patterns) {
-        const match = text.match(pattern);
-        if (match?.index !== undefined) {
-          return text.substring(match.index);
-        }
+    // Try agreement patterns first (content-based, label-independent)
+    const agreementPatterns = [
+      /إنه في يوم/,
+      /تم الاتفاق بين كل من/,
+      /تم الاتفاق/,
+    ];
+    for (const pattern of agreementPatterns) {
+      const match = text.match(pattern);
+      if (match?.index !== undefined) {
+        return text.substring(match.index);
       }
     }
 
-    // --- General Conditions / Particular Conditions documents ---
-    if (
-      label.includes('condition') ||
-      label.includes('شروط') ||
-      label.includes('المادة') ||
-      label.includes('البند')
-    ) {
-      const patterns = [
-        /المادة\s*1\b/,
-        /البند\s*1\b/,
-        /Article\s*1\b/i,
-        /Clause\s*1\b/i,
-        /^1[-–.]/m,
-      ];
-      for (const pattern of patterns) {
-        const match = text.match(pattern);
-        if (match?.index !== undefined) {
-          return text.substring(match.index);
-        }
+    // Then try conditions patterns
+    const conditionsPatterns = [
+      /المادة\s*1\b/,
+      /البند\s*1\b/,
+      /Article\s*1\b/i,
+      /Clause\s*1\b/i,
+      /^1[-–.]/m,
+    ];
+    for (const pattern of conditionsPatterns) {
+      const match = text.match(pattern);
+      if (match?.index !== undefined) {
+        return text.substring(match.index);
       }
     }
 
@@ -273,27 +261,44 @@ export class DocumentProcessingService {
    * Extract party names from Arabic contract agreement text using regex.
    * Looks for the pattern after "كل من:" to find First Party and Second Party.
    */
+  /** Shared stop-word pattern for party name extraction. */
+  private static readonly PARTY_STOP_WORDS =
+    /(?:ويمثلها|ومقرها|ومقره|مقرها|ويشار|طرف أول|الطرف الأول|طرف ثان|الطرف الثاني|–\s*طرف|هاتف|تليفون|ص\.?\s*ب|والكائن|الكائن|يقع مقرها|الواقع|بالعنوان|سرايات|ميدان|في\s+\d)/;
+
+  /** Trim a party name that is too long — cut at the first address-like word after "في". */
+  private trimPartyName(name: string): string {
+    const words = name.split(/\s+/);
+    if (words.length <= 15) return name;
+
+    // Look for "في" followed by a number or location word
+    const addressCut = name.match(/\s+في\s+(?:\d|ميدان|شارع|منطقة|مدينة|حي|سرايات|طريق)/);
+    if (addressCut?.index !== undefined) {
+      return name.substring(0, addressCut.index).trim();
+    }
+
+    // Fallback: keep first 15 words
+    return words.slice(0, 15).join(' ');
+  }
+
   private extractParties(
     text: string,
   ): { firstParty: string | null; secondParty: string | null } {
     const result = { firstParty: null as string | null, secondParty: null as string | null };
     if (!text) return result;
 
-    // Look for text after "كل من:" or "كل من :"
-    const kolMinMatch = text.match(/كل\s*من\s*[:\s]/);
+    // Look for contract party context: "بين كل من" or "كل من:"
+    const kolMinMatch = text.match(/(?:بين\s*كل\s*من|تم\s*الاتفاق\s*بين\s*كل\s*من|كل\s*من\s*:)/);
     if (!kolMinMatch || kolMinMatch.index === undefined) return result;
 
     const afterKolMin = text.substring(kolMinMatch.index + kolMinMatch[0].length);
 
     // First Party: text until stop words
-    const firstPartyStops = /(?:ويمثلها|ومقرها|ويشار|طرف أول|الطرف الأول|–\s*طرف|هاتف|تليفون|ص\.?\s*ب)/;
-    const firstMatch = afterKolMin.match(firstPartyStops);
+    const firstMatch = afterKolMin.match(DocumentProcessingService.PARTY_STOP_WORDS);
     if (firstMatch?.index !== undefined) {
       const raw = afterKolMin.substring(0, firstMatch.index).trim();
-      // Clean up: remove leading/trailing dashes, numbers, etc.
       const cleaned = raw.replace(/^[\s\-–:]+|[\s\-–:]+$/g, '').trim();
       if (cleaned.length > 2 && cleaned.length < 400) {
-        result.firstParty = cleaned;
+        result.firstParty = this.trimPartyName(cleaned);
       }
     }
 
@@ -305,13 +310,12 @@ export class DocumentProcessingService {
       const secondStart = afterFirstParty.index + afterFirstParty[0].length;
       const remaining = text.substring(secondStart);
 
-      const secondPartyStops = /(?:ويمثلها|ومقرها|ويشار|طرف ثان|الطرف الثاني|–\s*طرف|هاتف|تليفون|ص\.?\s*ب)/;
-      const secondMatch = remaining.match(secondPartyStops);
+      const secondMatch = remaining.match(DocumentProcessingService.PARTY_STOP_WORDS);
       if (secondMatch?.index !== undefined) {
         const raw = remaining.substring(0, secondMatch.index).trim();
         const cleaned = raw.replace(/^[\s\-–:]+|[\s\-–:]+$/g, '').trim();
         if (cleaned.length > 2 && cleaned.length < 400) {
-          result.secondParty = cleaned;
+          result.secondParty = this.trimPartyName(cleaned);
         }
       }
     }
@@ -420,6 +424,24 @@ export class DocumentProcessingService {
       throw new NotFoundException('Document not found');
     }
     return doc;
+  }
+
+  /**
+   * Update the extracted text of a document (manual correction).
+   */
+  async updateExtractedText(
+    docId: string,
+    orgId: string,
+    text: string,
+  ): Promise<DocumentUpload> {
+    const doc = await this.documentUploadRepository.findOne({
+      where: { id: docId, organization_id: orgId },
+    });
+    if (!doc) {
+      throw new NotFoundException('Document not found');
+    }
+    doc.extracted_text = text;
+    return this.documentUploadRepository.save(doc);
   }
 
   /**
