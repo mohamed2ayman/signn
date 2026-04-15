@@ -29,6 +29,7 @@ import SupportPage from '@/pages/app/SupportPage';
 import BillingPage from '@/pages/app/BillingPage';
 import TeamPage from '@/pages/app/TeamPage';
 import ProfilePage from '@/pages/app/ProfilePage';
+import MfaSetupPage from '@/pages/app/MfaSetupPage';
 import ProjectPermissionsPage from '@/pages/app/ProjectPermissionsPage';
 import ContractStorePage from '@/pages/app/ContractStorePage';
 import ContractStoreDetailPage from '@/pages/app/ContractStoreDetailPage';
@@ -37,6 +38,8 @@ import ContractStoreDetailPage from '@/pages/app/ContractStoreDetailPage';
 import AdminDashboardPage from '@/pages/admin/AdminDashboardPage';
 import AdminKnowledgeAssetsPage from '@/pages/admin/AdminKnowledgeAssetsPage';
 import AdminSupportPage from '@/pages/admin/AdminSupportPage';
+import AdminUsersPage from '@/pages/admin/AdminUsersPage';
+import AdminSubscriptionsPage from '@/pages/admin/AdminSubscriptionsPage';
 import PermissionDefaultsPage from '@/pages/admin/PermissionDefaultsPage';
 
 // Contractor portal pages
@@ -116,6 +119,16 @@ function App() {
       <Route path="/auth/reset-password" element={<ResetPasswordPage />} />
       <Route path="/auth/accept-invitation" element={<AcceptInvitationPage />} />
 
+      {/* MFA Setup enforcement page (authenticated, no layout) */}
+      <Route
+        path="/mfa-setup"
+        element={
+          <ProtectedRoute>
+            <MfaSetupPage />
+          </ProtectedRoute>
+        }
+      />
+
       {/* Public contractor invitation route (no auth) */}
       <Route path="/invitation/accept" element={<AcceptPartyInvitationPage />} />
 
@@ -161,6 +174,8 @@ function App() {
         <Route index element={<Navigate to="/admin/dashboard" replace />} />
         <Route path="dashboard" element={<AdminDashboardPage />} />
         <Route path="knowledge-assets" element={<AdminKnowledgeAssetsPage />} />
+        <Route path="subscriptions" element={<AdminSubscriptionsPage />} />
+        <Route path="users" element={<AdminUsersPage />} />
         <Route path="permission-defaults" element={<PermissionDefaultsPage />} />
         <Route path="support" element={<AdminSupportPage />} />
       </Route>

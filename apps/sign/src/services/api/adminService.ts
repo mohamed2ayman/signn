@@ -9,8 +9,22 @@ export interface InviteUserRequest {
   project_ids?: string[];
 }
 
+export interface AdminUser {
+  id: string;
+  email: string;
+  first_name: string;
+  last_name: string;
+  role: string;
+  organization_id: string;
+  is_active: boolean;
+  mfa_enabled: boolean;
+  mfa_method: 'email' | 'totp' | null;
+  last_login_at: string | null;
+  created_at: string;
+}
+
 export const adminService = {
-  // Users
+  // Users (org-scoped)
   getUsers: () =>
     api.get<User[]>('/users').then(r => r.data),
 
@@ -22,6 +36,13 @@ export const adminService = {
 
   deactivateUser: (userId: string) =>
     api.delete(`/users/${userId}`).then(r => r.data),
+
+  // System admin: all users
+  getAllUsers: () =>
+    api.get<AdminUser[]>('/users/admin/all').then(r => r.data),
+
+  resetUserMfa: (userId: string) =>
+    api.post<{ message: string }>(`/users/${userId}/mfa/reset`).then(r => r.data),
 
   // Knowledge Assets pending review
   getPendingAssets: () =>

@@ -5,3 +5,6 @@ export { AcceptInvitationDto } from './accept-invitation.dto';
 export { ForgotPasswordDto } from './forgot-password.dto';
 export { ResetPasswordDto } from './reset-password.dto';
 export { RefreshTokenDto } from './refresh-token.dto';
+export { EnableMfaTotpDto } from './enable-mfa-totp.dto';
+export { DisableMfaDto } from './disable-mfa.dto';
+export { VerifyRecoveryDto } from './verify-recovery.dto';

@@ -79,4 +79,18 @@ export class UsersController {
   async deactivateUser(@Param('id', ParseUUIDPipe) userId: string) {
     return this.usersService.deactivateUser(userId);
   }
+
+  // ─── Admin-only endpoints ─────────────────────────────────────
+
+  @Get('admin/all')
+  @Roles(UserRole.SYSTEM_ADMIN, UserRole.OPERATIONS)
+  async getAllUsersForAdmin() {
+    return this.usersService.getAllUsersForAdmin();
+  }
+
+  @Post(':id/mfa/reset')
+  @Roles(UserRole.SYSTEM_ADMIN, UserRole.OPERATIONS)
+  async adminResetUserMfa(@Param('id', ParseUUIDPipe) userId: string) {
+    return this.usersService.adminResetUserMfa(userId);
+  }
 }

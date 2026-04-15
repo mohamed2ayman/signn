@@ -57,6 +57,7 @@ export class SubscriptionsService {
       max_contracts_per_project: dto.max_contracts_per_project,
       features: dto.features,
       is_active: dto.is_active ?? true,
+      require_mfa: dto.require_mfa ?? false,
     });
 
     return this.subscriptionPlanRepository.save(plan);

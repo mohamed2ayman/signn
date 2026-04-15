@@ -47,4 +47,8 @@ export class UpdatePlanDto {
   @IsOptional()
   @IsBoolean()
   is_active?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  require_mfa?: boolean;
 }

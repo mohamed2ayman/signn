@@ -121,8 +121,17 @@ export class User {
   @Column({ type: 'boolean', default: false })
   mfa_enabled: boolean;
 
+  @Column({ type: 'varchar', length: 10, nullable: true })
+  mfa_method: string | null; // 'email' | 'totp'
+
   @Column({ type: 'varchar', length: 255, nullable: true })
   mfa_secret: string;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  mfa_totp_secret: string | null;
+
+  @Column({ type: 'jsonb', nullable: true })
+  mfa_recovery_codes: string[] | null;
 
   @Column({ type: 'varchar', length: 255, nullable: true })
   invitation_token: string;

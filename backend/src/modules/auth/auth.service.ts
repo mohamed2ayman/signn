@@ -12,6 +12,8 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
+import { authenticator } from 'otplib';
+import * as QRCode from 'qrcode';
 
 import {
   User,
@@ -35,6 +37,7 @@ const BCRYPT_SALT_ROUNDS = 10;
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCKOUT_DURATION_MINUTES = 30;
 const OTP_VALIDITY_MINUTES = 10;
+const RECOVERY_CODE_COUNT = 8;
 
 @Injectable()
 export class AuthService {
@@ -55,7 +58,6 @@ export class AuthService {
   ) {}
 
   async register(dto: RegisterDto) {
-    // Check if email is already taken
     const existingUser = await this.userRepository.findOne({
       where: { email: dto.email },
     });
@@ -63,7 +65,6 @@ export class AuthService {
       throw new ConflictException('Email is already registered');
     }
 
-    // Verify the subscription plan exists
     const plan = await this.subscriptionPlanRepository.findOne({
       where: { id: dto.plan_id },
     });
@@ -71,10 +72,8 @@ export class AuthService {
       throw new BadRequestException('Invalid subscription plan');
     }
 
-    // Hash password
     const passwordHash = await this.hashData(dto.password);
 
-    // Create Organization
     const organization = this.organizationRepository.create({
       name: dto.organization_name,
       industry: dto.industry,
@@ -83,7 +82,6 @@ export class AuthService {
     const savedOrganization =
       await this.organizationRepository.save(organization);
 
-    // Create User with role OWNER_ADMIN
     const user = this.userRepository.create({
       email: dto.email,
       password_hash: passwordHash,
@@ -96,7 +94,6 @@ export class AuthService {
     });
     const savedUser = await this.userRepository.save(user);
 
-    // Create OrganizationSubscription (INACTIVE, will be activated by Paymob webhook)
     const now = new Date();
     const endDate = new Date(now);
     endDate.setDate(endDate.getDate() + plan.duration_days);
@@ -110,10 +107,8 @@ export class AuthService {
     });
     await this.orgSubscriptionRepository.save(subscription);
 
-    // Generate tokens
     const tokens = await this.generateTokens(savedUser);
 
-    // Store refresh token hash
     const refreshTokenHash = await this.hashData(tokens.refresh_token);
     await this.userRepository.update(savedUser.id, {
       refresh_token_hash: refreshTokenHash,
@@ -127,7 +122,6 @@ export class AuthService {
   }
 
   async login(dto: LoginDto) {
-    // Find user by email
     const user = await this.userRepository.findOne({
       where: { email: dto.email },
     });
@@ -135,12 +129,10 @@ export class AuthService {
       throw new UnauthorizedException('Invalid email or password');
     }
 
-    // Check if account is active
     if (!user.is_active) {
       throw new ForbiddenException('Account has been deactivated');
     }
 
-    // Check if account is locked
     if (user.locked_until && user.locked_until > new Date()) {
       const remainingMinutes = Math.ceil(
         (user.locked_until.getTime() - Date.now()) / 60000,
@@ -150,20 +142,17 @@ export class AuthService {
       );
     }
 
-    // Verify password
     const isPasswordValid = await this.validatePassword(
       dto.password,
       user.password_hash,
     );
 
     if (!isPasswordValid) {
-      // Increment failed login attempts
       const failedAttempts = user.failed_login_attempts + 1;
       const updateData: Record<string, any> = {
         failed_login_attempts: failedAttempts,
       };
 
-      // Lock account if too many failed attempts
       if (failedAttempts >= MAX_FAILED_ATTEMPTS) {
         const lockUntil = new Date();
         lockUntil.setMinutes(lockUntil.getMinutes() + LOCKOUT_DURATION_MINUTES);
@@ -177,36 +166,62 @@ export class AuthService {
       throw new UnauthorizedException('Invalid email or password');
     }
 
-    // Reset failed login attempts on successful password verification
     await this.userRepository.update(user.id, {
       failed_login_attempts: 0,
       locked_until: null as unknown as Date,
     });
 
-    // Check if MFA is enabled
+    // Check if MFA is enabled for this user
     if (user.mfa_enabled) {
-      const otpCode = this.generateOtp();
-      const otpHash = await this.hashData(otpCode);
+      if (user.mfa_method === 'totp') {
+        // For TOTP, user enters code from authenticator app — no email OTP needed
+        return {
+          requires_mfa: true,
+          mfa_method: 'totp',
+          email: user.email,
+        };
+      } else {
+        // Email OTP: generate and send
+        const otpCode = this.generateOtp();
+        const otpHash = await this.hashData(otpCode);
+        const otpTimestamp = Date.now().toString();
+        await this.userRepository.update(user.id, {
+          mfa_secret: `${otpHash}|${otpTimestamp}`,
+        });
+        await this.emailService.sendMfaOtp(user.email, otpCode);
 
-      // Store OTP hash with timestamp in mfa_secret field (format: "hash|timestamp")
-      const otpTimestamp = Date.now().toString();
-      await this.userRepository.update(user.id, {
-        mfa_secret: `${otpHash}|${otpTimestamp}`,
-      });
-
-      // Send OTP via email
-      await this.emailService.sendMfaOtp(user.email, otpCode);
-
-      return {
-        requires_mfa: true,
-        email: user.email,
-      };
+        return {
+          requires_mfa: true,
+          mfa_method: 'email',
+          email: user.email,
+        };
+      }
     }
 
-    // Generate tokens
+    // Check if org's subscription plan requires MFA
+    if (user.organization_id) {
+      const requiresMfaSetup = await this.checkPlanRequiresMfa(
+        user.organization_id,
+      );
+      if (requiresMfaSetup) {
+        // Issue full tokens but flag that MFA setup is required
+        const tokens = await this.generateTokens(user);
+        const refreshTokenHash = await this.hashData(tokens.refresh_token);
+        await this.userRepository.update(user.id, {
+          last_login_at: new Date(),
+          refresh_token_hash: refreshTokenHash,
+        });
+        return {
+          user: this.sanitizeUser(user),
+          access_token: tokens.access_token,
+          refresh_token: tokens.refresh_token,
+          requires_mfa_setup: true,
+        };
+      }
+    }
+
     const tokens = await this.generateTokens(user);
 
-    // Update last login and store refresh token hash
     const refreshTokenHash = await this.hashData(tokens.refresh_token);
     await this.userRepository.update(user.id, {
       last_login_at: new Date(),
@@ -228,36 +243,46 @@ export class AuthService {
       throw new UnauthorizedException('Invalid verification request');
     }
 
-    if (!user.mfa_secret) {
-      throw new UnauthorizedException('No MFA verification pending');
+    if (user.mfa_method === 'totp') {
+      // TOTP verification
+      if (!user.mfa_totp_secret) {
+        throw new UnauthorizedException('TOTP not configured');
+      }
+      const isValid = authenticator.verify({
+        token: dto.otp_code,
+        secret: user.mfa_totp_secret,
+      });
+      if (!isValid) {
+        throw new UnauthorizedException('Invalid authenticator code');
+      }
+    } else {
+      // Email OTP verification
+      if (!user.mfa_secret) {
+        throw new UnauthorizedException('No MFA verification pending');
+      }
+
+      const separatorIndex = user.mfa_secret.lastIndexOf('|');
+      if (separatorIndex === -1) {
+        throw new UnauthorizedException('Invalid MFA state');
+      }
+
+      const otpHash = user.mfa_secret.substring(0, separatorIndex);
+      const otpTimestamp = user.mfa_secret.substring(separatorIndex + 1);
+
+      const otpIssueTime = parseInt(otpTimestamp, 10);
+      const elapsed = Date.now() - otpIssueTime;
+      if (elapsed > OTP_VALIDITY_MINUTES * 60 * 1000) {
+        throw new UnauthorizedException('OTP has expired. Please login again.');
+      }
+
+      const isOtpValid = await this.validatePassword(dto.otp_code, otpHash);
+      if (!isOtpValid) {
+        throw new UnauthorizedException('Invalid OTP code');
+      }
     }
 
-    // Parse stored OTP hash and timestamp (format: "bcryptHash|timestamp")
-    const separatorIndex = user.mfa_secret.lastIndexOf('|');
-    if (separatorIndex === -1) {
-      throw new UnauthorizedException('Invalid MFA state');
-    }
-
-    const otpHash = user.mfa_secret.substring(0, separatorIndex);
-    const otpTimestamp = user.mfa_secret.substring(separatorIndex + 1);
-
-    // Check if OTP is expired (10 minutes)
-    const otpIssueTime = parseInt(otpTimestamp, 10);
-    const elapsed = Date.now() - otpIssueTime;
-    if (elapsed > OTP_VALIDITY_MINUTES * 60 * 1000) {
-      throw new UnauthorizedException('OTP has expired. Please login again.');
-    }
-
-    // Verify OTP
-    const isOtpValid = await this.validatePassword(dto.otp_code, otpHash);
-    if (!isOtpValid) {
-      throw new UnauthorizedException('Invalid OTP code');
-    }
-
-    // Generate tokens
     const tokens = await this.generateTokens(user);
 
-    // Clear MFA secret, update last login, and store refresh token hash
     const refreshTokenHash = await this.hashData(tokens.refresh_token);
     await this.userRepository.update(user.id, {
       mfa_secret: null as unknown as string,
@@ -272,8 +297,223 @@ export class AuthService {
     };
   }
 
+  async verifyRecoveryCode(email: string, recoveryCode: string) {
+    const user = await this.userRepository.findOne({ where: { email } });
+    if (!user || !user.mfa_enabled) {
+      throw new UnauthorizedException('Invalid recovery request');
+    }
+
+    if (!user.mfa_recovery_codes || user.mfa_recovery_codes.length === 0) {
+      throw new UnauthorizedException('No recovery codes available');
+    }
+
+    // Find matching recovery code
+    let matchIndex = -1;
+    for (let i = 0; i < user.mfa_recovery_codes.length; i++) {
+      const isMatch = await this.validatePassword(
+        recoveryCode.trim().toUpperCase(),
+        user.mfa_recovery_codes[i],
+      );
+      if (isMatch) {
+        matchIndex = i;
+        break;
+      }
+    }
+
+    if (matchIndex === -1) {
+      throw new UnauthorizedException('Invalid recovery code');
+    }
+
+    // Remove the used recovery code (single-use)
+    const updatedCodes = user.mfa_recovery_codes.filter(
+      (_, i) => i !== matchIndex,
+    );
+
+    const tokens = await this.generateTokens(user);
+    const refreshTokenHash = await this.hashData(tokens.refresh_token);
+
+    await this.userRepository.update(user.id, {
+      mfa_secret: null as unknown as string,
+      mfa_recovery_codes: updatedCodes.length > 0 ? updatedCodes : null as unknown as string[],
+      last_login_at: new Date(),
+      refresh_token_hash: refreshTokenHash,
+    });
+
+    return {
+      user: this.sanitizeUser(user),
+      access_token: tokens.access_token,
+      refresh_token: tokens.refresh_token,
+      recovery_codes_remaining: updatedCodes.length,
+    };
+  }
+
+  // ─── MFA Settings ─────────────────────────────────────────────
+
+  async getMfaStatus(userId: string) {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) throw new UnauthorizedException('User not found');
+
+    let requiresMfaSetup = false;
+    if (user.organization_id) {
+      requiresMfaSetup = await this.checkPlanRequiresMfa(user.organization_id);
+    }
+
+    return {
+      mfa_enabled: user.mfa_enabled,
+      mfa_method: user.mfa_method,
+      recovery_codes_count: user.mfa_recovery_codes?.length ?? 0,
+      requires_mfa_setup: requiresMfaSetup && !user.mfa_enabled,
+    };
+  }
+
+  async setupMfaTotp(userId: string) {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) throw new UnauthorizedException('User not found');
+
+    // Generate a new TOTP secret
+    const secret = authenticator.generateSecret();
+    const appName = 'SIGN Platform';
+    const otpauthUri = authenticator.keyuri(user.email, appName, secret);
+
+    // Store secret temporarily (will be confirmed on enable)
+    await this.userRepository.update(userId, {
+      mfa_totp_secret: secret,
+    });
+
+    // Generate QR code as data URL
+    const qrCodeDataUrl = await QRCode.toDataURL(otpauthUri);
+
+    return {
+      secret,
+      otpauth_uri: otpauthUri,
+      qr_code: qrCodeDataUrl,
+    };
+  }
+
+  async enableMfaTotp(userId: string, totpCode: string) {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) throw new UnauthorizedException('User not found');
+
+    if (!user.mfa_totp_secret) {
+      throw new BadRequestException(
+        'TOTP setup not initiated. Call /auth/mfa/setup/totp first.',
+      );
+    }
+
+    // Verify the TOTP code to confirm the user has scanned it correctly
+    const isValid = authenticator.verify({
+      token: totpCode,
+      secret: user.mfa_totp_secret,
+    });
+    if (!isValid) {
+      throw new BadRequestException(
+        'Invalid TOTP code. Make sure you scanned the QR code correctly.',
+      );
+    }
+
+    const recoveryCodes = await this.generateRecoveryCodes();
+
+    await this.userRepository.update(userId, {
+      mfa_enabled: true,
+      mfa_method: 'totp',
+      mfa_recovery_codes: recoveryCodes.hashed,
+    });
+
+    return {
+      message: 'MFA enabled with authenticator app',
+      recovery_codes: recoveryCodes.plain,
+    };
+  }
+
+  async enableMfaEmail(userId: string) {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) throw new UnauthorizedException('User not found');
+
+    if (user.mfa_enabled) {
+      throw new BadRequestException('MFA is already enabled');
+    }
+
+    const recoveryCodes = await this.generateRecoveryCodes();
+
+    await this.userRepository.update(userId, {
+      mfa_enabled: true,
+      mfa_method: 'email',
+      mfa_recovery_codes: recoveryCodes.hashed,
+    });
+
+    return {
+      message: 'MFA enabled with email OTP',
+      recovery_codes: recoveryCodes.plain,
+    };
+  }
+
+  async disableMfa(userId: string, password: string) {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) throw new UnauthorizedException('User not found');
+
+    if (!user.mfa_enabled) {
+      throw new BadRequestException('MFA is not enabled');
+    }
+
+    // Require password confirmation for security
+    const isPasswordValid = await this.validatePassword(
+      password,
+      user.password_hash,
+    );
+    if (!isPasswordValid) {
+      throw new UnauthorizedException('Incorrect password');
+    }
+
+    await this.userRepository.update(userId, {
+      mfa_enabled: false,
+      mfa_method: null as unknown as string,
+      mfa_totp_secret: null as unknown as string,
+      mfa_secret: null as unknown as string,
+      mfa_recovery_codes: null as unknown as string[],
+    });
+
+    return { message: 'MFA disabled successfully' };
+  }
+
+  // ─── Admin MFA Management ──────────────────────────────────────
+
+  async adminResetUserMfa(adminUserId: string, targetUserId: string) {
+    // Verify admin
+    const admin = await this.userRepository.findOne({
+      where: { id: adminUserId },
+    });
+    if (
+      !admin ||
+      (admin.role !== UserRole.SYSTEM_ADMIN && admin.role !== UserRole.OPERATIONS)
+    ) {
+      throw new ForbiddenException('Insufficient permissions');
+    }
+
+    const user = await this.userRepository.findOne({
+      where: { id: targetUserId },
+    });
+    if (!user) {
+      throw new BadRequestException('User not found');
+    }
+
+    await this.userRepository.update(targetUserId, {
+      mfa_enabled: false,
+      mfa_method: null as unknown as string,
+      mfa_totp_secret: null as unknown as string,
+      mfa_secret: null as unknown as string,
+      mfa_recovery_codes: null as unknown as string[],
+    });
+
+    this.logger.log(
+      `Admin ${admin.email} reset MFA for user ${user.email}`,
+    );
+
+    return { message: `MFA reset for user ${user.email}` };
+  }
+
+  // ─── Auth Helpers ──────────────────────────────────────────────
+
   async refreshToken(refreshToken: string) {
-    // Verify the refresh token
     let payload: { sub: string; email: string };
     try {
       payload = this.jwtService.verify(refreshToken, {
@@ -283,7 +523,6 @@ export class AuthService {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
 
-    // Find the user
     const user = await this.userRepository.findOne({
       where: { id: payload.sub },
     });
@@ -291,7 +530,6 @@ export class AuthService {
       throw new UnauthorizedException('User not found or inactive');
     }
 
-    // Verify the refresh token matches stored hash
     if (!user.refresh_token_hash) {
       throw new UnauthorizedException('No active session found');
     }
@@ -304,10 +542,8 @@ export class AuthService {
       throw new UnauthorizedException('Invalid refresh token');
     }
 
-    // Generate new tokens
     const tokens = await this.generateTokens(user);
 
-    // Update stored refresh token hash
     const refreshTokenHash = await this.hashData(tokens.refresh_token);
     await this.userRepository.update(user.id, {
       refresh_token_hash: refreshTokenHash,
@@ -340,7 +576,6 @@ export class AuthService {
       throw new BadRequestException('Invitation has expired');
     }
 
-    // Update user with password and details
     const passwordHash = await this.hashData(dto.password);
     await this.userRepository.update(user.id, {
       password_hash: passwordHash,
@@ -352,15 +587,12 @@ export class AuthService {
       invitation_expires_at: null as unknown as Date,
     });
 
-    // Reload user with updated data
     const updatedUser = await this.userRepository.findOne({
       where: { id: user.id },
     });
 
-    // Generate tokens
     const tokens = await this.generateTokens(updatedUser!);
 
-    // Store refresh token hash
     const refreshTokenHash = await this.hashData(tokens.refresh_token);
     await this.userRepository.update(updatedUser!.id, {
       refresh_token_hash: refreshTokenHash,
@@ -379,7 +611,6 @@ export class AuthService {
       where: { email: dto.email },
     });
 
-    // Always return the same message to prevent email enumeration
     if (user) {
       const resetToken = crypto.randomBytes(32).toString('hex');
       const expiresAt = new Date();
@@ -409,7 +640,6 @@ export class AuthService {
       throw new BadRequestException('Reset token has expired');
     }
 
-    // Hash new password and update
     const passwordHash = await this.hashData(dto.password);
     await this.userRepository.update(user.id, {
       password_hash: passwordHash,
@@ -440,7 +670,38 @@ export class AuthService {
     return this.sanitizeUser(user);
   }
 
-  // --- Private Helper Methods ---
+  // ─── Private Helpers ───────────────────────────────────────────
+
+  private async checkPlanRequiresMfa(organizationId: string): Promise<boolean> {
+    const subscription = await this.orgSubscriptionRepository.findOne({
+      where: {
+        organization_id: organizationId,
+        status: SubscriptionStatus.ACTIVE,
+      },
+      relations: ['plan'],
+    });
+    return subscription?.plan?.require_mfa ?? false;
+  }
+
+  private async generateRecoveryCodes(): Promise<{
+    plain: string[];
+    hashed: string[];
+  }> {
+    const plain: string[] = [];
+    const hashed: string[] = [];
+
+    for (let i = 0; i < RECOVERY_CODE_COUNT; i++) {
+      // Format: XXXX-XXXX (8 uppercase hex chars with dash)
+      const code =
+        crypto.randomBytes(4).toString('hex').toUpperCase().slice(0, 4) +
+        '-' +
+        crypto.randomBytes(4).toString('hex').toUpperCase().slice(0, 4);
+      plain.push(code);
+      hashed.push(await this.hashData(code));
+    }
+
+    return { plain, hashed };
+  }
 
   private async generateTokens(user: User) {
     const payload = {
@@ -471,7 +732,6 @@ export class AuthService {
   }
 
   private generateOtp(): string {
-    // Generate a secure 6-digit OTP
     const buffer = crypto.randomBytes(4);
     const num = buffer.readUInt32BE(0) % 1000000;
     return num.toString().padStart(6, '0');
@@ -489,8 +749,14 @@ export class AuthService {
   }
 
   private sanitizeUser(user: User) {
-    const { password_hash, mfa_secret, refresh_token_hash, ...sanitized } =
-      user;
+    const {
+      password_hash,
+      mfa_secret,
+      mfa_totp_secret,
+      mfa_recovery_codes,
+      refresh_token_hash,
+      ...sanitized
+    } = user;
     return sanitized;
   }
 }

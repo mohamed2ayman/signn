@@ -61,6 +61,8 @@ export class UsersService {
     const {
       password_hash,
       mfa_secret,
+      mfa_totp_secret,
+      mfa_recovery_codes,
       refresh_token_hash,
       invitation_token,
       ...profile
@@ -233,5 +235,59 @@ export class UsersService {
       email: user.email,
       is_active: false,
     };
+  }
+
+  async getAllUsersForAdmin(): Promise<
+    {
+      id: string;
+      email: string;
+      first_name: string;
+      last_name: string;
+      role: string;
+      organization_id: string;
+      is_active: boolean;
+      mfa_enabled: boolean;
+      mfa_method: string | null;
+      last_login_at: Date;
+      created_at: Date;
+    }[]
+  > {
+    const users = await this.userRepository.find({
+      select: [
+        'id',
+        'email',
+        'first_name',
+        'last_name',
+        'role',
+        'organization_id',
+        'is_active',
+        'mfa_enabled',
+        'mfa_method',
+        'last_login_at',
+        'created_at',
+      ],
+      order: { created_at: 'DESC' },
+    });
+    return users as any;
+  }
+
+  async adminResetUserMfa(targetUserId: string) {
+    const user = await this.userRepository.findOne({
+      where: { id: targetUserId },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    await this.userRepository.update(targetUserId, {
+      mfa_enabled: false,
+      mfa_method: null as unknown as string,
+      mfa_totp_secret: null as unknown as string,
+      mfa_secret: null as unknown as string,
+      mfa_recovery_codes: null as unknown as string[],
+    });
+
+    return { message: `MFA reset for user ${user.email}` };
   }
 }

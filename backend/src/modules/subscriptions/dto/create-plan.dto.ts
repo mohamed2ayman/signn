@@ -41,4 +41,8 @@ export class CreatePlanDto {
   @IsOptional()
   @IsBoolean()
   is_active?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  require_mfa?: boolean;
 }

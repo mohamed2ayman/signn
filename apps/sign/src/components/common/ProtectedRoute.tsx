@@ -14,7 +14,7 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   allowedRoles,
 }) => {
   const location = useLocation();
-  const { isAuthenticated, user } = useSelector(
+  const { isAuthenticated, user, mfaSetupRequired } = useSelector(
     (state: RootState) => state.auth,
   );
 
@@ -23,11 +23,15 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
     return <Navigate to="/auth/login" state={{ from: location }} replace />;
   }
 
+  // If org requires MFA and user hasn't set it up, redirect to setup page
+  if (mfaSetupRequired && location.pathname !== '/mfa-setup') {
+    return <Navigate to="/mfa-setup" replace />;
+  }
+
   // If roles are specified, check if user has the required role
   if (allowedRoles && allowedRoles.length > 0 && user) {
     const hasRequiredRole = allowedRoles.includes(user.role);
     if (!hasRequiredRole) {
-      // Redirect to appropriate dashboard based on user role
       return <Navigate to="/auth/login" replace />;
     }
   }

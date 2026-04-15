@@ -247,6 +247,8 @@ export interface User {
   is_active: boolean;
   is_email_verified: boolean;
   mfa_enabled: boolean;
+  mfa_method: 'email' | 'totp' | null;
+  mfa_recovery_codes_count?: number;
   preferred_language: string;
   onboarding_completed?: boolean;
   onboarding_level?: 'none' | 'quick' | 'comprehensive';
@@ -887,6 +889,7 @@ export interface SubscriptionPlan {
   max_contracts_per_project: number;
   features: Record<string, boolean> | null;
   is_active: boolean;
+  require_mfa: boolean;
   created_at: string;
 }
 

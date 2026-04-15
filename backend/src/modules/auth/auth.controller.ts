@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Put,
+  Delete,
   Body,
   UseGuards,
   HttpCode,
@@ -18,6 +19,9 @@ import {
   AcceptInvitationDto,
   ForgotPasswordDto,
   ResetPasswordDto,
+  EnableMfaTotpDto,
+  DisableMfaDto,
+  VerifyRecoveryDto,
 } from './dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -41,6 +45,12 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   async verifyMfa(@Body() dto: VerifyMfaDto) {
     return this.authService.verifyMfa(dto);
+  }
+
+  @Post('verify-recovery')
+  @HttpCode(HttpStatus.OK)
+  async verifyRecovery(@Body() dto: VerifyRecoveryDto) {
+    return this.authService.verifyRecoveryCode(dto.email, dto.recovery_code);
   }
 
   @Post('refresh')
@@ -87,5 +97,47 @@ export class AuthController {
   ) {
     await this.authService.completeOnboarding(userId, body.level);
     return { message: 'Onboarding completed' };
+  }
+
+  // ─── MFA Settings Endpoints ───────────────────────────────────
+
+  @Get('mfa/status')
+  @UseGuards(JwtAuthGuard)
+  async getMfaStatus(@CurrentUser('id') userId: string) {
+    return this.authService.getMfaStatus(userId);
+  }
+
+  @Post('mfa/setup/totp')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  async setupMfaTotp(@CurrentUser('id') userId: string) {
+    return this.authService.setupMfaTotp(userId);
+  }
+
+  @Post('mfa/enable/totp')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  async enableMfaTotp(
+    @CurrentUser('id') userId: string,
+    @Body() dto: EnableMfaTotpDto,
+  ) {
+    return this.authService.enableMfaTotp(userId, dto.totp_code);
+  }
+
+  @Post('mfa/enable/email')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  async enableMfaEmail(@CurrentUser('id') userId: string) {
+    return this.authService.enableMfaEmail(userId);
+  }
+
+  @Delete('mfa/disable')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  async disableMfa(
+    @CurrentUser('id') userId: string,
+    @Body() dto: DisableMfaDto,
+  ) {
+    return this.authService.disableMfa(userId, dto.password);
   }
 }

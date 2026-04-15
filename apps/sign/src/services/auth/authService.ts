@@ -26,6 +26,11 @@ export interface VerifyMfaRequest {
   otp_code: string;
 }
 
+export interface VerifyRecoveryRequest {
+  email: string;
+  recovery_code: string;
+}
+
 export interface AcceptInvitationRequest {
   token: string;
   password: string;
@@ -51,7 +56,27 @@ export interface LoginResponse {
   access_token?: string;
   refresh_token?: string;
   requires_mfa?: boolean;
+  requires_mfa_setup?: boolean;
+  mfa_method?: string;
   email?: string;
+}
+
+export interface MfaStatusResponse {
+  mfa_enabled: boolean;
+  mfa_method: 'email' | 'totp' | null;
+  recovery_codes_count: number;
+  requires_mfa_setup: boolean;
+}
+
+export interface MfaTotpSetupResponse {
+  secret: string;
+  otpauth_uri: string;
+  qr_code: string;
+}
+
+export interface EnableMfaResponse {
+  message: string;
+  recovery_codes: string[];
 }
 
 export interface RefreshTokenResponse {
@@ -95,6 +120,48 @@ export const authService = {
     if (response.data.refresh_token) {
       localStorage.setItem('refresh_token', response.data.refresh_token);
     }
+    return response.data;
+  },
+
+  /**
+   * Use a backup recovery code to bypass MFA
+   */
+  async verifyRecovery(data: VerifyRecoveryRequest): Promise<LoginResponse> {
+    const response = await api.post<LoginResponse>('/auth/verify-recovery', data);
+    if (response.data.refresh_token) {
+      localStorage.setItem('refresh_token', response.data.refresh_token);
+    }
+    return response.data;
+  },
+
+  // ─── MFA Settings ─────────────────────────────────────────
+
+  async getMfaStatus(): Promise<MfaStatusResponse> {
+    const response = await api.get<MfaStatusResponse>('/auth/mfa/status');
+    return response.data;
+  },
+
+  async setupMfaTotp(): Promise<MfaTotpSetupResponse> {
+    const response = await api.post<MfaTotpSetupResponse>('/auth/mfa/setup/totp');
+    return response.data;
+  },
+
+  async enableMfaTotp(totpCode: string): Promise<EnableMfaResponse> {
+    const response = await api.post<EnableMfaResponse>('/auth/mfa/enable/totp', {
+      totp_code: totpCode,
+    });
+    return response.data;
+  },
+
+  async enableMfaEmail(): Promise<EnableMfaResponse> {
+    const response = await api.post<EnableMfaResponse>('/auth/mfa/enable/email');
+    return response.data;
+  },
+
+  async disableMfa(password: string): Promise<{ message: string }> {
+    const response = await api.delete<{ message: string }>('/auth/mfa/disable', {
+      data: { password },
+    });
     return response.data;
   },
 

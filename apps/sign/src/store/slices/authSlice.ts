@@ -8,7 +8,9 @@ interface AuthState {
   isAuthenticated: boolean;
   isLoading: boolean;
   mfaRequired: boolean;
+  mfaMethod: 'email' | 'totp' | null;
   mfaEmail: string | null;
+  mfaSetupRequired: boolean;
 }
 
 const initialState: AuthState = {
@@ -18,7 +20,9 @@ const initialState: AuthState = {
   isAuthenticated: !!localStorage.getItem('access_token'),
   isLoading: false,
   mfaRequired: false,
+  mfaMethod: null,
   mfaEmail: null,
+  mfaSetupRequired: false,
 };
 
 const authSlice = createSlice({
@@ -31,6 +35,7 @@ const authSlice = createSlice({
         user: User;
         token: string;
         refreshToken?: string;
+        mfaSetupRequired?: boolean;
       }>,
     ) => {
       state.user = action.payload.user;
@@ -39,7 +44,9 @@ const authSlice = createSlice({
       state.isAuthenticated = true;
       state.isLoading = false;
       state.mfaRequired = false;
+      state.mfaMethod = null;
       state.mfaEmail = null;
+      state.mfaSetupRequired = action.payload.mfaSetupRequired ?? false;
       localStorage.setItem('access_token', action.payload.token);
       if (action.payload.refreshToken) {
         localStorage.setItem('refresh_token', action.payload.refreshToken);
@@ -47,6 +54,7 @@ const authSlice = createSlice({
     },
     setUser: (state, action: PayloadAction<User>) => {
       state.user = action.payload;
+      state.mfaSetupRequired = false;
     },
     setToken: (state, action: PayloadAction<string>) => {
       state.token = action.payload;
@@ -57,15 +65,20 @@ const authSlice = createSlice({
     },
     setMfaRequired: (
       state,
-      action: PayloadAction<{ email: string }>,
+      action: PayloadAction<{ email: string; mfaMethod: 'email' | 'totp' }>,
     ) => {
       state.mfaRequired = true;
+      state.mfaMethod = action.payload.mfaMethod;
       state.mfaEmail = action.payload.email;
       state.isLoading = false;
     },
     clearMfa: (state) => {
       state.mfaRequired = false;
+      state.mfaMethod = null;
       state.mfaEmail = null;
+    },
+    clearMfaSetupRequired: (state) => {
+      state.mfaSetupRequired = false;
     },
     logout: (state) => {
       state.user = null;
@@ -74,7 +87,9 @@ const authSlice = createSlice({
       state.isAuthenticated = false;
       state.isLoading = false;
       state.mfaRequired = false;
+      state.mfaMethod = null;
       state.mfaEmail = null;
+      state.mfaSetupRequired = false;
       localStorage.removeItem('access_token');
       localStorage.removeItem('refresh_token');
     },
@@ -88,6 +103,7 @@ export const {
   setLoading,
   setMfaRequired,
   clearMfa,
+  clearMfaSetupRequired,
   logout,
 } = authSlice.actions;
 

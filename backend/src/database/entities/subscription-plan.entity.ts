@@ -42,6 +42,9 @@ export class SubscriptionPlan {
   @Column({ type: 'boolean', default: true })
   is_active: boolean;
 
+  @Column({ type: 'boolean', default: false })
+  require_mfa: boolean;
+
   @CreateDateColumn({ type: 'timestamptz' })
   created_at: Date;
 
