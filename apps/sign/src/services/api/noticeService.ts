@@ -28,7 +28,4 @@ export const noticeService = {
 
   updateStatus: (id: string, status: string, note?: string) =>
     api.put<Notice>(`/notices/${id}/status`, { status, note }).then(r => r.data),
-
-  withdraw: (id: string) =>
-    api.put<Notice>(`/notices/${id}/withdraw`).then(r => r.data),
 };

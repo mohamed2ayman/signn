@@ -37,7 +37,7 @@ export class SubContractsService {
     const existingCount = await this.subContractRepo.count({
       where: { main_contract_id: dto.main_contract_id },
     });
-    const subcontractNumber = `SUB-${String(existingCount + 1).padStart(4, '0')}`;
+    const subcontractNumber = `SC-${String(existingCount + 1).padStart(3, '0')}`;
 
     const subContract = this.subContractRepo.create({
       ...dto,

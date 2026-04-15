@@ -54,15 +54,3 @@ export class CreateNoticeResponseDto {
   @IsString()
   response_content: string;
 }
-
-export class UploadNoticeDocumentDto {
-  @IsString()
-  file_url: string;
-
-  @IsString()
-  file_name: string;
-
-  @IsOptional()
-  @IsString()
-  document_type?: string;
-}

@@ -37,7 +37,4 @@ export const claimService = {
 
   uploadDocument: (id: string, data: { file_url: string; file_name: string; document_type?: string }) =>
     api.post(`/claims/${id}/documents`, data).then(r => r.data),
-
-  withdraw: (id: string) =>
-    api.put<Claim>(`/claims/${id}/withdraw`).then(r => r.data),
 };

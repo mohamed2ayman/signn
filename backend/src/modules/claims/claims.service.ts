@@ -191,7 +191,6 @@ export class ClaimsService {
     const terminalStatuses: ClaimStatus[] = [
       ClaimStatus.SETTLED,
       ClaimStatus.REJECTED,
-      ClaimStatus.WITHDRAWN,
     ];
 
     if (terminalStatuses.includes(claim.status)) {
@@ -232,25 +231,6 @@ export class ClaimsService {
     });
 
     return this.claimDocumentRepo.save(document);
-  }
-
-  async withdraw(id: string, userId: string): Promise<Claim> {
-    const claim = await this.findById(id);
-    const previousStatus = claim.status;
-
-    claim.status = ClaimStatus.WITHDRAWN;
-    claim.resolved_at = new Date();
-
-    const saved = await this.claimRepo.save(claim);
-
-    await this.logStatusChange(
-      id,
-      userId,
-      previousStatus,
-      ClaimStatus.WITHDRAWN,
-    );
-
-    return saved;
   }
 
   private async logStatusChange(

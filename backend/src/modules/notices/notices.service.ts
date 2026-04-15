@@ -5,7 +5,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In, LessThan, Not } from 'typeorm';
+import { Repository, In, Not } from 'typeorm';
 import { Contract, ContractStatus } from '../../database/entities';
 import {
   Notice,
@@ -188,12 +188,7 @@ export class NoticesService {
     const notice = await this.findById(id);
     const previousStatus = notice.status;
 
-    const terminalStatuses: NoticeStatus[] = [
-      NoticeStatus.CLOSED,
-      NoticeStatus.WITHDRAWN,
-    ];
-
-    if (terminalStatuses.includes(notice.status)) {
+    if (notice.status === NoticeStatus.CLOSED) {
       throw new BadRequestException(
         `Cannot transition from terminal status ${notice.status}`,
       );
@@ -204,24 +199,6 @@ export class NoticesService {
     const saved = await this.noticeRepo.save(notice);
 
     await this.logStatusChange(id, userId, previousStatus, dto.status, dto.note);
-
-    return saved;
-  }
-
-  async withdraw(id: string, userId: string): Promise<Notice> {
-    const notice = await this.findById(id);
-    const previousStatus = notice.status;
-
-    notice.status = NoticeStatus.WITHDRAWN;
-
-    const saved = await this.noticeRepo.save(notice);
-
-    await this.logStatusChange(
-      id,
-      userId,
-      previousStatus,
-      NoticeStatus.WITHDRAWN,
-    );
 
     return saved;
   }
@@ -248,7 +225,6 @@ export class NoticesService {
     const terminalStatuses = [
       NoticeStatus.RESPONDED,
       NoticeStatus.CLOSED,
-      NoticeStatus.WITHDRAWN,
       NoticeStatus.OVERDUE,
     ];
 

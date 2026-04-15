@@ -79,13 +79,4 @@ export class NoticesController {
   ) {
     return this.noticesService.updateStatus(id, dto, user.id);
   }
-
-  @Put(':id/withdraw')
-  @RequirePermission(PermissionLevel.EDITOR)
-  async withdraw(
-    @Param('id', ParseUUIDPipe) id: string,
-    @CurrentUser() user: any,
-  ) {
-    return this.noticesService.withdraw(id, user.id);
-  }
 }

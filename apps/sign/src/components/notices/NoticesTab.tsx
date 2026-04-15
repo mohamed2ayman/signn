@@ -2,67 +2,82 @@ import { useEffect, useState } from 'react';
 import { noticeService } from '@/services/api/noticeService';
 import type { Notice } from '@/types';
 
+const NOTICE_TYPE_LABELS: Record<string, string> = {
+  PRELIMINARY_NOTICE: 'Preliminary Notice',
+  NOTICE_TO_PROCEED: 'Notice to Proceed',
+  NOTICE_TO_CORRECT: 'Notice to Correct',
+  NOTICE_OF_DELAY: 'Notice of Delay',
+  EXTENSION_OF_TIME: 'Notice of Extension of Time (EOT)',
+  CHANGE_ORDER_REQUEST: 'Change Order Request',
+  NOTICE_OF_VARIATION: 'Notice of Variation',
+  NOTICE_OF_CONCEALED_CONDITIONS: 'Notice of Concealed / Unknown Conditions',
+  NOTICE_OF_DISPUTE: 'Notice of Dispute',
+  NOTICE_OF_DISSATISFACTION: 'Notice of Dissatisfaction',
+  PAYMENT_NOTICE: 'Payment Notice',
+  NOTICE_OF_NON_PAYMENT: 'Notice of Non-Payment',
+  INTENTION_TO_SUSPEND: 'Intention to Suspend Work',
+  NOTICE_OF_SUSPENSION: 'Notice of Suspension',
+  NOTICE_OF_TERMINATION: 'Notice of Termination',
+  DEFECT_NOTICE: 'Defect Notice',
+  RECTIFICATION_NOTICE: 'Rectification Notice',
+  NOTICE_OF_COMPLETION: 'Notice of Completion',
+  NOTICE_OF_FORCE_MAJEURE: 'Notice of Force Majeure',
+  INTENT_TO_CLAIM: 'Notice of Intent to Claim',
+  CHANGE_IN_CONDITIONS: 'Notice of Change in Conditions',
+  GENERAL: 'General Notice',
+};
+
 const NOTICE_TYPE_GROUPS: { label: string; types: { value: string; label: string }[] }[] = [
+  { label: 'General & Procedural', types: [
+    { value: 'PRELIMINARY_NOTICE', label: NOTICE_TYPE_LABELS.PRELIMINARY_NOTICE },
+    { value: 'NOTICE_TO_PROCEED', label: NOTICE_TYPE_LABELS.NOTICE_TO_PROCEED },
+    { value: 'NOTICE_OF_COMPLETION', label: NOTICE_TYPE_LABELS.NOTICE_OF_COMPLETION },
+    { value: 'GENERAL', label: NOTICE_TYPE_LABELS.GENERAL },
+  ]},
   { label: 'Delay & Time', types: [
-    { value: 'NOTICE_OF_DELAY', label: 'Notice of Delay' },
-    { value: 'NOTICE_OF_EXTENSION_OF_TIME', label: 'Extension of Time' },
-    { value: 'NOTICE_OF_COMPLETION', label: 'Completion' },
-    { value: 'NOTICE_OF_PRACTICAL_COMPLETION', label: 'Practical Completion' },
-    { value: 'NOTICE_OF_SECTIONAL_COMPLETION', label: 'Sectional Completion' },
+    { value: 'NOTICE_OF_DELAY', label: NOTICE_TYPE_LABELS.NOTICE_OF_DELAY },
+    { value: 'EXTENSION_OF_TIME', label: NOTICE_TYPE_LABELS.EXTENSION_OF_TIME },
   ]},
   { label: 'Variations & Changes', types: [
-    { value: 'NOTICE_OF_VARIATION', label: 'Variation' },
-    { value: 'NOTICE_OF_CHANGE_IN_CONDITIONS', label: 'Change in Conditions' },
-    { value: 'NOTICE_OF_ACCELERATION', label: 'Acceleration' },
-    { value: 'NOTICE_OF_SCOPE_CHANGE', label: 'Scope Change' },
+    { value: 'CHANGE_ORDER_REQUEST', label: NOTICE_TYPE_LABELS.CHANGE_ORDER_REQUEST },
+    { value: 'NOTICE_OF_VARIATION', label: NOTICE_TYPE_LABELS.NOTICE_OF_VARIATION },
+    { value: 'CHANGE_IN_CONDITIONS', label: NOTICE_TYPE_LABELS.CHANGE_IN_CONDITIONS },
+    { value: 'NOTICE_OF_CONCEALED_CONDITIONS', label: NOTICE_TYPE_LABELS.NOTICE_OF_CONCEALED_CONDITIONS },
   ]},
   { label: 'Quality & Defects', types: [
-    { value: 'NOTICE_TO_CORRECT', label: 'Notice to Correct' },
-    { value: 'NOTICE_OF_DEFECTS', label: 'Defects' },
-    { value: 'NOTICE_OF_NON_CONFORMANCE', label: 'Non-Conformance' },
-    { value: 'NOTICE_OF_REJECTION', label: 'Rejection' },
+    { value: 'NOTICE_TO_CORRECT', label: NOTICE_TYPE_LABELS.NOTICE_TO_CORRECT },
+    { value: 'DEFECT_NOTICE', label: NOTICE_TYPE_LABELS.DEFECT_NOTICE },
+    { value: 'RECTIFICATION_NOTICE', label: NOTICE_TYPE_LABELS.RECTIFICATION_NOTICE },
   ]},
   { label: 'Payment & Financial', types: [
-    { value: 'NOTICE_OF_PAYMENT', label: 'Payment' },
-    { value: 'PAY_LESS_NOTICE', label: 'Pay Less Notice' },
-    { value: 'NOTICE_OF_WITHHOLDING', label: 'Withholding' },
-    { value: 'NOTICE_OF_LOSS_AND_EXPENSE', label: 'Loss and Expense' },
-    { value: 'NOTICE_OF_PRICE_ADJUSTMENT', label: 'Price Adjustment' },
+    { value: 'PAYMENT_NOTICE', label: NOTICE_TYPE_LABELS.PAYMENT_NOTICE },
+    { value: 'NOTICE_OF_NON_PAYMENT', label: NOTICE_TYPE_LABELS.NOTICE_OF_NON_PAYMENT },
   ]},
   { label: 'Claims & Disputes', types: [
-    { value: 'INTENT_TO_CLAIM', label: 'Intent to Claim' },
-    { value: 'NOTICE_OF_DISPUTE', label: 'Dispute' },
-    { value: 'NOTICE_OF_ADJUDICATION', label: 'Adjudication' },
-    { value: 'NOTICE_OF_ARBITRATION', label: 'Arbitration' },
-  ]},
-  { label: 'Early Warnings', types: [
-    { value: 'EARLY_WARNING_NOTICE', label: 'Early Warning' },
-    { value: 'RISK_REDUCTION_NOTICE', label: 'Risk Reduction' },
+    { value: 'INTENT_TO_CLAIM', label: NOTICE_TYPE_LABELS.INTENT_TO_CLAIM },
+    { value: 'NOTICE_OF_DISPUTE', label: NOTICE_TYPE_LABELS.NOTICE_OF_DISPUTE },
+    { value: 'NOTICE_OF_DISSATISFACTION', label: NOTICE_TYPE_LABELS.NOTICE_OF_DISSATISFACTION },
   ]},
   { label: 'Suspension & Termination', types: [
-    { value: 'NOTICE_OF_SUSPENSION', label: 'Suspension' },
-    { value: 'NOTICE_OF_TERMINATION', label: 'Termination' },
-    { value: 'NOTICE_OF_TERMINATION_FOR_CONVENIENCE', label: 'Termination for Convenience' },
-    { value: 'NOTICE_OF_TERMINATION_FOR_CAUSE', label: 'Termination for Cause' },
-    { value: 'NOTICE_TO_SHOW_CAUSE', label: 'Show Cause' },
+    { value: 'INTENTION_TO_SUSPEND', label: NOTICE_TYPE_LABELS.INTENTION_TO_SUSPEND },
+    { value: 'NOTICE_OF_SUSPENSION', label: NOTICE_TYPE_LABELS.NOTICE_OF_SUSPENSION },
+    { value: 'NOTICE_OF_TERMINATION', label: NOTICE_TYPE_LABELS.NOTICE_OF_TERMINATION },
   ]},
-  { label: 'Force Majeure & Exceptional Events', types: [
-    { value: 'NOTICE_OF_FORCE_MAJEURE', label: 'Force Majeure' },
-    { value: 'NOTICE_OF_EXCEPTIONAL_EVENT', label: 'Exceptional Event' },
-  ]},
-  { label: 'Insurance & Indemnity', types: [
-    { value: 'NOTICE_OF_INSURANCE_CLAIM', label: 'Insurance Claim' },
-    { value: 'NOTICE_OF_INDEMNITY_CLAIM', label: 'Indemnity Claim' },
-  ]},
-  { label: 'Access & Site', types: [
-    { value: 'NOTICE_OF_ACCESS', label: 'Access' },
-    { value: 'NOTICE_OF_POSSESSION', label: 'Possession' },
-    { value: 'NOTICE_OF_OBSTRUCTION', label: 'Obstruction' },
-  ]},
-  { label: 'General', types: [
-    { value: 'GENERAL_NOTICE', label: 'General Notice' },
+  { label: 'Force Majeure', types: [
+    { value: 'NOTICE_OF_FORCE_MAJEURE', label: NOTICE_TYPE_LABELS.NOTICE_OF_FORCE_MAJEURE },
   ]},
 ];
+
+const RESPONSE_TYPE_LABELS: Record<string, string> = {
+  ACKNOWLEDGE_ACCEPT: 'Acknowledge and Accept',
+  ACKNOWLEDGE_DISPUTE: 'Acknowledge with Dispute',
+  REQUEST_INFO: 'Request Additional Information',
+  COUNTER_NOTICE: 'Counter Notice',
+  FOR_CONSIDERATION_AND_APPROVAL: 'For Consideration and Approval',
+  FOR_RECORD: 'For Record',
+  FOR_CONSIDERATION_AND_ACTION: 'For Consideration and Action',
+  NO_RESPONSE_REQUIRED: 'No Response Required',
+};
 
 const STATUS_STYLES: Record<string, { bg: string; text: string }> = {
   DRAFT: { bg: 'bg-gray-100', text: 'text-gray-700' },
@@ -72,21 +87,15 @@ const STATUS_STYLES: Record<string, { bg: string; text: string }> = {
   RESPONDED: { bg: 'bg-emerald-100', text: 'text-emerald-700' },
   OVERDUE: { bg: 'bg-red-100', text: 'text-red-700' },
   CLOSED: { bg: 'bg-gray-200', text: 'text-gray-600' },
-  WITHDRAWN: { bg: 'bg-gray-100', text: 'text-gray-500' },
 };
 
 function getNoticeTypeLabel(type: string): string {
-  for (const g of NOTICE_TYPE_GROUPS) {
-    for (const t of g.types) {
-      if (t.value === type) return t.label;
-    }
-  }
-  return type.replace(/_/g, ' ');
+  return NOTICE_TYPE_LABELS[type] || type.replace(/_/g, ' ');
 }
 
 function isOverdue(notice: Notice): boolean {
   if (!notice.response_required || !notice.response_deadline) return false;
-  if (['RESPONDED', 'CLOSED', 'WITHDRAWN', 'OVERDUE'].includes(notice.status)) return false;
+  if (['RESPONDED', 'CLOSED', 'OVERDUE'].includes(notice.status)) return false;
   return new Date(notice.response_deadline) < new Date();
 }
 
@@ -104,13 +113,18 @@ export default function NoticesTab({ contractId }: Props) {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [selectedNotice, setSelectedNotice] = useState<Notice | null>(null);
+  const [showResponseForm, setShowResponseForm] = useState(false);
   const [form, setForm] = useState({
     title: '',
     description: '',
-    notice_type: 'GENERAL_NOTICE',
+    notice_type: 'GENERAL',
     event_date: '',
     response_required: false,
     response_deadline: '',
+  });
+  const [responseForm, setResponseForm] = useState({
+    response_type: 'ACKNOWLEDGE_ACCEPT' as string,
+    response_content: '',
   });
   const [submitting, setSubmitting] = useState(false);
 
@@ -138,7 +152,7 @@ export default function NoticesTab({ contractId }: Props) {
         response_deadline: form.response_required ? form.response_deadline || undefined : undefined,
       });
       setShowForm(false);
-      setForm({ title: '', description: '', notice_type: 'GENERAL_NOTICE', event_date: '', response_required: false, response_deadline: '' });
+      setForm({ title: '', description: '', notice_type: 'GENERAL', event_date: '', response_required: false, response_deadline: '' });
       loadNotices();
     } catch {}
     finally { setSubmitting(false); }
@@ -148,14 +162,7 @@ export default function NoticesTab({ contractId }: Props) {
     try {
       const detail = await noticeService.getById(id);
       setSelectedNotice(detail);
-    } catch {}
-  };
-
-  const handleWithdraw = async (id: string) => {
-    try {
-      await noticeService.withdraw(id);
-      setSelectedNotice(null);
-      loadNotices();
+      setShowResponseForm(false);
     } catch {}
   };
 
@@ -167,7 +174,24 @@ export default function NoticesTab({ contractId }: Props) {
     } catch {}
   };
 
-  if (loading) return <div className="py-10 text-center text-gray-400">Loading notices…</div>;
+  const handleRespond = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedNotice) return;
+    setSubmitting(true);
+    try {
+      await noticeService.respond(selectedNotice.id, {
+        response_type: responseForm.response_type,
+        response_content: responseForm.response_content,
+      });
+      setShowResponseForm(false);
+      setResponseForm({ response_type: 'ACKNOWLEDGE_ACCEPT', response_content: '' });
+      handleViewDetail(selectedNotice.id);
+      loadNotices();
+    } catch {}
+    finally { setSubmitting(false); }
+  };
+
+  if (loading) return <div className="py-10 text-center text-gray-400">Loading notices...</div>;
 
   // Detail view
   if (selectedNotice) {
@@ -175,11 +199,11 @@ export default function NoticesTab({ contractId }: Props) {
     const overdue = isOverdue(n) || n.status === 'OVERDUE';
     return (
       <div className="space-y-4">
-        <button onClick={() => setSelectedNotice(null)} className="text-sm text-blue-600 hover:underline">← Back to notices</button>
+        <button onClick={() => setSelectedNotice(null)} className="text-sm text-blue-600 hover:underline">&larr; Back to notices</button>
         {overdue && (
           <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700 flex items-center gap-2">
             <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 6a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 6zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" /></svg>
-            Response deadline has passed — this notice is overdue
+            Response deadline has passed &mdash; this notice is overdue
           </div>
         )}
         <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm space-y-4">
@@ -196,8 +220,8 @@ export default function NoticesTab({ contractId }: Props) {
               {n.status === 'SUBMITTED' && (
                 <button onClick={() => handleAcknowledge(n.id)} className="px-3 py-1.5 text-xs rounded-md bg-indigo-600 text-white hover:bg-indigo-700">Acknowledge</button>
               )}
-              {!['CLOSED', 'WITHDRAWN'].includes(n.status) && (
-                <button onClick={() => handleWithdraw(n.id)} className="px-3 py-1.5 text-xs rounded-md border border-gray-300 text-gray-600 hover:bg-gray-50">Withdraw</button>
+              {!['CLOSED'].includes(n.status) && (
+                <button onClick={() => setShowResponseForm(true)} className="px-3 py-1.5 text-xs rounded-md bg-blue-600 text-white hover:bg-blue-700">Respond</button>
               )}
             </div>
           </div>
@@ -225,6 +249,29 @@ export default function NoticesTab({ contractId }: Props) {
             </div>
           )}
 
+          {/* Response form */}
+          {showResponseForm && (
+            <div className="border border-blue-200 rounded-lg p-4 bg-blue-50/50">
+              <h4 className="text-sm font-semibold text-gray-700 mb-3">Submit Response</h4>
+              <form onSubmit={handleRespond} className="space-y-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Response Type</label>
+                  <select value={responseForm.response_type} onChange={e => setResponseForm(f => ({ ...f, response_type: e.target.value }))} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+                    {Object.entries(RESPONSE_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Response Content</label>
+                  <textarea value={responseForm.response_content} onChange={e => setResponseForm(f => ({ ...f, response_content: e.target.value }))} required rows={3} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+                </div>
+                <div className="flex justify-end gap-2">
+                  <button type="button" onClick={() => setShowResponseForm(false)} className="px-3 py-1.5 text-xs rounded-md border border-gray-300 text-gray-600 hover:bg-gray-50">Cancel</button>
+                  <button type="submit" disabled={submitting} className="px-3 py-1.5 text-xs rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">{submitting ? 'Submitting...' : 'Submit Response'}</button>
+                </div>
+              </form>
+            </div>
+          )}
+
           {n.responses && n.responses.length > 0 && (
             <div>
               <h4 className="text-sm font-semibold text-gray-700 mb-2">Responses</h4>
@@ -233,9 +280,9 @@ export default function NoticesTab({ contractId }: Props) {
                   <div key={r.id} className="border border-gray-100 rounded-lg p-3 bg-gray-50">
                     <div className="flex items-center gap-2 text-xs text-gray-500 mb-1">
                       <span className="font-medium text-gray-700">{r.responder?.first_name} {r.responder?.last_name}</span>
-                      <span>·</span>
-                      <span>{r.response_type.replace(/_/g, ' ')}</span>
-                      <span>·</span>
+                      <span>&middot;</span>
+                      <span>{RESPONSE_TYPE_LABELS[r.response_type] || r.response_type.replace(/_/g, ' ')}</span>
+                      <span>&middot;</span>
                       <span>{new Date(r.created_at).toLocaleDateString()}</span>
                     </div>
                     <p className="text-sm text-gray-700">{r.response_content}</p>
@@ -252,8 +299,8 @@ export default function NoticesTab({ contractId }: Props) {
                 {n.status_logs.map(log => (
                   <div key={log.id} className="flex items-center gap-3 text-xs text-gray-600">
                     <span className="text-gray-400 w-32">{new Date(log.changed_at).toLocaleString()}</span>
-                    <span>{log.previous_status} → {log.new_status}</span>
-                    {log.note && <span className="text-gray-400">— {log.note}</span>}
+                    <span>{log.previous_status} &rarr; {log.new_status}</span>
+                    {log.note && <span className="text-gray-400">&mdash; {log.note}</span>}
                   </div>
                 ))}
               </div>
@@ -294,7 +341,7 @@ export default function NoticesTab({ contractId }: Props) {
             <button
               key={notice.id}
               onClick={() => handleViewDetail(notice.id)}
-              className={`w-full text-left rounded-lg border p-4 transition hover:border-blue-200 hover:bg-blue-50/30 ${notice.status === 'WITHDRAWN' ? 'opacity-60' : ''} ${overdue ? 'border-red-200 bg-red-50/30' : 'border-gray-200 bg-white'}`}
+              className={`w-full text-left rounded-lg border p-4 transition hover:border-blue-200 hover:bg-blue-50/30 ${overdue ? 'border-red-200 bg-red-50/30' : 'border-gray-200 bg-white'}`}
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
@@ -367,7 +414,7 @@ export default function NoticesTab({ contractId }: Props) {
               )}
               <div className="flex justify-end gap-3 pt-2">
                 <button type="button" onClick={() => setShowForm(false)} className="px-4 py-2 text-sm rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50">Cancel</button>
-                <button type="submit" disabled={submitting} className="px-4 py-2 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">{submitting ? 'Submitting…' : 'Submit Notice'}</button>
+                <button type="submit" disabled={submitting} className="px-4 py-2 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">{submitting ? 'Submitting...' : 'Submit Notice'}</button>
               </div>
             </form>
           </div>

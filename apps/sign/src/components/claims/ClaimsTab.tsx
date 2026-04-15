@@ -7,10 +7,14 @@ const CLAIM_TYPE_LABELS: Record<string, string> = {
   TIME_EXTENSION: 'Time Extension',
   VARIATION: 'Variation',
   DISRUPTION: 'Disruption',
-  LOSS_AND_EXPENSE: 'Loss & Expense',
-  PROLONGATION: 'Prolongation',
-  ACCELERATION: 'Acceleration',
   GENERAL_DISPUTE: 'General Dispute',
+};
+
+const RESPONSE_TYPE_LABELS: Record<string, string> = {
+  ACCEPTED: 'Accepted',
+  PARTIAL_ACCEPTANCE: 'Partial Acceptance',
+  COUNTER_OFFER: 'Counter Offer',
+  REJECTED: 'Rejected',
 };
 
 const STATUS_STYLES: Record<string, { bg: string; text: string }> = {
@@ -23,7 +27,6 @@ const STATUS_STYLES: Record<string, { bg: string; text: string }> = {
   SETTLED: { bg: 'bg-emerald-100', text: 'text-emerald-700' },
   REJECTED: { bg: 'bg-red-100', text: 'text-red-700' },
   ESCALATED: { bg: 'bg-orange-100', text: 'text-orange-700' },
-  WITHDRAWN: { bg: 'bg-gray-100', text: 'text-gray-500' },
 };
 
 interface Props {
@@ -35,6 +38,7 @@ export default function ClaimsTab({ contractId }: Props) {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [selectedClaim, setSelectedClaim] = useState<Claim | null>(null);
+  const [showResponseForm, setShowResponseForm] = useState(false);
   const [form, setForm] = useState({
     title: '',
     description: '',
@@ -42,6 +46,13 @@ export default function ClaimsTab({ contractId }: Props) {
     event_date: '',
     claimed_amount: '',
     claimed_time_extension_days: '',
+  });
+  const [responseForm, setResponseForm] = useState({
+    response_type: 'ACCEPTED' as string,
+    response_content: '',
+    counter_amount: '',
+    counter_time_days: '',
+    justification: '',
   });
   const [submitting, setSubmitting] = useState(false);
 
@@ -81,14 +92,7 @@ export default function ClaimsTab({ contractId }: Props) {
     try {
       const detail = await claimService.getById(id);
       setSelectedClaim(detail);
-    } catch {}
-  };
-
-  const handleWithdraw = async (id: string) => {
-    try {
-      await claimService.withdraw(id);
-      setSelectedClaim(null);
-      loadClaims();
+      setShowResponseForm(false);
     } catch {}
   };
 
@@ -100,14 +104,34 @@ export default function ClaimsTab({ contractId }: Props) {
     } catch {}
   };
 
-  if (loading) return <div className="py-10 text-center text-gray-400">Loading claims…</div>;
+  const handleRespond = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedClaim) return;
+    setSubmitting(true);
+    try {
+      await claimService.respond(selectedClaim.id, {
+        response_type: responseForm.response_type,
+        response_content: responseForm.response_content,
+        counter_amount: responseForm.counter_amount ? parseFloat(responseForm.counter_amount) : undefined,
+        counter_time_days: responseForm.counter_time_days ? parseInt(responseForm.counter_time_days) : undefined,
+        justification: responseForm.justification || undefined,
+      });
+      setShowResponseForm(false);
+      setResponseForm({ response_type: 'ACCEPTED', response_content: '', counter_amount: '', counter_time_days: '', justification: '' });
+      handleViewDetail(selectedClaim.id);
+      loadClaims();
+    } catch {}
+    finally { setSubmitting(false); }
+  };
+
+  if (loading) return <div className="py-10 text-center text-gray-400">Loading claims...</div>;
 
   // Detail view
   if (selectedClaim) {
     const c = selectedClaim;
     return (
       <div className="space-y-4">
-        <button onClick={() => setSelectedClaim(null)} className="text-sm text-blue-600 hover:underline">← Back to claims</button>
+        <button onClick={() => setSelectedClaim(null)} className="text-sm text-blue-600 hover:underline">&larr; Back to claims</button>
         <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm space-y-4">
           <div className="flex items-start justify-between">
             <div>
@@ -121,8 +145,8 @@ export default function ClaimsTab({ contractId }: Props) {
               {c.status === 'SUBMITTED' && (
                 <button onClick={() => handleAcknowledge(c.id)} className="px-3 py-1.5 text-xs rounded-md bg-indigo-600 text-white hover:bg-indigo-700">Acknowledge</button>
               )}
-              {!['SETTLED', 'REJECTED', 'WITHDRAWN'].includes(c.status) && (
-                <button onClick={() => handleWithdraw(c.id)} className="px-3 py-1.5 text-xs rounded-md border border-gray-300 text-gray-600 hover:bg-gray-50">Withdraw</button>
+              {!['SETTLED', 'REJECTED'].includes(c.status) && (
+                <button onClick={() => setShowResponseForm(true)} className="px-3 py-1.5 text-xs rounded-md bg-blue-600 text-white hover:bg-blue-700">Respond</button>
               )}
             </div>
           </div>
@@ -152,6 +176,45 @@ export default function ClaimsTab({ contractId }: Props) {
             </div>
           )}
 
+          {/* Response form */}
+          {showResponseForm && (
+            <div className="border border-blue-200 rounded-lg p-4 bg-blue-50/50">
+              <h4 className="text-sm font-semibold text-gray-700 mb-3">Submit Response</h4>
+              <form onSubmit={handleRespond} className="space-y-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Response Type</label>
+                  <select value={responseForm.response_type} onChange={e => setResponseForm(f => ({ ...f, response_type: e.target.value }))} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+                    {Object.entries(RESPONSE_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Response Content</label>
+                  <textarea value={responseForm.response_content} onChange={e => setResponseForm(f => ({ ...f, response_content: e.target.value }))} required rows={3} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+                </div>
+                {(responseForm.response_type === 'COUNTER_OFFER' || responseForm.response_type === 'PARTIAL_ACCEPTANCE') && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Counter Amount</label>
+                      <input type="number" step="0.01" value={responseForm.counter_amount} onChange={e => setResponseForm(f => ({ ...f, counter_amount: e.target.value }))} placeholder="Optional" className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Counter Days</label>
+                      <input type="number" value={responseForm.counter_time_days} onChange={e => setResponseForm(f => ({ ...f, counter_time_days: e.target.value }))} placeholder="Optional" className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+                    </div>
+                  </div>
+                )}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Justification</label>
+                  <textarea value={responseForm.justification} onChange={e => setResponseForm(f => ({ ...f, justification: e.target.value }))} rows={2} placeholder="Optional" className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+                </div>
+                <div className="flex justify-end gap-2">
+                  <button type="button" onClick={() => setShowResponseForm(false)} className="px-3 py-1.5 text-xs rounded-md border border-gray-300 text-gray-600 hover:bg-gray-50">Cancel</button>
+                  <button type="submit" disabled={submitting} className="px-3 py-1.5 text-xs rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">{submitting ? 'Submitting...' : 'Submit Response'}</button>
+                </div>
+              </form>
+            </div>
+          )}
+
           {/* Responses */}
           {c.responses && c.responses.length > 0 && (
             <div>
@@ -161,13 +224,15 @@ export default function ClaimsTab({ contractId }: Props) {
                   <div key={r.id} className="border border-gray-100 rounded-lg p-3 bg-gray-50">
                     <div className="flex items-center gap-2 text-xs text-gray-500 mb-1">
                       <span className="font-medium text-gray-700">{r.responder?.first_name} {r.responder?.last_name}</span>
-                      <span>·</span>
-                      <span>{r.response_type.replace(/_/g, ' ')}</span>
-                      <span>·</span>
+                      <span>&middot;</span>
+                      <span>{RESPONSE_TYPE_LABELS[r.response_type] || r.response_type.replace(/_/g, ' ')}</span>
+                      <span>&middot;</span>
                       <span>{new Date(r.created_at).toLocaleDateString()}</span>
                     </div>
                     <p className="text-sm text-gray-700">{r.response_content}</p>
                     {r.counter_amount != null && <p className="text-xs text-gray-500 mt-1">Counter: ${Number(r.counter_amount).toLocaleString()}</p>}
+                    {r.counter_time_days != null && <p className="text-xs text-gray-500">Counter Days: {r.counter_time_days}</p>}
+                    {r.justification && <p className="text-xs text-gray-500 mt-1">Justification: {r.justification}</p>}
                   </div>
                 ))}
               </div>
@@ -182,8 +247,8 @@ export default function ClaimsTab({ contractId }: Props) {
                 {c.status_logs.map(log => (
                   <div key={log.id} className="flex items-center gap-3 text-xs text-gray-600">
                     <span className="text-gray-400 w-32">{new Date(log.changed_at).toLocaleString()}</span>
-                    <span>{log.previous_status} → {log.new_status}</span>
-                    {log.note && <span className="text-gray-400">— {log.note}</span>}
+                    <span>{log.previous_status} &rarr; {log.new_status}</span>
+                    {log.note && <span className="text-gray-400">&mdash; {log.note}</span>}
                   </div>
                 ))}
               </div>
@@ -222,7 +287,7 @@ export default function ClaimsTab({ contractId }: Props) {
           <button
             key={claim.id}
             onClick={() => handleViewDetail(claim.id)}
-            className={`w-full text-left rounded-lg border p-4 transition hover:border-blue-200 hover:bg-blue-50/30 ${claim.status === 'WITHDRAWN' ? 'opacity-60' : ''} border-gray-200 bg-white`}
+            className="w-full text-left rounded-lg border p-4 transition hover:border-blue-200 hover:bg-blue-50/30 border-gray-200 bg-white"
           >
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
@@ -288,7 +353,7 @@ export default function ClaimsTab({ contractId }: Props) {
               </div>
               <div className="flex justify-end gap-3 pt-2">
                 <button type="button" onClick={() => setShowForm(false)} className="px-4 py-2 text-sm rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50">Cancel</button>
-                <button type="submit" disabled={submitting} className="px-4 py-2 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">{submitting ? 'Submitting…' : 'Submit Claim'}</button>
+                <button type="submit" disabled={submitting} className="px-4 py-2 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">{submitting ? 'Submitting...' : 'Submit Claim'}</button>
               </div>
             </form>
           </div>
