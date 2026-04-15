@@ -70,6 +70,43 @@ export class EmailService {
     await this.sendGenericEmail(email, subject, html);
   }
 
+  async sendMfaRecoveryCodes(
+    email: string,
+    recoveryCodes: string[],
+    method: string,
+  ): Promise<void> {
+    const { baseEmailLayout } = require('./templates/base-layout');
+    const subject = 'Sign — Your MFA Recovery Codes';
+    const codesHtml = recoveryCodes
+      .map(
+        (code) =>
+          `<div style="display:inline-block; background:#F8FAFF; border:1px solid #E2E8F0; border-radius:6px; padding:8px 16px; margin:4px; font-family:monospace; font-size:14px; font-weight:600; color:#0F1729; letter-spacing:2px;">${code}</div>`,
+      )
+      .join('');
+
+    const html = baseEmailLayout(
+      `
+      <h1 style="margin:0 0 8px; font-size:22px; font-weight:700; color:#0F1729;">Two-Factor Authentication Enabled</h1>
+      <p style="margin:12px 0; font-size:14px; color:#4B5563; line-height:1.6;">
+        You have successfully enabled two-factor authentication (${method === 'totp' ? 'Authenticator App' : 'Email OTP'}) on your Sign account.
+      </p>
+      <div style="background:#FEF3C7; border:1px solid #FCD34D; border-radius:10px; padding:16px; margin:20px 0;">
+        <p style="margin:0 0 6px; font-size:13px; font-weight:700; color:#92400E;">⚠️ Save these recovery codes</p>
+        <p style="margin:0; font-size:13px; color:#92400E; line-height:1.5;">
+          Each code can only be used once to access your account if you lose your MFA device. Store them somewhere safe — this is the only time they will be shown.
+        </p>
+      </div>
+      <div style="text-align:center; margin:24px 0;">${codesHtml}</div>
+      <p style="margin:12px 0; font-size:12px; color:#9CA3AF; text-align:center;">
+        If you did not enable MFA on your account, please contact support immediately.
+      </p>
+    `,
+      { preheader: 'Your Sign MFA recovery codes — save them now' },
+    );
+
+    await this.sendGenericEmail(email, subject, html);
+  }
+
   async sendInvitation(
     email: string,
     invitationToken: string,

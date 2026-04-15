@@ -419,6 +419,12 @@ export class AuthService {
       mfa_recovery_codes: recoveryCodes.hashed,
     });
 
+    await this.emailService.sendMfaRecoveryCodes(
+      user.email,
+      recoveryCodes.plain,
+      'totp',
+    );
+
     return {
       message: 'MFA enabled with authenticator app',
       recovery_codes: recoveryCodes.plain,
@@ -440,6 +446,12 @@ export class AuthService {
       mfa_method: 'email',
       mfa_recovery_codes: recoveryCodes.hashed,
     });
+
+    await this.emailService.sendMfaRecoveryCodes(
+      user.email,
+      recoveryCodes.plain,
+      'email',
+    );
 
     return {
       message: 'MFA enabled with email OTP',
