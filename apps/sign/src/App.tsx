@@ -27,6 +27,7 @@ import NotificationsPage from '@/pages/app/NotificationsPage';
 import OnboardingPage from '@/pages/app/OnboardingPage';
 import SupportPage from '@/pages/app/SupportPage';
 import BillingPage from '@/pages/app/BillingPage';
+import SubscriptionSettingsPage from '@/pages/app/SubscriptionSettingsPage';
 import TeamPage from '@/pages/app/TeamPage';
 import ProfilePage from '@/pages/app/ProfilePage';
 import MfaSetupPage from '@/pages/app/MfaSetupPage';
@@ -40,6 +41,8 @@ import AdminKnowledgeAssetsPage from '@/pages/admin/AdminKnowledgeAssetsPage';
 import AdminSupportPage from '@/pages/admin/AdminSupportPage';
 import AdminUsersPage from '@/pages/admin/AdminUsersPage';
 import AdminSubscriptionsPage from '@/pages/admin/AdminSubscriptionsPage';
+import AdminPlansPage from '@/pages/admin/AdminPlansPage';
+import AdminPlansComparePage from '@/pages/admin/AdminPlansComparePage';
 import PermissionDefaultsPage from '@/pages/admin/PermissionDefaultsPage';
 
 // Contractor portal pages
@@ -86,6 +89,7 @@ const ownerNavItems = [
   { label: 'nav.notifications', path: '/app/notifications', icon: '🔔' },
   { label: 'nav.team', path: '/app/team', icon: '👥' },
   { label: 'nav.store', path: '/app/store', icon: '🛒' },
+  { label: 'nav.subscription', path: '/app/settings/subscription', icon: '💳' },
   { label: 'nav.profile', path: '/app/profile', icon: '👤' },
   { label: 'nav.support', path: '/app/support', icon: '💬' },
 ];
@@ -93,7 +97,7 @@ const ownerNavItems = [
 const adminNavItems = [
   { label: 'nav.dashboard', path: '/admin/dashboard', icon: '📊' },
   { label: 'nav.knowledgeAssets', path: '/admin/knowledge-assets', icon: '📚' },
-  { label: 'nav.subscriptions', path: '/admin/subscriptions', icon: '💳' },
+  { label: 'nav.plans', path: '/admin/plans', icon: '💳' },
   { label: 'nav.users', path: '/admin/users', icon: '👥' },
   { label: 'nav.riskRules', path: '/admin/risk-rules', icon: '⚠️' },
   { label: 'nav.permissionDefaults', path: '/admin/permission-defaults', icon: '🛡️' },
@@ -160,6 +164,7 @@ function App() {
         <Route path="store/contract/:id" element={<ContractStoreDetailPage />} />
         <Route path="profile" element={<ProfilePage />} />
         <Route path="settings/billing" element={<BillingPage />} />
+        <Route path="settings/subscription" element={<SubscriptionSettingsPage />} />
       </Route>
 
       {/* ─── Admin Portal (/admin/*) ─── */}
@@ -175,6 +180,8 @@ function App() {
         <Route path="dashboard" element={<AdminDashboardPage />} />
         <Route path="knowledge-assets" element={<AdminKnowledgeAssetsPage />} />
         <Route path="subscriptions" element={<AdminSubscriptionsPage />} />
+        <Route path="plans" element={<AdminPlansPage />} />
+        <Route path="plans/compare" element={<AdminPlansComparePage />} />
         <Route path="users" element={<AdminUsersPage />} />
         <Route path="permission-defaults" element={<PermissionDefaultsPage />} />
         <Route path="support" element={<AdminSupportPage />} />
