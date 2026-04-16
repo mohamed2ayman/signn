@@ -28,3 +28,4 @@ export { ChatMessage, ChatMessageRole } from './chat-message.entity';
 export { Claim, ClaimDocument, ClaimResponse, ClaimStatusLog, ClaimType, ClaimStatus, ClaimResponseType } from './claim.entity';
 export { Notice, NoticeDocument, NoticeResponse, NoticeStatusLog, NoticeType, NoticeStatus, NoticeResponseType } from './notice.entity';
 export { SubContract, SubContractStatusLog } from './sub-contract.entity';
+export { ContractApprover, ApproverStatus } from './contract-approver.entity';

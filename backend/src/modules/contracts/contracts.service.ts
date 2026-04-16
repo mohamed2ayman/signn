@@ -16,6 +16,8 @@ import {
   ContractComment,
   ContractorResponse,
   User,
+  ContractApprover,
+  ApproverStatus,
 } from '../../database/entities';
 import { diffWordsWithSpace } from 'diff';
 import {
@@ -28,6 +30,7 @@ import {
 } from './dto';
 import { CollaborationGateway } from '../collaboration/collaboration.gateway';
 import { ContractTemplatesService, isStandardForm, getLicenseOrg } from '../contract-templates/contract-templates.service';
+import { EmailService } from '../notifications/email.service';
 
 @Injectable()
 export class ContractsService {
@@ -46,8 +49,11 @@ export class ContractsService {
     private readonly contractorResponseRepository: Repository<ContractorResponse>,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    @InjectRepository(ContractApprover)
+    private readonly contractApproverRepository: Repository<ContractApprover>,
     private readonly collaborationGateway: CollaborationGateway,
     private readonly contractTemplatesService: ContractTemplatesService,
+    private readonly emailService: EmailService,
   ) {}
 
   // ─── Contract CRUD ─────────────────────────────────────────
@@ -839,6 +845,223 @@ export class ContractsService {
       relations: ['party'],
       order: { created_at: 'DESC' },
     });
+  }
+
+  // ─── Approval Workflow ─────────────────────────────────────
+
+  /**
+   * Assign approvers and submit the contract for approval.
+   * Transitions status DRAFT/CHANGES_REQUESTED → PENDING_APPROVAL.
+   * Sends email notifications to each assigned approver.
+   */
+  async requestApproval(
+    contractId: string,
+    requesterId: string,
+    approverIds: string[],
+  ): Promise<ContractApprover[]> {
+    if (!approverIds || approverIds.length === 0) {
+      throw new BadRequestException('At least one approver must be selected');
+    }
+
+    const contract = await this.findById(contractId);
+
+    if (
+      contract.status !== ContractStatus.DRAFT &&
+      contract.status !== ContractStatus.CHANGES_REQUESTED
+    ) {
+      throw new BadRequestException(
+        'Contract must be in DRAFT or CHANGES_REQUESTED status to request approval',
+      );
+    }
+
+    // Remove any previous PENDING approver records (re-submission after changes)
+    await this.contractApproverRepository.delete({ contract_id: contractId });
+
+    // Create a new approver record for each selected user
+    const approvers: ContractApprover[] = [];
+    for (const userId of approverIds) {
+      const user = await this.userRepository.findOne({ where: { id: userId } });
+      if (!user) continue;
+
+      const record = this.contractApproverRepository.create({
+        contract_id: contractId,
+        user_id: userId,
+        status: ApproverStatus.PENDING,
+      });
+      const saved = await this.contractApproverRepository.save(record);
+      approvers.push(saved);
+    }
+
+    // Transition status to PENDING_APPROVAL
+    contract.status = ContractStatus.PENDING_APPROVAL;
+    await this.contractRepository.save(contract);
+
+    // Create version snapshot
+    try {
+      await this.createVersionSnapshot(contractId, requesterId, undefined, {
+        eventType: ContractVersionEventType.SUBMITTED_FOR_APPROVAL,
+        metadata: { approver_ids: approverIds },
+      });
+    } catch (err: any) {
+      this.logger.warn(`Version snapshot failed (requestApproval): ${err?.message}`);
+    }
+
+    // Emit real-time status change
+    this.collaborationGateway.emitStatusChanged(contractId, {
+      contractId,
+      oldStatus: ContractStatus.DRAFT,
+      newStatus: ContractStatus.PENDING_APPROVAL,
+      updatedBy: requesterId,
+    });
+
+    // Fetch requester info for emails
+    const requester = await this.userRepository.findOne({ where: { id: requesterId } });
+    const requesterName = requester
+      ? `${requester.first_name} ${requester.last_name}`.trim()
+      : 'A team member';
+
+    // Send email notifications to all assigned approvers
+    for (const approver of approvers) {
+      const approverUser = await this.userRepository.findOne({
+        where: { id: approver.user_id },
+      });
+      if (!approverUser) continue;
+
+      await this.emailService.sendContractApprovalRequest(
+        approverUser.email,
+        contract.name,
+        contract.project?.name || 'your project',
+        requesterName,
+        contractId,
+      );
+    }
+
+    return this.getApprovers(contractId);
+  }
+
+  /**
+   * An assigned approver submits their decision (APPROVED / REJECTED).
+   * If all approvers approve → contract moves to APPROVED.
+   * If any approver rejects → contract returns to DRAFT with status CHANGES_REQUESTED.
+   */
+  async reviewApproval(
+    contractId: string,
+    userId: string,
+    decision: ApproverStatus.APPROVED | ApproverStatus.REJECTED,
+    comment?: string,
+  ): Promise<ContractApprover[]> {
+    const contract = await this.findById(contractId);
+
+    if (contract.status !== ContractStatus.PENDING_APPROVAL) {
+      throw new BadRequestException('Contract is not currently pending approval');
+    }
+
+    // Find this user's approver record
+    const record = await this.contractApproverRepository.findOne({
+      where: { contract_id: contractId, user_id: userId },
+    });
+
+    if (!record) {
+      throw new ForbiddenException('You are not assigned as an approver for this contract');
+    }
+
+    if (record.status !== ApproverStatus.PENDING) {
+      throw new BadRequestException('You have already submitted your decision');
+    }
+
+    // Record the decision
+    record.status = decision;
+    record.comment = comment || null;
+    record.approved_at = new Date();
+    await this.contractApproverRepository.save(record);
+
+    // Check overall outcome
+    const allRecords = await this.contractApproverRepository.find({
+      where: { contract_id: contractId },
+    });
+
+    const anyRejected = allRecords.some((r) => r.status === ApproverStatus.REJECTED);
+    const allApproved = allRecords.every((r) => r.status === ApproverStatus.APPROVED);
+
+    if (anyRejected) {
+      // Return to DRAFT/CHANGES_REQUESTED
+      contract.status = ContractStatus.CHANGES_REQUESTED;
+      await this.contractRepository.save(contract);
+
+      try {
+        await this.createVersionSnapshot(contractId, userId, comment, {
+          eventType: ContractVersionEventType.CHANGES_REQUESTED,
+          metadata: { rejected_by: userId, comment },
+        });
+      } catch (err: any) {
+        this.logger.warn(`Version snapshot failed (reviewApproval REJECTED): ${err?.message}`);
+      }
+
+      this.collaborationGateway.emitStatusChanged(contractId, {
+        contractId,
+        oldStatus: ContractStatus.PENDING_APPROVAL,
+        newStatus: ContractStatus.CHANGES_REQUESTED,
+        updatedBy: userId,
+      });
+    } else if (allApproved) {
+      // All approvers have approved — move to APPROVED
+      contract.status = ContractStatus.APPROVED;
+      contract.approved_by = userId;
+      contract.approved_at = new Date();
+      await this.contractRepository.save(contract);
+
+      try {
+        await this.createVersionSnapshot(contractId, userId, undefined, {
+          eventType: ContractVersionEventType.APPROVED,
+          metadata: { approved_by: userId },
+        });
+      } catch (err: any) {
+        this.logger.warn(`Version snapshot failed (reviewApproval APPROVED): ${err?.message}`);
+      }
+
+      this.collaborationGateway.emitStatusChanged(contractId, {
+        contractId,
+        oldStatus: ContractStatus.PENDING_APPROVAL,
+        newStatus: ContractStatus.APPROVED,
+        updatedBy: userId,
+      });
+    }
+
+    return this.getApprovers(contractId);
+  }
+
+  /**
+   * Get all approver records for a contract, with user details.
+   */
+  async getApprovers(contractId: string): Promise<ContractApprover[]> {
+    return this.contractApproverRepository.find({
+      where: { contract_id: contractId },
+      relations: ['user'],
+      order: { assigned_at: 'ASC' },
+    });
+  }
+
+  /**
+   * Get all contracts currently pending the given user's approval
+   * across all projects in their organisation.
+   */
+  async getPendingApprovalsForUser(
+    userId: string,
+    orgId: string,
+  ): Promise<ContractApprover[]> {
+    return this.contractApproverRepository
+      .createQueryBuilder('ca')
+      .leftJoinAndSelect('ca.contract', 'contract')
+      .leftJoinAndSelect('contract.project', 'project')
+      .leftJoinAndSelect('contract.creator', 'creator')
+      .where('ca.user_id = :userId', { userId })
+      .andWhere('ca.status = :status', { status: ApproverStatus.PENDING })
+      .andWhere('contract.status = :contractStatus', {
+        contractStatus: ContractStatus.PENDING_APPROVAL,
+      })
+      .andWhere('project.organization_id = :orgId', { orgId })
+      .orderBy('ca.assigned_at', 'DESC')
+      .getMany();
   }
 
   // ─── Status Transition Validation ─────────────────────────

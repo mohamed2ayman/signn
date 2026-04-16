@@ -17,6 +17,7 @@ import { RiskAnalysis } from './risk-analysis.entity';
 import { Obligation } from './obligation.entity';
 import { ContractorResponse } from './contractor-response.entity';
 import { DocumentUpload } from './document-upload.entity';
+import { ContractApprover } from './contract-approver.entity';
 
 export enum ContractStatus {
   DRAFT = 'DRAFT',
@@ -205,4 +206,7 @@ export class Contract {
 
   @OneToMany(() => DocumentUpload, (du) => du.contract)
   documents: DocumentUpload[];
+
+  @OneToMany(() => ContractApprover, (ca) => ca.contract)
+  contract_approvers: ContractApprover[];
 }

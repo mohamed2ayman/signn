@@ -1,14 +1,18 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useSelector } from 'react-redux';
+import type { RootState } from '@/store';
 import { contractService } from '@/services/api/contractService';
 import { clauseService } from '@/services/api/clauseService';
 import { riskAnalysisService } from '@/services/api/riskAnalysisService';
 import { exportService } from '@/services/api/exportService';
 import { contractSharingService } from '@/services/api/contractSharingService';
+import { projectService } from '@/services/api/projectService';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
 import ChatPanel from '@/components/chat/ChatPanel';
 import { useCollaboration } from '@/hooks/useCollaboration';
-import type { Contract, ContractClause, Clause, ContractComment, RiskAnalysis, ContractShare, SignatureSigner, ConflictDetail, ContractVersion } from '@/types';
+import type { Contract, ContractClause, Clause, ContractComment, RiskAnalysis, ContractShare, SignatureSigner, ConflictDetail, ContractVersion, ContractApprover, ProjectMember } from '@/types';
+import { ApproverStatus } from '@/types';
 import VersionTimeline from '@/components/versions/VersionTimeline';
 import DiffViewerModal from '@/components/versions/DiffViewerModal';
 import VersionSnapshotModal from '@/components/versions/VersionSnapshotModal';
@@ -231,6 +235,7 @@ const tabConfig = [
   { key: 'notices' as const, label: 'Notices', icon: 'M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0', activeOnly: true },
   { key: 'subcontracts' as const, label: 'Sub-Contracts', icon: 'M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z', activeOnly: true },
   { key: 'history' as const, label: 'History', icon: 'M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z' },
+  { key: 'approvals' as const, label: 'Approvals', icon: 'M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z' },
 ];
 
 /* ── Main Component ──────────────────────────────────────────── */
@@ -244,7 +249,7 @@ export default function ContractDetailPage() {
   const [risks, setRisks] = useState<RiskAnalysis[]>([]);
   const [availableClauses, setAvailableClauses] = useState<Clause[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'clauses' | 'comments' | 'risks' | 'claims' | 'notices' | 'subcontracts' | 'history'>('clauses');
+  const [activeTab, setActiveTab] = useState<'clauses' | 'comments' | 'risks' | 'claims' | 'notices' | 'subcontracts' | 'history' | 'approvals'>('clauses');
   const [diffPair, setDiffPair] = useState<{ a: string; b: string } | null>(null);
   const [snapshotVersion, setSnapshotVersion] = useState<ContractVersion | null>(null);
   const [showAddClause, setShowAddClause] = useState(false);
@@ -276,6 +281,19 @@ export default function ContractDetailPage() {
   const [partySecondDraft, setPartySecondDraft] = useState('');
   const [savingParties, setSavingParties] = useState(false);
 
+  // Approval workflow state
+  const [approvers, setApprovers] = useState<ContractApprover[]>([]);
+  const [showRequestApprovalModal, setShowRequestApprovalModal] = useState(false);
+  const [projectMembers, setProjectMembers] = useState<ProjectMember[]>([]);
+  const [selectedApproverIds, setSelectedApproverIds] = useState<string[]>([]);
+  const [requestingApproval, setRequestingApproval] = useState(false);
+  const [showReviewModal, setShowReviewModal] = useState(false);
+  const [reviewDecision, setReviewDecision] = useState<'APPROVED' | 'REJECTED' | null>(null);
+  const [reviewComment, setReviewComment] = useState('');
+  const [submittingReview, setSubmittingReview] = useState(false);
+
+  const currentUser = useSelector((state: RootState) => state.auth.user);
+
   useEffect(() => {
     if (id) loadContract();
   }, [id]);
@@ -283,16 +301,18 @@ export default function ContractDetailPage() {
   const loadContract = async () => {
     if (!id) return;
     try {
-      const [contractData, clauseData, commentData, riskData] = await Promise.all([
+      const [contractData, clauseData, commentData, riskData, approverData] = await Promise.all([
         contractService.getById(id),
         contractService.getClauses(id),
         contractService.getComments(id),
         riskAnalysisService.getByContract(id),
+        contractService.getApprovers(id),
       ]);
       setContract(contractData);
       setClauses(clauseData);
       setComments(commentData);
       setRisks(riskData);
+      setApprovers(approverData);
     } catch (err) {
       console.error('Failed to load contract:', err);
     } finally {
@@ -384,13 +404,51 @@ export default function ContractDetailPage() {
     }
   };
 
-  const handleStatusChange = async (newStatus: string) => {
-    if (!id) return;
+  // Approval workflow handlers
+  const openRequestApprovalModal = async () => {
+    if (!contract?.project_id) return;
     try {
-      const updated = await contractService.updateStatus(id, newStatus);
-      setContract(updated);
+      const members = await projectService.getMembers(contract.project_id);
+      setProjectMembers(members.filter((m) => m.permission_level === 'APPROVER'));
     } catch (err) {
-      console.error('Failed to update status:', err);
+      console.error('Failed to load project members:', err);
+    }
+    setSelectedApproverIds([]);
+    setShowRequestApprovalModal(true);
+  };
+
+  const handleRequestApproval = async () => {
+    if (!id || selectedApproverIds.length === 0) return;
+    setRequestingApproval(true);
+    try {
+      const updated = await contractService.requestApproval(id, selectedApproverIds);
+      setApprovers(updated);
+      const updatedContract = await contractService.getById(id);
+      setContract(updatedContract);
+      setShowRequestApprovalModal(false);
+    } catch (err) {
+      console.error('Failed to request approval:', err);
+    } finally {
+      setRequestingApproval(false);
+    }
+  };
+
+  const handleApprovalReview = async () => {
+    if (!id || !reviewDecision) return;
+    if (reviewDecision === 'REJECTED' && !reviewComment.trim()) return;
+    setSubmittingReview(true);
+    try {
+      const updated = await contractService.reviewApproval(id, reviewDecision, reviewComment || undefined);
+      setApprovers(updated);
+      const updatedContract = await contractService.getById(id);
+      setContract(updatedContract);
+      setShowReviewModal(false);
+      setReviewDecision(null);
+      setReviewComment('');
+    } catch (err) {
+      console.error('Failed to submit review:', err);
+    } finally {
+      setSubmittingReview(false);
     }
   };
 
@@ -743,26 +801,26 @@ export default function ContractDetailPage() {
             )}
 
             {/* Status Actions */}
-            {contract.status === 'DRAFT' && (
+            {(contract.status === 'DRAFT' || contract.status === 'CHANGES_REQUESTED') && (
               <button
-                onClick={() => handleStatusChange('PENDING_APPROVAL')}
+                onClick={openRequestApprovalModal}
                 className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-primary-600"
               >
                 <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
                 </svg>
-                Submit for Approval
+                Request Approval
               </button>
             )}
-            {contract.status === 'PENDING_APPROVAL' && (
+            {contract.status === 'PENDING_APPROVAL' && currentUser && approvers.some((a) => a.user_id === currentUser.id && a.status === ApproverStatus.PENDING) && (
               <button
-                onClick={() => handleStatusChange('APPROVED')}
+                onClick={() => { setReviewDecision(null); setReviewComment(''); setShowReviewModal(true); }}
                 className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700"
               >
                 <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
                 </svg>
-                Approve
+                Review
               </button>
             )}
             {contract.status === 'APPROVED' && !contract.signature_status && (
@@ -845,6 +903,39 @@ export default function ContractDetailPage() {
                       {new Date(signer.signed_at).toLocaleDateString()}
                     </span>
                   )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Approver Status Bar */}
+        {approvers.length > 0 && (contract.status === 'PENDING_APPROVAL' || contract.status === 'APPROVED' || contract.status === 'CHANGES_REQUESTED') && (
+          <div className="mt-5 rounded-lg border border-amber-100 bg-amber-50/30 px-4 py-3">
+            <div className="mb-2 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <svg className="h-4 w-4 text-amber-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span className="text-sm font-semibold text-amber-900">Approvers</span>
+              </div>
+              <button onClick={() => setActiveTab('approvals')} className="text-xs font-medium text-amber-700 hover:text-amber-900">View all &rarr;</button>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {approvers.map((a) => (
+                <div key={a.id} className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${
+                  a.status === ApproverStatus.APPROVED ? 'bg-emerald-100 text-emerald-700' :
+                  a.status === ApproverStatus.REJECTED ? 'bg-red-100 text-red-700' :
+                  'bg-amber-100 text-amber-700'
+                }`}>
+                  <span className={`h-1.5 w-1.5 rounded-full ${
+                    a.status === ApproverStatus.APPROVED ? 'bg-emerald-500' :
+                    a.status === ApproverStatus.REJECTED ? 'bg-red-500' :
+                    'bg-amber-400'
+                  }`} />
+                  {a.user ? `${a.user.first_name} ${a.user.last_name}` : 'Unknown'}
+                  {' · '}
+                  {a.status === ApproverStatus.APPROVED ? 'Approved' : a.status === ApproverStatus.REJECTED ? 'Rejected' : 'Pending'}
                 </div>
               ))}
             </div>
@@ -1019,6 +1110,11 @@ export default function ContractDetailPage() {
                 {tab.key === 'risks' && risks.length > 0 && (
                   <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${highRisks.length > 0 ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-500'}`}>
                     {risks.length}
+                  </span>
+                )}
+                {tab.key === 'approvals' && approvers.length > 0 && (
+                  <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-600">
+                    {approvers.length}
                   </span>
                 )}
               </button>
@@ -1395,6 +1491,87 @@ export default function ContractDetailPage() {
         </div>
       )}
 
+      {/* ── Approvals Tab ────────────────────────────────────────── */}
+      {activeTab === 'approvals' && (
+        <div className="rounded-xl border border-gray-200/80 bg-white p-6 shadow-card">
+          <div className="mb-5 flex items-center justify-between">
+            <div>
+              <h2 className="text-base font-bold text-gray-900">Approval History</h2>
+              <p className="mt-0.5 text-sm text-gray-400">All approvers assigned to this contract and their decisions.</p>
+            </div>
+            {(contract.status === 'DRAFT' || contract.status === 'CHANGES_REQUESTED') && (
+              <button
+                onClick={openRequestApprovalModal}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-primary-600"
+              >
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
+                </svg>
+                Request Approval
+              </button>
+            )}
+          </div>
+
+          {approvers.length === 0 ? (
+            <div className="py-12 text-center">
+              <svg className="mx-auto mb-3 h-10 w-10 text-gray-200" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <p className="text-sm font-medium text-gray-500">No approvers assigned yet</p>
+              <p className="mt-1 text-xs text-gray-400">Use "Request Approval" to assign team members.</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {approvers.map((a) => (
+                <div key={a.id} className="flex items-start gap-4 rounded-xl border border-gray-100 bg-gray-50/50 px-5 py-4">
+                  <div className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-sm font-bold text-white ${
+                    a.status === ApproverStatus.APPROVED ? 'bg-emerald-500' :
+                    a.status === ApproverStatus.REJECTED ? 'bg-red-500' :
+                    'bg-amber-400'
+                  }`}>
+                    {a.user ? `${a.user.first_name[0]}${a.user.last_name[0]}`.toUpperCase() : '?'}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-semibold text-gray-900">
+                        {a.user ? `${a.user.first_name} ${a.user.last_name}` : 'Unknown'}
+                      </p>
+                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                        a.status === ApproverStatus.APPROVED ? 'bg-emerald-100 text-emerald-700' :
+                        a.status === ApproverStatus.REJECTED ? 'bg-red-100 text-red-700' :
+                        'bg-amber-100 text-amber-700'
+                      }`}>
+                        {a.status === ApproverStatus.APPROVED ? 'APPROVED' : a.status === ApproverStatus.REJECTED ? 'CHANGES REQUESTED' : 'PENDING'}
+                      </span>
+                    </div>
+                    {a.user?.email && <p className="mt-0.5 text-xs text-gray-400">{a.user.email}</p>}
+                    <p className="mt-0.5 text-xs text-gray-400">
+                      Assigned {new Date(a.assigned_at).toLocaleDateString()}
+                      {a.approved_at && ` · Reviewed ${new Date(a.approved_at).toLocaleDateString()}`}
+                    </p>
+                    {a.comment && (
+                      <div className="mt-2 rounded-lg border border-gray-200 bg-white px-3 py-2">
+                        <p className="text-xs italic text-gray-600">"{a.comment}"</p>
+                      </div>
+                    )}
+                  </div>
+                  {a.status === ApproverStatus.APPROVED && (
+                    <svg className="h-5 w-5 flex-shrink-0 text-emerald-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  )}
+                  {a.status === ApproverStatus.REJECTED && (
+                    <svg className="h-5 w-5 flex-shrink-0 text-red-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 9.75l4.5 4.5m0-4.5l-4.5 4.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {diffPair && (
         <DiffViewerModal
           contractId={contract.id}
@@ -1588,6 +1765,168 @@ export default function ContractDetailPage() {
                 <LoadingSpinner size="sm" />
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Request Approval Modal ───────────────────────────────── */}
+      {showRequestApprovalModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-navy-900/40 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border border-gray-200/50 bg-white shadow-elevated">
+            <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Request Approval</h2>
+                <p className="mt-0.5 text-sm text-gray-400">Select team members to review this contract</p>
+              </div>
+              <button onClick={() => setShowRequestApprovalModal(false)} className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600">
+                <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="max-h-72 overflow-y-auto px-6 py-4">
+              {projectMembers.length === 0 ? (
+                <div className="py-8 text-center">
+                  <p className="text-sm text-gray-500">No members with Approver permission found in this project.</p>
+                  <p className="mt-1 text-xs text-gray-400">Invite team members and grant them Approver access first.</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {projectMembers.map((member) => {
+                    const selected = selectedApproverIds.includes(member.user_id);
+                    return (
+                      <label
+                        key={member.user_id}
+                        className={`flex cursor-pointer items-center gap-3 rounded-xl border p-3.5 transition-colors ${
+                          selected ? 'border-primary bg-primary/5' : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selected}
+                          onChange={() =>
+                            setSelectedApproverIds((prev) =>
+                              selected ? prev.filter((id) => id !== member.user_id) : [...prev, member.user_id]
+                            )
+                          }
+                          className="rounded border-gray-300 text-primary focus:ring-primary"
+                        />
+                        <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
+                          {member.user ? `${member.user.first_name[0]}${member.user.last_name[0]}`.toUpperCase() : '?'}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-gray-900">
+                            {member.user ? `${member.user.first_name} ${member.user.last_name}` : member.user_id}
+                          </p>
+                          {member.user?.email && <p className="text-xs text-gray-400">{member.user.email}</p>}
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-2.5 border-t border-gray-100 px-6 py-4">
+              <button
+                onClick={() => setShowRequestApprovalModal(false)}
+                className="rounded-lg border border-gray-200 px-4 py-2.5 text-sm font-medium text-gray-700 transition hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleRequestApproval}
+                disabled={requestingApproval || selectedApproverIds.length === 0}
+                className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-primary-600 disabled:opacity-50"
+              >
+                {requestingApproval && <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />}
+                Send for Review
+                {selectedApproverIds.length > 0 && ` (${selectedApproverIds.length})`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Review Decision Modal ─────────────────────────────────── */}
+      {showReviewModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl">
+            <div className="border-b border-gray-100 px-6 py-4">
+              <h2 className="text-lg font-bold text-gray-900">Submit Review Decision</h2>
+              <p className="mt-0.5 text-sm text-gray-500 truncate">{contract.name}</p>
+            </div>
+
+            <div className="space-y-4 p-6">
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  onClick={() => setReviewDecision('APPROVED')}
+                  className={`flex items-center gap-2 rounded-xl border-2 p-4 text-left transition-all ${
+                    reviewDecision === 'APPROVED' ? 'border-emerald-500 bg-emerald-50' : 'border-gray-200 hover:border-gray-300'
+                  }`}
+                >
+                  <svg className={`h-6 w-6 ${reviewDecision === 'APPROVED' ? 'text-emerald-500' : 'text-gray-300'}`} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900">Approve</p>
+                    <p className="text-xs text-gray-500">Mark as approved</p>
+                  </div>
+                </button>
+                <button
+                  onClick={() => setReviewDecision('REJECTED')}
+                  className={`flex items-center gap-2 rounded-xl border-2 p-4 text-left transition-all ${
+                    reviewDecision === 'REJECTED' ? 'border-red-400 bg-red-50' : 'border-gray-200 hover:border-gray-300'
+                  }`}
+                >
+                  <svg className={`h-6 w-6 ${reviewDecision === 'REJECTED' ? 'text-red-500' : 'text-gray-300'}`} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 9.75l4.5 4.5m0-4.5l-4.5 4.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900">Request Changes</p>
+                    <p className="text-xs text-gray-500">Return to draft</p>
+                  </div>
+                </button>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">
+                  Comment{reviewDecision === 'REJECTED' && <span className="text-red-500 ml-1">*</span>}
+                </label>
+                <textarea
+                  rows={3}
+                  value={reviewComment}
+                  onChange={(e) => setReviewComment(e.target.value)}
+                  placeholder={reviewDecision === 'REJECTED' ? 'Describe the changes needed...' : 'Optional comment for the submitter...'}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+              </div>
+
+              {reviewDecision === 'REJECTED' && !reviewComment.trim() && (
+                <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">A comment is required when requesting changes.</p>
+              )}
+            </div>
+
+            <div className="flex gap-3 border-t border-gray-100 px-6 py-4">
+              <button
+                onClick={handleApprovalReview}
+                disabled={submittingReview || !reviewDecision || (reviewDecision === 'REJECTED' && !reviewComment.trim())}
+                className={`flex flex-1 items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-semibold text-white transition-colors disabled:opacity-50 ${
+                  reviewDecision === 'REJECTED' ? 'bg-red-500 hover:bg-red-600' : 'bg-emerald-600 hover:bg-emerald-700'
+                } ${!reviewDecision ? 'bg-gray-400' : ''}`}
+              >
+                {submittingReview ? (
+                  <><span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />Submitting…</>
+                ) : reviewDecision === 'REJECTED' ? 'Request Changes' : 'Approve Contract'}
+              </button>
+              <button
+                onClick={() => setShowReviewModal(false)}
+                className="rounded-xl border border-gray-200 px-4 py-2.5 text-sm text-gray-600 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+            </div>
           </div>
         </div>
       )}

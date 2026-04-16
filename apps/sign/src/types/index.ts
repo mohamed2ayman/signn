@@ -906,6 +906,24 @@ export interface OrganizationSubscription {
   plan?: SubscriptionPlan;
 }
 
+export enum ApproverStatus {
+  PENDING = 'PENDING',
+  APPROVED = 'APPROVED',
+  REJECTED = 'REJECTED',
+}
+
+export interface ContractApprover {
+  id: string;
+  contract_id: string;
+  user_id: string;
+  assigned_at: string;
+  approved_at: string | null;
+  status: ApproverStatus;
+  comment: string | null;
+  user?: User;
+  contract?: Contract;
+}
+
 export interface SupportTicket {
   id: string;
   user_id: string;

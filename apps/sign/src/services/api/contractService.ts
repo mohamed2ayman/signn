@@ -1,5 +1,5 @@
 import api from './axios';
-import { Contract, ContractClause, ContractVersion, ContractComment, ContractorResponse, SignatureSigner, VersionComparisonResult } from '@/types';
+import { Contract, ContractClause, ContractVersion, ContractComment, ContractorResponse, SignatureSigner, VersionComparisonResult, ContractApprover } from '@/types';
 
 export const contractService = {
   // Contract CRUD
@@ -80,4 +80,17 @@ export const contractService = {
 
   getSignatureStatus: (contractId: string) =>
     api.get<{ signature_status: string | null; signers: SignatureSigner[]; envelope_status?: string; executed_at?: string | null }>(`/contracts/${contractId}/signature-status`).then(r => r.data),
+
+  // Approval Workflow
+  getApprovers: (contractId: string) =>
+    api.get<ContractApprover[]>(`/contracts/${contractId}/approvers`).then(r => r.data),
+
+  requestApproval: (contractId: string, approverIds: string[]) =>
+    api.post<ContractApprover[]>(`/contracts/${contractId}/request-approval`, { approver_ids: approverIds }).then(r => r.data),
+
+  reviewApproval: (contractId: string, decision: 'APPROVED' | 'REJECTED', comment?: string) =>
+    api.post<ContractApprover[]>(`/contracts/${contractId}/review-approval`, { decision, comment }).then(r => r.data),
+
+  getPendingApprovals: () =>
+    api.get<ContractApprover[]>('/contracts/pending-approvals/mine').then(r => r.data),
 };

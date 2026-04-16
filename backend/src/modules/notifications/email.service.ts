@@ -147,14 +147,20 @@ export class EmailService {
     email: string,
     contractName: string,
     projectName: string,
+    requesterName?: string,
+    contractId?: string,
   ): Promise<void> {
     const subject = `Sign — Approval required: ${contractName}`;
+    const contractLink = contractId
+      ? `${this.frontendUrl}/app/contracts/${contractId}`
+      : `${this.frontendUrl}/app/approvals`;
+
     const html = approvalRequestedEmail({
       reviewerName: '',
       contractName,
       projectName,
-      requesterName: 'A team member',
-      contractLink: `${this.frontendUrl}/app/dashboard`,
+      requesterName: requesterName || 'A team member',
+      contractLink,
     });
 
     await this.sendGenericEmail(email, subject, html);

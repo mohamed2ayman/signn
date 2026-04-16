@@ -28,6 +28,7 @@ import OnboardingPage from '@/pages/app/OnboardingPage';
 import SupportPage from '@/pages/app/SupportPage';
 import BillingPage from '@/pages/app/BillingPage';
 import SubscriptionSettingsPage from '@/pages/app/SubscriptionSettingsPage';
+import ApprovalsPage from '@/pages/app/ApprovalsPage';
 import TeamPage from '@/pages/app/TeamPage';
 import ProfilePage from '@/pages/app/ProfilePage';
 import MfaSetupPage from '@/pages/app/MfaSetupPage';
@@ -87,6 +88,7 @@ const ownerNavItems = [
   { label: 'nav.knowledge', path: '/app/knowledge-assets', icon: '📚' },
   { label: 'nav.obligations', path: '/app/obligations', icon: '📋' },
   { label: 'nav.notifications', path: '/app/notifications', icon: '🔔' },
+  { label: 'nav.approvals', path: '/app/approvals', icon: '✅' },
   { label: 'nav.team', path: '/app/team', icon: '👥' },
   { label: 'nav.store', path: '/app/store', icon: '🛒' },
   { label: 'nav.subscription', path: '/app/settings/subscription', icon: '💳' },
@@ -165,6 +167,7 @@ function App() {
         <Route path="profile" element={<ProfilePage />} />
         <Route path="settings/billing" element={<BillingPage />} />
         <Route path="settings/subscription" element={<SubscriptionSettingsPage />} />
+        <Route path="approvals" element={<ApprovalsPage />} />
       </Route>
 
       {/* ─── Admin Portal (/admin/*) ─── */}

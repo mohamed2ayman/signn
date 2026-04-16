@@ -25,6 +25,8 @@ import {
   UpdateClauseOrderDto,
   AddCommentDto,
   UpdateStatusDto,
+  RequestApprovalDto,
+  ReviewApprovalDto,
 } from './dto';
 
 @Controller('contracts')
@@ -226,5 +228,57 @@ export class ContractsController {
   @Get(':id/responses')
   async getContractorResponses(@Param('id', ParseUUIDPipe) id: string) {
     return this.contractsService.getContractorResponses(id);
+  }
+
+  // ─── Approval Workflow ─────────────────────────────────────
+
+  /**
+   * GET /contracts/:id/approvers
+   * Returns all approver records with user details for a contract.
+   */
+  @Get(':id/approvers')
+  async getApprovers(@Param('id', ParseUUIDPipe) id: string) {
+    return this.contractsService.getApprovers(id);
+  }
+
+  /**
+   * POST /contracts/:id/request-approval
+   * Submits the contract for approval and assigns approvers.
+   * Requires EDITOR permission (the creator/editor initiates).
+   */
+  @Post(':id/request-approval')
+  @RequirePermission(PermissionLevel.EDITOR)
+  async requestApproval(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: RequestApprovalDto,
+    @CurrentUser() user: any,
+  ) {
+    return this.contractsService.requestApproval(id, user.id, dto.approver_ids);
+  }
+
+  /**
+   * POST /contracts/:id/review-approval
+   * An assigned approver submits APPROVED or REJECTED with optional comment.
+   * No special permission guard — service validates approver assignment.
+   */
+  @Post(':id/review-approval')
+  async reviewApproval(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ReviewApprovalDto,
+    @CurrentUser() user: any,
+  ) {
+    return this.contractsService.reviewApproval(id, user.id, dto.decision, dto.comment);
+  }
+
+  /**
+   * GET /contracts/pending-approvals
+   * Returns all contracts pending the current user's approval.
+   */
+  @Get('pending-approvals/mine')
+  async getPendingApprovals(@CurrentUser() user: any) {
+    return this.contractsService.getPendingApprovalsForUser(
+      user.id,
+      user.organization_id,
+    );
   }
 }
