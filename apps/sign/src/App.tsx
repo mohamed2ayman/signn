@@ -101,15 +101,12 @@ const adminNavItems = [
   { label: 'nav.knowledgeAssets', path: '/admin/knowledge-assets', icon: '📚' },
   { label: 'nav.plans', path: '/admin/plans', icon: '💳' },
   { label: 'nav.users', path: '/admin/users', icon: '👥' },
-  { label: 'nav.riskRules', path: '/admin/risk-rules', icon: '⚠️' },
   { label: 'nav.permissionDefaults', path: '/admin/permission-defaults', icon: '🛡️' },
   { label: 'nav.support', path: '/admin/support', icon: '💬' },
 ];
 
 const contractorNavItems = [
   { label: 'nav.dashboard', path: '/contractor/dashboard', icon: '📊' },
-  { label: 'nav.contracts', path: '/contractor/contracts', icon: '📄' },
-  { label: 'nav.notifications', path: '/contractor/notifications', icon: '🔔' },
 ];
 
 function App() {
