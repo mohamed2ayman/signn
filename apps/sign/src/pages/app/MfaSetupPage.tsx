@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ShieldCheck, Smartphone, Mail, Copy, Check, Eye, EyeOff } from 'lucide-react';
+import { ShieldCheck, Smartphone, Mail, Copy, Check } from 'lucide-react';
 import { authService } from '@/services/auth/authService';
 import type { MfaTotpSetupResponse } from '@/services/auth/authService';
 import Button from '@/components/common/Button';
@@ -86,13 +86,6 @@ export default function MfaSetupPage() {
     completeMfaSetup();
     navigate('/app/dashboard', { replace: true });
   };
-
-  const role = user?.role ?? '';
-  const dashboardPath = role === 'SYSTEM_ADMIN' || role === 'OPERATIONS'
-    ? '/admin/dashboard'
-    : role.startsWith('CONTRACTOR_')
-      ? '/contractor/dashboard'
-      : '/app/dashboard';
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-background px-4 py-12">

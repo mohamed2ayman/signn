@@ -21,9 +21,14 @@
     "analytics": "التحليلات",
     "subscriptions": "الاشتراكات",
     "riskRules": "قواعد المخاطر",
+    "storeAnalytics": "تحليلات المتجر",
+    "permissionDefaults": "الصلاحيات الافتراضية",
+    "approvals": "الموافقات",
+    "plans": "الخطط",
     "profile": "الملف الشخصي",
     "team": "الفريق",
-    "store": "متجر العقود"
+    "store": "متجر العقود",
+    "subscription": "الاشتراك"
   },
   "auth": {
     "login": "تسجيل الدخول",

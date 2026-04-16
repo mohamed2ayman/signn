@@ -45,6 +45,8 @@ import AdminSubscriptionsPage from '@/pages/admin/AdminSubscriptionsPage';
 import AdminPlansPage from '@/pages/admin/AdminPlansPage';
 import AdminPlansComparePage from '@/pages/admin/AdminPlansComparePage';
 import PermissionDefaultsPage from '@/pages/admin/PermissionDefaultsPage';
+import AdminRiskRulesPage from '@/pages/admin/AdminRiskRulesPage';
+import AdminStoreAnalyticsPage from '@/pages/admin/AdminStoreAnalyticsPage';
 
 // Contractor portal pages
 import ContractorDashboardPage from '@/pages/contractor/ContractorDashboardPage';
@@ -101,6 +103,8 @@ const adminNavItems = [
   { label: 'nav.knowledgeAssets', path: '/admin/knowledge-assets', icon: '📚' },
   { label: 'nav.plans', path: '/admin/plans', icon: '💳' },
   { label: 'nav.users', path: '/admin/users', icon: '👥' },
+  { label: 'nav.riskRules', path: '/admin/risk-rules', icon: '⚠️' },
+  { label: 'nav.storeAnalytics', path: '/admin/store-analytics', icon: '🛒' },
   { label: 'nav.permissionDefaults', path: '/admin/permission-defaults', icon: '🛡️' },
   { label: 'nav.support', path: '/admin/support', icon: '💬' },
 ];
@@ -184,6 +188,8 @@ function App() {
         <Route path="plans/compare" element={<AdminPlansComparePage />} />
         <Route path="users" element={<AdminUsersPage />} />
         <Route path="permission-defaults" element={<PermissionDefaultsPage />} />
+        <Route path="risk-rules" element={<AdminRiskRulesPage />} />
+        <Route path="store-analytics" element={<AdminStoreAnalyticsPage />} />
         <Route path="support" element={<AdminSupportPage />} />
       </Route>
 

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ShieldCheck, Plus, Pencil, Check, X } from 'lucide-react';
+import { ShieldCheck, Plus, Check, X } from 'lucide-react';
 import { adminService } from '@/services/api/adminService';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
 import Button from '@/components/common/Button';

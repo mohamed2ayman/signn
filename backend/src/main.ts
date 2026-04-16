@@ -12,8 +12,14 @@ async function bootstrap() {
 
   app.use(helmet());
 
+  const frontendUrl = configService.get<string>('FRONTEND_URL', 'http://localhost:5173');
+  const allowedOrigins = frontendUrl.split(',').map(o => o.trim());
+  // In development, also allow the Vite preview port
+  if (process.env.NODE_ENV !== 'production') {
+    allowedOrigins.push('http://localhost:5180', 'http://localhost:5174');
+  }
   app.enableCors({
-    origin: configService.get<string>('FRONTEND_URL', 'http://localhost:5173'),
+    origin: allowedOrigins,
     credentials: true,
   });
 

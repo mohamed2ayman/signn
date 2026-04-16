@@ -21,9 +21,14 @@
     "analytics": "Analytics",
     "subscriptions": "Subscriptions",
     "riskRules": "Risk Rules",
+    "storeAnalytics": "Store Analytics",
+    "permissionDefaults": "Permission Defaults",
+    "approvals": "Approvals",
+    "plans": "Plans",
     "profile": "Profile",
     "team": "Team",
-    "store": "Contract Store"
+    "store": "Contract Store",
+    "subscription": "Subscription"
   },
   "auth": {
     "login": "Login",

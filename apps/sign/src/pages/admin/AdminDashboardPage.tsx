@@ -1,19 +1,19 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { adminService } from '@/services/api/adminService';
+import { adminService, type AdminUser } from '@/services/api/adminService';
 import { knowledgeAssetService } from '@/services/api/knowledgeAssetService';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
-import type { User, KnowledgeAsset } from '@/types';
+import type { KnowledgeAsset } from '@/types';
 
 export default function AdminDashboardPage() {
   const { t } = useTranslation();
-  const [users, setUsers] = useState<User[]>([]);
+  const [users, setUsers] = useState<AdminUser[]>([]);
   const [pendingAssets, setPendingAssets] = useState<KnowledgeAsset[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     Promise.all([
-      adminService.getUsers().catch(() => []),
+      adminService.getAllUsers().catch(() => [] as AdminUser[]),
       adminService.getPendingAssets().catch(() => []),
     ]).then(([usersData, assetsData]) => {
       setUsers(usersData);

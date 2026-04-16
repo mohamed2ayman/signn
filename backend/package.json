@@ -18,8 +18,9 @@
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "typeorm": "ts-node -r tsconfig-paths/register ./node_modules/typeorm/cli.js",
     "migration:generate": "npm run typeorm -- migration:generate -d src/config/data-source.ts",
-    "migration:run": "npm run typeorm -- migration:run -d src/config/data-source.ts",
-    "migration:revert": "npm run typeorm -- migration:revert -d src/config/data-source.ts"
+    "migration:run": "npm run typeorm -- migration:run -d src/config/data-source.ts && npm run seed:run",
+    "migration:revert": "npm run typeorm -- migration:revert -d src/config/data-source.ts",
+    "seed:run": "ts-node -r tsconfig-paths/register src/database/seeds/run-seeds.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.490.0",
