@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { projectService } from '@/services/api/projectService';
+import { documentProcessingService } from '@/services/api/documentProcessingService';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
 import type { Project } from '@/types';
+import { DocumentProcessingStatus } from '@/types';
 
 export default function ProjectsPage() {
   const navigate = useNavigate();
@@ -11,6 +13,9 @@ export default function ProjectsPage() {
   const [deleteTarget, setDeleteTarget] = useState<Project | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
+
+  // ── Analysis-session banner ──────────────────────────────────
+  const [analysisBannerContractId, setAnalysisBannerContractId] = useState<string | null>(null);
 
   useEffect(() => {
     projectService
@@ -26,6 +31,47 @@ export default function ProjectsPage() {
     const timer = setTimeout(() => setSuccessMessage(''), 3000);
     return () => clearTimeout(timer);
   }, [successMessage]);
+
+  // On mount: check whether a document analysis was left mid-way
+  useEffect(() => {
+    const raw = localStorage.getItem('sign_analysis_session');
+    if (!raw) return;
+
+    let session: { contractId: string; projectId: string };
+    try {
+      session = JSON.parse(raw);
+    } catch {
+      localStorage.removeItem('sign_analysis_session');
+      return;
+    }
+
+    const terminalStatuses = new Set([
+      DocumentProcessingStatus.CLAUSES_EXTRACTED,
+      DocumentProcessingStatus.FAILED,
+    ]);
+
+    documentProcessingService
+      .getDocuments(session.contractId)
+      .then((docs) => {
+        const stillProcessing = docs.some(
+          (d) => !terminalStatuses.has(d.processing_status as DocumentProcessingStatus),
+        );
+        if (stillProcessing) {
+          setAnalysisBannerContractId(session.contractId);
+        } else {
+          // Analysis already finished — clear the stale entry
+          localStorage.removeItem('sign_analysis_session');
+        }
+      })
+      .catch(() => {
+        // Can't verify — silently hide; don't spam the user
+      });
+  }, []);
+
+  const handleDismissAnalysisBanner = () => {
+    localStorage.removeItem('sign_analysis_session');
+    setAnalysisBannerContractId(null);
+  };
 
   const handleDeleteClick = (e: React.MouseEvent, project: Project) => {
     e.stopPropagation(); // Prevent navigating to project detail
@@ -83,6 +129,57 @@ export default function ProjectsPage() {
             <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
           {successMessage}
+        </div>
+      )}
+
+      {/* Analysis-in-progress banner */}
+      {analysisBannerContractId && (
+        <div className="flex items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          {/* Spinner */}
+          <svg
+            className="h-4 w-4 flex-shrink-0 animate-spin text-amber-600"
+            fill="none"
+            viewBox="0 0 24 24"
+          >
+            <circle
+              className="opacity-25"
+              cx="12"
+              cy="12"
+              r="10"
+              stroke="currentColor"
+              strokeWidth="4"
+            />
+            <path
+              className="opacity-75"
+              fill="currentColor"
+              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+            />
+          </svg>
+
+          {/* Message */}
+          <p className="flex-1">
+            <span className="font-medium">Analysis in progress</span>
+            {' '}— your documents are still being processed.
+          </p>
+
+          {/* View Progress button */}
+          <button
+            onClick={() => navigate(`/app/contracts/${analysisBannerContractId}`)}
+            className="rounded-md bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-amber-700"
+          >
+            View Progress →
+          </button>
+
+          {/* Dismiss (X) */}
+          <button
+            onClick={handleDismissAnalysisBanner}
+            className="rounded-md p-1 text-amber-500 transition hover:bg-amber-100 hover:text-amber-700"
+            title="Dismiss"
+          >
+            <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
         </div>
       )}
 

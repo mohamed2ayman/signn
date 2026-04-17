@@ -133,6 +133,13 @@ export default function ProjectCreationPage() {
   const { documents, allComplete, anyFailed, overallProgress } =
     useDocumentProcessing(contractId, documentIds);
 
+  // Clear the localStorage session marker when analysis finishes
+  useEffect(() => {
+    if (allComplete) {
+      localStorage.removeItem('sign_analysis_session');
+    }
+  }, [allComplete]);
+
   // ─── Step 1: Project Details ────────────────────────────────
 
   const handleProjectDetailsNext = () => {
@@ -221,7 +228,13 @@ export default function ProjectCreationPage() {
       const uploadedDocs: DocumentUpload[] = await Promise.all(uploadPromises);
       setDocumentIds(uploadedDocs.map((d) => d.id));
 
-      // 4. Move to processing step
+      // 4. Persist analysis session so ProjectsPage can show a resume banner
+      localStorage.setItem(
+        'sign_analysis_session',
+        JSON.stringify({ contractId: contract.id, projectId: project.id }),
+      );
+
+      // 5. Move to processing step
       setCurrentStep(3);
     } catch (err: unknown) {
       const error = err as { response?: { data?: { message?: string } } };

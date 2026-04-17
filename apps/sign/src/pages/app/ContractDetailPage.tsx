@@ -19,6 +19,10 @@ import VersionSnapshotModal from '@/components/versions/VersionSnapshotModal';
 import ClaimsTab from '@/components/claims/ClaimsTab';
 import NoticesTab from '@/components/notices/NoticesTab';
 import SubContractsTab from '@/components/subcontracts/SubContractsTab';
+import { documentProcessingService } from '@/services/api/documentProcessingService';
+import { useDocumentProcessing } from '@/hooks/useDocumentProcessing';
+import ProcessingStatusCard from '@/components/common/ProcessingStatusCard';
+import { DocumentProcessingStatus } from '@/types';
 
 /* ── Status Badge ─────────────────────────────────────────────── */
 const statusStyles: Record<string, { bg: string; text: string; dot: string }> = {
@@ -292,10 +296,39 @@ export default function ContractDetailPage() {
   const [reviewComment, setReviewComment] = useState('');
   const [submittingReview, setSubmittingReview] = useState(false);
 
+  // ── Document processing auto-resume ──────────────────────────────
+  const [processingDocIds, setProcessingDocIds] = useState<string[]>([]);
+  const [processingChecked, setProcessingChecked] = useState(false);
+
   const currentUser = useSelector((state: RootState) => state.auth.user);
+
+  const {
+    documents: processingDocs,
+    allComplete: processingAllDone,
+    overallProgress: processingProgress,
+  } = useDocumentProcessing(processingChecked ? (id ?? null) : null, processingDocIds);
 
   useEffect(() => {
     if (id) loadContract();
+  }, [id]);
+
+  // Check on mount whether any documents are still being processed
+  useEffect(() => {
+    if (!id) return;
+    const terminalStatuses: DocumentProcessingStatus[] = [
+      DocumentProcessingStatus.CLAUSES_EXTRACTED,
+      DocumentProcessingStatus.FAILED,
+    ];
+    documentProcessingService
+      .getDocuments(id)
+      .then((docs) => {
+        const inProgress = docs
+          .filter((d) => !terminalStatuses.includes(d.processing_status as DocumentProcessingStatus))
+          .map((d) => d.id);
+        setProcessingDocIds(inProgress);
+      })
+      .catch(() => {})
+      .finally(() => setProcessingChecked(true));
   }, [id]);
 
   const loadContract = async () => {
@@ -332,6 +365,14 @@ export default function ContractDetailPage() {
   const reloadRisks = useCallback(() => {
     if (id) riskAnalysisService.getByContract(id).then(setRisks).catch(() => {});
   }, [id]);
+
+  // When all in-progress documents finish, reload clauses and risks
+  useEffect(() => {
+    if (processingAllDone && processingChecked && processingDocIds.length > 0) {
+      reloadClauses();
+      reloadRisks();
+    }
+  }, [processingAllDone]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleRealtimeStatusChange = useCallback(
     (_payload: { oldStatus: string; newStatus: string }) => {
@@ -601,6 +642,10 @@ export default function ContractDetailPage() {
   const highRisks = risks.filter(r => r.risk_level === 'HIGH');
   const openRisks = risks.filter(r => r.status === 'OPEN');
 
+  // Show the processing banner when docs are still being analysed
+  const isProcessingActive =
+    processingChecked && processingDocIds.length > 0 && !processingAllDone;
+
   return (
     <div className="space-y-6">
       {/* ── Toast Notifications ── */}
@@ -788,17 +833,15 @@ export default function ContractDetailPage() {
             </div>
 
             {/* Review Documents Button */}
-            {clauses.length > 0 && (
-              <button
-                onClick={() => navigate(`/app/contracts/${contract.id}/review`)}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3.5 py-2 text-sm font-medium text-gray-700 transition hover:border-gray-300 hover:bg-gray-50"
-              >
-                <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
-                </svg>
-                Review Documents
-              </button>
-            )}
+            <button
+              onClick={() => navigate(`/app/contracts/${contract.id}/review`)}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3.5 py-2 text-sm font-medium text-gray-700 transition hover:border-gray-300 hover:bg-gray-50"
+            >
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+              </svg>
+              Review Documents
+            </button>
 
             {/* Status Actions */}
             {(contract.status === 'DRAFT' || contract.status === 'CHANGES_REQUESTED') && (
@@ -1080,6 +1123,50 @@ export default function ContractDetailPage() {
           </p>
         )}
       </div>
+
+      {/* ── Document Processing Banner ───────────────────────────── */}
+      {isProcessingActive && (
+        <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-4">
+          <div className="mb-3 flex items-center gap-2">
+            <svg
+              className="h-5 w-5 flex-shrink-0 animate-spin text-blue-600"
+              fill="none"
+              viewBox="0 0 24 24"
+            >
+              <circle
+                className="opacity-25"
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                strokeWidth="4"
+              />
+              <path
+                className="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+              />
+            </svg>
+            <h3 className="text-sm font-semibold text-blue-800">
+              Analyzing Documents…
+            </h3>
+            <span className="ml-auto text-sm font-medium tabular-nums text-blue-700">
+              {processingProgress}%
+            </span>
+          </div>
+          <div className="mb-3 h-1.5 w-full overflow-hidden rounded-full bg-blue-200">
+            <div
+              className="h-full rounded-full bg-blue-600 transition-all duration-500"
+              style={{ width: `${processingProgress}%` }}
+            />
+          </div>
+          <div className="space-y-2">
+            {processingDocs.map((doc) => (
+              <ProcessingStatusCard key={doc.id} document={doc} />
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="border-b border-gray-200">
