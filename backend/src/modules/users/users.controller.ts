@@ -6,6 +6,7 @@ import {
   Delete,
   Body,
   Param,
+  Query,
   UseGuards,
   ParseUUIDPipe,
 } from '@nestjs/common';
@@ -16,12 +17,13 @@ import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { OrganizationId } from '../../common/decorators/organization.decorator';
-import { UserRole } from '../../database/entities';
+import { User, UserRole } from '../../database/entities';
 import {
   UpdateProfileDto,
   ChangePasswordDto,
   InviteUserDto,
   UpdateRoleDto,
+  CreateOperationsUserDto,
 } from './dto';
 
 @Controller('users')
@@ -61,8 +63,12 @@ export class UsersController {
   async inviteUser(
     @OrganizationId() organizationId: string,
     @Body() dto: InviteUserDto,
+    @CurrentUser() currentUser: User,
   ) {
-    return this.usersService.inviteUser(organizationId, dto);
+    const inviterName =
+      `${currentUser.first_name} ${currentUser.last_name}`.trim() ||
+      'A team member';
+    return this.usersService.inviteUser(organizationId, dto, inviterName);
   }
 
   @Put(':id/role')
@@ -82,10 +88,58 @@ export class UsersController {
 
   // ─── Admin-only endpoints ─────────────────────────────────────
 
+  /**
+   * GET /users/check-email?email=X
+   * Real-time uniqueness check used by the "Add Operations Member" modal.
+   */
+  @Get('check-email')
+  @Roles(UserRole.SYSTEM_ADMIN)
+  async checkEmail(@Query('email') email: string) {
+    return this.usersService.checkEmailExists(email);
+  }
+
+  /**
+   * GET /users/admin/all?role=OPERATIONS
+   * Returns all users (or filtered by role) with computed invitation_status.
+   */
   @Get('admin/all')
   @Roles(UserRole.SYSTEM_ADMIN, UserRole.OPERATIONS)
-  async getAllUsersForAdmin() {
-    return this.usersService.getAllUsersForAdmin();
+  async getAllUsersForAdmin(@Query('role') role?: string) {
+    return this.usersService.getAllUsersForAdmin(role);
+  }
+
+  /**
+   * POST /users/admin/create-operations
+   * Creates a new Operations team member, hashes their temp password, and
+   * dispatches an invitation email.
+   */
+  @Post('admin/create-operations')
+  @Roles(UserRole.SYSTEM_ADMIN)
+  async createOperationsUser(
+    @Body() dto: CreateOperationsUserDto,
+    @CurrentUser() currentUser: User,
+  ) {
+    const inviterName =
+      `${currentUser.first_name} ${currentUser.last_name}`.trim() ||
+      'SIGN Admin';
+    return this.usersService.createOperationsUser(dto, inviterName);
+  }
+
+  /**
+   * POST /users/:id/resend-invitation
+   * Regenerates the invitation token + temp password, resets invitation_sent_at,
+   * and re-dispatches the email.
+   */
+  @Post(':id/resend-invitation')
+  @Roles(UserRole.SYSTEM_ADMIN)
+  async resendInvitation(
+    @Param('id', ParseUUIDPipe) userId: string,
+    @CurrentUser() currentUser: User,
+  ) {
+    const inviterName =
+      `${currentUser.first_name} ${currentUser.last_name}`.trim() ||
+      'SIGN Admin';
+    return this.usersService.resendInvitation(userId, inviterName);
   }
 
   @Post(':id/mfa/reset')

@@ -798,11 +798,14 @@ export interface KnowledgeAsset {
   review_status: AssetReviewStatus;
   file_url: string | null;
   file_name: string | null;
+  file_hash: string | null;
   jurisdiction: string | null;
   tags: string[] | null;
   include_in_risk_analysis: boolean;
   include_in_citations: boolean;
+  ocr_status: string;
   embedding_status: string;
+  detected_languages: string[] | null;
   reviewed_by: string | null;
   reviewed_at: string | null;
   created_by: string | null;
@@ -940,6 +943,10 @@ export interface SupportTicket {
   organization?: Organization;
   assignee?: User;
   replies?: SupportTicketReply[];
+  // Admin-only: ACTIVE subscription plan name of the ticket owner's org.
+  // Null when the user has no org or no active subscription — UI treats
+  // that as the Standard support tier.
+  planName?: string | null;
 }
 
 export interface RiskRule {

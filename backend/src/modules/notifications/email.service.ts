@@ -111,13 +111,15 @@ export class EmailService {
     email: string,
     invitationToken: string,
     role: string,
+    organizationName: string,
+    inviterName: string,
   ): Promise<void> {
     const invitationLink = `${this.frontendUrl}/auth/accept-invitation?token=${invitationToken}`;
     const subject = 'Sign — You Have Been Invited';
     const html = teamInvitationEmail({
-      organizationName: 'your organization',
+      organizationName,
       role,
-      inviterName: 'A team member',
+      inviterName,
       invitationLink,
     });
 

@@ -71,6 +71,15 @@ export class KnowledgeAsset {
   @Column({ type: 'jsonb', nullable: true })
   content: Record<string, unknown> | null;
 
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  file_hash: string | null;
+
+  @Column({ type: 'varchar', length: 50, default: 'PENDING' })
+  ocr_status: string;
+
+  @Column({ type: 'jsonb', nullable: true })
+  detected_languages: string[] | null;
+
   @Column({ type: 'varchar', length: 50, default: 'PENDING' })
   embedding_status: string;
 

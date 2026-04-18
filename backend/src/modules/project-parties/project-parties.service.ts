@@ -114,10 +114,14 @@ export class ProjectPartiesService {
     return this.projectPartyRepository.save(party);
   }
 
-  async invite(id: string, orgId: string): Promise<{ message: string }> {
+  async invite(
+    id: string,
+    orgId: string,
+    inviterName: string,
+  ): Promise<{ message: string }> {
     const party = await this.projectPartyRepository.findOne({
       where: { id, owner_organization_id: orgId },
-      relations: ['project'],
+      relations: ['project', 'owner_organization'],
     });
 
     if (!party) {
@@ -136,6 +140,8 @@ export class ProjectPartiesService {
       party.email,
       invitationToken,
       party.party_type,
+      party.owner_organization?.name ?? 'your organization',
+      inviterName,
     );
 
     return { message: `Invitation sent to ${party.email}` };

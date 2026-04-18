@@ -1,9 +1,187 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { adminService, type AdminUser } from '@/services/api/adminService';
+import { useQuery } from '@tanstack/react-query';
+import { adminService, type AdminUser, type SystemHealthResponse, type ServiceStatus } from '@/services/api/adminService';
 import { knowledgeAssetService } from '@/services/api/knowledgeAssetService';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
 import type { KnowledgeAsset } from '@/types';
+
+// ─── Health helpers ───────────────────────────────────────────────────────────
+
+function statusDot(status: ServiceStatus) {
+  if (status === 'up')      return 'bg-green-500';
+  if (status === 'down')    return 'bg-red-500';
+  if (status === 'skipped') return 'bg-gray-300';
+  return 'bg-amber-400';
+}
+
+function statusLabel(status: ServiceStatus) {
+  if (status === 'up')      return 'Up';
+  if (status === 'down')    return 'Down';
+  if (status === 'skipped') return 'Skipped';
+  return status;
+}
+
+function overallBadgeClass(overall: SystemHealthResponse['overall']) {
+  if (overall === 'HEALTHY')  return 'text-green-600';
+  if (overall === 'DEGRADED') return 'text-amber-500';
+  return 'text-red-600';
+}
+
+function overallIcon(overall: SystemHealthResponse['overall']) {
+  if (overall === 'HEALTHY')  return '✓';
+  if (overall === 'DEGRADED') return '⚠';
+  return '✗';
+}
+
+function formatMs(ms?: number) {
+  return ms !== undefined ? `${ms} ms` : '—';
+}
+
+function formatTime(iso: string) {
+  return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+// ─── SystemStatusCard ─────────────────────────────────────────────────────────
+
+function SystemStatusCard({ health, isLoading, isError }: {
+  health: SystemHealthResponse | undefined;
+  isLoading: boolean;
+  isError: boolean;
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  if (isLoading) {
+    return (
+      <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+        <p className="text-sm font-medium text-gray-500">System Status</p>
+        <div className="mt-2 flex items-center gap-2">
+          <LoadingSpinner size="sm" />
+          <span className="text-sm text-gray-400">Checking…</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (isError || !health) {
+    return (
+      <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+        <p className="text-sm font-medium text-gray-500">System Status</p>
+        <p className="mt-1 text-lg font-bold text-red-500">⚠ Unavailable</p>
+      </div>
+    );
+  }
+
+  const { overall, timestamp, services } = health;
+
+  const rows: Array<{
+    label: string;
+    status: ServiceStatus;
+    detail?: string;
+  }> = [
+    {
+      label: 'PostgreSQL',
+      status: services.postgres.status,
+      detail: formatMs(services.postgres.responseTime),
+    },
+    {
+      label: 'Redis',
+      status: services.redis.status,
+      detail: formatMs(services.redis.responseTime),
+    },
+    {
+      label: 'Email Queue',
+      status: services.emailQueue.status,
+      detail: services.emailQueue.status === 'up'
+        ? `${services.emailQueue.waiting}w · ${services.emailQueue.active}a · ${services.emailQueue.failed}f`
+        : '—',
+    },
+    {
+      label: 'Job Queue',
+      status: services.aiQueue.status,
+      detail: services.aiQueue.status === 'up'
+        ? `${services.aiQueue.waiting}w · ${services.aiQueue.active}a · ${services.aiQueue.failed}f`
+        : '—',
+    },
+    {
+      label: 'AI Backend',
+      status: services.aiBackend.status,
+      detail: formatMs(services.aiBackend.responseTime),
+    },
+    {
+      label: 'S3 Storage',
+      status: services.s3.status,
+      detail: services.s3.status === 'skipped' ? 'Not configured' : undefined,
+    },
+  ];
+
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
+      {/* Header row — always visible */}
+      <button
+        className="flex w-full items-center justify-between p-6 text-left"
+        onClick={() => setExpanded((v) => !v)}
+      >
+        <div>
+          <p className="text-sm font-medium text-gray-500">System Status</p>
+          <p className={`mt-1 text-lg font-bold ${overallBadgeClass(overall)}`}>
+            {overallIcon(overall)} {overall}
+          </p>
+          <p className="mt-0.5 text-xs text-gray-400">
+            Last checked {formatTime(timestamp)}
+          </p>
+        </div>
+        <svg
+          className={`h-4 w-4 text-gray-400 transition-transform duration-150 ${expanded ? 'rotate-180' : ''}`}
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+
+      {/* Expandable service rows */}
+      {expanded && (
+        <div className="border-t border-gray-100 px-6 pb-4">
+          <div className="divide-y divide-gray-50">
+            {rows.map((row) => (
+              <div key={row.label} className="flex items-center justify-between py-2.5">
+                <div className="flex items-center gap-2.5">
+                  <span
+                    className={`h-2 w-2 flex-shrink-0 rounded-full ${statusDot(row.status)}`}
+                  />
+                  <span className="text-sm text-gray-700">{row.label}</span>
+                </div>
+                <div className="flex items-center gap-3 text-right">
+                  {row.detail && (
+                    <span className="text-xs text-gray-400">{row.detail}</span>
+                  )}
+                  <span
+                    className={`text-xs font-medium ${
+                      row.status === 'up'
+                        ? 'text-green-600'
+                        : row.status === 'down'
+                          ? 'text-red-600'
+                          : 'text-gray-400'
+                    }`}
+                  >
+                    {statusLabel(row.status)}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+          <p className="mt-3 text-xs text-gray-400">
+            Auto-refreshes every 60 s · w=waiting, a=active, f=failed
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function AdminDashboardPage() {
   const { t } = useTranslation();
@@ -21,6 +199,17 @@ export default function AdminDashboardPage() {
       setLoading(false);
     });
   }, []);
+
+  const {
+    data: health,
+    isLoading: healthLoading,
+    isError: healthError,
+  } = useQuery({
+    queryKey: ['admin', 'system-health'],
+    queryFn: () => adminService.getSystemHealth(),
+    refetchInterval: 60_000,
+    retry: 2,
+  });
 
   if (loading) {
     return <div className="flex h-64 items-center justify-center"><LoadingSpinner size="lg" /></div>;
@@ -48,10 +237,13 @@ export default function AdminDashboardPage() {
           <p className="text-sm font-medium text-gray-500">{t('admin.pendingReviews')}</p>
           <p className="mt-1 text-3xl font-bold text-yellow-600">{pendingAssets.length}</p>
         </div>
-        <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-          <p className="text-sm font-medium text-gray-500">{t('admin.systemStatus')}</p>
-          <p className="mt-1 text-lg font-bold text-green-600">✓ {t('admin.healthy')}</p>
-        </div>
+
+        {/* ── Real System Status card (replaces hardcoded "✓ Healthy") ── */}
+        <SystemStatusCard
+          health={health}
+          isLoading={healthLoading}
+          isError={healthError}
+        />
       </div>
 
       {/* Pending Reviews */}

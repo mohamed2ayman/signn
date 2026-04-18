@@ -1,7 +1,20 @@
 import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { SupportTicket, SupportTicketReply } from '../../database/entities';
+import {
+  SupportTicket,
+  SupportTicketReply,
+  OrganizationSubscription,
+  SubscriptionStatus,
+} from '../../database/entities';
+
+/**
+ * Shape returned by the admin tickets endpoint — the regular SupportTicket
+ * entity plus the ACTIVE subscription plan name of the ticket owner's org.
+ * `planName` is null for tickets created by users without an active plan
+ * (free trial, expired, individual guest, etc.).
+ */
+export type AdminTicket = SupportTicket & { planName: string | null };
 
 @Injectable()
 export class SupportService {
@@ -12,6 +25,8 @@ export class SupportService {
     private readonly ticketRepository: Repository<SupportTicket>,
     @InjectRepository(SupportTicketReply)
     private readonly replyRepository: Repository<SupportTicketReply>,
+    @InjectRepository(OrganizationSubscription)
+    private readonly orgSubscriptionRepository: Repository<OrganizationSubscription>,
   ) {}
 
   async createTicket(
@@ -45,7 +60,7 @@ export class SupportService {
     status?: string;
     priority?: string;
     category?: string;
-  }): Promise<SupportTicket[]> {
+  }): Promise<AdminTicket[]> {
     const qb = this.ticketRepository
       .createQueryBuilder('ticket')
       .leftJoinAndSelect('ticket.user', 'user')
@@ -63,7 +78,38 @@ export class SupportService {
     }
 
     qb.orderBy('ticket.created_at', 'DESC');
-    return qb.getMany();
+    const tickets = await qb.getMany();
+
+    // ── Resolve the ACTIVE plan name for each ticket's organization ─────
+    // Tickets created by users without an org or without an active
+    // subscription simply return planName: null — the UI then treats
+    // them as the Standard support tier.
+    const orgIds = Array.from(
+      new Set(
+        tickets
+          .map((t) => t.organization_id)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    );
+
+    const planByOrgId = new Map<string, string>();
+    if (orgIds.length > 0) {
+      const subs = await this.orgSubscriptionRepository
+        .createQueryBuilder('sub')
+        .leftJoinAndSelect('sub.plan', 'plan')
+        .where('sub.organization_id IN (:...orgIds)', { orgIds })
+        .andWhere('sub.status = :status', { status: SubscriptionStatus.ACTIVE })
+        .getMany();
+
+      for (const sub of subs) {
+        if (sub.plan?.name) planByOrgId.set(sub.organization_id, sub.plan.name);
+      }
+    }
+
+    return tickets.map((t) => ({
+      ...t,
+      planName: t.organization_id ? planByOrgId.get(t.organization_id) ?? null : null,
+    })) as AdminTicket[];
   }
 
   async getTicketById(ticketId: string): Promise<SupportTicket & { replies: SupportTicketReply[] }> {

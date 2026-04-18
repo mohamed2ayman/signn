@@ -13,8 +13,9 @@ import {
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { OrganizationId } from '../../common/decorators/organization.decorator';
-import { UserRole } from '../../database/entities';
+import { User, UserRole } from '../../database/entities';
 import { ProjectPartiesService } from './project-parties.service';
 import { CreatePartyDto, UpdatePartyDto } from './dto';
 
@@ -69,7 +70,11 @@ export class ProjectPartiesController {
   async invite(
     @Param('id', ParseUUIDPipe) id: string,
     @OrganizationId() orgId: string,
+    @CurrentUser() currentUser: User,
   ) {
-    return this.projectPartiesService.invite(id, orgId);
+    const inviterName =
+      `${currentUser.first_name} ${currentUser.last_name}`.trim() ||
+      'A team member';
+    return this.projectPartiesService.invite(id, orgId, inviterName);
   }
 }

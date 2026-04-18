@@ -30,6 +30,16 @@
     "store": "Contract Store",
     "subscription": "Subscription"
   },
+  "portal": {
+    "client": "Client Portal",
+    "guest": "Guest Portal",
+    "admin": "Admin Portal"
+  },
+  "userType": {
+    "managingParty": "Managing Party",
+    "respondingParty": "Responding Party",
+    "individual": "Individual Practitioner"
+  },
   "auth": {
     "login": "Login",
     "register": "Register",

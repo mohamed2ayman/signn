@@ -17,6 +17,56 @@ const PRIORITY_COLORS: Record<string, string> = {
   urgent: 'text-red-700 font-bold',
 };
 
+// ─────────────────────────────────────────────────────────────────────
+// Support tier derivation — platform SLA policy
+//
+//   Dedicated (2h)  — Enterprise Managed / Enterprise Custom plans
+//   Priority  (8h)  — any other Enterprise plan
+//   Standard  (48h) — Starter, Pro, Individual, no active subscription
+//
+// The tier is resolved from the ACTIVE subscription plan name of the
+// ticket owner's organization (server-joined as `planName`). Users
+// without an organization or without an active plan fall through to
+// the Standard tier.
+// ─────────────────────────────────────────────────────────────────────
+type TierKey = 'dedicated' | 'priority' | 'standard';
+interface TierInfo {
+  key: TierKey;
+  label: string;
+  sla: string;
+  rank: number; // lower = higher tier, used for "Sort by tier"
+  badgeClass: string;
+}
+
+const getTierInfo = (planName: string | null | undefined): TierInfo => {
+  const name = (planName || '').toLowerCase();
+  if (name.includes('enterprise') && (name.includes('managed') || name.includes('custom'))) {
+    return {
+      key: 'dedicated',
+      label: 'Dedicated',
+      sla: '2h SLA',
+      rank: 0,
+      badgeClass: 'text-blue-700 bg-blue-50 border border-blue-200',
+    };
+  }
+  if (name.includes('enterprise')) {
+    return {
+      key: 'priority',
+      label: 'Priority',
+      sla: '8h SLA',
+      rank: 1,
+      badgeClass: 'text-amber-700 bg-amber-50 border border-amber-200',
+    };
+  }
+  return {
+    key: 'standard',
+    label: 'Standard',
+    sla: '48h SLA',
+    rank: 2,
+    badgeClass: 'text-gray-600 bg-gray-100 border border-gray-200',
+  };
+};
+
 export default function AdminSupportPage() {
   const [tickets, setTickets] = useState<SupportTicket[]>([]);
   const [selectedTicket, setSelectedTicket] = useState<(SupportTicket & { replies?: SupportTicketReply[] }) | null>(null);
@@ -25,6 +75,7 @@ export default function AdminSupportPage() {
   const [filterPriority, setFilterPriority] = useState('');
   const [replyText, setReplyText] = useState('');
   const [isInternal, setIsInternal] = useState(false);
+  const [sortByTier, setSortByTier] = useState(false);
 
   useEffect(() => { loadTickets(); }, [filterStatus, filterPriority]);
 
@@ -151,7 +202,7 @@ export default function AdminSupportPage() {
       </div>
 
       {/* Filters */}
-      <div className="flex gap-3">
+      <div className="flex flex-wrap gap-3 items-center">
         <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary/20">
           <option value="">All Statuses</option>
           {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>)}
@@ -163,6 +214,18 @@ export default function AdminSupportPage() {
           <option value="high">High</option>
           <option value="urgent">Urgent</option>
         </select>
+        <button
+          type="button"
+          onClick={() => setSortByTier((s) => !s)}
+          className={`px-3 py-2 text-sm font-medium rounded-lg border transition-colors ${
+            sortByTier
+              ? 'bg-primary text-white border-primary hover:bg-primary-600'
+              : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+          }`}
+          title="Order tickets Dedicated → Priority → Standard"
+        >
+          {sortByTier ? '✓ Sorted by tier' : 'Sort by tier'}
+        </button>
       </div>
 
       {loading ? (
@@ -178,30 +241,47 @@ export default function AdminSupportPage() {
               <tr className="border-b border-gray-100">
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Subject</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">User</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Support Tier</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Priority</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Created</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {tickets.map((ticket) => (
-                <tr key={ticket.id} onClick={() => openTicket(ticket)} className="hover:bg-gray-50/50 cursor-pointer transition-colors">
-                  <td className="px-4 py-3">
-                    <p className="text-sm font-medium text-navy-900 truncate max-w-xs">{ticket.subject}</p>
-                    <p className="text-xs text-gray-400">{ticket.category}</p>
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-600">
-                    {ticket.user ? `${ticket.user.first_name} ${ticket.user.last_name}` : '—'}
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className={`px-2 py-0.5 text-[10px] font-semibold rounded-full ${STATUS_COLORS[ticket.status] || ''}`}>{ticket.status.replace(/_/g, ' ')}</span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className={`text-xs font-medium ${PRIORITY_COLORS[ticket.priority] || ''}`}>{ticket.priority}</span>
-                  </td>
-                  <td className="px-4 py-3 text-xs text-gray-400">{getTimeAgo(ticket.created_at)}</td>
-                </tr>
-              ))}
+              {(sortByTier
+                ? [...tickets].sort(
+                    (a, b) => getTierInfo(a.planName).rank - getTierInfo(b.planName).rank,
+                  )
+                : tickets
+              ).map((ticket) => {
+                const tier = getTierInfo(ticket.planName);
+                return (
+                  <tr key={ticket.id} onClick={() => openTicket(ticket)} className="hover:bg-gray-50/50 cursor-pointer transition-colors">
+                    <td className="px-4 py-3">
+                      <p className="text-sm font-medium text-navy-900 truncate max-w-xs">{ticket.subject}</p>
+                      <p className="text-xs text-gray-400">{ticket.category}</p>
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-600">
+                      {ticket.user ? `${ticket.user.first_name} ${ticket.user.last_name}` : '—'}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <span className={`px-2 py-0.5 text-[10px] font-semibold rounded-full ${tier.badgeClass}`}>
+                          {tier.label}
+                        </span>
+                        <span className="text-[11px] text-gray-400">{tier.sla}</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`px-2 py-0.5 text-[10px] font-semibold rounded-full ${STATUS_COLORS[ticket.status] || ''}`}>{ticket.status.replace(/_/g, ' ')}</span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`text-xs font-medium ${PRIORITY_COLORS[ticket.priority] || ''}`}>{ticket.priority}</span>
+                    </td>
+                    <td className="px-4 py-3 text-xs text-gray-400">{getTimeAgo(ticket.created_at)}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

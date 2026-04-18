@@ -1,8 +1,27 @@
 import api from './axios';
 import { KnowledgeAsset } from '@/types';
 
+export interface ProcessingStatus {
+  ocrStatus: string;
+  embeddingStatus: string;
+  detectedLanguages: string[] | null;
+  processingProgress: number;
+  errorMessage?: string;
+}
+
+export interface DuplicateCheckResult {
+  exists: boolean;
+  assetId?: string;
+  assetTitle?: string;
+}
+
 export const knowledgeAssetService = {
-  getAll: (params?: { asset_type?: string; review_status?: string; search?: string }) =>
+  getAll: (params?: {
+    asset_type?: string;
+    review_status?: string;
+    embedding_status?: string;
+    search?: string;
+  }) =>
     api.get<KnowledgeAsset[]>('/knowledge-assets', { params }).then(r => r.data),
 
   getById: (id: string) =>
@@ -24,4 +43,16 @@ export const knowledgeAssetService = {
 
   delete: (id: string) =>
     api.delete(`/knowledge-assets/${id}`).then(r => r.data),
+
+  /** Checks whether a file (identified by its SHA-256 hex hash) already exists. */
+  checkDuplicate: (hash: string) =>
+    api.post<DuplicateCheckResult>('/knowledge-assets/check-duplicate', { hash }).then(r => r.data),
+
+  /** Polls the processing state of an asset. */
+  getProcessingStatus: (id: string) =>
+    api.get<ProcessingStatus>(`/knowledge-assets/${id}/processing-status`).then(r => r.data),
+
+  /** Re-queues OCR + embedding for a failed asset. */
+  retryOcr: (id: string) =>
+    api.post<{ message: string }>(`/knowledge-assets/${id}/retry-ocr`).then(r => r.data),
 };

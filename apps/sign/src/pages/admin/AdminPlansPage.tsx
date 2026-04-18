@@ -60,7 +60,9 @@ const DEFAULT_FORM: PlanForm = {
   max_projects: '10',
   max_users: '20',
   max_contracts_per_project: '50',
-  require_mfa: false,
+  // Platform-wide policy: MFA is required on all plans and is enforced
+  // server-side. UI shows this as a locked row — never user-toggleable.
+  require_mfa: true,
   is_active: true,
   features: {},
 };
@@ -514,16 +516,34 @@ export default function AdminPlansPage() {
 
               {/* Toggles */}
               <div className="flex items-center gap-6">
-                <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-700">
-                  <input
-                    type="checkbox"
-                    checked={form.require_mfa}
-                    onChange={(e) => setForm((f) => ({ ...f, require_mfa: e.target.checked }))}
-                    className="h-4 w-4 rounded border-gray-300 accent-primary"
-                  />
-                  <ShieldCheck className="h-4 w-4 text-primary" />
-                  Require MFA for all users
-                </label>
+                {/*
+                  MFA toggle is intentionally read-only.
+                  Platform-wide policy: MFA is required on ALL plans.
+                  The field still exists in the DB/entity, but the UI
+                  prevents it from being disabled.
+                */}
+                <div
+                  className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700"
+                  aria-readonly="true"
+                  title="Platform-wide policy — MFA is required on all plans and cannot be disabled."
+                >
+                  <svg
+                    className="h-4 w-4 text-primary"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    aria-hidden="true"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
+                    />
+                  </svg>
+                  <span className="font-medium">MFA Required</span>
+                  <span className="text-gray-500">— Enabled for all plans (platform policy)</span>
+                </div>
                 <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-700">
                   <input
                     type="checkbox"

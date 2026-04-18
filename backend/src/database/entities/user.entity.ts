@@ -13,6 +13,55 @@ import { ProjectMember } from './project-member.entity';
 import { Notification } from './notification.entity';
 import { AuditLog } from './audit-log.entity';
 
+/**
+ * ═══════════════════════════════════════════════════════════════════════
+ *  PLATFORM ROLE ARCHITECTURE
+ * ═══════════════════════════════════════════════════════════════════════
+ *
+ *  The platform exposes three distinct portals. Enum values are stable
+ *  contract identifiers (stored in the DB, referenced by RBAC, JWTs,
+ *  migrations) and MUST NOT be renamed — the human-facing portal names
+ *  below are the canonical vocabulary used in UI, docs, and logs.
+ *
+ *  ─── CLIENT PORTAL  (mounted at /app/*) ──────────────────────────────
+ *    For the Managing Party / paying customer's team. They own
+ *    organizations, projects, and contracts, and invite Guest users in.
+ *      OWNER_ADMIN     → Client Portal administrator
+ *      OWNER_CREATOR   → Client Portal creator (drafts contracts)
+ *      OWNER_REVIEWER  → Client Portal reviewer (read/approve)
+ *
+ *  ─── GUEST PORTAL  (mounted at /contractor/*) ────────────────────────
+ *    For the Responding Party — contractors/vendors invited to a
+ *    contract. Scope is limited to the inviting organization's data.
+ *      CONTRACTOR_ADMIN      → Guest Portal administrator
+ *      CONTRACTOR_CREATOR    → Guest Portal creator
+ *      CONTRACTOR_REVIEWER   → Guest Portal reviewer
+ *      CONTRACTOR_TENDERING  → Guest Portal tendering user (bids only)
+ *
+ *  ─── ADMIN PORTAL  (mounted at /admin/*) ─────────────────────────────
+ *    Internal platform operators — full cross-tenant access.
+ *      SYSTEM_ADMIN  → platform super-admin
+ *      OPERATIONS    → platform operations staff
+ *
+ *  ─── PLATFORM POLICIES ───────────────────────────────────────────────
+ *    • MFA POLICY: multi-factor authentication is REQUIRED on every
+ *      subscription plan (Starter, Pro, Enterprise SaaS, Enterprise
+ *      Managed/Custom) — no exceptions. Enforced in SubscriptionsService
+ *      by forcing `require_mfa = true` on create/update.
+ *
+ *    • SUPPORT SLA TIERS (derived from the org's ACTIVE plan name):
+ *        Dedicated — 2h   (Enterprise Managed / Enterprise Custom)
+ *        Priority  — 8h   (any other Enterprise plan)
+ *        Standard  — 48h  (Starter, Pro, Individual, no active plan)
+ *      Tier is shown on admin ticket lists and drives response targets.
+ *
+ *  ─── USER TYPE TERMINOLOGY ───────────────────────────────────────────
+ *    Marketing/UI-level grouping orthogonal to role:
+ *      Managing Party      — client organizations (owners of contracts)
+ *      Responding Party    — guest organizations (contractors/vendors)
+ *      Individual          — solo practitioners without an organization
+ * ═══════════════════════════════════════════════════════════════════════
+ */
 export enum UserRole {
   SYSTEM_ADMIN = 'SYSTEM_ADMIN',
   OPERATIONS = 'OPERATIONS',
@@ -138,6 +187,10 @@ export class User {
 
   @Column({ type: 'timestamptz', nullable: true })
   invitation_expires_at: Date;
+
+  /** Set when an admin invitation email is dispatched; used to compute EXPIRED status. */
+  @Column({ type: 'timestamptz', nullable: true })
+  invitation_sent_at: Date | null;
 
   @Column({ type: 'timestamptz', nullable: true })
   last_login_at: Date;

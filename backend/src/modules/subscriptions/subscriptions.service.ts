@@ -46,6 +46,14 @@ export class SubscriptionsService {
   }
 
   async createPlan(dto: CreatePlanDto): Promise<SubscriptionPlan> {
+    // ─────────────────────────────────────────────────────────────
+    // PLATFORM-WIDE POLICY: MFA is required on ALL plans without
+    // exception (Starter, Pro, Enterprise SaaS, Enterprise Managed).
+    // This is NOT a per-plan setting — the DTO flag is ignored and
+    // always forced to true. UI reflects this as a locked field.
+    // ─────────────────────────────────────────────────────────────
+    dto.require_mfa = true;
+
     const plan = this.subscriptionPlanRepository.create({
       name: dto.name,
       description: dto.description,
@@ -57,7 +65,7 @@ export class SubscriptionsService {
       max_contracts_per_project: dto.max_contracts_per_project,
       features: dto.features,
       is_active: dto.is_active ?? true,
-      require_mfa: dto.require_mfa ?? false,
+      require_mfa: dto.require_mfa,
     });
 
     return this.subscriptionPlanRepository.save(plan);
@@ -71,6 +79,12 @@ export class SubscriptionsService {
     if (!plan) {
       throw new NotFoundException('Subscription plan not found');
     }
+
+    // ─────────────────────────────────────────────────────────────
+    // PLATFORM-WIDE POLICY: MFA is required on ALL plans. Overriding
+    // any value from the request body to guarantee it stays enabled.
+    // ─────────────────────────────────────────────────────────────
+    dto.require_mfa = true;
 
     Object.assign(plan, dto);
 

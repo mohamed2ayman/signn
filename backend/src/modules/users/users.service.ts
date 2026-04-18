@@ -16,7 +16,11 @@ import {
   ChangePasswordDto,
   InviteUserDto,
   UpdateRoleDto,
+  CreateOperationsUserDto,
 } from './dto';
+
+// Invitation is considered expired after 72 hours with no login
+const INVITATION_EXPIRY_HOURS = 72;
 
 const BCRYPT_SALT_ROUNDS = 10;
 
@@ -146,7 +150,7 @@ export class UsersService {
     return users;
   }
 
-  async inviteUser(organizationId: string, dto: InviteUserDto) {
+  async inviteUser(organizationId: string, dto: InviteUserDto, inviterName: string) {
     // Check if user already exists with this email
     const existingUser = await this.userRepository.findOne({
       where: { email: dto.email },
@@ -187,7 +191,13 @@ export class UsersService {
     const savedUser = await this.userRepository.save(user);
 
     // Send invitation email
-    await this.emailService.sendInvitation(dto.email, invitationToken, dto.role);
+    await this.emailService.sendInvitation(
+      dto.email,
+      invitationToken,
+      dto.role,
+      organization.name,
+      inviterName,
+    );
 
     return {
       id: savedUser.id,
@@ -237,22 +247,17 @@ export class UsersService {
     };
   }
 
-  async getAllUsersForAdmin(): Promise<
-    {
-      id: string;
-      email: string;
-      first_name: string;
-      last_name: string;
-      role: string;
-      organization_id: string;
-      is_active: boolean;
-      mfa_enabled: boolean;
-      mfa_method: string | null;
-      last_login_at: Date;
-      created_at: Date;
-    }[]
-  > {
+  async checkEmailExists(email: string): Promise<{ exists: boolean }> {
+    const user = await this.userRepository.findOne({ where: { email } });
+    return { exists: !!user };
+  }
+
+  async getAllUsersForAdmin(role?: string) {
+    const where: Record<string, unknown> = {};
+    if (role) where.role = role;
+
     const users = await this.userRepository.find({
+      where: Object.keys(where).length ? where : undefined,
       select: [
         'id',
         'email',
@@ -264,11 +269,29 @@ export class UsersService {
         'mfa_enabled',
         'mfa_method',
         'last_login_at',
+        'invitation_sent_at',
         'created_at',
       ],
       order: { created_at: 'DESC' },
     });
-    return users as any;
+
+    const now = Date.now();
+    return users.map((u) => ({
+      ...u,
+      invitation_status: this.computeInvitationStatus(u, now),
+    }));
+  }
+
+  /** Derives invitation status from persisted timestamps — never stored in DB. */
+  private computeInvitationStatus(
+    user: Pick<User, 'last_login_at' | 'invitation_sent_at'>,
+    now = Date.now(),
+  ): 'ACCEPTED' | 'PENDING' | 'EXPIRED' | null {
+    if (user.last_login_at) return 'ACCEPTED';
+    if (!user.invitation_sent_at) return null;
+    const hoursSince =
+      (now - new Date(user.invitation_sent_at).getTime()) / 3_600_000;
+    return hoursSince > INVITATION_EXPIRY_HOURS ? 'EXPIRED' : 'PENDING';
   }
 
   async adminResetUserMfa(targetUserId: string) {
@@ -289,5 +312,90 @@ export class UsersService {
     });
 
     return { message: `MFA reset for user ${user.email}` };
+  }
+
+  // ─── Operations team management ───────────────────────────────────────────
+
+  async createOperationsUser(
+    dto: CreateOperationsUserDto,
+    inviterName: string,
+  ) {
+    // 1. Uniqueness check
+    const existing = await this.userRepository.findOne({
+      where: { email: dto.email },
+    });
+    if (existing) {
+      throw new ConflictException('A user with this email already exists');
+    }
+
+    // 2. Hash the temporary password
+    const passwordHash = await bcrypt.hash(dto.temporaryPassword, BCRYPT_SALT_ROUNDS);
+
+    // 3. Generate an invitation token (used in the email link)
+    const invitationToken = crypto.randomBytes(32).toString('hex');
+    const now = new Date();
+
+    // 4. Persist the user
+    const user = this.userRepository.create({
+      email:              dto.email,
+      password_hash:      passwordHash,
+      first_name:         dto.firstName,
+      last_name:          dto.lastName,
+      role:               UserRole.OPERATIONS,
+      job_title:          dto.jobTitle ?? null,
+      is_active:          true,
+      is_email_verified:  true,
+      invitation_token:   invitationToken,
+      invitation_sent_at: now,
+    } as Partial<User>);
+
+    const saved = await this.userRepository.save(user);
+
+    // 5. Send invitation email
+    await this.emailService.sendInvitation(
+      dto.email,
+      invitationToken,
+      UserRole.OPERATIONS,
+      'SIGN Platform',
+      inviterName,
+    );
+
+    const { password_hash, mfa_secret, mfa_totp_secret, mfa_recovery_codes, refresh_token_hash, invitation_token, ...safeUser } = saved;
+    return safeUser;
+  }
+
+  async resendInvitation(
+    targetUserId: string,
+    inviterName: string,
+  ): Promise<{ success: boolean; sentAt: string }> {
+    const user = await this.userRepository.findOne({
+      where: { id: targetUserId },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    // Regenerate a new temporary password and token
+    const newTempPassword    = crypto.randomBytes(6).toString('base64url').slice(0, 10) + 'A1!';
+    const newPasswordHash    = await bcrypt.hash(newTempPassword, BCRYPT_SALT_ROUNDS);
+    const newInvitationToken = crypto.randomBytes(32).toString('hex');
+    const now = new Date();
+
+    await this.userRepository.update(targetUserId, {
+      password_hash:      newPasswordHash,
+      invitation_token:   newInvitationToken,
+      invitation_sent_at: now,
+    } as any);
+
+    await this.emailService.sendInvitation(
+      user.email,
+      newInvitationToken,
+      user.role,
+      'SIGN Platform',
+      inviterName,
+    );
+
+    return { success: true, sentAt: now.toISOString() };
   }
 }

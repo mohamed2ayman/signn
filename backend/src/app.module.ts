@@ -30,6 +30,8 @@ import { ClaimsModule } from './modules/claims/claims.module';
 import { NoticesModule } from './modules/notices/notices.module';
 import { SubContractsModule } from './modules/subcontracts/subcontracts.module';
 import { HealthModule } from './health/health.module';
+import { AdminHealthModule } from './modules/admin-health/admin-health.module';
+import { AdminAuditLogModule } from './modules/admin-audit-log/admin-audit-log.module';
 import { dataSourceOptions } from './config/data-source';
 
 @Module({
@@ -81,6 +83,8 @@ import { dataSourceOptions } from './config/data-source';
     NoticesModule,
     SubContractsModule,
     HealthModule,
+    AdminHealthModule,
+    AdminAuditLogModule,
   ],
 })
 export class AppModule {}

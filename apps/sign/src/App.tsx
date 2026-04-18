@@ -13,7 +13,7 @@ import ForgotPasswordPage from '@/pages/auth/ForgotPasswordPage';
 import ResetPasswordPage from '@/pages/auth/ResetPasswordPage';
 import AcceptInvitationPage from '@/pages/auth/AcceptInvitationPage';
 
-// Owner portal pages
+// Client Portal pages
 import DashboardPage from '@/pages/app/DashboardPage';
 import ProjectsPage from '@/pages/app/ProjectsPage';
 import ProjectCreationPage from '@/pages/app/ProjectCreationPage';
@@ -36,7 +36,7 @@ import ProjectPermissionsPage from '@/pages/app/ProjectPermissionsPage';
 import ContractStorePage from '@/pages/app/ContractStorePage';
 import ContractStoreDetailPage from '@/pages/app/ContractStoreDetailPage';
 
-// Admin portal pages
+// Admin Portal pages
 import AdminDashboardPage from '@/pages/admin/AdminDashboardPage';
 import AdminKnowledgeAssetsPage from '@/pages/admin/AdminKnowledgeAssetsPage';
 import AdminSupportPage from '@/pages/admin/AdminSupportPage';
@@ -47,8 +47,9 @@ import AdminPlansComparePage from '@/pages/admin/AdminPlansComparePage';
 import PermissionDefaultsPage from '@/pages/admin/PermissionDefaultsPage';
 import AdminRiskRulesPage from '@/pages/admin/AdminRiskRulesPage';
 import AdminStoreAnalyticsPage from '@/pages/admin/AdminStoreAnalyticsPage';
+import AdminAuditLogPage from '@/pages/admin/AdminAuditLogPage';
 
-// Contractor portal pages
+// Guest Portal pages
 import ContractorDashboardPage from '@/pages/contractor/ContractorDashboardPage';
 import AcceptPartyInvitationPage from '@/pages/contractor/AcceptInvitationPage';
 
@@ -70,7 +71,7 @@ function NotFound() {
 
 // ─── Role groups ─────────────────────────────────────────────
 const ADMIN_ROLES: UserRole[] = [UserRole.SYSTEM_ADMIN, UserRole.OPERATIONS];
-const OWNER_ROLES: UserRole[] = [
+const CLIENT_ROLES: UserRole[] = [
   UserRole.OWNER_ADMIN,
   UserRole.OWNER_CREATOR,
   UserRole.OWNER_REVIEWER,
@@ -83,7 +84,7 @@ const CONTRACTOR_ROLES: UserRole[] = [
 ];
 
 // ─── Navigation items ────────────────────────────────────────
-const ownerNavItems = [
+const clientNavItems = [
   { label: 'nav.dashboard', path: '/app/dashboard', icon: '📊' },
   { label: 'nav.projects', path: '/app/projects', icon: '📁' },
   { label: 'nav.clauses', path: '/app/clauses', icon: '📝' },
@@ -106,7 +107,8 @@ const adminNavItems = [
   { label: 'nav.riskRules', path: '/admin/risk-rules', icon: '⚠️' },
   { label: 'nav.storeAnalytics', path: '/admin/store-analytics', icon: '🛒' },
   { label: 'nav.permissionDefaults', path: '/admin/permission-defaults', icon: '🛡️' },
-  { label: 'nav.support', path: '/admin/support', icon: '💬' },
+  { label: 'nav.support',   path: '/admin/support',     icon: '💬' },
+  { label: 'nav.auditLog', path: '/admin/audit-logs',  icon: '📋' },
 ];
 
 const contractorNavItems = [
@@ -136,15 +138,15 @@ function App() {
         }
       />
 
-      {/* Public contractor invitation route (no auth) */}
+      {/* Public guest invitation route (no auth) */}
       <Route path="/invitation/accept" element={<AcceptPartyInvitationPage />} />
 
-      {/* ─── Owner Portal (/app/*) ─── */}
+      {/* ─── Client Portal (/app/*) ─── */}
       <Route
         path="/app"
         element={
-          <ProtectedRoute allowedRoles={OWNER_ROLES}>
-            <AppLayout navItems={ownerNavItems} />
+          <ProtectedRoute allowedRoles={CLIENT_ROLES}>
+            <AppLayout navItems={clientNavItems} />
           </ProtectedRoute>
         }
       >
@@ -190,10 +192,11 @@ function App() {
         <Route path="permission-defaults" element={<PermissionDefaultsPage />} />
         <Route path="risk-rules" element={<AdminRiskRulesPage />} />
         <Route path="store-analytics" element={<AdminStoreAnalyticsPage />} />
-        <Route path="support" element={<AdminSupportPage />} />
+        <Route path="support"         element={<AdminSupportPage />} />
+        <Route path="audit-logs"      element={<AdminAuditLogPage />} />
       </Route>
 
-      {/* ─── Contractor Portal (/contractor/*) ─── */}
+      {/* ─── Guest Portal (/contractor/*) ─── */}
       <Route
         path="/contractor"
         element={
