@@ -53,6 +53,12 @@ services:
       - ./backend:/app
       - /app/node_modules
       - uploads_data:/app/uploads
+    healthcheck:
+      test: ['CMD', 'node', '-e', "require('http').get('http://localhost:3000/api/v1/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
 
   ai-backend:
     build:

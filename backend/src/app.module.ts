@@ -29,6 +29,7 @@ import { ContractTemplatesModule } from './modules/contract-templates/contract-t
 import { ClaimsModule } from './modules/claims/claims.module';
 import { NoticesModule } from './modules/notices/notices.module';
 import { SubContractsModule } from './modules/subcontracts/subcontracts.module';
+import { HealthModule } from './health/health.module';
 import { dataSourceOptions } from './config/data-source';
 
 @Module({
@@ -79,6 +80,7 @@ import { dataSourceOptions } from './config/data-source';
     ClaimsModule,
     NoticesModule,
     SubContractsModule,
+    HealthModule,
   ],
 })
 export class AppModule {}
