@@ -1,5 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Outlet } from 'react-router-dom';
+import { useSelector } from 'react-redux';
+import type { RootState } from '@/store';
+import { useAuth } from '@/hooks/useAuth';
 import Sidebar from './Sidebar';
 import TopBar from './TopBar';
 
@@ -9,6 +12,17 @@ interface AppLayoutProps {
 
 export default function AppLayout({ navItems }: AppLayoutProps) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const { token, user } = useSelector((state: RootState) => state.auth);
+  const { refreshUserProfile } = useAuth();
+
+  // Restore user profile from token on page refresh.
+  // The token is persisted in localStorage but state.user resets to null
+  // on every page load — this re-hydrates it once from GET /auth/profile.
+  useEffect(() => {
+    if (token && !user) {
+      refreshUserProfile();
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="min-h-screen bg-background">

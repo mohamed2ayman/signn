@@ -90,7 +90,7 @@ services:
       dockerfile: Dockerfile
     container_name: sign-celery-worker
     restart: unless-stopped
-    command: celery -A app.tasks worker --loglevel=info --concurrency=1
+    command: celery -A app.tasks worker --loglevel=info --concurrency=3 --time-limit=2400 --soft-time-limit=1800
     env_file:
       - ./ai-backend/.env
     depends_on:
@@ -99,11 +99,12 @@ services:
       redis:
         condition: service_healthy
     volumes:
+      - ./ai-backend:/app
       - uploads_data:/app/uploads
     deploy:
       resources:
         limits:
-          memory: 2G
+          memory: 3G
         reservations:
           memory: 512M
 

@@ -165,6 +165,22 @@ class TextExtractorService:
     def _extract_docx(self, path: str) -> dict[str, Any]:
         doc = DocxDocument(path)
         paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]
+
+        # Extract text from table cells (contract terms, payment schedules, etc.
+        # are often in tables and are missed by doc.paragraphs alone)
+        for table in doc.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    if cell.text.strip():
+                        paragraphs.append(cell.text.strip())
+
+        # Extract headers (document title, article headings in header band)
+        for section in doc.sections:
+            header = section.header
+            for para in header.paragraphs:
+                if para.text.strip():
+                    paragraphs.append(para.text.strip())
+
         self.last_page_count = max(1, len(paragraphs) // 40)  # Estimate
         return {"text": "\n\n".join(paragraphs), "page_count": self.last_page_count}
 

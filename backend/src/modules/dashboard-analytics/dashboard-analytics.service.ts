@@ -209,9 +209,12 @@ export class DashboardAnalyticsService {
   private async getClauseStats(orgId: string) {
     const clauses = await this.clauseRepository
       .createQueryBuilder('clause')
+      // Only count clauses that are actually linked to a contract —
+      // orphaned clauses (no contract_clauses entry) are excluded.
+      .innerJoin('clause.contract_clauses', 'cc')
       .select('clause.source', 'source')
       .addSelect('clause.review_status', 'review_status')
-      .addSelect('COUNT(*)', 'count')
+      .addSelect('COUNT(DISTINCT clause.id)', 'count')
       .where('(clause.organization_id = :orgId OR clause.organization_id IS NULL)', { orgId })
       .andWhere('clause.is_active = true')
       .groupBy('clause.source')

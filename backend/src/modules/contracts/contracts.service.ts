@@ -837,6 +837,53 @@ export class ContractsService {
     return saved;
   }
 
+  async updateComment(
+    contractId: string,
+    commentId: string,
+    userId: string,
+    content: string,
+  ): Promise<ContractComment> {
+    const comment = await this.contractCommentRepository.findOne({
+      where: { id: commentId, contract_id: contractId },
+    });
+
+    if (!comment) {
+      throw new NotFoundException('Comment not found');
+    }
+
+    if (comment.user_id !== userId) {
+      throw new ForbiddenException('Only the comment author can edit this comment');
+    }
+
+    comment.content = content;
+    return this.contractCommentRepository.save(comment);
+  }
+
+  async deleteComment(
+    contractId: string,
+    commentId: string,
+    userId: string,
+    userRole: string,
+  ): Promise<void> {
+    const comment = await this.contractCommentRepository.findOne({
+      where: { id: commentId, contract_id: contractId },
+    });
+
+    if (!comment) {
+      throw new NotFoundException('Comment not found');
+    }
+
+    const adminRoles = ['SYSTEM_ADMIN', 'OWNER_ADMIN', 'CONTRACTOR_ADMIN'];
+    const isAdmin = adminRoles.includes(userRole);
+    const isAuthor = comment.user_id === userId;
+
+    if (!isAuthor && !isAdmin) {
+      throw new ForbiddenException('You do not have permission to delete this comment');
+    }
+
+    await this.contractCommentRepository.remove(comment);
+  }
+
   // ─── Contractor Responses ──────────────────────────────────
 
   async getContractorResponses(contractId: string): Promise<ContractorResponse[]> {

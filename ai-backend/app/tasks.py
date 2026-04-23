@@ -150,7 +150,12 @@ def run_extract_text(self, request_data: dict[str, Any]) -> dict[str, Any]:
         return {"status": "failed", "error": str(e)}
 
 
-@celery_app.task(name="tasks.run_extract_clauses", bind=True)
+@celery_app.task(
+    name="tasks.run_extract_clauses",
+    bind=True,
+    soft_time_limit=1800,  # 30 min — large Arabic contracts can take ~4 min per AI call with retries
+    time_limit=2400,        # 40 min hard kill
+)
 def run_extract_clauses(self, request_data: dict[str, Any]) -> dict[str, Any]:
     """Extract structured clauses from contract text using AI."""
     from app.agents.clause_extractor import ClauseExtractorAgent

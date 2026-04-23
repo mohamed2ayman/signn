@@ -67,6 +67,12 @@ export const contractService = {
   resolveComment: (contractId: string, commentId: string) =>
     api.put<ContractComment>(`/contracts/${contractId}/comments/${commentId}/resolve`).then(r => r.data),
 
+  updateComment: (contractId: string, commentId: string, content: string) =>
+    api.patch<ContractComment>(`/contracts/${contractId}/comments/${commentId}`, { content }).then(r => r.data),
+
+  deleteComment: (contractId: string, commentId: string) =>
+    api.delete(`/contracts/${contractId}/comments/${commentId}`).then(r => r.data),
+
   // Contractor Responses
   getResponses: (contractId: string) =>
     api.get<ContractorResponse[]>(`/contracts/${contractId}/responses`).then(r => r.data),

@@ -223,10 +223,37 @@ export class DocumentProcessingService {
    * extracted text so that only substantive contract content is sent to
    * clause extraction.  The trimming strategy depends on the document label.
    */
-  private trimCoverPages(text: string, _documentLabel?: string | null): string {
+  private trimCoverPages(text: string, documentLabel?: string | null): string {
     if (!text) return text;
 
-    // Try agreement patterns first (content-based, label-independent)
+    // Detect conditions/specifications documents by label so we avoid matching
+    // agreement phrases (e.g. "تم الاتفاق") that can appear mid-body in those docs.
+    const label = (documentLabel ?? '').toLowerCase();
+    const isConditionsDoc =
+      /condition|شروط|general|particular|spec|مواصفات/.test(label);
+
+    if (isConditionsDoc) {
+      // For conditions docs: try numbered-article patterns FIRST.
+      // This prevents "تم الاتفاق" buried inside an article from truncating the text.
+      const conditionsPatterns = [
+        /مادة\s*[\(\s]?[١-٩\d]/,   // مادة (1) / مادة ١ / مادة 1
+        /المادة\s*[\(\s]?[١-٩\d]/, // المادة (1) / المادة 1
+        /البند\s*[\(\s]?[١-٩\d]/,  // البند (1) / البند 1
+        /Article\s*1\b/i,
+        /Clause\s*1\b/i,
+        /^1[-–.]/m,
+      ];
+      for (const pattern of conditionsPatterns) {
+        const match = text.match(pattern);
+        if (match?.index !== undefined) {
+          return text.substring(match.index);
+        }
+      }
+      // No numbered article found — return as-is
+      return text;
+    }
+
+    // For agreement / general documents: try agreement opening phrases first
     const agreementPatterns = [
       /إنه في يوم/,
       /تم الاتفاق بين كل من/,
@@ -239,10 +266,11 @@ export class DocumentProcessingService {
       }
     }
 
-    // Then try conditions patterns
+    // Fallback: conditions-style numbered patterns
     const conditionsPatterns = [
-      /المادة\s*1\b/,
-      /البند\s*1\b/,
+      /مادة\s*[\(\s]?[١-٩\d]/,
+      /المادة\s*[\(\s]?[١-٩\d]/,
+      /البند\s*[\(\s]?[١-٩\d]/,
       /Article\s*1\b/i,
       /Clause\s*1\b/i,
       /^1[-–.]/m,

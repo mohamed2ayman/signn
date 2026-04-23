@@ -3,6 +3,115 @@ import { ClauseReviewStatus } from '@/types';
 import type { Clause } from '@/types';
 import ConfidenceBadge from '@/components/common/ConfidenceBadge';
 
+/** Render clause content with RTL bullet-point support.
+ *
+ * Lines starting with "- " are collected into a RTL <ul> so that
+ * the bullet marker appears on the RIGHT side for Arabic text.
+ * All other lines render as plain paragraphs with dir="auto".
+ */
+function ClauseContentDisplay({
+  content,
+  isExpanded,
+  isRejected,
+}: {
+  content: string;
+  isExpanded: boolean;
+  isRejected: boolean;
+}) {
+  const strikeClass = isRejected ? 'line-through opacity-60' : '';
+  const lines = content.split('\n');
+  const hasBullets = lines.some((l) => l.trimStart().startsWith('- '));
+
+  if (!hasBullets) {
+    return (
+      <p
+        className={`text-sm text-gray-600 ${isExpanded ? '' : 'line-clamp-3'} ${strikeClass}`}
+        dir="auto"
+        style={{ unicodeBidi: 'plaintext' }}
+      >
+        {content}
+      </p>
+    );
+  }
+
+  // Build mixed content: RTL bullet lists interleaved with plain paragraphs
+  type Segment = { kind: 'bullets'; items: string[] } | { kind: 'para'; text: string };
+  const segments: Segment[] = [];
+  let bulletBuf: string[] = [];
+
+  const flushBullets = () => {
+    if (bulletBuf.length > 0) {
+      segments.push({ kind: 'bullets', items: [...bulletBuf] });
+      bulletBuf = [];
+    }
+  };
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    if (trimmed.startsWith('- ')) {
+      bulletBuf.push(trimmed.slice(2));
+    } else {
+      flushBullets();
+      segments.push({ kind: 'para', text: trimmed });
+    }
+  }
+  flushBullets();
+
+  // When collapsed, show at most 4 bullet items and 2 paragraphs total
+  let visibleSegments = segments;
+  if (!isExpanded) {
+    let bulletCount = 0;
+    let paraCount = 0;
+    const limited: Segment[] = [];
+    for (const seg of segments) {
+      if (seg.kind === 'para') {
+        if (paraCount < 2) { limited.push(seg); paraCount++; }
+      } else {
+        const remaining = 4 - bulletCount;
+        if (remaining > 0) {
+          limited.push({ kind: 'bullets', items: seg.items.slice(0, remaining) });
+          bulletCount += Math.min(seg.items.length, remaining);
+        }
+      }
+    }
+    visibleSegments = limited;
+  }
+
+  return (
+    <div className={strikeClass}>
+      {visibleSegments.map((seg, i) =>
+        seg.kind === 'para' ? (
+          <p
+            key={i}
+            className="text-sm text-gray-600"
+            dir="auto"
+            style={{ unicodeBidi: 'plaintext' }}
+          >
+            {seg.text}
+          </p>
+        ) : (
+          <ul
+            key={i}
+            dir="rtl"
+            style={{
+              listStyleType: 'disc',
+              paddingRight: '1.5rem',
+              paddingLeft: '0',
+              textAlign: 'right',
+            }}
+            className="text-sm text-gray-600 space-y-0.5"
+          >
+            {seg.items.map((item, j) => (
+              <li key={j}>{item}</li>
+            ))}
+          </ul>
+        ),
+      )}
+    </div>
+  );
+}
+
 interface ClauseReviewCardProps {
   clause: Clause;
   sectionNumber?: string | null;
@@ -99,9 +208,10 @@ export default function ClauseReviewCard({
                 onChange={(e) => setEditTitle(e.target.value)}
                 className="flex-1 rounded border border-gray-300 px-2 py-1 text-sm font-medium focus:border-primary focus:outline-none"
                 onClick={(e) => e.stopPropagation()}
+                dir="auto"
               />
             ) : (
-              <h4 className="text-sm font-medium text-gray-900 truncate">
+              <h4 className="text-sm font-medium text-gray-900 truncate" dir="auto" style={{ unicodeBidi: 'plaintext' }}>
                 {clause.title}
               </h4>
             )}
@@ -141,15 +251,14 @@ export default function ClauseReviewCard({
             className="w-full rounded border border-gray-300 p-2 text-sm text-gray-700 focus:border-primary focus:outline-none"
             rows={6}
             onClick={(e) => e.stopPropagation()}
+            dir="auto"
           />
         ) : (
-          <p
-            className={`text-sm text-gray-600 ${isExpanded ? '' : 'line-clamp-3'} ${
-              reviewStatus === ClauseReviewStatus.REJECTED ? 'line-through opacity-60' : ''
-            }`}
-          >
-            {clause.content}
-          </p>
+          <ClauseContentDisplay
+            content={clause.content}
+            isExpanded={isExpanded}
+            isRejected={reviewStatus === ClauseReviewStatus.REJECTED}
+          />
         )}
 
         {!isEditing && clause.content.length > 200 && (

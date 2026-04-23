@@ -62,18 +62,26 @@ export default function ClauseReviewPage() {
   );
 
   const filteredClauses = useMemo(() => {
-    if (filter === 'all') return allClauses;
-    const statusMap: Record<FilterMode, ClauseReviewStatus> = {
-      all: ClauseReviewStatus.PENDING_REVIEW,
-      pending: ClauseReviewStatus.PENDING_REVIEW,
-      approved: ClauseReviewStatus.APPROVED,
-      rejected: ClauseReviewStatus.REJECTED,
-    };
-    return allClauses.filter(
-      (c) => c.review_status === statusMap[filter] ||
-        (filter === 'approved' && c.review_status === ClauseReviewStatus.EDITED),
-    );
-  }, [allClauses, filter]);
+    let result = activeDocTab
+      ? allClauses.filter((c) => c.source_document_id === activeDocTab)
+      : allClauses;
+
+    if (filter === 'pending')
+      return result.filter(
+        (c) => c.review_status === ClauseReviewStatus.PENDING_REVIEW,
+      );
+    if (filter === 'approved')
+      return result.filter(
+        (c) =>
+          c.review_status === ClauseReviewStatus.APPROVED ||
+          c.review_status === ClauseReviewStatus.EDITED,
+      );
+    if (filter === 'rejected')
+      return result.filter(
+        (c) => c.review_status === ClauseReviewStatus.REJECTED,
+      );
+    return result;
+  }, [allClauses, filter, activeDocTab]);
 
   const stats = useMemo(() => {
     const total = allClauses.length;
@@ -93,7 +101,32 @@ export default function ClauseReviewPage() {
     return { total, reviewed, approved, rejected, pending };
   }, [allClauses]);
 
+  // Per-document-tab counts (used by filter bar buttons)
+  const tabStats = useMemo(() => {
+    const docClauses = activeDocTab
+      ? allClauses.filter((c) => c.source_document_id === activeDocTab)
+      : allClauses;
+    const total = docClauses.length;
+    const reviewed = docClauses.filter(
+      (c) => c.review_status !== ClauseReviewStatus.PENDING_REVIEW,
+    ).length;
+    const approved = docClauses.filter(
+      (c) =>
+        c.review_status === ClauseReviewStatus.APPROVED ||
+        c.review_status === ClauseReviewStatus.EDITED,
+    ).length;
+    const rejected = docClauses.filter(
+      (c) => c.review_status === ClauseReviewStatus.REJECTED,
+    ).length;
+    const pending = total - reviewed;
+    return { total, pending, approved, rejected };
+  }, [allClauses, activeDocTab]);
+
   const allReviewed = stats.pending === 0 && stats.total > 0;
+
+  // Helper — clause count for a specific document tab label
+  const getDocClauseCount = (docId: string) =>
+    allClauses.filter((c) => c.source_document_id === docId).length;
 
   // Active document text
   const activeDocument = useMemo(
@@ -290,7 +323,7 @@ export default function ClauseReviewPage() {
                     : 'text-gray-500 hover:text-gray-700'
                 }`}
               >
-                {doc.document_label || doc.original_name || doc.file_name}
+                {doc.document_label || doc.original_name || doc.file_name} ({getDocClauseCount(doc.id)})
               </button>
             ))}
           </div>
@@ -421,10 +454,10 @@ export default function ClauseReviewPage() {
             <div className="flex gap-1">
               {(
                 [
-                  { key: 'all', label: 'All', count: stats.total },
-                  { key: 'pending', label: 'Pending', count: stats.pending },
-                  { key: 'approved', label: 'Approved', count: stats.approved },
-                  { key: 'rejected', label: 'Rejected', count: stats.rejected },
+                  { key: 'all', label: 'All', count: tabStats.total },
+                  { key: 'pending', label: 'Pending', count: tabStats.pending },
+                  { key: 'approved', label: 'Approved', count: tabStats.approved },
+                  { key: 'rejected', label: 'Rejected', count: tabStats.rejected },
                 ] as const
               ).map((f) => (
                 <button
@@ -440,12 +473,12 @@ export default function ClauseReviewPage() {
                 </button>
               ))}
             </div>
-            {stats.pending > 0 && (
+            {tabStats.pending > 0 && (
               <button
                 onClick={handleApproveAll}
                 className="text-xs font-medium text-primary hover:text-primary/80"
               >
-                Approve All ({stats.pending})
+                Approve All ({tabStats.pending})
               </button>
             )}
           </div>

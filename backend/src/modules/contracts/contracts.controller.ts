@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Put,
+  Patch,
   Delete,
   Body,
   Param,
@@ -221,6 +222,26 @@ export class ContractsController {
     @Param('commentId', ParseUUIDPipe) commentId: string,
   ) {
     return this.contractsService.resolveComment(id, commentId);
+  }
+
+  @Patch(':id/comments/:commentId')
+  async updateComment(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('commentId', ParseUUIDPipe) commentId: string,
+    @Body() body: { content: string },
+    @CurrentUser() user: any,
+  ) {
+    return this.contractsService.updateComment(id, commentId, user.id, body.content);
+  }
+
+  @Delete(':id/comments/:commentId')
+  async deleteComment(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('commentId', ParseUUIDPipe) commentId: string,
+    @CurrentUser() user: any,
+  ) {
+    await this.contractsService.deleteComment(id, commentId, user.id, user.role);
+    return { message: 'Comment deleted successfully' };
   }
 
   // ─── Contractor Responses ──────────────────────────────────
