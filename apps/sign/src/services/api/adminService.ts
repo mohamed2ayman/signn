@@ -175,4 +175,310 @@ export const adminService = {
 
   exportAuditLogs: (query: Omit<AuditLogQuery, 'page' | 'limit'>) =>
     api.get<AuditLogEntry[]>('/admin/audit-logs/export', { params: query }).then(r => r.data),
+
+  // ─── Operations Review Queue ─────────────────────────────────────────────
+
+  getOperationsReviewStats: () =>
+    api.get<OperationsReviewStats>('/admin/operations-review/stats').then(r => r.data),
+
+  getOperationsReviewQueue: (params?: OperationsReviewQueueParams) =>
+    api.get<OperationsReviewQueueResponse>('/admin/operations-review/queue', { params })
+      .then(r => r.data),
+
+  batchReviewAssets: (body: BatchReviewRequest) =>
+    api.post<BatchReviewResponse>('/admin/operations-review/batch', body).then(r => r.data),
+
+  getConfidenceThreshold: () =>
+    api.get<{ threshold: number }>('/admin/operations-review/confidence-threshold')
+      .then(r => r.data),
+
+  setConfidenceThreshold: (threshold: number) =>
+    api.put<{ threshold: number; updatedAt: string }>(
+      '/admin/operations-review/confidence-threshold',
+      { threshold },
+    ).then(r => r.data),
+
+  /**
+   * Single-asset review — reuses the existing PUT /knowledge-assets/:id/review
+   * endpoint (which accepts { review_status }).
+   */
+  approveAsset: (id: string) =>
+    api.put(`/knowledge-assets/${id}/review`, { review_status: 'APPROVED' })
+      .then(r => r.data),
+
+  rejectAsset: (id: string, _reason?: string) =>
+    api.put(`/knowledge-assets/${id}/review`, { review_status: 'REJECTED' })
+      .then(r => r.data),
+
+  // ─── System Analytics ────────────────────────────────────────────────
+  getAnalytics: <T = AnalyticsResponse>(tab: AnalyticsTab, period: AnalyticsPeriod) =>
+    api.get<T>('/admin/analytics', { params: { tab, period } }).then(r => r.data),
+
+  // ─── Organization Management ──────────────────────────────────────────
+  getOrganizations: (filters?: OrganizationFilters) =>
+    api.get<AdminOrganizationListResponse>('/admin/organizations', { params: filters })
+      .then(r => r.data),
+
+  getOrganizationById: (id: string) =>
+    api.get<AdminOrganizationDetail>(`/admin/organizations/${id}`).then(r => r.data),
+
+  suspendOrganization: (id: string, reason: string) =>
+    api.put<AdminOrganizationDetail>(`/admin/organizations/${id}/suspend`, { reason })
+      .then(r => r.data),
+
+  unsuspendOrganization: (id: string) =>
+    api.put<AdminOrganizationDetail>(`/admin/organizations/${id}/unsuspend`)
+      .then(r => r.data),
+
+  updateFeatureFlags: (id: string, featureFlags: Record<string, boolean>) =>
+    api.put<AdminOrganizationDetail>(`/admin/organizations/${id}/feature-flags`, { featureFlags })
+      .then(r => r.data),
 };
+
+// ─── System Analytics types ────────────────────────────────────────────────
+
+export type AnalyticsTab =
+  | 'overview'
+  | 'subscriptions'
+  | 'users'
+  | 'contracts'
+  | 'knowledge'
+  | 'performance';
+
+export type AnalyticsPeriod = '7d' | '30d' | '90d' | '365d';
+
+export interface OverviewAnalytics {
+  totalRevenue: number;
+  revenueChange: number;
+  activeUsers: number;
+  usersChange: number;
+  totalContracts: number;
+  contractsChange: number;
+  systemUptime: number;
+  topPerformingPlans: Array<{ name: string; subscribers: number; revenue: number }>;
+  knowledgeAssetUsage: Array<{ title: string; category: string; uses: number }>;
+  revenueTimeSeries: Array<{ date: string; value: number }>;
+}
+
+export interface SubscriptionsAnalytics {
+  mrr: number;
+  arr: number;
+  mrrChange: number;
+  planBreakdown: Array<{
+    planName: string;
+    subscribers: number;
+    revenue: number;
+    percentage: number;
+  }>;
+  churnRate: number;
+  upgradeRate: number;
+  annualVsMonthly: { annual: number; monthly: number };
+  revenueTimeSeries: Array<{ date: string; value: number }>;
+}
+
+export interface UsersAnalytics {
+  totalUsers: number;
+  newUsersThisPeriod: number;
+  byRole: Array<{ role: string; count: number; percentage: number }>;
+  mfaAdoptionRate: number;
+  invitationAcceptanceRate: number;
+  newUserTimeSeries: Array<{ date: string; count: number }>;
+}
+
+export interface ContractsAnalytics {
+  totalContracts: number;
+  contractsThisPeriod: number;
+  byStatus: Array<{ status: string; count: number }>;
+  byType: Array<{ type: string; count: number }>;
+  avgTimeToSign: number | null;
+  docuSignAdoptionRate: number;
+  contractTimeSeries: Array<{ date: string; count: number }>;
+}
+
+export interface KnowledgeAnalytics {
+  totalAssets: number;
+  pendingReview: number;
+  byType: Array<{ type: string; count: number }>;
+  byJurisdiction: Array<{ jurisdiction: string; count: number }>;
+  indexingSuccessRate: number;
+  topUsedAssets: Array<{ title: string; uses: number }>;
+}
+
+export interface PerformanceAnalytics {
+  apiResponseTimeP95: number;
+  errorRate: number;
+  activeWebSocketSessions: number;
+  bullQueueDepths: { emailQueue: number; aiQueue: number };
+  storageUsedPercent: number;
+  aiBackendLatency: number;
+}
+
+export type AnalyticsResponse =
+  | OverviewAnalytics
+  | SubscriptionsAnalytics
+  | UsersAnalytics
+  | ContractsAnalytics
+  | KnowledgeAnalytics
+  | PerformanceAnalytics;
+
+// ─── Operations Review types ────────────────────────────────────────────────
+
+export interface OperationsReviewStats {
+  pendingCount: number;
+  approvedToday: number;
+  rejectedToday: number;
+  aiAccuracyRate: number;
+  totalReviewedAllTime: number;
+}
+
+export interface OperationsReviewAsset {
+  id: string;
+  title: string;
+  asset_type: string;
+  tags: string[];
+  jurisdiction: string | null;
+  confidence_score: number | null;
+  created_at: string;
+  file_url: string | null;
+  embedding_status: string;
+  ocr_status: string;
+  detected_languages: string[] | null;
+  include_in_risk_analysis: boolean;
+  include_in_citations: boolean;
+  source: string | null;
+  page_count: number | null;
+  language: string;
+}
+
+export interface OperationsReviewQueueParams {
+  page?: number;
+  limit?: number;
+  minConfidence?: number;
+  maxConfidence?: number;
+  category?: string;
+}
+
+export interface OperationsReviewQueueResponse {
+  data: OperationsReviewAsset[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
+export interface BatchReviewRequest {
+  assetIds: string[];
+  action: 'APPROVE' | 'REJECT';
+  reason?: string;
+}
+
+export interface BatchReviewResponse {
+  processed: number;
+  failed: number;
+  errors?: string[];
+}
+
+// ─── Organization Management types ──────────────────────────────────────────
+
+export type OrgStatusFilter = 'ACTIVE' | 'SUSPENDED';
+
+export interface OrganizationFilters {
+  page?: number;
+  limit?: number;
+  search?: string;
+  country?: string;
+  industry?: string;
+  planId?: string;
+  status?: OrgStatusFilter;
+}
+
+export interface AdminOrganizationPlanSummary {
+  id: string;
+  name: string;
+  status: string;
+  expiresAt: string | null;
+}
+
+export interface AdminOrganization {
+  id: string;
+  name: string;
+  industry: string | null;
+  country: string | null;
+  crn: string | null;
+  logo_url: string | null;
+  created_at: string;
+  activeUserCount: number;
+  projectCount: number;
+  contractCount: number;
+  currentPlan: AdminOrganizationPlanSummary | null;
+  isSuspended: boolean;
+  suspensionReason: string | null;
+}
+
+export interface AdminOrganizationListResponse {
+  data: AdminOrganization[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
+export interface AdminOrganizationDetailUser {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  is_active: boolean;
+  last_login_at: string | null;
+}
+
+export interface AdminOrganizationSubscriptionHistoryItem {
+  id: string;
+  planName: string;
+  startDate: string;
+  endDate: string | null;
+  status: string;
+}
+
+export interface AdminOrganizationCurrentPlan {
+  id: string;
+  name: string;
+  status: string;
+  price: number;
+  currency: string;
+  startDate: string;
+  expiresAt: string | null;
+}
+
+export interface AdminOrganizationUsage {
+  users: { used: number; max: number };
+  projects: { used: number; max: number };
+}
+
+export interface AdminOrganizationRecentAuditLog {
+  id: string;
+  action: string;
+  entityType: string | null;
+  user: string | null;
+  created_at: string;
+}
+
+export interface AdminOrganizationDetail {
+  id: string;
+  name: string;
+  industry: string | null;
+  country: string | null;
+  crn: string | null;
+  logo_url: string | null;
+  created_at: string;
+  updated_at: string;
+  isSuspended: boolean;
+  suspensionReason: string | null;
+  suspendedAt: string | null;
+  currentPlan: AdminOrganizationCurrentPlan | null;
+  users: AdminOrganizationDetailUser[];
+  subscriptionHistory: AdminOrganizationSubscriptionHistoryItem[];
+  currentUsage: AdminOrganizationUsage;
+  featureFlagOverrides: Record<string, boolean>;
+  recentAuditLogs: AdminOrganizationRecentAuditLog[];
+}

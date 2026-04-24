@@ -142,7 +142,11 @@
       "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\" http://localhost:5173/)",
       "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\" http://localhost:5180/)",
       "Bash(curl -s -w \"\\\\nHTTP %{http_code}\\\\n\" http://localhost:3000/api/v1/health)",
-      "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\" http://localhost:8000/health)"
+      "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\" http://localhost:8000/health)",
+      "Bash(lsof -iTCP:5173 -sTCP:LISTEN)",
+      "Bash(lsof -iTCP:5180 -sTCP:LISTEN)",
+      "Bash(curl -s \"http://localhost:5173/src/App.tsx\")",
+      "Bash(docker info *)"
     ]
   }
 }

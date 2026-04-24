@@ -83,6 +83,14 @@ export class KnowledgeAsset {
   @Column({ type: 'varchar', length: 50, default: 'PENDING' })
   embedding_status: string;
 
+  /** AI detection confidence (0–100). NULL for manually uploaded assets. */
+  @Column({ type: 'decimal', precision: 5, scale: 2, nullable: true })
+  confidence_score: string | null;
+
+  /** Origin of the asset: 'MANUAL', 'AI_EXTRACTED', 'AI_DRAFTED', etc. */
+  @Column({ type: 'varchar', length: 30, nullable: true })
+  source: string | null;
+
   @Column({ type: 'uuid', nullable: true })
   reviewed_by: string;
 

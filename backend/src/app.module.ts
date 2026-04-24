@@ -32,6 +32,9 @@ import { SubContractsModule } from './modules/subcontracts/subcontracts.module';
 import { HealthModule } from './health/health.module';
 import { AdminHealthModule } from './modules/admin-health/admin-health.module';
 import { AdminAuditLogModule } from './modules/admin-audit-log/admin-audit-log.module';
+import { OperationsReviewModule } from './modules/operations-review/operations-review.module';
+import { AdminAnalyticsModule } from './modules/admin-analytics/admin-analytics.module';
+import { AdminOrganizationsModule } from './modules/admin-organizations/admin-organizations.module';
 import { dataSourceOptions } from './config/data-source';
 
 @Module({
@@ -85,6 +88,9 @@ import { dataSourceOptions } from './config/data-source';
     HealthModule,
     AdminHealthModule,
     AdminAuditLogModule,
+    OperationsReviewModule,
+    AdminAnalyticsModule,
+    AdminOrganizationsModule,
   ],
 })
 export class AppModule {}

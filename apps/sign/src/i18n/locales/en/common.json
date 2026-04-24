@@ -28,7 +28,12 @@
     "profile": "Profile",
     "team": "Team",
     "store": "Contract Store",
-    "subscription": "Subscription"
+    "subscription": "Subscription",
+    "operationsReview": "Operations Review",
+    "auditLog": "Audit Log",
+    "billing": "Billing",
+    "accountSettings": "Account Settings",
+    "system": "System"
   },
   "portal": {
     "client": "Client Portal",

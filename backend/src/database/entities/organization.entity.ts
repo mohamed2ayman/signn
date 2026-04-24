@@ -33,6 +33,18 @@ export class Organization {
   @Column({ type: 'varchar', length: 500, nullable: true })
   logo_url: string;
 
+  @Column({ type: 'boolean', default: false })
+  is_suspended: boolean;
+
+  @Column({ type: 'varchar', length: 1000, nullable: true })
+  suspension_reason: string | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  suspended_at: Date | null;
+
+  @Column({ type: 'jsonb', nullable: true, default: () => `'{}'::jsonb` })
+  feature_flag_overrides: Record<string, boolean>;
+
   @CreateDateColumn({ type: 'timestamptz' })
   created_at: Date;
 

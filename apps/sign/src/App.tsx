@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import ProtectedRoute from '@/components/common/ProtectedRoute';
 import AppLayout from '@/components/layout/AppLayout';
+import AdminLayout from '@/components/layout/AdminLayout';
 import { UserRole } from '@/types';
 
 // Landing page (public)
@@ -48,6 +49,10 @@ import PermissionDefaultsPage from '@/pages/admin/PermissionDefaultsPage';
 import AdminRiskRulesPage from '@/pages/admin/AdminRiskRulesPage';
 import AdminStoreAnalyticsPage from '@/pages/admin/AdminStoreAnalyticsPage';
 import AdminAuditLogPage from '@/pages/admin/AdminAuditLogPage';
+import AdminOperationsReviewPage from '@/pages/admin/AdminOperationsReviewPage';
+import AdminAnalyticsPage from '@/pages/admin/AdminAnalyticsPage';
+import AdminOrganizationsPage from '@/pages/admin/AdminOrganizationsPage';
+import AdminComingSoonPage from '@/pages/admin/AdminComingSoonPage';
 
 // Guest Portal pages
 import ContractorDashboardPage from '@/pages/contractor/ContractorDashboardPage';
@@ -99,7 +104,11 @@ const clientNavItems = [
   { label: 'nav.support', path: '/app/support', icon: '💬' },
 ];
 
-const adminNavItems = [
+// ── Admin nav items ──────────────────────────────────────────
+// Preserved as a named export for potential reuse (sidebar fallback,
+// tests, feature flags). The live Admin Portal nav is defined inside
+// AdminLayout.tsx, which uses its own primary/system split.
+export const adminNavItems = [
   { label: 'nav.dashboard', path: '/admin/dashboard', icon: '📊' },
   { label: 'nav.knowledgeAssets', path: '/admin/knowledge-assets', icon: '📚' },
   { label: 'nav.plans', path: '/admin/plans', icon: '💳' },
@@ -173,12 +182,12 @@ function App() {
         <Route path="approvals" element={<ApprovalsPage />} />
       </Route>
 
-      {/* ─── Admin Portal (/admin/*) ─── */}
+      {/* ─── Admin Portal (/admin/*) — top-nav layout (AdminLayout) ─── */}
       <Route
         path="/admin"
         element={
           <ProtectedRoute allowedRoles={ADMIN_ROLES}>
-            <AppLayout navItems={adminNavItems} />
+            <AdminLayout />
           </ProtectedRoute>
         }
       >
@@ -194,6 +203,14 @@ function App() {
         <Route path="store-analytics" element={<AdminStoreAnalyticsPage />} />
         <Route path="support"         element={<AdminSupportPage />} />
         <Route path="audit-logs"      element={<AdminAuditLogPage />} />
+
+        <Route path="operations-review" element={<AdminOperationsReviewPage />} />
+
+        {/* Placeholder routes for Phase 3+ admin pages */}
+        <Route path="organizations"     element={<AdminOrganizationsPage />} />
+        <Route path="analytics"         element={<AdminAnalyticsPage />} />
+        <Route path="billing"           element={<AdminComingSoonPage title="Billing & Payments" />} />
+        <Route path="account-settings"  element={<AdminComingSoonPage title="Account Settings" />} />
       </Route>
 
       {/* ─── Guest Portal (/contractor/*) ─── */}
