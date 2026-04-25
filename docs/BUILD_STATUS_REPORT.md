@@ -451,4 +451,157 @@ Ordered by impact ÷ effort. Top items first.
 
 ---
 
-*End of report — generated 2026-04-25*
+## PART D: API INTEGRATION READINESS
+
+> We are NOT in the deployment phase. This section documents which features require real API credentials to function.
+> These features may be fully coded but will NOT work until deployment phase provides real credentials.
+
+---
+
+### D1 — Integration Master Table
+
+| Integration | Purpose in SIGN | Features That Depend On It | Code Status | Env Vars Required | Works Without Credentials? |
+|-------------|----------------|---------------------------|-------------|-------------------|---------------------------|
+| **Anthropic API** | All AI analysis, chat, agents | Risk analysis, summarization, compliance, obligations, conflict detection, diff, chat, research, OCR text extract, clause extract | ✅ Fully wired in `ai-backend/app/agents/*` and `ai-backend/app/tasks.py` (9 Celery tasks) | `ANTHROPIC_API_KEY` (in `ai-backend/.env.example`) | ❌ No — every AI feature returns 5xx / fails the Celery job |
+| **OpenAI Embeddings** | Vector embeddings for RAG over the knowledge base | AI chat citations, knowledge-asset search, contextual retrieval | ✅ Wired in `ai-backend` embeddings router; uses `text-embedding-3-small` | `OPENAI_API_KEY` (in `ai-backend/.env.example`) | ❌ No — `/embeddings/ingest` and `/embeddings/search` fail |
+| **DocuSign** | E-signature for contract execution | Contract signing, FULLY_EXECUTED status, envelope tracking, completion / decline / void notifications | ✅ Now fully implemented (this session): JWT Grant auth, envelope create, embedded signing URL, **HMAC-verified webhook handler with completed/declined/voided branches + audit log + owner notification** | `DOCUSIGN_INTEGRATION_KEY` `DOCUSIGN_USER_ID` `DOCUSIGN_ACCOUNT_ID` `DOCUSIGN_RSA_PRIVATE_KEY` `DOCUSIGN_AUTH_SERVER` `DOCUSIGN_BASE_PATH` `DOCUSIGN_WEBHOOK_HMAC_SECRET` (⚠️ none of these are in `backend/.env.example` yet — must be added before deploy) | ❌ No — initiateSignature throws, webhook rejects with 401 |
+| **Paymob** (EG payments) | Payment processing | Subscription activation, plan upgrades, store purchases, renewals, HMAC-verified webhook → activate subscription + insert PaymentTransaction row | ✅ Fully wired in `subscriptions.service.ts` (auth → order → payment_keys → SHA-512 HMAC webhook). Dev fallback returns mock keys when key absent | `PAYMOB_API_KEY` `PAYMOB_INTEGRATION_ID` `PAYMOB_IFRAME_ID` `PAYMOB_HMAC_SECRET` (all 4 in `backend/.env.example`) | ⚠️ Partial — code returns mock `payment_key` for dev; real payments + webhook activation require keys |
+| **AWS S3** | Production object storage for uploaded files | Contract uploads (Word/PDF), knowledge assets, claim attachments, notice attachments, executed contract archives | ⚠️ SDK imported (`@aws-sdk/client-s3`) but `StorageService` always uses local disk; `STORAGE_TYPE=s3` switch not yet wired | `AWS_REGION` `AWS_ACCESS_KEY_ID` `AWS_SECRET_ACCESS_KEY` `AWS_S3_BUCKET` `STORAGE_TYPE=s3` (all in `backend/.env.example`) | ✅ Yes for local dev (writes to `./uploads/`) — ❌ No for production-grade durability |
+| **AWS SES** (prod email) | Transactional email in production | All transactional emails when `NODE_ENV=production` | ✅ Code path exists in `EmailService` (uses `@aws-sdk/client-ses` `SendEmailCommand`) | `AWS_SES_FROM_EMAIL` + the AWS_* credentials above | ❌ No in production — falls back to nodemailer in dev |
+| **SMTP (nodemailer)** | Dev / staging email | Same recipients as SES (invitations, MFA OTP, reminders, contract sharing, password reset, DocuSign notifications) | ✅ Wired via nodemailer; queued through Bull `email-queue` | `SMTP_HOST` `SMTP_PORT` `SMTP_USER` `SMTP_PASS` `SMTP_FROM` (all in `backend/.env.example`, defaults to Mailtrap) | ⚠️ Partial — Mailtrap host defaulted but credentials blank → emails silently fail without `SMTP_USER`/`SMTP_PASS` |
+| **Redis** | Bull job broker (NestJS) + Celery broker & result backend (FastAPI) | All async AI jobs, all queued emails, all obligation reminder scans, all subscription session caches | ✅ Configured via `BullModule.forRootAsync` in NestJS and Celery config in `ai-backend` | `REDIS_URL` (in both `backend/.env.example` and `ai-backend/.env.example`) | ❌ No — service won't boot without Redis (default `redis://localhost:6379`) |
+| **PostgreSQL + pgvector** | Primary data store + vector search for RAG | Every persisted entity (33 entities, 21 migrations) + `KnowledgeAssetChunk.embedding` vector column | ✅ Active — `pgvector/pgvector:pg15` image, `init-db.sql` enables `vector` + `uuid-ossp` extensions | `DATABASE_URL` (in both backend and ai-backend env templates) | ❌ No — service won't boot |
+| **Internal NestJS ↔ FastAPI token** | Authenticate internal AI requests | NestJS posting jobs to FastAPI; FastAPI calling back into NestJS for ingestion | ✅ Used in headers between services | `NESTJS_INTERNAL_TOKEN` (in `ai-backend/.env.example`) | ⚠️ Default value works locally; must rotate before any non-local deploy |
+| **JWT Secrets** | Access + refresh token signing | Every authenticated request | ✅ Hard-required in `AuthService` | `JWT_SECRET` `JWT_REFRESH_SECRET` `JWT_EXPIRY` `JWT_REFRESH_EXPIRY` (in `backend/.env.example`) | ⚠️ Defaults present but must be rotated for production |
+
+---
+
+### D2 — Features Grouped by Integration Dependency
+
+#### Needs Anthropic API
+- Risk analysis across all 8 risk categories per clause (`run_risk_analysis`)
+- Contract summarization, 17 key elements (`run_summarize`)
+- Compliance check against FIDIC/NEC/JCT standards (compliance prompt in agents)
+- Obligation extraction from contract text (`run_extract_obligations`)
+- Conflict / contradiction detection across clauses (`run_conflict_detection`)
+- DIFF analysis between contract versions (`run_diff_analysis`)
+- AI chat assistant with RAG (`run_chat`)
+- AI Research Agent (`run_research`)
+- OCR text extract from uploaded PDFs (`run_extract_text`, 30-min limit, Arabic-friendly)
+- Clause extraction from raw uploaded contracts (`run_extract_clauses`, 40-min limit)
+
+#### Needs OpenAI API
+- Knowledge base embedding generation (`POST /embeddings/ingest`)
+- Knowledge base vector search (`POST /embeddings/search`)
+- AI chat retrieval with knowledge-base citations (uses search internally)
+
+#### Needs DocuSign API
+- Initiate envelope from contract PDF (`DocuSignService.createEnvelope`)
+- Generate embedded signing URL for the initiator (`getSigningUrl`)
+- Live envelope status query (`getEnvelopeStatus`)
+- Webhook → `completed` → contract `FULLY_EXECUTED` + `executed_at` + audit log + owner notification
+- Webhook → `declined` → contract reverted to `ACTIVE` + decline reason logged in audit + owner notification
+- Webhook → `voided` → contract reverted to `ACTIVE` + void reason logged in audit + owner notification
+- Webhook → `sent` / `delivered` → per-signer status sync only
+
+#### Needs Paymob API
+- Create payment intention for plan purchase (`SubscriptionsService.createPaymentIntention`)
+- Iframe-embedded checkout for the user
+- HMAC-verified webhook → `activateSubscription` + `PaymentTransaction` insert (success / pending / refunded / failed)
+- Subscription expiry / renewal flow (relies on the same webhook surface)
+
+#### Needs AWS S3
+- Upload contract documents (Word, PDF) to durable storage
+- Upload knowledge assets and chunked source files
+- Upload claim supporting documents
+- Upload notice attachments
+- Archive executed contract PDFs (post-DocuSign)
+
+#### Needs Email Service (SES in prod, SMTP in dev)
+- Team / org invitation email
+- MFA OTP delivery via email
+- Password reset email
+- Contract approval-request email
+- Contract sharing link email
+- Obligation deadline reminder email (sent by `obligation-reminders` Bull processor)
+- DocuSign envelope state-change notification (added this session)
+- Generic system notifications (via `EmailService.sendGenericEmail`)
+
+#### Needs Redis
+- Every async AI job (NestJS publishes job, Celery consumes, result polled)
+- Bull `email-queue` (transactional email)
+- Bull `obligation-reminders` (scheduled scanner)
+- Celery result backend for `GET /agents/jobs/{job_id}` polling
+
+#### Needs PostgreSQL + pgvector
+- Every persisted entity (auth, orgs, projects, contracts, clauses, comments, versions, approvals, knowledge assets, obligations, notifications, subscriptions, payments, audit, MFA, recovery codes, sessions)
+- pgvector cosine search on `KnowledgeAssetChunk.embedding`
+
+#### Works Right Now — No External API Needed
+- Full authentication (register, login, MFA TOTP enroll/verify, recovery codes, password reset)
+- Invitation creation (creation works; email delivery requires SMTP/SES)
+- Organization and team management (CRUD, role assignment)
+- Project and contractor management
+- Contract creation, clause editing, parties, comments, version save / compare / list
+- Approval workflow (request + review)
+- Claims, Notices, Sub-contract submission and tracking (when contract status is ACTIVE)
+- Obligations dashboard (manual entry + Bull-powered reminder cron — reminder scan runs without external APIs but its email step needs SMTP/SES)
+- Admin portal (organizations, users, plan CRUD, knowledge curation, audit log, observability page)
+- Audit trail viewing
+- CENVOX landing page (all 11 sections — fully static)
+
+---
+
+### D3 — Deployment Readiness Checklist
+
+> To be completed when deployment phase begins. Do not action any of these now.
+
+| # | Item | Category | Status |
+|---|------|----------|--------|
+| 1 | Anthropic API key configured and tested | AI | ❌ Not configured |
+| 2 | OpenAI API key configured and tested (embeddings) | AI | ❌ Not configured |
+| 3 | DocuSign integration key configured | E-Signature | ❌ Not configured |
+| 4 | DocuSign user ID + RSA private key configured (JWT Grant) | E-Signature | ❌ Not configured |
+| 5 | DocuSign account ID configured | E-Signature | ❌ Not configured |
+| 6 | DocuSign webhook HMAC secret configured (`DOCUSIGN_WEBHOOK_HMAC_SECRET`) | E-Signature | ❌ Not configured |
+| 7 | DocuSign webhook URL registered in DocuSign Connect dashboard | E-Signature | ❌ Not registered |
+| 8 | DocuSign webhook handler fixed (was no-op — fixed in this session: HMAC verify + completed/declined/voided + audit + notify) | E-Signature | ✅ Code fixed |
+| 9 | DocuSign env vars added to `backend/.env.example` (currently missing) | E-Signature | ❌ Not added |
+| 10 | Paymob API key, integration ID, iframe ID, HMAC secret configured | Payments | ❌ Not configured |
+| 11 | Paymob webhook URL registered in Paymob dashboard | Payments | ❌ Not registered |
+| 12 | AWS S3 bucket created with correct CORS policy | Storage | ❌ Not configured |
+| 13 | AWS IAM credentials with S3 read/write scope | Storage | ❌ Not configured |
+| 14 | `STORAGE_TYPE=s3` switch wired in `StorageService` (currently always local) | Storage | ❌ Code change needed |
+| 15 | AWS SES verified sender + production-mode access approved | Email | ❌ Not configured |
+| 16 | SMTP credentials (Mailtrap or alternative) for dev / staging | Email | ❌ Not configured |
+| 17 | All email templates rendered and tested end-to-end | Email | ❌ Not verified |
+| 18 | Redis running in production environment with persistence | Queue | ❌ Not configured |
+| 19 | PostgreSQL with pgvector extension enabled in production | Database | ❌ Not confirmed |
+| 20 | All env vars documented in `.env.example` (DocuSign vars currently missing) | Docs | ❌ Verify and add |
+| 21 | JWT secrets rotated to production values | Security | ❌ Not done |
+| 22 | `NESTJS_INTERNAL_TOKEN` rotated to production value | Security | ❌ Not done |
+| 23 | HTTPS / SSL configured on all endpoints | Security | ❌ Not done |
+| 24 | CORS origins updated from localhost to production domains | Security | ❌ Not done |
+| 25 | Rate limiting (`@nestjs/throttler`) added to auth endpoints | Security | ❌ Not done |
+| 26 | cenvox.ai DNS configured | Domain | ❌ Not done |
+| 27 | sign.ai DNS configured | Domain | ❌ Not done |
+| 28 | Hardcoded `SIGN_URL = http://localhost:5173` in `apps/cenvox/src/App.tsx` replaced with env var | Domain | ❌ Not done |
+
+---
+
+### D4 — Local Development Workarounds
+
+| Integration | Free Local Workaround | Notes |
+|-------------|----------------------|-------|
+| DocuSign | Free sandbox at developers.docusign.com | Get test integration key + RSA key — full envelope flow works in sandbox; webhook can be tunneled with ngrok / cloudflared |
+| Paymob | Test mode API keys from Paymob dashboard | Test cards available — no real money. Code already returns mock `payment_key` when `PAYMOB_API_KEY` is unset |
+| AWS S3 | MinIO via Docker (local S3 emulator) | Drop-in S3 replacement — set `AWS_S3_ENDPOINT` to MinIO URL once `STORAGE_TYPE=s3` switch is wired |
+| AWS SES | Mailtrap.io (free) | Catches all outbound emails — already the default `SMTP_HOST` in `backend/.env.example`; just add `SMTP_USER` + `SMTP_PASS` from your Mailtrap inbox |
+| Anthropic Claude | Real API key required | No free alternative — get key from console.anthropic.com |
+| OpenAI Embeddings | Real API key required | No free alternative — get key from platform.openai.com |
+| Redis | `docker compose up redis` | Already in compose file — no config needed |
+| Postgres + pgvector | `docker compose up postgres` | Already in compose file with pgvector image |
+
+---
+
+*End of report — generated 2026-04-25, Part D appended same day*
