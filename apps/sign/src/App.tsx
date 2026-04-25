@@ -13,6 +13,7 @@ import RegisterPage from '@/pages/auth/RegisterPage';
 import ForgotPasswordPage from '@/pages/auth/ForgotPasswordPage';
 import ResetPasswordPage from '@/pages/auth/ResetPasswordPage';
 import AcceptInvitationPage from '@/pages/auth/AcceptInvitationPage';
+import PortalSelectPage from '@/pages/auth/PortalSelectPage';
 
 // Client Portal pages
 import DashboardPage from '@/pages/app/DashboardPage';
@@ -88,6 +89,8 @@ const CONTRACTOR_ROLES: UserRole[] = [
   UserRole.CONTRACTOR_REVIEWER,
   UserRole.CONTRACTOR_TENDERING,
 ];
+// Admins can also access the Client Portal via the portal chooser.
+const APP_ACCESS_ROLES: UserRole[] = [...CLIENT_ROLES, ...ADMIN_ROLES];
 
 // ─── Navigation items ────────────────────────────────────────
 const clientNavItems = [
@@ -148,6 +151,16 @@ function App() {
         }
       />
 
+      {/* Portal chooser — SYSTEM_ADMIN / OPERATIONS only */}
+      <Route
+        path="/portal-select"
+        element={
+          <ProtectedRoute allowedRoles={ADMIN_ROLES}>
+            <PortalSelectPage />
+          </ProtectedRoute>
+        }
+      />
+
       {/* Public guest invitation route (no auth) */}
       <Route path="/invitation/accept" element={<AcceptPartyInvitationPage />} />
 
@@ -155,7 +168,7 @@ function App() {
       <Route
         path="/app"
         element={
-          <ProtectedRoute allowedRoles={CLIENT_ROLES}>
+          <ProtectedRoute allowedRoles={APP_ACCESS_ROLES}>
             <AppLayout navItems={clientNavItems} />
           </ProtectedRoute>
         }
