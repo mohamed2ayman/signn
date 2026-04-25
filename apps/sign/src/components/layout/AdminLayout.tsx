@@ -139,14 +139,32 @@ export default function AdminLayout() {
   const { t } = useTranslation();
   const location = useLocation();
   const navigate = useNavigate();
-  const { logout } = useAuth();
-  const user = useSelector((state: RootState) => state.auth.user);
+  const { logout, refreshUserProfile } = useAuth();
+  const { user, isAuthenticated } = useSelector((state: RootState) => state.auth);
 
   const [unreadCount, setUnreadCount] = useState(0);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
 
   const userMenuRef = useRef<HTMLDivElement>(null);
+
+  // ── Re-hydrate user profile from token on page refresh (same as AppLayout) ──
+  useEffect(() => {
+    if (isAuthenticated && !user) {
+      refreshUserProfile();
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Show portal chooser for admin users who skipped the login flow ────
+  // (e.g. navigating directly to /admin with an existing session)
+  useEffect(() => {
+    if (!user) return;
+    const isAdminRole = user.role === UserRole.SYSTEM_ADMIN || user.role === UserRole.OPERATIONS;
+    const alreadyChose = sessionStorage.getItem('portal-chosen') === '1';
+    if (isAdminRole && !alreadyChose) {
+      navigate('/portal-select', { replace: true });
+    }
+  }, [user, navigate]);
 
   // ── Fetch unread notifications once on mount ─────────────────────────
   useEffect(() => {
@@ -184,9 +202,10 @@ export default function AdminLayout() {
     [isOperations],
   );
 
-  const handleLogout = () => {
-    logout();
-    navigate('/auth/login');
+  const handleLogout = async () => {
+    sessionStorage.removeItem('portal-chosen');
+    await logout();
+    navigate('/auth/login', { replace: true });
   };
 
   const handleNavMouseEnter = (event: React.MouseEvent<HTMLElement>, label: string) => {

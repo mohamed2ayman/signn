@@ -25,7 +25,7 @@ export default function PortalSelectPage() {
         <div className="flex flex-col gap-3 w-full">
           <button
             type="button"
-            onClick={() => navigate('/admin/dashboard', { replace: true })}
+            onClick={() => { sessionStorage.setItem('portal-chosen', '1'); navigate('/admin/dashboard', { replace: true }); }}
             className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3 font-semibold text-white transition hover:bg-primary-600"
           >
             <LayoutDashboard className="h-4 w-4" />
@@ -33,7 +33,7 @@ export default function PortalSelectPage() {
           </button>
           <button
             type="button"
-            onClick={() => navigate('/app/dashboard', { replace: true })}
+            onClick={() => { sessionStorage.setItem('portal-chosen', '1'); navigate('/app/dashboard', { replace: true }); }}
             className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-primary py-3 font-semibold text-primary transition hover:bg-primary/5"
           >
             <Briefcase className="h-4 w-4" />
