@@ -146,7 +146,12 @@
       "Bash(lsof -iTCP:5173 -sTCP:LISTEN)",
       "Bash(lsof -iTCP:5180 -sTCP:LISTEN)",
       "Bash(curl -s \"http://localhost:5173/src/App.tsx\")",
-      "Bash(docker info *)"
+      "Bash(docker info *)",
+      "Bash(gh auth *)",
+      "Bash(security find-internet-password *)",
+      "Bash(git credential-osxkeychain *)",
+      "Bash(echo \"erase exit: $?\")",
+      "Bash(git config *)"
     ]
   }
 }

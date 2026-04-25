@@ -233,6 +233,33 @@ export const adminService = {
   updateFeatureFlags: (id: string, featureFlags: Record<string, boolean>) =>
     api.put<AdminOrganizationDetail>(`/admin/organizations/${id}/feature-flags`, { featureFlags })
       .then(r => r.data),
+
+  // ─── Billing & Payments ──────────────────────────────────────────────
+  getBillingSummary: () =>
+    api.get<BillingSummary>('/admin/billing/summary').then(r => r.data),
+
+  getTransactions: (params?: TransactionsQueryParams) =>
+    api.get<PaymentTransactionListResponse>('/admin/billing/transactions', { params })
+      .then(r => r.data),
+
+  getFailedPayments: () =>
+    api.get<FailedPayment[]>('/admin/billing/failed-payments').then(r => r.data),
+
+  exportTransactions: async (params?: TransactionsQueryParams) => {
+    const res = await api.get('/admin/billing/transactions/export', {
+      params,
+      responseType: 'blob',
+    });
+    const blob = new Blob([res.data], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `sign-transactions-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  },
 };
 
 // ─── System Analytics types ────────────────────────────────────────────────
@@ -481,4 +508,73 @@ export interface AdminOrganizationDetail {
   currentUsage: AdminOrganizationUsage;
   featureFlagOverrides: Record<string, boolean>;
   recentAuditLogs: AdminOrganizationRecentAuditLog[];
+}
+
+// ─── Billing & Payments types ──────────────────────────────────────────────
+
+export type PaymentTransactionStatus = 'SUCCESS' | 'FAILED' | 'REFUNDED' | 'PENDING';
+
+export interface PlanRevenueRow {
+  planName: string;
+  revenue: number;
+  subscribers: number;
+}
+
+export interface CurrencyRevenueRow {
+  currency: string;
+  amount: number;
+}
+
+export interface BillingSummary {
+  mrr: number;
+  arr: number;
+  mrrChange: number;
+  activeSubscriptions: number;
+  failedPaymentsCount: number;
+  failedPaymentsAmount: number;
+  newThisMonth: number;
+  churnedThisMonth: number;
+  revenueByPlan: PlanRevenueRow[];
+  revenueByCurrency: CurrencyRevenueRow[];
+}
+
+export interface TransactionsQueryParams {
+  page?: number;
+  limit?: number;
+  organizationId?: string;
+  status?: PaymentTransactionStatus | string;
+  currency?: string;
+  startDate?: string;
+  endDate?: string;
+}
+
+export interface PaymentTransaction {
+  id: string;
+  organization_id: string;
+  organizationName: string;
+  paymob_transaction_id: string | null;
+  amount: number;
+  currency: string;
+  status: PaymentTransactionStatus | string;
+  plan_id: string | null;
+  plan_name: string | null;
+  created_at: string;
+}
+
+export interface PaymentTransactionListResponse {
+  data: PaymentTransaction[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
+export interface FailedPayment {
+  organizationId: string;
+  organizationName: string;
+  contactEmail: string | null;
+  failedAmount: number;
+  currency: string;
+  lastAttempt: string;
+  failureCount: number;
 }

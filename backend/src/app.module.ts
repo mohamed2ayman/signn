@@ -35,6 +35,7 @@ import { AdminAuditLogModule } from './modules/admin-audit-log/admin-audit-log.m
 import { OperationsReviewModule } from './modules/operations-review/operations-review.module';
 import { AdminAnalyticsModule } from './modules/admin-analytics/admin-analytics.module';
 import { AdminOrganizationsModule } from './modules/admin-organizations/admin-organizations.module';
+import { AdminBillingModule } from './modules/admin-billing/admin-billing.module';
 import { dataSourceOptions } from './config/data-source';
 
 @Module({
@@ -91,6 +92,7 @@ import { dataSourceOptions } from './config/data-source';
     OperationsReviewModule,
     AdminAnalyticsModule,
     AdminOrganizationsModule,
+    AdminBillingModule,
   ],
 })
 export class AppModule {}

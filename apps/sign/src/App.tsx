@@ -52,6 +52,7 @@ import AdminAuditLogPage from '@/pages/admin/AdminAuditLogPage';
 import AdminOperationsReviewPage from '@/pages/admin/AdminOperationsReviewPage';
 import AdminAnalyticsPage from '@/pages/admin/AdminAnalyticsPage';
 import AdminOrganizationsPage from '@/pages/admin/AdminOrganizationsPage';
+import AdminBillingPage from '@/pages/admin/AdminBillingPage';
 import AdminComingSoonPage from '@/pages/admin/AdminComingSoonPage';
 
 // Guest Portal pages
@@ -209,7 +210,7 @@ function App() {
         {/* Placeholder routes for Phase 3+ admin pages */}
         <Route path="organizations"     element={<AdminOrganizationsPage />} />
         <Route path="analytics"         element={<AdminAnalyticsPage />} />
-        <Route path="billing"           element={<AdminComingSoonPage title="Billing & Payments" />} />
+        <Route path="billing"           element={<AdminBillingPage />} />
         <Route path="account-settings"  element={<AdminComingSoonPage title="Account Settings" />} />
       </Route>
 

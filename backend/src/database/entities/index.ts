@@ -29,3 +29,4 @@ export { Claim, ClaimDocument, ClaimResponse, ClaimStatusLog, ClaimType, ClaimSt
 export { Notice, NoticeDocument, NoticeResponse, NoticeStatusLog, NoticeType, NoticeStatus, NoticeResponseType } from './notice.entity';
 export { SubContract, SubContractStatusLog } from './sub-contract.entity';
 export { ContractApprover, ApproverStatus } from './contract-approver.entity';
+export { PaymentTransaction, PaymentTransactionStatus } from './payment-transaction.entity';

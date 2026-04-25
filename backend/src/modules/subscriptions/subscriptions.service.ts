@@ -14,6 +14,8 @@ import {
   OrganizationSubscription,
   SubscriptionStatus,
   Organization,
+  PaymentTransaction,
+  PaymentTransactionStatus,
 } from '../../database/entities';
 import { CreatePlanDto } from './dto/create-plan.dto';
 import { UpdatePlanDto } from './dto/update-plan.dto';
@@ -29,6 +31,8 @@ export class SubscriptionsService {
     private readonly organizationSubscriptionRepository: Repository<OrganizationSubscription>,
     @InjectRepository(Organization)
     private readonly organizationRepository: Repository<Organization>,
+    @InjectRepository(PaymentTransaction)
+    private readonly paymentTransactionRepository: Repository<PaymentTransaction>,
     private readonly configService: ConfigService,
   ) {}
 
@@ -320,28 +324,77 @@ export class SubscriptionsService {
       throw new BadRequestException('Invalid HMAC signature');
     }
 
-    // Process the payment
-    if (obj.success === true || obj.success === 'true') {
-      const orderId = obj.order?.id?.toString();
-      const merchantOrderId = obj.order?.merchant_order_id;
+    // Extract the common fields we need for the transaction record
+    const orderId = obj.order?.id?.toString();
+    const merchantOrderId: string | undefined = obj.order?.merchant_order_id;
+    const isSuccess = obj.success === true || obj.success === 'true';
+    const isRefunded = obj.is_refunded === true || obj.is_refunded === 'true';
+    const isPending = obj.pending === true || obj.pending === 'true';
 
-      if (merchantOrderId) {
-        // merchant_order_id format expected: "orgId:planId"
-        const parts = merchantOrderId.split(':');
-        if (parts.length === 2) {
-          const [orgId, planId] = parts;
-          try {
-            await this.activateSubscription(orgId, planId, orderId);
-            this.logger.log(
-              `Subscription activated for org ${orgId} via Paymob webhook`,
-            );
-          } catch (error) {
-            this.logger.error(
-              `Failed to activate subscription for org ${orgId}`,
-              error,
-            );
-          }
+    let txStatus: PaymentTransactionStatus = PaymentTransactionStatus.FAILED;
+    if (isRefunded) txStatus = PaymentTransactionStatus.REFUNDED;
+    else if (isSuccess) txStatus = PaymentTransactionStatus.SUCCESS;
+    else if (isPending) txStatus = PaymentTransactionStatus.PENDING;
+
+    let orgId: string | null = null;
+    let planId: string | null = null;
+    if (merchantOrderId) {
+      const parts = merchantOrderId.split(':');
+      if (parts.length === 2) {
+        [orgId, planId] = parts;
+      }
+    }
+
+    // Resolve plan details (for plan_name) — best-effort
+    let planName: string | null = null;
+    let currency = obj.currency ?? 'EGP';
+    if (planId) {
+      try {
+        const plan = await this.subscriptionPlanRepository.findOne({
+          where: { id: planId },
+        });
+        if (plan) {
+          planName = plan.name;
+          if (!obj.currency) currency = plan.currency;
         }
+      } catch {
+        // ignore
+      }
+    }
+
+    const amountCents = Number(obj.amount_cents ?? 0);
+    const amount = amountCents > 0 ? amountCents / 100 : 0;
+
+    // Process subscription activation on success
+    if (isSuccess && orgId && planId) {
+      try {
+        await this.activateSubscription(orgId, planId, orderId);
+        this.logger.log(
+          `Subscription activated for org ${orgId} via Paymob webhook`,
+        );
+      } catch (error) {
+        this.logger.error(
+          `Failed to activate subscription for org ${orgId}`,
+          error,
+        );
+      }
+    }
+
+    // Record the payment transaction — success, failure, or refund
+    if (orgId) {
+      try {
+        await this.paymentTransactionRepository.insert({
+          organization_id: orgId,
+          paymob_transaction_id: obj.id ? String(obj.id) : null,
+          amount,
+          currency,
+          status: txStatus,
+          plan_id: planId,
+          plan_name: planName,
+          webhook_payload: payload as any,
+        });
+      } catch (err) {
+        this.logger.warn(`Failed to record payment transaction: ${err}`);
       }
     }
 

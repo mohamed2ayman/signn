@@ -6,6 +6,7 @@ import {
   SubscriptionPlan,
   OrganizationSubscription,
   Organization,
+  PaymentTransaction,
 } from '../../database/entities';
 import { SubscriptionsController } from './subscriptions.controller';
 import { SubscriptionsService } from './subscriptions.service';
@@ -16,6 +17,7 @@ import { SubscriptionsService } from './subscriptions.service';
       SubscriptionPlan,
       OrganizationSubscription,
       Organization,
+      PaymentTransaction,
     ]),
     ConfigModule,
   ],
