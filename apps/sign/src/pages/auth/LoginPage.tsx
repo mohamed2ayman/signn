@@ -41,7 +41,7 @@ const LoginPage: React.FC = () => {
       }
       const role = user.role;
       if (role === 'SYSTEM_ADMIN' || role === 'OPERATIONS') {
-        navigate('/admin/dashboard', { replace: true });
+        navigate('/portal-select', { replace: true });
       } else if (role.startsWith('CONTRACTOR_')) {
         navigate('/contractor/dashboard', { replace: true });
       } else {
