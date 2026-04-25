@@ -11,8 +11,11 @@ import {
   Contract,
   ContractStatus,
   SignatureStatus,
+  AuditLog,
 } from '../../database/entities';
 import { ExportService } from '../export/export.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { EmailService } from '../notifications/email.service';
 
 // DocuSign SDK — no types available
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -39,7 +42,11 @@ export class DocuSignService {
     private readonly configService: ConfigService,
     @InjectRepository(Contract)
     private readonly contractRepo: Repository<Contract>,
+    @InjectRepository(AuditLog)
+    private readonly auditLogRepo: Repository<AuditLog>,
     private readonly exportService: ExportService,
+    private readonly notificationsService: NotificationsService,
+    private readonly emailService: EmailService,
   ) {
     this.accountId = this.configService.get<string>('DOCUSIGN_ACCOUNT_ID', '');
     this.integrationKey = this.configService.get<string>(
@@ -246,11 +253,29 @@ export class DocuSignService {
   }
 
   /**
-   * Handle DocuSign webhook — update contract when all signed
+   * Handle DocuSign Connect webhook events.
+   * Signature is verified by DocuSignWebhookController before this is called.
+   *
+   * Supported envelope events:
+   *  - completed → contract FULLY_EXECUTED, executed_at = now()
+   *  - declined  → contract reverted to ACTIVE, decline reason logged
+   *  - voided    → contract reverted to ACTIVE, void reason logged
+   *  - sent / delivered → per-signer status update only
    */
   async handleWebhook(payload: any): Promise<void> {
-    const envelopeId = payload?.envelopeId || payload?.EnvelopeStatus?.EnvelopeID;
-    const status = payload?.status || payload?.EnvelopeStatus?.Status;
+    const envelopeId =
+      payload?.envelopeId ||
+      payload?.data?.envelopeId ||
+      payload?.EnvelopeStatus?.EnvelopeID;
+    const status = (
+      payload?.status ||
+      payload?.event ||
+      payload?.EnvelopeStatus?.Status ||
+      ''
+    )
+      .toString()
+      .toLowerCase()
+      .replace(/^envelope-/, '');
 
     if (!envelopeId) {
       this.logger.warn('DocuSign webhook: no envelopeId in payload');
@@ -259,6 +284,7 @@ export class DocuSignService {
 
     const contract = await this.contractRepo.findOne({
       where: { docusign_envelope_id: envelopeId },
+      relations: ['creator'],
     });
 
     if (!contract) {
@@ -269,29 +295,91 @@ export class DocuSignService {
     }
 
     this.logger.log(
-      `DocuSign webhook: envelope ${envelopeId} status=${status}`,
+      `DocuSign webhook: envelope ${envelopeId} status=${status} contract=${contract.id}`,
     );
+
+    const previousStatus = contract.status;
+    const previousSignatureStatus = contract.signature_status;
 
     if (status === 'completed') {
       contract.signature_status = SignatureStatus.FULLY_EXECUTED;
-      contract.status = ContractStatus.ACTIVE;
       contract.executed_at = new Date();
+      // Per the platform status machine: a fully-signed contract becomes ACTIVE.
+      contract.status = ContractStatus.ACTIVE;
 
-      // Update signer statuses
       if (contract.signature_signers) {
         contract.signature_signers = contract.signature_signers.map((s) => ({
           ...s,
           status: 'completed',
-          signed_at: new Date().toISOString(),
+          signed_at: s.signed_at ?? new Date().toISOString(),
         }));
       }
 
       await this.contractRepo.save(contract);
+      await this.recordAudit(contract, 'docusign.envelope.completed', {
+        envelopeId,
+        previousStatus,
+        previousSignatureStatus,
+        newStatus: ContractStatus.ACTIVE,
+        newSignatureStatus: SignatureStatus.FULLY_EXECUTED,
+        executed_at: contract.executed_at,
+        payload,
+      });
+      await this.notifyOwner(
+        contract,
+        'Contract executed',
+        `Your contract "${contract.name}" has been signed by all parties and is now fully executed.`,
+        ContractStatus.ACTIVE,
+      );
       this.logger.log(
         `Contract ${contract.id} fully executed, status → ACTIVE`,
       );
+    } else if (status === 'declined') {
+      const reason = this.extractEventReason(payload, 'decline');
+      contract.signature_status = null;
+      // Revert: do not progress the contract; return it to ACTIVE for re-issue.
+      contract.status = ContractStatus.ACTIVE;
+      await this.contractRepo.save(contract);
+
+      await this.recordAudit(contract, 'docusign.envelope.declined', {
+        envelopeId,
+        previousStatus,
+        previousSignatureStatus,
+        decline_reason: reason,
+        payload,
+      });
+      await this.notifyOwner(
+        contract,
+        'Contract signature declined',
+        `Signature was declined for contract "${contract.name}". Reason: ${reason}`,
+        ContractStatus.ACTIVE,
+      );
+      this.logger.warn(
+        `Contract ${contract.id} envelope ${envelopeId} declined: ${reason}`,
+      );
+    } else if (status === 'voided') {
+      const reason = this.extractEventReason(payload, 'void');
+      contract.signature_status = null;
+      contract.status = ContractStatus.ACTIVE;
+      await this.contractRepo.save(contract);
+
+      await this.recordAudit(contract, 'docusign.envelope.voided', {
+        envelopeId,
+        previousStatus,
+        previousSignatureStatus,
+        void_reason: reason,
+        payload,
+      });
+      await this.notifyOwner(
+        contract,
+        'Contract signature voided',
+        `The signature envelope for contract "${contract.name}" was voided. Reason: ${reason}`,
+        ContractStatus.ACTIVE,
+      );
+      this.logger.warn(
+        `Contract ${contract.id} envelope ${envelopeId} voided: ${reason}`,
+      );
     } else if (status === 'sent' || status === 'delivered') {
-      // Update individual signer statuses from webhook if available
       const signerStatuses =
         payload?.EnvelopeStatus?.RecipientStatuses?.RecipientStatus;
       if (signerStatuses && contract.signature_signers) {
@@ -314,7 +402,6 @@ export class DocuSignService {
           return s;
         });
 
-        // If some signers have signed but not all
         const signedCount = contract.signature_signers.filter(
           (s) => s.status === 'completed' || s.status === 'signed',
         ).length;
@@ -326,6 +413,90 @@ export class DocuSignService {
         }
 
         await this.contractRepo.save(contract);
+      }
+    } else {
+      this.logger.log(
+        `DocuSign webhook: ignoring envelope status "${status}" for ${envelopeId}`,
+      );
+    }
+  }
+
+  private extractEventReason(payload: any, kind: 'decline' | 'void'): string {
+    if (kind === 'void') {
+      return (
+        payload?.voidedReason ||
+        payload?.data?.voidedReason ||
+        payload?.EnvelopeStatus?.VoidedReason ||
+        'No reason provided'
+      );
+    }
+    const recipientStatuses =
+      payload?.EnvelopeStatus?.RecipientStatuses?.RecipientStatus;
+    const arr = Array.isArray(recipientStatuses)
+      ? recipientStatuses
+      : recipientStatuses
+        ? [recipientStatuses]
+        : [];
+    const declined = arr.find(
+      (r: any) => (r.Status || r.status || '').toLowerCase() === 'declined',
+    );
+    return (
+      payload?.declinedReason ||
+      payload?.data?.declinedReason ||
+      declined?.DeclineReason ||
+      declined?.declinedReason ||
+      'No reason provided'
+    );
+  }
+
+  private async recordAudit(
+    contract: Contract,
+    action: string,
+    details: Record<string, unknown>,
+  ): Promise<void> {
+    try {
+      await this.auditLogRepo.insert({
+        user_id: null,
+        organization_id: (contract as any).organization_id ?? null,
+        action,
+        entity_type: 'contract',
+        entity_id: contract.id,
+        new_values: details,
+      });
+    } catch (err) {
+      this.logger.warn(`Failed to record DocuSign audit log: ${err}`);
+    }
+  }
+
+  private async notifyOwner(
+    contract: Contract,
+    subject: string,
+    message: string,
+    newStatus: string,
+  ): Promise<void> {
+    if (!contract.created_by) return;
+    try {
+      await this.notificationsService.notifyContractStatusChange(
+        contract.created_by,
+        contract.name,
+        newStatus,
+        contract.id,
+      );
+    } catch (err) {
+      this.logger.warn(`Failed to enqueue contract status notification: ${err}`);
+    }
+
+    // Best-effort email — only if we can resolve the creator's address.
+    const creatorEmail = (contract as any).creator?.email;
+    if (creatorEmail) {
+      try {
+        await this.emailService.sendGenericEmail(
+          creatorEmail,
+          subject,
+          `<p>${message}</p>`,
+        );
+      } catch (err) {
+        this.logger.warn(`Failed to send DocuSign notification email: ${err}`);
       }
     }
   }

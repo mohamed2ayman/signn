@@ -1,18 +1,30 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule } from '@nestjs/config';
-import { Contract, ProjectMember, PermissionDefault } from '../../database/entities';
+import {
+  Contract,
+  ProjectMember,
+  PermissionDefault,
+  AuditLog,
+} from '../../database/entities';
 import { ExportModule } from '../export/export.module';
 import { DocuSignService } from './docusign.service';
 import { DocuSignController } from './docusign.controller';
 import { DocuSignWebhookController } from './docusign-webhook.controller';
 import { PermissionLevelGuard } from '../../common/guards/permission-level.guard';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
     ConfigModule,
-    TypeOrmModule.forFeature([Contract, ProjectMember, PermissionDefault]),
+    TypeOrmModule.forFeature([
+      Contract,
+      ProjectMember,
+      PermissionDefault,
+      AuditLog,
+    ]),
     ExportModule,
+    NotificationsModule,
   ],
   controllers: [DocuSignController, DocuSignWebhookController],
   providers: [DocuSignService, PermissionLevelGuard],
