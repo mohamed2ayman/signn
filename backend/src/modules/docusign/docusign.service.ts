@@ -456,12 +456,12 @@ export class DocuSignService {
   ): Promise<void> {
     try {
       await this.auditLogRepo.insert({
-        user_id: null,
-        organization_id: (contract as any).organization_id ?? null,
+        user_id: undefined,
+        organization_id: (contract as any).organization_id ?? undefined,
         action,
         entity_type: 'contract',
         entity_id: contract.id,
-        new_values: details,
+        new_values: details as any,
       });
     } catch (err) {
       this.logger.warn(`Failed to record DocuSign audit log: ${err}`);
