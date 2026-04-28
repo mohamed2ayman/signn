@@ -51,6 +51,7 @@ import AdminRiskRulesPage from '@/pages/admin/AdminRiskRulesPage';
 import AdminStoreAnalyticsPage from '@/pages/admin/AdminStoreAnalyticsPage';
 import AdminAuditLogPage from '@/pages/admin/AdminAuditLogPage';
 import AdminOperationsReviewPage from '@/pages/admin/AdminOperationsReviewPage';
+import AdminOperationsPage from '@/pages/admin/AdminOperationsPage';
 import AdminAnalyticsPage from '@/pages/admin/AdminAnalyticsPage';
 import AdminOrganizationsPage from '@/pages/admin/AdminOrganizationsPage';
 import AdminBillingPage from '@/pages/admin/AdminBillingPage';
@@ -219,6 +220,7 @@ function App() {
         <Route path="audit-logs"      element={<AdminAuditLogPage />} />
 
         <Route path="operations-review" element={<AdminOperationsReviewPage />} />
+        <Route path="operations"        element={<AdminOperationsPage />} />
 
         {/* Placeholder routes for Phase 3+ admin pages */}
         <Route path="organizations"     element={<AdminOrganizationsPage />} />

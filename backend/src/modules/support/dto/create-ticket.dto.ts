@@ -3,7 +3,16 @@ import { IsString, IsOptional, MaxLength, IsIn } from 'class-validator';
 export class CreateTicketDto {
   @IsString()
   @MaxLength(50)
-  @IsIn(['billing', 'technical', 'account', 'feature_request', 'other'])
+  @IsIn([
+    'billing',
+    'technical',
+    'account',
+    'feature_request',
+    'other',
+    // Tickets created by ops via the "Convert to Ticket" action on a closed
+    // Live Chat carry this category so the admin queue can filter for them.
+    'live_chat',
+  ])
   category: string;
 
   @IsString()

@@ -31,3 +31,8 @@ export { SubContract, SubContractStatusLog } from './sub-contract.entity';
 export { ContractApprover, ApproverStatus } from './contract-approver.entity';
 export { PaymentTransaction, PaymentTransactionStatus } from './payment-transaction.entity';
 export { NegotiationEvent, NegotiationEventType, NegotiationEventSource } from './negotiation-event.entity';
+export { SupportChat, SupportChatStatus, SupportChatClosedReason } from './support-chat.entity';
+export { SupportChatMessage, SupportChatSenderRole } from './support-chat-message.entity';
+export { SupportChatNote } from './support-chat-note.entity';
+export { CannedResponse } from './canned-response.entity';
+export { OpsAvailability, OpsAvailabilityStatus } from './ops-availability.entity';
