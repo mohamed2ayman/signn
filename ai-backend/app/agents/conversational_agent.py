@@ -46,6 +46,7 @@ class ConversationalAgent:
         contract_context: str | None = None,
         knowledge_context: str | None = None,
         history: list[dict[str, str]] | None = None,
+        system_context: str | None = None,
     ) -> dict[str, Any]:
         """Send a conversational message and receive a response with citations.
 
@@ -60,6 +61,10 @@ class ConversationalAgent:
         history:
             Previous conversation turns as ``{"role": ..., "content": ...}``
             dicts.
+        system_context:
+            Caller-supplied ambient context (e.g. a clause selected in Word).
+            Appended to the system prompt rather than injected as a user
+            message so the model treats it as background, not as the question.
 
         Returns
         -------
@@ -94,10 +99,20 @@ class ConversationalAgent:
             "content": "\n".join(user_content_parts),
         })
 
+        system_prompt = SYSTEM_PROMPT
+        if system_context:
+            system_prompt = (
+                f"{SYSTEM_PROMPT}\n\n"
+                f"### Ambient Context (caller-supplied)\n"
+                f"The user is currently focused on the following text. Treat it "
+                f"as background context for any question they ask, even if the "
+                f"question is general:\n\n{system_context}"
+            )
+
         response = self._client.messages.create(
             model="claude-sonnet-4-6",
             max_tokens=4096,
-            system=SYSTEM_PROMPT,
+            system=system_prompt,
             messages=messages,
         )
 

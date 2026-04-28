@@ -30,3 +30,4 @@ export { Notice, NoticeDocument, NoticeResponse, NoticeStatusLog, NoticeType, No
 export { SubContract, SubContractStatusLog } from './sub-contract.entity';
 export { ContractApprover, ApproverStatus } from './contract-approver.entity';
 export { PaymentTransaction, PaymentTransactionStatus } from './payment-transaction.entity';
+export { NegotiationEvent, NegotiationEventType, NegotiationEventSource } from './negotiation-event.entity';

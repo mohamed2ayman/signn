@@ -85,6 +85,7 @@ export class AiController {
       message: string;
       contract_id?: string;
       history?: Array<{ role: string; content: string }>;
+      system_context?: string;
     },
     @OrganizationId() orgId: string,
   ) {
