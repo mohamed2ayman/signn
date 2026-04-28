@@ -5,6 +5,7 @@ import type { RootState } from '@/store';
 import { useAuth } from '@/hooks/useAuth';
 import Sidebar from './Sidebar';
 import TopBar from './TopBar';
+import LiveChatWidget from '@/components/support-chat/LiveChatWidget';
 
 interface AppLayoutProps {
   navItems: { label: string; path: string; icon: string }[];
@@ -43,6 +44,12 @@ export default function AppLayout({ navItems }: AppLayoutProps) {
           <Outlet />
         </div>
       </main>
+      {/*
+        Live Chat Support — floating bottom-right launcher. Visible on every
+        /app/* page; the component itself hides for SYSTEM_ADMIN / OPERATIONS
+        users (who use /admin/operations) and for unauthenticated states.
+      */}
+      <LiveChatWidget />
     </div>
   );
 }
