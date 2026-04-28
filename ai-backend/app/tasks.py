@@ -112,6 +112,7 @@ def run_chat(self, request_data: dict[str, Any]) -> dict[str, Any]:
             contract_context=request_data.get("contract_context"),
             knowledge_context=request_data.get("knowledge_context"),
             history=request_data.get("history"),
+            system_context=request_data.get("system_context"),
         )
         return {"status": "completed", "result": result}
     except Exception as e:

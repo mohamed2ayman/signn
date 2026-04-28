@@ -235,6 +235,14 @@ class ChatRequest(BaseModel):
         default_factory=list,
         description="Previous conversation messages.",
     )
+    system_context: Optional[str] = Field(
+        None,
+        description=(
+            "Optional system-level context (e.g. selected clause text from a Word "
+            "Add-in). When present, prepended as a system message ahead of history "
+            "so the model treats it as ambient context rather than user input."
+        ),
+    )
 
 
 class Citation(BaseModel):

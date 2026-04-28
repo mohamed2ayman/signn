@@ -36,6 +36,7 @@ import { OperationsReviewModule } from './modules/operations-review/operations-r
 import { AdminAnalyticsModule } from './modules/admin-analytics/admin-analytics.module';
 import { AdminOrganizationsModule } from './modules/admin-organizations/admin-organizations.module';
 import { AdminBillingModule } from './modules/admin-billing/admin-billing.module';
+import { NegotiationModule } from './modules/negotiation/negotiation.module';
 import { dataSourceOptions } from './config/data-source';
 
 @Module({
@@ -93,6 +94,7 @@ import { dataSourceOptions } from './config/data-source';
     AdminAnalyticsModule,
     AdminOrganizationsModule,
     AdminBillingModule,
+    NegotiationModule,
   ],
 })
 export class AppModule {}

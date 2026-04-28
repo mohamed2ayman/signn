@@ -151,7 +151,11 @@
       "Bash(security find-internet-password *)",
       "Bash(git credential-osxkeychain *)",
       "Bash(echo \"erase exit: $?\")",
-      "Bash(git config *)"
+      "Bash(git config *)",
+      "Bash(grep -E \"\\\\.ts$\")",
+      "Bash(npm view *)",
+      "Bash(node scripts/generate-icons.js)",
+      "Bash(npm pkg *)"
     ]
   }
 }

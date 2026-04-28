@@ -9,6 +9,8 @@ import {
 } from '../../database/entities';
 import { DocumentProcessingController } from './document-processing.controller';
 import { DocumentProcessingService } from './document-processing.service';
+import { ParseDocxController } from './parse-docx.controller';
+import { ParseDocxService } from './parse-docx.service';
 import { StorageModule } from '../storage/storage.module';
 import { AiModule } from '../ai/ai.module';
 
@@ -18,8 +20,8 @@ import { AiModule } from '../ai/ai.module';
     StorageModule,
     AiModule,
   ],
-  controllers: [DocumentProcessingController],
-  providers: [DocumentProcessingService],
-  exports: [DocumentProcessingService],
+  controllers: [DocumentProcessingController, ParseDocxController],
+  providers: [DocumentProcessingService, ParseDocxService],
+  exports: [DocumentProcessingService, ParseDocxService],
 })
 export class DocumentProcessingModule {}
