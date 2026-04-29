@@ -9,6 +9,7 @@ import {
 } from '@/store/slices/supportChatSlice';
 import { supportChatService } from '@/services/api/supportChatService';
 import { supportSocketService } from '@/services/supportSocketService';
+import { WhiteBloomIcon } from '@/components/common/SignLogo';
 import { useSupportChatSocket } from './useSupportChatSocket';
 import LiveChatStartForm from './LiveChatStartForm';
 import LiveChatWindow from './LiveChatWindow';
@@ -96,32 +97,86 @@ export default function LiveChatWidget() {
     }
   };
 
+  // Pulse the bubble whenever we don't have an in-flight chat — i.e. nudge
+  // first-time visitors. Once a chat is active, the bubble is calm.
+  const showBubblePulse = !activeChat && !isOpen;
+
   return (
     <>
       {/* Floating launcher (always visible) */}
       <button
         type="button"
         onClick={() => dispatch(setOpen(!isOpen))}
-        className="fixed bottom-5 right-5 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-2xl text-white shadow-lg transition-transform hover:scale-105"
+        className={`fixed bottom-5 right-5 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-white shadow-elevated transition-transform hover:scale-105 hover:bg-primary-600 focus:outline-none focus:ring-4 focus:ring-primary/30 ${
+          showBubblePulse ? 'sign-chat-bubble-pulse' : ''
+        }`}
         aria-label={isOpen ? 'Close live chat' : 'Open live chat'}
       >
-        {isOpen ? '✕' : '💬'}
+        {isOpen ? (
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2.4}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M6 6l12 12M18 6L6 18" />
+          </svg>
+        ) : (
+          <WhiteBloomIcon size={24} />
+        )}
       </button>
 
       {isOpen && (
-        <div className="fixed bottom-24 right-5 z-40 flex h-[520px] w-[360px] flex-col overflow-hidden rounded-lg border border-gray-200 bg-white shadow-2xl">
+        <div className="fixed bottom-24 right-5 z-40 flex h-[560px] w-[380px] flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-elevated">
           {activeChat ? (
             <LiveChatWindow onClose={() => dispatch(setOpen(false))} />
           ) : (
             <>
-              <div className="flex items-center justify-between border-b border-gray-200 bg-primary px-4 py-3 text-white">
-                <div className="text-sm font-semibold">Live Support</div>
+              {/* Branded header (matches LiveChatWindow header for visual continuity) */}
+              <div className="flex items-center justify-between bg-navy-900 px-4 py-3 text-white">
+                <div className="flex items-center gap-2.5">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-md bg-white/10">
+                    <WhiteBloomIcon size={20} />
+                  </span>
+                  <div>
+                    <div className="flex items-center gap-2 text-sm font-semibold">
+                      SIGN Support
+                      <span className="relative inline-flex h-2 w-2">
+                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                        <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" />
+                      </span>
+                      <span className="text-[10px] font-medium uppercase tracking-wider text-emerald-300">
+                        Online
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-white/70">
+                      We typically reply in a few minutes
+                    </div>
+                  </div>
+                </div>
                 <button
                   onClick={() => dispatch(setOpen(false))}
-                  className="rounded p-1 text-white/80 hover:bg-white/10 hover:text-white"
+                  className="rounded p-1 text-white/70 transition-colors hover:bg-white/10 hover:text-white"
                   aria-label="Close"
                 >
-                  ✕
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M6 6l12 12M18 6L6 18" />
+                  </svg>
                 </button>
               </div>
               <LiveChatStartForm

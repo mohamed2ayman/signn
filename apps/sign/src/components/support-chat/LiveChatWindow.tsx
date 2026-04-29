@@ -6,6 +6,7 @@ import {
   appendMessage,
   setShowCsat,
 } from '@/store/slices/supportChatSlice';
+import { WhiteBloomIcon } from '@/components/common/SignLogo';
 import ChatTranscript from './ChatTranscript';
 import AttachmentButton from './AttachmentButton';
 import CsatPrompt from './CsatPrompt';
@@ -67,24 +68,54 @@ export default function LiveChatWindow({ onClose }: Props) {
 
   return (
     <div className="flex h-full flex-col">
-      {/* Header */}
-      <div className="flex items-center justify-between border-b border-gray-200 bg-primary px-4 py-3 text-white">
-        <div>
-          <div className="text-sm font-semibold">Live Support</div>
-          <div className="text-xs text-white/80">
-            {isWaiting && 'Waiting for an agent…'}
-            {activeChat.status === 'ACTIVE' && 'Connected'}
-            {activeChat.status === 'TRANSFERRED' && 'Transferring…'}
-            {isClosed && 'Chat ended'}
-            {connectionState !== 'connected' && ` · ${connectionState}`}
+      {/* Header — branded, matches start-form header */}
+      <div className="flex items-center justify-between bg-navy-900 px-4 py-3 text-white">
+        <div className="flex items-center gap-2.5">
+          <span className="flex h-8 w-8 items-center justify-center rounded-md bg-white/10">
+            <WhiteBloomIcon size={20} />
+          </span>
+          <div>
+            <div className="flex items-center gap-2 text-sm font-semibold">
+              SIGN Support
+              {!isClosed && activeChat.status === 'ACTIVE' && (
+                <>
+                  <span className="relative inline-flex h-2 w-2">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                    <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" />
+                  </span>
+                  <span className="text-[10px] font-medium uppercase tracking-wider text-emerald-300">
+                    Online
+                  </span>
+                </>
+              )}
+            </div>
+            <div className="text-[11px] text-white/70">
+              {isWaiting && 'Waiting for an agent…'}
+              {activeChat.status === 'ACTIVE' && 'Connected — we typically reply in minutes'}
+              {activeChat.status === 'TRANSFERRED' && 'Transferring to another agent…'}
+              {isClosed && 'Chat ended'}
+              {connectionState !== 'connected' && ` · ${connectionState}`}
+            </div>
           </div>
         </div>
         <button
           onClick={onClose}
-          className="rounded p-1 text-white/80 hover:bg-white/10 hover:text-white"
+          className="rounded p-1 text-white/70 transition-colors hover:bg-white/10 hover:text-white"
           aria-label="Close chat"
         >
-          ✕
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M6 6l12 12M18 6L6 18" />
+          </svg>
         </button>
       </div>
 

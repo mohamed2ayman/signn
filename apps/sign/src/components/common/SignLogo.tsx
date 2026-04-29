@@ -57,6 +57,43 @@ export function BloomIcon({
   );
 }
 
+/* ── White-on-color Bloom (for use over brand-color surfaces) ──
+   Mirrors BloomIcon but renders the petals in white at 0.9 opacity
+   with a transparent center, so it reads cleanly on a brand-color
+   bubble (chat widget bubble, etc.). Star center is solid white. */
+export function WhiteBloomIcon({
+  size = 24,
+  className,
+}: {
+  size?: number;
+  className?: string;
+}) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="-28 -28 56 56"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+      aria-hidden="true"
+    >
+      {PETAL_ANGLES.map((angle) => (
+        <ellipse
+          key={angle}
+          rx="16"
+          ry="27"
+          fill="white"
+          opacity="0.9"
+          transform={`rotate(${angle})`}
+        />
+      ))}
+      {/* solid white center for crispness on brand-color backgrounds */}
+      <circle cx="0" cy="0" r="5" fill="white" />
+    </svg>
+  );
+}
+
 /* ── App Icon variant (white bloom on blue background) ────────── */
 export function BloomAppIcon({
   size = 64,
