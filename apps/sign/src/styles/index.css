@@ -63,6 +63,29 @@
   }
 }
 
+/* ── Live Chat Widget animations ─────────────────────────────── */
+
+/* Slow ambient pulse on the floating bubble when no chat is active.
+   Subtler than Tailwind's animate-pulse (which dims to 50% opacity); this
+   keeps the bubble fully visible and just radiates a soft ring. */
+@keyframes sign-chat-bubble-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(13, 110, 253, 0.45); }
+  70%  { box-shadow: 0 0 0 12px rgba(13, 110, 253, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(13, 110, 253, 0); }
+}
+.sign-chat-bubble-pulse {
+  animation: sign-chat-bubble-pulse 2.4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Slide-in for new chat messages — small upward translate + fade. */
+@keyframes sign-chat-message-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.sign-chat-message-in {
+  animation: sign-chat-message-in 0.22s ease-out both;
+}
+
 /* ── CENVOX Parent Brand Elements ─────────────────────────────── */
 
 .cenvox-backlink {
