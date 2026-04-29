@@ -1,7 +1,7 @@
 # lessons.md — SIGN + CENVOX Platform
 > This file documents every bug, issue, and fix that took significant time to resolve.
 > Feed this file to Claude at the start of every session to avoid repeating mistakes.
-> Last updated: 2026-04-27
+> Last updated: 2026-04-28
 
 ---
 
@@ -39,6 +39,7 @@
 24. Frontend — Portal chooser redirect loop for admin users
 25. GitHub — Personal access token expiring
 26. GitHub — Mac osxkeychain interfering with token
+27. Clause Extraction — مادة (N) prefix appearing in clause content
 
 ---
 
@@ -932,6 +933,58 @@
 
 ---
 
+## 27. Clause Extraction — مادة (N) Prefix Appearing in Clause Content
+
+**Problem:**
+- Extracted clauses showed `مادة (1)` or `البند رقم (1)` at the start of every clause content
+- The clause number was visible TWICE — once in the clause number field AND again at the start of the content
+- Made clause content look messy and unprofessional in the UI
+
+**Root Cause:**
+- Claude was correctly including the article marker in its JSON response content field
+- No stripping was happening before saving to the database
+- The `clause_number` field already stores the number separately — repeating it in content was redundant
+- Example of wrong output:
+  ```
+  clause_number: "1"
+  content: "مادة (1) موضوع العقد: التصميم الكامل..."
+  ```
+- Example of correct output:
+  ```
+  clause_number: "1"
+  content: "موضوع العقد: التصميم الكامل..."
+  ```
+
+**Fix:**
+- Added `_strip_article_prefix()` static method to `ClauseExtractorAgent`
+- Regex covers ALL Arabic clause marker variations:
+  - `مادة (1)` / `مادة (١)` — with brackets
+  - `مادة 1` / `مادة ١` — without brackets
+  - `المادة (1)` — with definite article ال
+  - `مادة رقم (1)` — with رقم
+  - `البند رقم (1)` — Contract Agreement format
+  - `البند (1)` — without رقم
+  - Optional trailing `: - – —` after the marker
+- Called in `_parse_json()` on EVERY clause before returning:
+  ```python
+  @staticmethod
+  def _strip_article_prefix(content: str) -> str:
+      return _ARTICLE_PREFIX_RE.sub('', content).strip()
+  ```
+- Applied on both return paths in `_parse_json()`:
+  - Fast path (direct JSON array)
+  - Prose-wrapped path (JSON inside text)
+
+**File:** `ai-backend/app/agents/clause_extractor.py`
+
+**How to Avoid:**
+- Always strip article markers from content before saving — the number lives in `clause_number` field
+- After any extraction run verify: `SELECT clause_number, LEFT(content, 50) FROM clauses WHERE source_document_id = '...' LIMIT 5`
+- Content should start directly with the clause text — never with `مادة` or `البند`
+- If prefix appears → check that `_strip_article_prefix()` is being called in `_parse_json()`
+
+---
+
 ## 📝 Template for New Lessons
 
 ```
@@ -958,5 +1011,5 @@
 
 ---
 
-*Last updated: 2026-04-27*
+*Last updated: 2026-04-28*
 *Feed this file to Claude at the start of every new session*
