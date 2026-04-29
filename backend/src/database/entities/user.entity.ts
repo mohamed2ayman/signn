@@ -207,6 +207,14 @@ export class User {
   @Column({ type: 'varchar', length: 255, nullable: true })
   refresh_token_hash: string;
 
+  /**
+   * Timestamp of the most recent password change. Used by the password-expiry
+   * policy (SecurityPolicy.password_expiry_days). Backfilled on migration to
+   * the user's `created_at` for existing rows.
+   */
+  @Column({ type: 'timestamptz', nullable: true })
+  password_changed_at: Date | null;
+
   @Column({ type: 'boolean', default: false })
   onboarding_completed: boolean;
 

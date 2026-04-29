@@ -36,3 +36,8 @@ export { SupportChatMessage, SupportChatSenderRole } from './support-chat-messag
 export { SupportChatNote } from './support-chat-note.entity';
 export { CannedResponse } from './canned-response.entity';
 export { OpsAvailability, OpsAvailabilityStatus } from './ops-availability.entity';
+export { SecurityPolicy } from './security-policy.entity';
+export { UserSession, DeviceType, SuspiciousReason } from './user-session.entity';
+export { KnownDevice } from './known-device.entity';
+export { PasswordHistory } from './password-history.entity';
+export { BlockedIpAttempt, BlockedIpReason } from './blocked-ip-attempt.entity';

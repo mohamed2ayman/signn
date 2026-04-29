@@ -38,6 +38,7 @@ import { AdminAnalyticsModule } from './modules/admin-analytics/admin-analytics.
 import { AdminOrganizationsModule } from './modules/admin-organizations/admin-organizations.module';
 import { AdminBillingModule } from './modules/admin-billing/admin-billing.module';
 import { NegotiationModule } from './modules/negotiation/negotiation.module';
+import { AdminSecurityModule } from './modules/admin-security/admin-security.module';
 import { dataSourceOptions } from './config/data-source';
 
 @Module({
@@ -97,6 +98,7 @@ import { dataSourceOptions } from './config/data-source';
     AdminOrganizationsModule,
     AdminBillingModule,
     NegotiationModule,
+    AdminSecurityModule,
   ],
 })
 export class AppModule {}
