@@ -611,6 +611,21 @@ class ClauseExtractorAgent:
                 f"Clause extraction failed after {max_attempts} attempts"
             ) from last_exc
 
+    # Matches "مادة (1)", "مادة 1", "المادة (١)", "مادة رقم (2)", etc.
+    # at the very start of clause content — with optional colon/dash after the number.
+    _ARTICLE_PREFIX_RE = re.compile(
+        r"^(?:ال)?مادة\s*(?:رقم\s*)?[\(\[]?\s*[١-٩\d]+\s*[\)\]]?\s*[:\-–—]?\s*",
+        re.UNICODE,
+    )
+
+    def _strip_article_prefix(self, clauses: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Remove leading 'مادة (N)' markers from clause content fields."""
+        for clause in clauses:
+            content = clause.get("content", "")
+            if content:
+                clause["content"] = self._ARTICLE_PREFIX_RE.sub("", content).lstrip()
+        return clauses
+
     def _parse_json(self, raw_text: str) -> list[dict[str, Any]]:
         """Strip optional markdown code fences and parse the JSON array.
 
@@ -635,7 +650,7 @@ class ClauseExtractorAgent:
         # Fast path: response is already a bare JSON array
         if cleaned.startswith("["):
             try:
-                return json.loads(cleaned)
+                return self._strip_article_prefix(json.loads(cleaned))
             except json.JSONDecodeError:
                 pass  # fall through to extraction
 
@@ -647,7 +662,7 @@ class ClauseExtractorAgent:
             candidate = cleaned[bracket_start : bracket_end + 1]
             try:
                 clauses: list[dict[str, Any]] = json.loads(candidate)
-                return clauses
+                return self._strip_article_prefix(clauses)
             except json.JSONDecodeError:
                 pass
 
