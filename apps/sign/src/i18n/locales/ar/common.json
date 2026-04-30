@@ -28,7 +28,8 @@
     "profile": "الملف الشخصي",
     "team": "الفريق",
     "store": "متجر العقود",
-    "subscription": "الاشتراك"
+    "subscription": "الاشتراك",
+    "security": "الأمان"
   },
   "auth": {
     "login": "تسجيل الدخول",
