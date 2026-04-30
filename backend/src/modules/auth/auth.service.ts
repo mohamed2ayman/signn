@@ -24,6 +24,15 @@ import {
   SubscriptionStatus,
 } from '../../database/entities';
 import { EmailService } from '../notifications/email.service';
+import { NotificationDispatchService } from '../notifications/notification-dispatch.service';
+import { SessionService } from '../admin-security/services/session.service';
+import { KnownDeviceService } from '../admin-security/services/known-device.service';
+import { SuspiciousLoginService } from '../admin-security/services/suspicious-login.service';
+import { GeoLookupService } from '../admin-security/services/geo-lookup.service';
+import { UserAgentService } from '../admin-security/services/user-agent.service';
+import { SecurityEventService } from '../admin-security/services/security-event.service';
+import { SECURITY_EVENT_TYPES } from '../../common/enums/security-event-types';
+import { baseEmailLayout } from '../notifications/templates/base-layout';
 import {
   RegisterDto,
   LoginDto,
@@ -55,9 +64,177 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly emailService: EmailService,
+    private readonly dispatch: NotificationDispatchService,
+    private readonly sessions: SessionService,
+    private readonly devices: KnownDeviceService,
+    private readonly suspicious: SuspiciousLoginService,
+    private readonly geo: GeoLookupService,
+    private readonly ua: UserAgentService,
+    private readonly securityEvents: SecurityEventService,
   ) {}
 
-  async register(dto: RegisterDto) {
+  // ─── Phase 3.3: post-login session + suspicious detection ─────
+
+  /**
+   * Called immediately after a refresh token is issued on any successful
+   * login path (register, login, verifyMfa, acceptInvitation, refresh).
+   * Creates a UserSession row, evaluates suspicious-login signals,
+   * upserts the known-device record, and emails the user if the
+   * device is new. Best-effort: errors are logged but never thrown.
+   */
+  private async _finalizeLogin(input: {
+    user: User;
+    refreshToken: string;
+    ip?: string | null;
+    userAgent?: string | null;
+    /** Pass already-known failure count to skip a query. */
+    recentFailureCount?: number;
+  }): Promise<void> {
+    try {
+      const ip = input.ip ?? null;
+      const ua = input.userAgent ?? null;
+      const parsed = this.ua.parse(ua);
+      const geo = this.geo.lookup(ip);
+
+      const evaluation = await this.suspicious.evaluate({
+        user_id: input.user.id,
+        ip,
+        country_code: geo.country_code,
+        recent_failure_count: input.recentFailureCount ?? 0,
+      });
+
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + 7);
+
+      await this.sessions.create({
+        user_id: input.user.id,
+        rawJwt: input.refreshToken,
+        ip_address: ip,
+        user_agent: ua,
+        browser: parsed.browser,
+        os: parsed.os,
+        device_type: parsed.device_type,
+        location: geo.pretty,
+        country_code: geo.country_code,
+        is_suspicious: evaluation.is_suspicious,
+        suspicious_reason: evaluation.reason,
+        expires_at: expiresAt,
+      });
+
+      const deviceResult = await this.devices.upsert({
+        user_id: input.user.id,
+        ip,
+        country_code: geo.country_code,
+        browser: parsed.browser,
+        os: parsed.os,
+      });
+
+      await this.securityEvents.record({
+        type: SECURITY_EVENT_TYPES.LOGIN_SUCCESS,
+        actor_id: input.user.id,
+        user_id: input.user.id,
+        organization_id: input.user.organization_id ?? null,
+        ip_address: ip,
+        metadata: {
+          country: geo.country_code,
+          browser: parsed.browser,
+          os: parsed.os,
+          suspicious: evaluation.is_suspicious,
+          suspicious_reason: evaluation.reason,
+          new_device: deviceResult.isNew,
+        },
+      });
+
+      if (evaluation.is_suspicious) {
+        await this.securityEvents.record({
+          type: SECURITY_EVENT_TYPES.SUSPICIOUS_LOGIN,
+          actor_id: input.user.id,
+          user_id: input.user.id,
+          organization_id: input.user.organization_id ?? null,
+          ip_address: ip,
+          metadata: { reason: evaluation.reason, location: geo.pretty },
+        });
+      }
+
+      // Email user if this is a brand-new device combination
+      if (deviceResult.isNew) {
+        try {
+          await this.dispatch.enqueueEmail({
+            to: input.user.email,
+            subject: evaluation.is_suspicious
+              ? 'Suspicious sign-in detected'
+              : 'New device sign-in to your Sign account',
+            html: this._renderNewDeviceEmail({
+              recipientName: input.user.first_name || input.user.email,
+              browser: parsed.browser,
+              os: parsed.os,
+              location: geo.pretty ?? 'Unknown location',
+              ip: ip || 'unknown',
+              suspiciousReason: evaluation.is_suspicious ? evaluation.reason : null,
+              when: new Date().toUTCString(),
+            }),
+            templateName: 'new_device_login',
+          });
+        } catch (err) {
+          this.logger.error(
+            `Failed to send new-device email: ${(err as Error).message}`,
+          );
+        }
+      }
+    } catch (err) {
+      this.logger.error(
+        `_finalizeLogin failed for user ${input.user.id}: ${(err as Error).message}`,
+      );
+    }
+  }
+
+  private _renderNewDeviceEmail(data: {
+    recipientName: string;
+    browser: string | null;
+    os: string | null;
+    location: string;
+    ip: string;
+    suspiciousReason: string | null;
+    when: string;
+  }): string {
+    const banner = data.suspiciousReason
+      ? `<div style="background:#FEF2F2; border-left:3px solid #DC2626; padding:12px 16px; border-radius:0 8px 8px 0; margin:12px 0;"><p style="margin:0; font-size:13px; color:#991B1B; font-weight:600;">⚠ Flagged as ${data.suspiciousReason.replace(/_/g, ' ').toLowerCase()}</p></div>`
+      : '';
+    const content = `
+      <h1 style="margin:0 0 8px; font-size:22px; font-weight:700; color:#0F1729;">${data.suspiciousReason ? 'Suspicious Sign-In' : 'New Device Sign-In'}</h1>
+      <p style="font-size:14px; color:#4B5563; line-height:1.6;">Hi ${data.recipientName}, your account was just signed in from a device we haven't seen before.</p>
+      ${banner}
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F8FAFF; border-radius:10px; margin:20px 0;">
+        <tr><td style="padding:10px 16px;"><span style="font-size:12px; color:#6B7280; text-transform:uppercase; letter-spacing:0.5px;">When</span><br/><span style="font-size:14px; color:#0F1729; font-weight:600;">${data.when}</span></td></tr>
+        <tr><td style="padding:10px 16px;"><span style="font-size:12px; color:#6B7280; text-transform:uppercase; letter-spacing:0.5px;">Device</span><br/><span style="font-size:14px; color:#0F1729; font-weight:600;">${data.browser ?? 'Unknown browser'} on ${data.os ?? 'unknown OS'}</span></td></tr>
+        <tr><td style="padding:10px 16px;"><span style="font-size:12px; color:#6B7280; text-transform:uppercase; letter-spacing:0.5px;">Location</span><br/><span style="font-size:14px; color:#0F1729; font-weight:600;">${data.location}</span></td></tr>
+        <tr><td style="padding:10px 16px;"><span style="font-size:12px; color:#6B7280; text-transform:uppercase; letter-spacing:0.5px;">IP</span><br/><span style="font-size:14px; color:#0F1729; font-weight:600; font-family:monospace;">${data.ip}</span></td></tr>
+      </table>
+      <p style="font-size:14px; color:#4B5563; line-height:1.6;">If this was you, no action is needed. If you don't recognize this sign-in, change your password and revoke other sessions immediately from your security settings.</p>
+    `;
+    return baseEmailLayout(content, { preheader: 'New device signed in to your Sign account' });
+  }
+
+  /** Records a failed login attempt as a security event. Best-effort. */
+  private async _recordLoginFailure(input: {
+    email: string;
+    ip: string | null;
+    user_agent: string | null;
+    user_id?: string | null;
+  }): Promise<void> {
+    try {
+      await this.securityEvents.record({
+        type: SECURITY_EVENT_TYPES.LOGIN_FAILED,
+        user_id: input.user_id ?? null,
+        ip_address: input.ip,
+        metadata: { email: input.email, user_agent: input.user_agent },
+      });
+    } catch {
+      // ignore
+    }
+  }
+
+  async register(dto: RegisterDto, ctx: { ip?: string | null; user_agent?: string | null } = {}) {
     const existingUser = await this.userRepository.findOne({
       where: { email: dto.email },
     });
@@ -112,6 +289,14 @@ export class AuthService {
     const refreshTokenHash = await this.hashData(tokens.refresh_token);
     await this.userRepository.update(savedUser.id, {
       refresh_token_hash: refreshTokenHash,
+      password_changed_at: new Date(),
+    });
+
+    await this._finalizeLogin({
+      user: savedUser,
+      refreshToken: tokens.refresh_token,
+      ip: ctx.ip ?? null,
+      userAgent: ctx.user_agent ?? null,
     });
 
     return {
@@ -121,7 +306,7 @@ export class AuthService {
     };
   }
 
-  async login(dto: LoginDto) {
+  async login(dto: LoginDto, ctx: { ip?: string | null; user_agent?: string | null } = {}) {
     const user = await this.userRepository.findOne({
       where: { email: dto.email },
     });
@@ -163,6 +348,21 @@ export class AuthService {
       }
 
       await this.userRepository.update(user.id, updateData as any);
+      await this._recordLoginFailure({
+        email: dto.email,
+        ip: ctx.ip ?? null,
+        user_agent: ctx.user_agent ?? null,
+        user_id: user.id,
+      });
+      if (failedAttempts >= MAX_FAILED_ATTEMPTS) {
+        await this.securityEvents.record({
+          type: SECURITY_EVENT_TYPES.ACCOUNT_LOCKED,
+          actor_id: user.id,
+          user_id: user.id,
+          ip_address: ctx.ip ?? null,
+          metadata: { failed_attempts: failedAttempts },
+        });
+      }
       throw new UnauthorizedException('Invalid email or password');
     }
 
@@ -211,6 +411,12 @@ export class AuthService {
           last_login_at: new Date(),
           refresh_token_hash: refreshTokenHash,
         });
+        await this._finalizeLogin({
+          user,
+          refreshToken: tokens.refresh_token,
+          ip: ctx.ip ?? null,
+          userAgent: ctx.user_agent ?? null,
+        });
         return {
           user: this.sanitizeUser(user),
           access_token: tokens.access_token,
@@ -228,6 +434,13 @@ export class AuthService {
       refresh_token_hash: refreshTokenHash,
     });
 
+    await this._finalizeLogin({
+      user,
+      refreshToken: tokens.refresh_token,
+      ip: ctx.ip ?? null,
+      userAgent: ctx.user_agent ?? null,
+    });
+
     return {
       user: this.sanitizeUser(user),
       access_token: tokens.access_token,
@@ -235,7 +448,7 @@ export class AuthService {
     };
   }
 
-  async verifyMfa(dto: VerifyMfaDto) {
+  async verifyMfa(dto: VerifyMfaDto, ctx: { ip?: string | null; user_agent?: string | null } = {}) {
     const user = await this.userRepository.findOne({
       where: { email: dto.email },
     });
@@ -290,6 +503,13 @@ export class AuthService {
       refresh_token_hash: refreshTokenHash,
     });
 
+    await this._finalizeLogin({
+      user,
+      refreshToken: tokens.refresh_token,
+      ip: ctx.ip ?? null,
+      userAgent: ctx.user_agent ?? null,
+    });
+
     return {
       user: this.sanitizeUser(user),
       access_token: tokens.access_token,
@@ -297,7 +517,7 @@ export class AuthService {
     };
   }
 
-  async verifyRecoveryCode(email: string, recoveryCode: string) {
+  async verifyRecoveryCode(email: string, recoveryCode: string, ctx: { ip?: string | null; user_agent?: string | null } = {}) {
     const user = await this.userRepository.findOne({ where: { email } });
     if (!user || !user.mfa_enabled) {
       throw new UnauthorizedException('Invalid recovery request');
@@ -337,6 +557,13 @@ export class AuthService {
       mfa_recovery_codes: updatedCodes.length > 0 ? updatedCodes : null as unknown as string[],
       last_login_at: new Date(),
       refresh_token_hash: refreshTokenHash,
+    });
+
+    await this._finalizeLogin({
+      user,
+      refreshToken: tokens.refresh_token,
+      ip: ctx.ip ?? null,
+      userAgent: ctx.user_agent ?? null,
     });
 
     return {
@@ -525,7 +752,7 @@ export class AuthService {
 
   // ─── Auth Helpers ──────────────────────────────────────────────
 
-  async refreshToken(refreshToken: string) {
+  async refreshToken(refreshToken: string, ctx: { ip?: string | null; user_agent?: string | null } = {}) {
     let payload: { sub: string; email: string };
     try {
       payload = this.jwtService.verify(refreshToken, {
@@ -561,13 +788,34 @@ export class AuthService {
       refresh_token_hash: refreshTokenHash,
     });
 
+    // Revoke the old session and create a new one — keeps UserSession
+    // table in sync with the actual valid refresh token.
+    await this.sessions.revokeByToken(refreshToken);
+    await this._finalizeLogin({
+      user,
+      refreshToken: tokens.refresh_token,
+      ip: ctx.ip ?? null,
+      userAgent: ctx.user_agent ?? null,
+    });
+
     return {
       access_token: tokens.access_token,
       refresh_token: tokens.refresh_token,
     };
   }
 
-  async logout(userId: string) {
+  async logout(userId: string, ctx: { ip?: string | null; refreshToken?: string | null } = {}) {
+    if (ctx.refreshToken) {
+      await this.sessions.revokeByToken(ctx.refreshToken);
+    } else {
+      await this.sessions.revokeAllForUser(userId);
+    }
+    await this.securityEvents.record({
+      type: SECURITY_EVENT_TYPES.LOGOUT,
+      actor_id: userId,
+      user_id: userId,
+      ip_address: ctx.ip ?? null,
+    });
     await this.userRepository.update(userId, {
       refresh_token_hash: null as unknown as string,
     });
