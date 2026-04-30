@@ -258,3 +258,43 @@ All work is local development only.
 | 6 | Admin portal inaccessible after restart | SYSTEM_ADMIN seed user missing | Seed is idempotent — runs on every startup |
 | 7 | Port 3000 conflict | Stop local backend before docker-compose up | Use `docker-compose up frontend cenvox` to skip backend |
 | 8 | CENVOX not accessible | Frontend not started | Run `npm run dev` inside `apps/cenvox` |
+
+---
+
+## Phase 3 — Recently Shipped
+
+### Phase 3.1 — Microsoft Word Add-in (shipped)
+Office.js add-in shell with package versions pinned, SIGN logo icons generated, dependencies installed. Live integration with the contracts API still requires the auth bridge described in the integration rules above.
+
+### Phase 3.2 — Live Chat Support (shipped)
+Real-time human support channel sitting beside the AI ChatPanel:
+- Floating bottom-right widget on every `/app/*` page (hidden for SYSTEM_ADMIN/OPERATIONS roles)
+- `/admin/operations` ops dashboard with Chat Queue, Active Chats, CSAT Analytics tabs
+- Socket.io `/support` namespace (separate from `/collaboration`)
+- Lifecycle: WAITING → ACTIVE → CLOSED, with TRANSFERRED side-state
+- Internal notes (ops-only), canned responses with `/` autocomplete, file attachments, CSAT, Convert-to-Ticket
+- Audit-logged via `support_chat.*` action prefix
+
+### Phase 3.3 — Admin Security Management (shipped)
+Platform-wide security posture management. **All endpoints SYSTEM_ADMIN-only via `JwtAuthGuard + RolesGuard + @Roles(SYSTEM_ADMIN)`** unless prefixed with `/me`.
+
+**Database (5 new tables)**: `security_policies` (singleton, id=`global`), `user_sessions` (replaces single `users.refresh_token_hash` model), `known_devices`, `password_history`, `blocked_ip_attempts`. Plus `users.password_changed_at`. Migration is idempotent (`CREATE TABLE IF NOT EXISTS` + `ON CONFLICT DO NOTHING` for the seed row).
+
+**Module**: `backend/src/modules/admin-security/`
+- 13 services: `SecurityPolicyService` (60s in-memory cache), `SessionService` (SHA-256 hex tokens), `KnownDeviceService` (coarse `browser|os|country|/24` fingerprint), `PasswordPolicyService`, `IpFilterService`, `SuspiciousLoginService` (BRUTE_FORCE / NEW_COUNTRY / IMPOSSIBLE_TRAVEL), `GeoLookupService` (geoip-lite), `UserAgentService` (ua-parser-js), `MfaAdminService` (admin reset + remind), `SecurityScoreService` (0-100 with 6 weighted components), `GdprExportService` (archiver-built ZIP, anonymize-delete with FK preservation), `SecurityEventService` (`record()` + `recordAtomic()` flavors), `SecurityAuditLogService` + `AdminActivityLogService`.
+- 3 controllers: `ProfileController` (`/me/*`), `AdminSecurityController` (`/admin/security/*`), `AdminUserSecurityController` (`/admin/users/:id/*`).
+- 2 middleware: `IpFilterMiddleware` (mounted globally, skips `/health`), `SessionTrackingMiddleware`.
+
+**Auth integration**: `auth.service.ts` calls a shared `_finalizeLogin(user, refreshToken, ip, ua)` after every successful login path (register, login, verifyMfa, verifyRecoveryCode, refreshToken). It creates a UserSession row, evaluates suspicious signals, upserts the known-device record, and emails the user when a brand-new device combination signs in. `refreshToken` revokes the old session by hash before creating a new one. `logout` revokes the session by token (or all-for-user fallback) and emits `security.logout`.
+
+**Security event types**: 18 event strings under the `security.*` prefix in `backend/src/common/enums/security-event-types.ts` (LOGIN_SUCCESS, LOGIN_FAILED, LOGOUT, MFA_ENABLED/DISABLED/RESET, PASSWORD_CHANGED/RESET, SESSION_REVOKED/EXPIRED, ACCOUNT_LOCKED/UNLOCKED, IP_BLOCKED, SETTINGS_CHANGED, ADMIN_ACTION, SUSPICIOUS_LOGIN, GDPR_EXPORT/DELETE).
+
+**Frontend**: 4 new pages
+- `/admin/security` — Security Dashboard (score widget, suspicious banner, blocked-IP feed)
+- `/admin/security/settings` — Security Settings editor
+- `/admin/security/audit` — security.* audit log feed
+- `/app/settings/security` — User Profile & Security (name edit, password change, sessions list, GDPR export)
+
+**Hard escape hatch**: `IpFilterService.check()` always allows loopback / private addresses when `NODE_ENV !== 'production'`. Never remove this — it's the only thing keeping a misconfigured blocklist from locking developers out of the docker stack.
+
+**Atomic vs fire-and-forget audit writes**: use `SecurityEventService.recordAtomic(input, work)` only when the audit row MUST exist with the action (e.g. inside a critical state transition). Use `record(input)` for everything else — it logs but never throws.
