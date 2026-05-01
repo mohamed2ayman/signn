@@ -56,6 +56,10 @@ import AdminAnalyticsPage from '@/pages/admin/AdminAnalyticsPage';
 import AdminOrganizationsPage from '@/pages/admin/AdminOrganizationsPage';
 import AdminBillingPage from '@/pages/admin/AdminBillingPage';
 import AdminComingSoonPage from '@/pages/admin/AdminComingSoonPage';
+import AdminSecuritySettingsPage from '@/pages/admin/AdminSecuritySettingsPage';
+import AdminSecurityDashboardPage from '@/pages/admin/AdminSecurityDashboardPage';
+import AdminSecurityAuditPage from '@/pages/admin/AdminSecurityAuditPage';
+import MySecurityPage from '@/pages/MySecurityPage';
 
 // Guest Portal pages
 import ContractorDashboardPage from '@/pages/contractor/ContractorDashboardPage';
@@ -192,6 +196,7 @@ function App() {
         <Route path="store" element={<ContractStorePage />} />
         <Route path="store/contract/:id" element={<ContractStoreDetailPage />} />
         <Route path="profile" element={<ProfilePage />} />
+        <Route path="settings/security" element={<MySecurityPage />} />
         <Route path="settings/billing" element={<BillingPage />} />
         <Route path="settings/subscription" element={<SubscriptionSettingsPage />} />
         <Route path="approvals" element={<ApprovalsPage />} />
@@ -218,6 +223,9 @@ function App() {
         <Route path="store-analytics" element={<AdminStoreAnalyticsPage />} />
         <Route path="support"         element={<AdminSupportPage />} />
         <Route path="audit-logs"      element={<AdminAuditLogPage />} />
+        <Route path="security"          element={<AdminSecurityDashboardPage />} />
+        <Route path="security/settings" element={<AdminSecuritySettingsPage />} />
+        <Route path="security/audit"    element={<AdminSecurityAuditPage />} />
 
         <Route path="operations-review" element={<AdminOperationsReviewPage />} />
         <Route path="operations"        element={<AdminOperationsPage />} />

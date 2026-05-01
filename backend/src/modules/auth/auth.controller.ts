@@ -5,10 +5,12 @@ import {
   Put,
   Delete,
   Body,
+  Req,
   UseGuards,
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
+import { Request } from 'express';
 
 import { AuthService } from './auth.service';
 import {
@@ -26,44 +28,60 @@ import {
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
+function ctxOf(req: Request) {
+  const xff = req.headers['x-forwarded-for'];
+  const first = Array.isArray(xff) ? xff[0] : xff?.split(',')[0]?.trim();
+  return {
+    ip: first || req.ip || req.socket?.remoteAddress || null,
+    user_agent: (req.headers['user-agent'] as string) ?? null,
+  };
+}
+
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('register')
-  async register(@Body() dto: RegisterDto) {
-    return this.authService.register(dto);
+  async register(@Body() dto: RegisterDto, @Req() req: Request) {
+    return this.authService.register(dto, ctxOf(req));
   }
 
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  async login(@Body() dto: LoginDto) {
-    return this.authService.login(dto);
+  async login(@Body() dto: LoginDto, @Req() req: Request) {
+    return this.authService.login(dto, ctxOf(req));
   }
 
   @Post('verify-mfa')
   @HttpCode(HttpStatus.OK)
-  async verifyMfa(@Body() dto: VerifyMfaDto) {
-    return this.authService.verifyMfa(dto);
+  async verifyMfa(@Body() dto: VerifyMfaDto, @Req() req: Request) {
+    return this.authService.verifyMfa(dto, ctxOf(req));
   }
 
   @Post('verify-recovery')
   @HttpCode(HttpStatus.OK)
-  async verifyRecovery(@Body() dto: VerifyRecoveryDto) {
-    return this.authService.verifyRecoveryCode(dto.email, dto.recovery_code);
+  async verifyRecovery(@Body() dto: VerifyRecoveryDto, @Req() req: Request) {
+    return this.authService.verifyRecoveryCode(dto.email, dto.recovery_code, ctxOf(req));
   }
 
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
-  async refreshToken(@Body() dto: RefreshTokenDto) {
-    return this.authService.refreshToken(dto.refresh_token);
+  async refreshToken(@Body() dto: RefreshTokenDto, @Req() req: Request) {
+    return this.authService.refreshToken(dto.refresh_token, ctxOf(req));
   }
 
   @Post('logout')
   @HttpCode(HttpStatus.OK)
   @UseGuards(JwtAuthGuard)
-  async logout(@CurrentUser('id') userId: string) {
-    return this.authService.logout(userId);
+  async logout(
+    @CurrentUser('id') userId: string,
+    @Body() body: { refresh_token?: string },
+    @Req() req: Request,
+  ) {
+    return this.authService.logout(userId, {
+      ip: ctxOf(req).ip,
+      refreshToken: body?.refresh_token ?? null,
+    });
   }
 
   @Post('accept-invitation')

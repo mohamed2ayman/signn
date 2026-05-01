@@ -8,8 +8,9 @@ import { User, UserRole, Organization } from '../entities';
  * Idempotent seed for the two well-known accounts the platform requires
  * to exist in any environment (dev, staging, fresh DB resets).
  *
- * - youssef141162@gmail.com / Youssef@1997  (SYSTEM_ADMIN)
- * - admin@sign.com          / Admin@Sign2026 (SYSTEM_ADMIN)
+ * - youssef141162@gmail.com    / Youssef@1997     (SYSTEM_ADMIN)
+ * - admin@sign.com             / Admin@Sign2026   (SYSTEM_ADMIN)
+ * - mohameddaaymande@gmail.com / Mohamed@Sign2026 (SYSTEM_ADMIN)
  *
  * On every run:
  *   - Creates the user if missing.
@@ -39,6 +40,13 @@ const ADMIN_USERS: AdminSeed[] = [
     password: 'Admin@Sign2026',
     first_name: 'System',
     last_name: 'Admin',
+    role: UserRole.SYSTEM_ADMIN,
+  },
+  {
+    email: 'mohameddaaymande@gmail.com',
+    password: 'Mohamed@Sign2026',
+    first_name: 'Mohamed',
+    last_name: 'Ayman',
     role: UserRole.SYSTEM_ADMIN,
   },
 ];

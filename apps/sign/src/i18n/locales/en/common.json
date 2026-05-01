@@ -31,6 +31,7 @@
     "subscription": "Subscription",
     "operationsReview": "Operations Review",
     "auditLog": "Audit Log",
+    "security": "Security",
     "billing": "Billing",
     "accountSettings": "Account Settings",
     "system": "System"

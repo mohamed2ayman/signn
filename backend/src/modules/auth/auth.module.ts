@@ -15,6 +15,7 @@ import { AuthService } from './auth.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { UsersModule } from '../users/users.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { AdminSecurityModule } from '../admin-security/admin-security.module';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
     }),
     UsersModule,
     NotificationsModule,
+    AdminSecurityModule,
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy],
