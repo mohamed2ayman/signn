@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { ClauseReviewStatus } from '@/types';
 import type { Clause } from '@/types';
 import ConfidenceBadge from '@/components/common/ConfidenceBadge';
@@ -117,7 +117,7 @@ interface ClauseReviewCardProps {
   sectionNumber?: string | null;
   onApprove: (clauseId: string) => void;
   onReject: (clauseId: string) => void;
-  onEdit: (clauseId: string, data: { title?: string; content?: string; clause_type?: string }) => void;
+  onEdit: (clauseId: string, data: { title?: string; content?: string; clause_type?: string }) => Promise<void> | void;
   isSelected?: boolean;
   onClick?: () => void;
 }
@@ -170,6 +170,46 @@ export default function ClauseReviewCard({
   const [editTitle, setEditTitle] = useState(clause.title);
   const [editContent, setEditContent] = useState(clause.content);
 
+  // ── Type dropdown state ──────────────────────────────────────
+  const [localType, setLocalType] = useState<string | null>(clause.clause_type ?? null);
+  const [isTypeDropdownOpen, setIsTypeDropdownOpen] = useState(false);
+  const [typeError, setTypeError] = useState('');
+  const typeDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Keep localType in sync when parent clause prop changes (e.g. after revert)
+  useEffect(() => {
+    setLocalType(clause.clause_type ?? null);
+  }, [clause.clause_type]);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    if (!isTypeDropdownOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (typeDropdownRef.current && !typeDropdownRef.current.contains(e.target as Node)) {
+        setIsTypeDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [isTypeDropdownOpen]);
+
+  const handleTypeSelect = async (newType: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsTypeDropdownOpen(false);
+    const prev = localType;
+    setLocalType(newType); // optimistic update
+    setTypeError('');
+    try {
+      const result = onEdit(clause.id, { clause_type: newType });
+      if (result instanceof Promise) await result;
+    } catch {
+      setLocalType(prev); // revert on failure
+      setTypeError('Failed to update');
+      setTimeout(() => setTypeError(''), 3000);
+    }
+  };
+  // ────────────────────────────────────────────────────────────
+
   const reviewStatus = clause.review_status || ClauseReviewStatus.PENDING_REVIEW;
   const borderColor = REVIEW_BORDER_COLORS[reviewStatus] || 'border-l-gray-300';
   const bgColor = REVIEW_BG_COLORS[reviewStatus] || 'bg-white';
@@ -217,11 +257,45 @@ export default function ClauseReviewCard({
             )}
           </div>
           <div className="mt-1 flex items-center gap-2 flex-wrap">
-            {clause.clause_type && (
-              <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">
-                {CLAUSE_TYPE_LABELS[clause.clause_type] || clause.clause_type}
-              </span>
+            {/* ── Clickable type dropdown ── */}
+            <div className="relative" ref={typeDropdownRef}>
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setIsTypeDropdownOpen((o) => !o); }}
+                className="flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary transition-colors hover:bg-primary/20"
+                title="Click to change clause type"
+              >
+                {localType ? (CLAUSE_TYPE_LABELS[localType] || localType) : 'Set type'}
+                <svg className="h-2.5 w-2.5 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              {isTypeDropdownOpen && (
+                <div className="absolute left-0 top-full z-50 mt-1 max-h-60 w-44 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
+                  {Object.entries(CLAUSE_TYPE_LABELS).map(([key, label]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={(e) => handleTypeSelect(key, e)}
+                      className={`flex w-full items-center justify-between px-3 py-1.5 text-left text-xs transition-colors hover:bg-gray-50 ${
+                        key === localType ? 'bg-primary/5 font-medium text-primary' : 'text-gray-700'
+                      }`}
+                    >
+                      {label}
+                      {key === localType && (
+                        <svg className="h-3.5 w-3.5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                        </svg>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            {typeError && (
+              <span className="text-xs text-red-500">{typeError}</span>
             )}
+            {/* ─────────────────────────────── */}
             {clause.confidence_score != null && (
               <ConfidenceBadge score={clause.confidence_score} />
             )}

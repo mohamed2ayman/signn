@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { clauseService } from '@/services/api/clauseService';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
@@ -7,6 +7,26 @@ import type { Clause } from '@/types';
 
 type SourceFilter = 'all' | 'AI_EXTRACTED' | 'MANUAL';
 type ReviewFilter = 'all' | 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED' | 'EDITED';
+
+const CLAUSE_TYPE_LABELS: Record<string, string> = {
+  general: 'General',
+  payment: 'Payment',
+  liability: 'Liability',
+  termination: 'Termination',
+  indemnification: 'Indemnification',
+  force_majeure: 'Force Majeure',
+  dispute_resolution: 'Dispute Resolution',
+  confidentiality: 'Confidentiality',
+  compliance: 'Compliance',
+  insurance: 'Insurance',
+  warranty: 'Warranty',
+  intellectual_property: 'IP',
+  scope_of_work: 'Scope of Work',
+  variations: 'Variations',
+  defects: 'Defects',
+  time: 'Time',
+  other: 'Other',
+};
 
 export default function ClausesPage() {
   const navigate = useNavigate();
@@ -65,6 +85,14 @@ export default function ClausesPage() {
     const pendingReview = clauses.filter((c) => c.review_status === 'PENDING_REVIEW').length;
     return { total, aiExtracted, manual, pendingReview };
   }, [clauses]);
+
+  // Optimistically update type in local state; also persist to API
+  const handleTypeChange = useCallback(async (clauseId: string, newType: string) => {
+    await clauseService.update(clauseId, { clause_type: newType });
+    setClauses((prev) =>
+      prev.map((c) => (c.id === clauseId ? { ...c, clause_type: newType } : c)),
+    );
+  }, []);
 
   if (loading) {
     return (
@@ -194,6 +222,7 @@ export default function ClausesPage() {
               key={clause.id}
               clause={clause}
               onClick={() => setShowDetailModal(clause)}
+              onTypeChange={handleTypeChange}
             />
           ))}
         </div>
@@ -215,12 +244,53 @@ export default function ClausesPage() {
 function ClauseCard({
   clause,
   onClick,
+  onTypeChange,
 }: {
   clause: Clause;
   onClick: () => void;
+  onTypeChange: (clauseId: string, newType: string) => Promise<void>;
 }) {
   const isAI = clause.source === 'AI_EXTRACTED';
   const isPending = clause.review_status === 'PENDING_REVIEW';
+
+  // ── Type dropdown state ──────────────────────────────────────
+  const [localType, setLocalType] = useState<string | null>(clause.clause_type ?? null);
+  const [isTypeOpen, setIsTypeOpen] = useState(false);
+  const [typeError, setTypeError] = useState('');
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Sync localType if parent state updates (e.g. after revert)
+  useEffect(() => {
+    setLocalType(clause.clause_type ?? null);
+  }, [clause.clause_type]);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    if (!isTypeOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setIsTypeOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [isTypeOpen]);
+
+  const handleTypeSelect = async (newType: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsTypeOpen(false);
+    const prev = localType;
+    setLocalType(newType); // optimistic
+    setTypeError('');
+    try {
+      await onTypeChange(clause.id, newType);
+    } catch {
+      setLocalType(prev); // revert on failure
+      setTypeError('Failed to update type');
+      setTimeout(() => setTypeError(''), 3000);
+    }
+  };
+  // ────────────────────────────────────────────────────────────
 
   return (
     <div
@@ -231,9 +301,9 @@ function ClauseCard({
           : 'border-gray-200 hover:border-gray-300'
       }`}
     >
-      {/* Top: Source + Review Status */}
+      {/* Top: Source + Type + Review Status */}
       <div className="mb-3 flex items-center justify-between">
-        <div className="flex items-center space-x-2">
+        <div className="flex flex-wrap items-center gap-2">
           {isAI ? (
             <span className="inline-flex items-center rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700">
               <svg className="mr-1 h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -246,11 +316,49 @@ function ClauseCard({
               Manual
             </span>
           )}
-          {clause.clause_type && (
-            <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-600">
-              {clause.clause_type}
-            </span>
+
+          {/* ── Clickable type dropdown ── */}
+          <div className="relative" ref={dropdownRef}>
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setIsTypeOpen((o) => !o); }}
+              className="flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-600 transition-colors hover:bg-blue-100"
+              title="Click to change clause type"
+            >
+              {localType ? (CLAUSE_TYPE_LABELS[localType] || localType) : 'Set type'}
+              <svg className="h-2.5 w-2.5 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            {isTypeOpen && (
+              <div
+                className="absolute left-0 top-full z-50 mt-1 max-h-60 w-44 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {Object.entries(CLAUSE_TYPE_LABELS).map(([key, label]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={(e) => handleTypeSelect(key, e)}
+                    className={`flex w-full items-center justify-between px-3 py-1.5 text-left text-xs transition-colors hover:bg-gray-50 ${
+                      key === localType ? 'bg-blue-50 font-medium text-blue-600' : 'text-gray-700'
+                    }`}
+                  >
+                    {label}
+                    {key === localType && (
+                      <svg className="h-3.5 w-3.5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                      </svg>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          {typeError && (
+            <span className="text-xs text-red-500">{typeError}</span>
           )}
+          {/* ─────────────────────────────── */}
         </div>
         <ReviewStatusBadge status={clause.review_status} />
       </div>
