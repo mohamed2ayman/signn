@@ -1,7 +1,7 @@
 # lessons.md — SIGN + CENVOX Platform
 > This file documents every bug, issue, and fix that took significant time to resolve.
 > Feed this file to Claude at the start of every session to avoid repeating mistakes.
-> Last updated: 2026-04-28
+> Last updated: 2026-05-02
 
 ---
 
@@ -40,6 +40,7 @@
 25. GitHub — Personal access token expiring
 26. GitHub — Mac osxkeychain interfering with token
 27. Clause Extraction — مادة (N) prefix appearing in clause content
+28. Docker — Backend not rebuilt after colleague adds npm packages
 
 ---
 
@@ -985,6 +986,45 @@
 
 ---
 
+## 28. Docker — Backend Not Rebuilt After Colleague Adds npm Packages
+
+**Problem:**
+- Login failed with "Invalid email or password" even with correct credentials
+- Backend appeared to be running (container was up, health check passed)
+- Actual cause: backend failed to compile 3 missing packages from colleague's new module
+- TS errors: `Cannot find module 'archiver'`, `Cannot find module 'geoip-lite'`, `Cannot find module 'ua-parser-js'`
+- Misleading because the error shown to the user had nothing to do with packages
+
+**Root Cause:**
+- Colleague added 3 new npm packages to `package.json` and `package-lock.json` as part of admin-security module
+- After pulling the colleague's changes, `docker-compose up -d` was run WITHOUT `--build`
+- Docker reused the old cached image — its `node_modules` anonymous volume was created from the old image
+- The `- /app/node_modules` anonymous volume in docker-compose.yml preserves node_modules from the image
+- Without `--build`, `npm ci` never re-ran → new packages never installed → backend TS compile failed silently
+- NestJS still started (using last cached compiled JS) but the admin-security module failed at runtime
+
+**Fix:**
+- Installed packages manually in the running container: `docker exec sign-backend npm install archiver geoip-lite ua-parser-js @types/archiver @types/geoip-lite @types/ua-parser-js`
+- Then did a proper rebuild to make it permanent: `docker-compose up --build -d backend`
+- No code changes needed — packages were already correctly in `package.json` and `package-lock.json`
+
+**File:** `docker-compose.yml` (backend service volumes config)
+
+**How to Avoid:**
+- After pulling ANY commit that touches `backend/package.json` or `backend/package-lock.json`:
+  ```bash
+  docker-compose up --build -d backend
+  ```
+- Signal to watch for: colleague's PR diff shows changes to `package.json` or `package-lock.json`
+- Always check pull safety output for `package.json` changes before running `docker-compose up -d`
+- If login or any feature suddenly breaks after a pull with no obvious cause → check backend TS compile errors first:
+  ```bash
+  docker logs sign-backend 2>&1 | grep -E "error TS|Found [0-9]+ error"
+  ```
+- Quick fix without rebuild: `docker exec sign-backend npm install <package-name>`
+
+---
+
 ## 📝 Template for New Lessons
 
 ```
@@ -1011,5 +1051,5 @@
 
 ---
 
-*Last updated: 2026-04-28*
+*Last updated: 2026-05-02*
 *Feed this file to Claude at the start of every new session*
