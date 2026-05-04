@@ -13,8 +13,8 @@ import { User, UserRole, Organization } from '../entities';
  * - mohameddaaymande@gmail.com / Mohamed@Sign2026 (SYSTEM_ADMIN)
  *
  * On every run:
- *   - Creates the user if missing.
- *   - Updates password_hash + clears lock state if user exists.
+ *   - Creates the user if missing (with hashed password).
+ *   - If user EXISTS: only updates role + clears lock state. NEVER overwrites password.
  *   - Ensures an organization exists for the OWNER_ADMIN user.
  */
 
@@ -56,8 +56,6 @@ export async function seedAdminUsers(dataSource: DataSource): Promise<void> {
   const orgRepo = dataSource.getRepository(Organization);
 
   for (const seed of ADMIN_USERS) {
-    const passwordHash = await bcrypt.hash(seed.password, 10);
-
     let organizationId: string | null = null;
     if (seed.organization_name) {
       let org = await orgRepo.findOne({ where: { name: seed.organization_name } });
@@ -71,18 +69,21 @@ export async function seedAdminUsers(dataSource: DataSource): Promise<void> {
     const existing = await userRepo.findOne({ where: { email: seed.email } });
 
     if (existing) {
-      existing.password_hash = passwordHash;
+      // NEVER overwrite password — user may have changed it manually.
+      // Only update role (in case it drifted) and clear any lock state.
+      existing.role = seed.role;
       existing.is_active = true;
       existing.is_email_verified = true;
       existing.failed_login_attempts = 0;
       existing.locked_until = null as any;
-      existing.role = seed.role;
       if (organizationId && !existing.organization_id) {
         existing.organization_id = organizationId;
       }
       await userRepo.save(existing);
-      console.log(`[seed] Updated admin user: ${seed.email}`);
+      console.log(`[seed] Ensured admin user (password preserved): ${seed.email}`);
     } else {
+      // New user — hash and insert with seed password as the initial password.
+      const passwordHash = await bcrypt.hash(seed.password, 10);
       const user = userRepo.create({
         email: seed.email,
         password_hash: passwordHash,
