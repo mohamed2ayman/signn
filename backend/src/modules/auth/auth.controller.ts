@@ -3,12 +3,14 @@ import {
   Get,
   Post,
   Put,
+  Patch,
   Delete,
   Body,
   Req,
   UseGuards,
   HttpCode,
   HttpStatus,
+  BadRequestException,
 } from '@nestjs/common';
 import { Request } from 'express';
 
@@ -24,6 +26,7 @@ import {
   EnableMfaTotpDto,
   DisableMfaDto,
   VerifyRecoveryDto,
+  ChangePasswordDto,
 } from './dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -105,6 +108,25 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   async getProfile(@CurrentUser('id') userId: string) {
     return this.authService.getProfile(userId);
+  }
+
+  @Patch('change-password')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  async changePassword(
+    @CurrentUser('id') userId: string,
+    @Body() dto: ChangePasswordDto,
+  ) {
+    if (dto.newPassword !== dto.confirmPassword) {
+      throw new BadRequestException(
+        'New password and confirm password do not match',
+      );
+    }
+    return this.authService.changePassword(
+      userId,
+      dto.currentPassword,
+      dto.newPassword,
+    );
   }
 
   @Put('onboarding/complete')

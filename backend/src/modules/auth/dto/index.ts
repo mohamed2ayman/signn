@@ -8,3 +8,4 @@ export { RefreshTokenDto } from './refresh-token.dto';
 export { EnableMfaTotpDto } from './enable-mfa-totp.dto';
 export { DisableMfaDto } from './disable-mfa.dto';
 export { VerifyRecoveryDto } from './verify-recovery.dto';
+export { ChangePasswordDto } from './change-password.dto';
