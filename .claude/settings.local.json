@@ -155,7 +155,23 @@
       "Bash(grep -E \"\\\\.ts$\")",
       "Bash(npm view *)",
       "Bash(node scripts/generate-icons.js)",
-      "Bash(npm pkg *)"
+      "Bash(npm pkg *)",
+      "Bash(npm run *)",
+      "Bash(echo \"EXIT=$?\")",
+      "Bash(curl -s -o /dev/null -w \"backend: %{http_code}\\\\n\" http://localhost:3000/api/v1/health)",
+      "Bash(curl -s -o /dev/null -w \"frontend: %{http_code}\\\\n\" http://localhost:5173)",
+      "Bash(curl -s -w \"\\\\nHTTP %{http_code}\\\\n\" http://localhost:3000/api/v1/support/chat/me)",
+      "Bash(curl -s -w \"\\\\nHTTP %{http_code}\\\\n\" http://localhost:3000/api/v1/admin/support/chat/queue)",
+      "Bash(gh pr create --title 'feat\\(support-chat\\): Complete Phase 3.2 - Live Chat Support' --body ' *)",
+      "Bash(gh pr *)",
+      "Bash(curl -s -X POST http://localhost:3000/api/v1/auth/register -H 'Content-Type: application/json' -d '{ *)",
+      "Bash(curl -I http://localhost:5173)",
+      "Bash(curl -s http://localhost:5173/)",
+      "Bash(find ./backend/src/modules/admin-* -type f -name \"*.ts\")",
+      "Bash(mkdir -p /Users/youssefhazem/.claude/plans)",
+      "Read(//Users/youssefhazem/.claude/plans/**)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3000/api/v1/health)",
+      "Bash(curl -s -f -o /dev/null http://localhost:3000/api/v1/health)"
     ]
   }
 }
