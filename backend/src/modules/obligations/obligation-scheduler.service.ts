@@ -18,19 +18,30 @@ export class ObligationSchedulerService implements OnModuleInit {
       await this.reminderQueue.removeRepeatableByKey(job.key);
     }
 
-    // Schedule a daily check at 8:00 AM
+    // Daily reminder pass at 06:00 UTC = 08:00 Cairo / 09:00 Riyadh / 10:00 Dubai.
     await this.reminderQueue.add(
       'check-reminders',
       {},
       {
-        repeat: {
-          cron: '0 8 * * *', // Every day at 8 AM
-        },
+        repeat: { cron: '0 6 * * *' },
         removeOnComplete: true,
         removeOnFail: false,
       },
     );
 
-    this.logger.log('Obligation reminder scheduler initialized (daily at 8:00 AM)');
+    // Weekly digest — every Monday 06:00 UTC.
+    await this.reminderQueue.add(
+      'weekly-digest',
+      {},
+      {
+        repeat: { cron: '0 6 * * 1' },
+        removeOnComplete: true,
+        removeOnFail: false,
+      },
+    );
+
+    this.logger.log(
+      'Obligation scheduler initialised: daily reminders 06:00 UTC, weekly digest Monday 06:00 UTC',
+    );
   }
 }

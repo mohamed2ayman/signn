@@ -19,6 +19,8 @@ from app.models.schemas import (
     ChatResponse,
     ClauseExtractionRequest,
     ClauseExtractionResponse,
+    ComplianceCheckRequest,
+    ComplianceCheckResponse,
     ConflictDetectionRequest,
     ConflictDetectionResponse,
     DiffRequest,
@@ -243,3 +245,23 @@ async def get_job_status(job_id: str) -> dict[str, Any]:
         return {"job_id": job_id, "status": "failed", "error": str(result.result)}
     else:
         return {"job_id": job_id, "status": result.state.lower()}
+
+
+# ---------------------------------------------------------------------------
+# Compliance Check (Phase 3.4)
+# ---------------------------------------------------------------------------
+
+@router.post(
+    "/compliance-check",
+    response_model=AsyncJobResponse,
+    summary="Run multi-layer compliance check (standard + jurisdiction + playbook)",
+)
+async def compliance_check(request: ComplianceCheckRequest) -> AsyncJobResponse:
+    """Dispatch a compliance-check task to the Celery worker."""
+    job_id = str(uuid.uuid4())
+    celery_app.send_task(
+        "tasks.run_compliance_check",
+        args=[request.model_dump()],
+        task_id=job_id,
+    )
+    return AsyncJobResponse(job_id=job_id, status="queued")

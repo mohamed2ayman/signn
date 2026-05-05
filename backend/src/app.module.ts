@@ -39,6 +39,7 @@ import { AdminOrganizationsModule } from './modules/admin-organizations/admin-or
 import { AdminBillingModule } from './modules/admin-billing/admin-billing.module';
 import { NegotiationModule } from './modules/negotiation/negotiation.module';
 import { AdminSecurityModule } from './modules/admin-security/admin-security.module';
+import { ComplianceModule } from './modules/compliance/compliance.module';
 import { dataSourceOptions } from './config/data-source';
 
 @Module({
@@ -99,6 +100,7 @@ import { dataSourceOptions } from './config/data-source';
     AdminBillingModule,
     NegotiationModule,
     AdminSecurityModule,
+    ComplianceModule,
   ],
 })
 export class AppModule {}

@@ -13,7 +13,25 @@ export { ContractVersion, ContractVersionEventType } from './contract-version.en
 export { ContractorResponse } from './contractor-response.entity';
 export { RiskAnalysis, RiskLevel, RiskAnalysisStatus } from './risk-analysis.entity';
 export { KnowledgeAsset, AssetType, AssetReviewStatus } from './knowledge-asset.entity';
-export { Obligation, ObligationStatus } from './obligation.entity';
+export { Obligation, ObligationStatus, ObligationType } from './obligation.entity';
+export { ComplianceCheck, ComplianceOverallStatus, ComplianceExtractionStatus } from './compliance-check.entity';
+export {
+  ComplianceFinding,
+  ComplianceFindingLayer,
+  ComplianceFindingType,
+  ComplianceFindingSeverity,
+  ComplianceFindingStatus,
+} from './compliance-finding.entity';
+export {
+  ObligationReminderLog,
+  ObligationReminderType,
+  ObligationReminderEmailStatus,
+} from './obligation-reminder-log.entity';
+export {
+  ComplianceReportJob,
+  ComplianceReportType,
+  ComplianceReportStatus,
+} from './compliance-report-job.entity';
 export { Notification, NotificationType } from './notification.entity';
 export { AuditLog } from './audit-log.entity';
 export { ContractComment } from './contract-comment.entity';
