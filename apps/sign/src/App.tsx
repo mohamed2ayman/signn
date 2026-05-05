@@ -60,6 +60,7 @@ import AdminSecuritySettingsPage from '@/pages/admin/AdminSecuritySettingsPage';
 import AdminSecurityDashboardPage from '@/pages/admin/AdminSecurityDashboardPage';
 import AdminSecurityAuditPage from '@/pages/admin/AdminSecurityAuditPage';
 import MySecurityPage from '@/pages/MySecurityPage';
+import ProjectObligationsPage from '@/pages/app/ProjectObligationsPage';
 
 // Guest Portal pages
 import ContractorDashboardPage from '@/pages/contractor/ContractorDashboardPage';
@@ -184,6 +185,7 @@ function App() {
         <Route path="projects/new" element={<ProjectCreationPage />} />
         <Route path="projects/:id" element={<ProjectDetailPage />} />
         <Route path="projects/:id/permissions" element={<ProjectPermissionsPage />} />
+        <Route path="projects/:id/obligations" element={<ProjectObligationsPage />} />
         <Route path="contracts/:id" element={<ContractDetailPage />} />
         <Route path="contracts/:id/review" element={<ClauseReviewPage />} />
         <Route path="clauses" element={<ClausesPage />} />

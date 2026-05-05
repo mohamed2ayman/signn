@@ -171,3 +171,23 @@ def run_extract_clauses(self, request_data: dict[str, Any]) -> dict[str, Any]:
         return {"status": "completed", "result": {"clauses": clauses}}
     except Exception as e:
         return {"status": "failed", "error": str(e)}
+
+
+@celery_app.task(name="tasks.run_compliance_check", bind=True)
+def run_compliance_check(self, request_data: dict[str, Any]) -> dict[str, Any]:
+    """Multi-layer compliance check (Phase 3.4)."""
+    from app.agents.compliance_checker import ComplianceCheckerAgent
+
+    agent = ComplianceCheckerAgent()
+    try:
+        result = agent.check(
+            contract_type=request_data.get("contract_type"),
+            jurisdiction=request_data.get("jurisdiction"),
+            clauses=request_data["clauses"],
+            standard_knowledge=request_data.get("standard_knowledge"),
+            jurisdiction_knowledge=request_data.get("jurisdiction_knowledge"),
+            playbook_knowledge=request_data.get("playbook_knowledge"),
+        )
+        return {"status": "completed", "result": result}
+    except Exception as e:
+        return {"status": "failed", "error": str(e)}

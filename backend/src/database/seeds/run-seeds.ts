@@ -1,6 +1,7 @@
 import 'reflect-metadata';
 import dataSource from '../../config/data-source';
 import { seedAdminUsers } from './admin-users.seed';
+import { seedComplianceKnowledge } from './compliance-knowledge.seed';
 
 /**
  * Seed runner — invoked after `migration:run` so the well-known admin
@@ -12,6 +13,7 @@ async function main() {
   await dataSource.initialize();
   try {
     await seedAdminUsers(dataSource);
+    await seedComplianceKnowledge(dataSource);
     console.log('[seed] All seeds completed.');
   } finally {
     await dataSource.destroy();

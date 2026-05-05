@@ -160,6 +160,29 @@ export class AiService {
     return response.data;
   }
 
+  // ─── Compliance Check (Phase 3.4) ──────────────────────────
+
+  async triggerComplianceCheck(data: {
+    contract_id: string;
+    contract_type?: string | null;
+    jurisdiction?: string | null;
+    clauses: Array<{
+      id: string;
+      text: string;
+      clause_ref?: string | null;
+      document_label?: string | null;
+    }>;
+    standard_knowledge?: string | null;
+    jurisdiction_knowledge?: string | null;
+    playbook_knowledge?: string | null;
+  }): Promise<{ job_id: string; status: string }> {
+    const response = await firstValueFrom(
+      this.httpService.post(`${this.aiBackendUrl}/agents/compliance-check`, data),
+    );
+    this.logger.log(`Compliance check dispatched: job_id=${response.data.job_id}`);
+    return response.data;
+  }
+
   // ─── Job Status ────────────────────────────────────────────
 
   async getJobStatus(jobId: string): Promise<Record<string, any>> {

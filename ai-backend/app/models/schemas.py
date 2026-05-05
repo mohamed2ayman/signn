@@ -387,3 +387,51 @@ class AsyncJobResponse(BaseModel):
 
     job_id: str = Field(..., description="Celery task ID for polling status.")
     status: str = Field(default="queued", description="Initial job status.")
+
+
+# ---------------------------------------------------------------------------
+# Compliance Check (Phase 3.4)
+# ---------------------------------------------------------------------------
+
+class ComplianceCheckRequest(BaseModel):
+    """Request body for the compliance-check agent."""
+
+    contract_id: str = Field(..., description="UUID of the contract.")
+    contract_type: Optional[str] = Field(
+        None, description="Contract standard form (e.g. FIDIC_RED_BOOK_2017)."
+    )
+    jurisdiction: Optional[str] = Field(
+        None, description="ISO-2 country code or 'INTL'."
+    )
+    clauses: list[dict[str, Any]] = Field(
+        ..., description="Contract clauses (id, text, optional clause_ref, document_label)."
+    )
+    standard_knowledge: Optional[str] = Field(
+        None, description="Concatenated text from STANDARD-tagged knowledge assets."
+    )
+    jurisdiction_knowledge: Optional[str] = Field(
+        None, description="Concatenated text from MANDATORY_LAW / CONFLICT_GUIDE assets for the jurisdiction."
+    )
+    playbook_knowledge: Optional[str] = Field(
+        None, description="Concatenated text from organisation PLAYBOOK assets."
+    )
+
+
+class ComplianceFindingItem(BaseModel):
+    """One finding produced by the compliance checker."""
+
+    layer: str = Field(..., description="STANDARD | JURISDICTION | PLAYBOOK | CONFLICT")
+    clause_ref: Optional[str] = None
+    finding_type: str = Field(..., description="MISSING_CLAUSE | DEVIATION | CONFLICT | JURISDICTION_OVERRIDE | PLAYBOOK_DEVIATION")
+    severity: str = Field(..., description="CRITICAL | HIGH | MEDIUM | LOW | INFO")
+    requirement: str
+    actual_text: Optional[str] = None
+    recommendation: Optional[str] = None
+    knowledge_asset_ref: Optional[str] = None
+
+
+class ComplianceCheckResponse(BaseModel):
+    """Response from the compliance checker."""
+
+    findings: list[ComplianceFindingItem] = Field(default_factory=list)
+    summary: dict[str, Any] = Field(default_factory=dict)
