@@ -542,3 +542,61 @@ Platform-wide security posture management. **All endpoints SYSTEM_ADMIN-only via
 **Hard escape hatch**: `IpFilterService.check()` always allows loopback / private addresses when `NODE_ENV !== 'production'`. Never remove this — it's the only thing keeping a misconfigured blocklist from locking developers out of the docker stack.
 
 **Atomic vs fire-and-forget audit writes**: use `SecurityEventService.recordAtomic(input, work)` only when the audit row MUST exist with the action (e.g. inside a critical state transition). Use `record(input)` for everything else — it logs but never throws.
+
+### Phase 3.4 — Compliance Monitoring (shipped)
+Five-layer compliance pipeline that uses the entire Knowledge Base — both SIGN platform assets and the user's organisation assets — as the brain behind every contract check.
+
+**Database (4 new tables)**: `compliance_checks`, `compliance_findings`, `obligation_reminder_logs`, `compliance_report_jobs`. Plus 13 new fields on the existing `obligations` table (`project_id`, `compliance_check_id`, `obligation_type`, `clause_ref`, `duration`, `timeframe_description`, `amount`, `currency`, `is_critical`, `next_reminder_date`, `last_reminder_sent_at`, `mark_met_token`, `mark_met_token_expires_at`) and the new `MET` / `WAIVED` status values. Plus `users.email_digest_opt_out`. Migration is idempotent (`ADD COLUMN IF NOT EXISTS`, `ALTER TYPE … ADD VALUE IF NOT EXISTS`).
+
+**Strategic decisions — never violate**:
+1. **Reuse the existing `obligations` table — do not fork.** All compliance-aware fields are columns on `obligations`, not a parallel `contract_obligations` table. Single source of truth for everything obligation-related.
+2. **Use the existing `ContractType` enum as the standard.** ComplianceCheck stores `contract_type: string` (a ContractType value) — do not create a parallel "standard" enum.
+3. **Knowledge taxonomy = tags, not enum values.** `type:PLAYBOOK` / `type:MANDATORY_LAW` / `type:CONFLICT_GUIDE` / `jurisdiction:EG` / `standard:FIDIC_RED_BOOK_2017` are all tag strings inside the existing `KnowledgeAsset.tags` jsonb. No new `AssetType` enum values.
+4. **Layers 1-3 run as ONE Claude call** with all knowledge context. Avoids 3× token cost and gives Claude cross-layer awareness. The compliance agent (`ai-backend/app/agents/compliance_checker.py`) returns findings already partitioned by `layer`.
+5. **Layer 4 (obligation extraction) reuses the existing obligations extractor agent** — chains after the compliance agent completes.
+
+**Module**: `backend/src/modules/compliance/`
+- 8 services: `ComplianceService` (orchestrator), `ComplianceKnowledgeService` (tag-driven KA queries → 3 partitioned context buckets), `ComplianceObligationService` (bulk-creates Obligation rows from extractor with `is_critical` heuristics), `ComplianceFindingService`, `ComplianceReportService`, `PdfReportService` (pdfmake-based with watermark + permissions), `ObligationTokenService` (HMAC mark-as-met tokens), `IcalExportService` (`ical-generator`)
+- 4 controllers: `ComplianceController` (`/contracts/:id/compliance-checks/*` — auth'd), `ComplianceObligationsController` (`/contracts/:id/obligations`, `/projects/:id/obligations` — auth'd), `ComplianceReportDownloadController` (`/compliance/reports/download` — token-gated, no JWT), `PublicObligationController` (`/public/obligations/mark-met` — token-gated, no JWT, **separate `/public/` prefix** to avoid collision with the existing `/obligations/:id` route)
+- BullMQ queue `compliance-jobs` for async report rendering
+
+**Reminder engine** (extends the existing `obligation-reminders` queue):
+- Multi-tier cadence: DAYS_30 / DAYS_14 / DAYS_7 / DAYS_1 / DUE_TODAY / OVERDUE
+- Dedup via `obligation_reminder_logs` per `(obligation_id, reminder_type)` so each tier fires at most once
+- New `weekly-digest` repeatable cron Mondays 06:00 UTC; honours `users.email_digest_opt_out`
+- Daily reminder cron shifted to 06:00 UTC = 08:00 Cairo / 09:00 Riyadh / 10:00 Dubai
+- Each reminder email contains a one-click "Mark as Met" button with an HMAC-signed token (`ObligationTokenService.issue`); single-use, 7-day expiry
+
+**Global Report Standards (every PDF)**:
+- pdfmake renderer with random discarded `ownerPassword` and `permissions: { printing: 'highResolution', modifying: false, copying: false, annotating: false }` — file opens freely but cannot be edited or copied
+- Cover page (SIGN logo, report title, contract / project / org / jurisdiction / date / generated-by)
+- Confidentiality footer + page number on every page
+- Reports are **NEVER** downloaded directly from the browser — they are queued (`compliance-jobs` BullMQ), written to `/uploads/compliance-reports/<uuid>.pdf`, and emailed with an HMAC-signed download URL that expires in 24h
+- Three report types: `COMPLIANCE_SUMMARY`, `OBLIGATIONS_REPORT`, `JURISDICTION_CONFLICT`
+- Email subject format: `[SIGN] Your <Report Name> is ready — <Contract Name>`
+
+**AI integration**:
+- New Celery task `tasks.run_compliance_check` and FastAPI route `POST /agents/compliance-check`
+- New agent `compliance_checker.py` accepts `(contract_type, jurisdiction, clauses, standard_knowledge, jurisdiction_knowledge, playbook_knowledge)` and returns `{findings: [...], summary: {...}}`. The 3 knowledge sections are passed as separate fields so the prompt can reason layer-by-layer.
+
+**Knowledge base seed** (`compliance-knowledge.seed.ts`, idempotent): 9 SIGN-platform assets (`organization_id IS NULL`, `review_status = AUTO_APPROVED`, `source = 'PLATFORM_SEED'`):
+1. FIDIC Red Book 2017 reference
+2. FIDIC Yellow Book 2017 reference
+3. NEC4 ECC core clauses
+4. Egyptian Civil Code construction articles (incl. Art 651 decennial liability — overrides FIDIC limitation clauses)
+5. Egyptian Public Procurement Law 182/2018
+6. UAE Civil Code Muqawala (incl. Art 880 decennial liability)
+7. UK Housing Grants Construction Act
+8. FIDIC vs Egyptian law conflict guide
+9. FIDIC vs UAE law conflict guide
+
+`content` jsonb shape on each asset: `{ summary, articles: [{ ref, title, text, citation }] }` — structured so the AI receives parsed legal references, not opaque blobs.
+
+**Frontend**:
+- New tab "Compliance" on ContractDetailPage (`apps/sign/src/components/contracts/ComplianceTab.tsx`) — shows status badge, knowledge sources count, 3 "Email Report" buttons with confirmation dialog ("This report will be sent to <email>. Reports are sent by email for confidentiality purposes."), 4 layer tabs, sortable findings table with severity coloring + per-row status, obligations panel grouped by responsible party with mark-as-met buttons and iCal export
+- New page `/app/projects/:id/obligations` (`ProjectObligationsPage.tsx`) — project-wide aggregation with summary cards (Total / Critical / Due This Week / Overdue / Met), filters (party / type / status), and timeline grouped by month
+- Polling: ComplianceTab uses `refetchInterval` while `overall_status === PENDING` or `obligation_extraction_status === RUNNING` so the user sees progress in real time
+
+**Frontend report request UX — never violate**: every "Email Report" button opens a confirmation dialog that says "Reports are sent by email for confidentiality purposes" — there is **no** browser download fallback. On confirm: `POST /contracts/:id/compliance-checks/:id/{report|conflict-report|obligations-report}` returns `{job_id, email}` and a toast confirms "Your report is being generated and will be sent to <email> within a few minutes."
+
+**Public mark-as-met flow**: email contains a button → `${BASE_URL}/api/v1/public/obligations/mark-met?token=<HMAC>` → no-auth controller verifies the HMAC, transitions status to `MET`, returns a small inline HTML confirmation page with a "View dashboard" link. Token includes `obligation_id`, `user_id`, `expires_at`, and a nonce; token verification is timing-safe.

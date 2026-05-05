@@ -19,6 +19,7 @@ import VersionSnapshotModal from '@/components/versions/VersionSnapshotModal';
 import ClaimsTab from '@/components/claims/ClaimsTab';
 import NoticesTab from '@/components/notices/NoticesTab';
 import SubContractsTab from '@/components/subcontracts/SubContractsTab';
+import ComplianceTab from '@/components/contracts/ComplianceTab';
 import { documentProcessingService } from '@/services/api/documentProcessingService';
 import { useDocumentProcessing } from '@/hooks/useDocumentProcessing';
 import ProcessingStatusCard from '@/components/common/ProcessingStatusCard';
@@ -238,6 +239,7 @@ const tabConfig = [
   { key: 'claims' as const, label: 'Claims', icon: 'M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z', activeOnly: true },
   { key: 'notices' as const, label: 'Notices', icon: 'M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0', activeOnly: true },
   { key: 'subcontracts' as const, label: 'Sub-Contracts', icon: 'M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z', activeOnly: true },
+  { key: 'compliance' as const, label: 'Compliance', icon: 'M9 12.75L11.25 15 15 9.75M21 12c0 1.268-.63 2.39-1.593 3.068a3.745 3.745 0 01-1.043 3.296 3.745 3.745 0 01-3.296 1.043A3.745 3.745 0 0112 21c-1.268 0-2.39-.63-3.068-1.593a3.746 3.746 0 01-3.296-1.043 3.745 3.745 0 01-1.043-3.296A3.745 3.745 0 013 12c0-1.268.63-2.39 1.593-3.068a3.745 3.745 0 011.043-3.296 3.746 3.746 0 013.296-1.043A3.746 3.746 0 0112 3c1.268 0 2.39.63 3.068 1.593a3.746 3.746 0 013.296 1.043 3.746 3.746 0 011.043 3.296A3.745 3.745 0 0121 12z' },
   { key: 'history' as const, label: 'History', icon: 'M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z' },
   { key: 'approvals' as const, label: 'Approvals', icon: 'M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z' },
 ];
@@ -253,7 +255,7 @@ export default function ContractDetailPage() {
   const [risks, setRisks] = useState<RiskAnalysis[]>([]);
   const [availableClauses, setAvailableClauses] = useState<Clause[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'clauses' | 'comments' | 'risks' | 'claims' | 'notices' | 'subcontracts' | 'history' | 'approvals'>('clauses');
+  const [activeTab, setActiveTab] = useState<'clauses' | 'comments' | 'risks' | 'claims' | 'notices' | 'subcontracts' | 'compliance' | 'history' | 'approvals'>('clauses');
   const [diffPair, setDiffPair] = useState<{ a: string; b: string } | null>(null);
   const [snapshotVersion, setSnapshotVersion] = useState<ContractVersion | null>(null);
   const [showAddClause, setShowAddClause] = useState(false);
@@ -1682,6 +1684,15 @@ export default function ContractDetailPage() {
         <div className="rounded-xl border border-gray-200/80 bg-white p-6 shadow-card">
           <SubContractsTab contractId={contract.id} contractName={contract.name} />
         </div>
+      )}
+
+      {/* ── Compliance Tab ──────────────────────────────────────── */}
+      {activeTab === 'compliance' && (
+        <ComplianceTab
+          contractId={contract.id}
+          contractName={contract.name}
+          userEmail={currentUser?.email ?? ''}
+        />
       )}
 
       {/* ── History Tab ──────────────────────────────────────────── */}
