@@ -45,6 +45,7 @@ export default function ComplianceTab({ contractId, contractName, userEmail }: P
     refetchInterval: (q) => {
       const data = q.state.data as ComplianceCheck | undefined;
       if (!data) return false;
+      if (data.overall_status === 'FAILED') return false;
       const stillRunning =
         data.overall_status === 'PENDING' ||
         data.obligation_extraction_status === 'PENDING' ||
@@ -158,9 +159,10 @@ export default function ComplianceTab({ contractId, contractName, userEmail }: P
             </div>
 
             {/* Progress (when running) */}
-            {(check.overall_status === 'PENDING' ||
-              check.obligation_extraction_status === 'RUNNING' ||
-              check.obligation_extraction_status === 'PENDING') && (
+            {check.overall_status !== 'FAILED' &&
+              (check.overall_status === 'PENDING' ||
+                check.obligation_extraction_status === 'RUNNING' ||
+                check.obligation_extraction_status === 'PENDING') && (
               <ProgressBar check={check} />
             )}
 
