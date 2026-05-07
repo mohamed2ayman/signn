@@ -184,8 +184,12 @@ export class AdminHealthService {
       });
       await s3.send(new HeadBucketCommand({ Bucket: bucket }));
       return { status: 'up' };
-    } catch {
-      return { status: 'down' };
+    } catch (error) {
+      this.logger.warn(
+        `[checkS3] S3 health check failed: ${(error as Error).message}`,
+        (error as Error).stack,
+      );
+      return { status: 'down', error: (error as Error).message };
     }
   }
 }

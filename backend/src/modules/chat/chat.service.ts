@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ChatSession, ChatMessage, ChatMessageRole } from '../../database/entities';
@@ -6,6 +6,8 @@ import { AiService } from '../ai/ai.service';
 
 @Injectable()
 export class ChatService {
+  private readonly logger = new Logger(ChatService.name);
+
   constructor(
     @InjectRepository(ChatSession)
     private readonly sessionRepo: Repository<ChatSession>,
@@ -125,7 +127,11 @@ export class ChatService {
           aiContent = 'The response is still being generated. Please try again in a moment.';
         }
       }
-    } catch {
+    } catch (error) {
+      this.logger.error(
+        `[AI chat] Claude API call failed for session ${sessionId}: ${(error as Error).message}`,
+        (error as Error).stack,
+      );
       aiContent = 'I encountered an error processing your request. Please try again.';
     }
 

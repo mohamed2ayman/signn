@@ -252,7 +252,10 @@ export class OperationsReviewService {
           ? parsed.confidence_threshold
           : DEFAULT_THRESHOLD;
       return { threshold };
-    } catch {
+    } catch (error) {
+      this.logger.warn(
+        `[getConfidenceThreshold] Failed to read confidence threshold config, using default ${DEFAULT_THRESHOLD}: ${(error as Error).message}`,
+      );
       return { threshold: DEFAULT_THRESHOLD };
     }
   }

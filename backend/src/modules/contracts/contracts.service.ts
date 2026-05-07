@@ -432,7 +432,10 @@ export class ContractsService {
     try {
       const user = await this.userRepository.findOne({ where: { id: userId } });
       return user?.job_title || null;
-    } catch {
+    } catch (error) {
+      this.logger.warn(
+        `[getUserJobTitle] Failed to fetch job title for user ${userId}: ${(error as Error).message}`,
+      );
       return null;
     }
   }

@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Logger,
   NotFoundException,
   ForbiddenException,
   ConflictException,
@@ -22,6 +23,8 @@ import { UpdateMemberPermissionDto } from './dto/update-member-permission.dto';
 
 @Injectable()
 export class ProjectsService {
+  private readonly logger = new Logger(ProjectsService.name);
+
   constructor(
     @InjectRepository(Project)
     private readonly projectRepository: Repository<Project>,
@@ -56,7 +59,11 @@ export class ProjectsService {
         where: { id, organization_id: orgId },
         relations: ['members', 'members.user', 'creator'],
       });
-    } catch {
+    } catch (error) {
+      this.logger.warn(
+        `[findOne] Primary query with relations failed for project ${id}, retrying without nested relations. Original error: ${(error as Error).message}`,
+        (error as Error).stack,
+      );
       // Relation loading failed — retry without nested relations
       project = await this.projectRepository.findOne({
         where: { id, organization_id: orgId },
