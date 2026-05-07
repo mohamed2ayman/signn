@@ -104,6 +104,10 @@ export class DocumentProcessingService {
       doc.processing_job_id = result.job_id;
       await this.documentUploadRepository.save(doc);
     } catch (error) {
+      this.logger.error(
+        `[startTextExtraction] Text extraction failed for document ${doc.id}: ${error.message}`,
+        error.stack,
+      );
       doc.processing_status = DocumentProcessingStatus.FAILED;
       doc.error_message = `Text extraction failed to start: ${error.message}`;
       await this.documentUploadRepository.save(doc);
@@ -373,6 +377,10 @@ export class DocumentProcessingService {
       doc.processing_job_id = result.job_id;
       await this.documentUploadRepository.save(doc);
     } catch (error) {
+      this.logger.error(
+        `[startClauseExtraction] Clause extraction failed for document ${doc.id}: ${error.message}`,
+        error.stack,
+      );
       doc.processing_status = DocumentProcessingStatus.FAILED;
       doc.error_message = `Clause extraction failed to start: ${error.message}`;
       await this.documentUploadRepository.save(doc);
