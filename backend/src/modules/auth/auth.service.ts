@@ -185,6 +185,12 @@ export class AuthService {
       this.logger.error(
         `_finalizeLogin failed for user ${input.user.id}: ${(err as Error).message}`,
       );
+      this.logger.error(
+        `[_finalizeLogin] Device tracking and security logging failed completely for user. Login succeeded but security telemetry is degraded. Error: ${(err as Error).message}`,
+        (err as Error).stack,
+      );
+      // NOTE: Do NOT rethrow — login must never fail due to tracking failures.
+      // If this catch fires frequently, investigate session/device tracking services.
     }
   }
 
@@ -229,8 +235,11 @@ export class AuthService {
         ip_address: input.ip,
         metadata: { email: input.email, user_agent: input.user_agent },
       });
-    } catch {
-      // ignore
+    } catch (error) {
+      this.logger.warn(
+        `[login] Failed to record failed-login security event: ${(error as Error).message}`,
+        (error as Error).stack,
+      );
     }
   }
 
