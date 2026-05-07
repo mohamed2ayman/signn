@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  Logger,
   Post,
   Body,
   Param,
@@ -20,6 +21,8 @@ import { InitiateSignatureDto } from './dto/initiate-signature.dto';
 @Controller('contracts')
 @UseGuards(JwtAuthGuard, RolesGuard, PermissionLevelGuard)
 export class DocuSignController {
+  private readonly logger = new Logger(DocuSignController.name);
+
   constructor(private readonly docusignService: DocuSignService) {}
 
   @Post(':id/initiate-signature')
@@ -66,7 +69,11 @@ export class DocuSignController {
         returnUrl || url,
       );
       return { signingUrl };
-    } catch {
+    } catch (error) {
+      this.logger.warn(
+        `[getSigningUrl] DocuSign API call failed for contract ${contractId}. Returning null signingUrl. This may indicate DocuSign is down or credentials are invalid. Error: ${(error as Error).message}`,
+        (error as Error).stack,
+      );
       return { signingUrl: null, message: 'You are not a pending signer' };
     }
   }
