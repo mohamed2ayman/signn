@@ -73,12 +73,13 @@ ai-backend/    → FastAPI + Celery AI service (localhost:8000)
 ## Seed Users (always exist after migration:run)
 | Email | Password | Role |
 |-------|----------|------|
-| youssef141162@gmail.com | Youssef@1997 | OWNER_ADMIN |
+| youssef141162@gmail.com | Youssef@1997 | SYSTEM_ADMIN |
 | admin@sign.com | Admin@Sign2026 | SYSTEM_ADMIN |
 | mohameddaaymande@gmail.com | (set manually) | SYSTEM_ADMIN |
 
-> Note: mohameddaaymande@gmail.com is not auto-seeded — role must be set manually in DB if lost:
-> `UPDATE users SET role = 'SYSTEM_ADMIN' WHERE email = 'mohameddaaymande@gmail.com';`
+> All 3 users are SYSTEM_ADMIN — full platform access including /admin/* portal.
+> Seed uses ON CONFLICT DO NOTHING — existing users are never overwritten.
+> mohameddaaymande@gmail.com is NOT in the seed — set role manually if lost.
 
 ---
 
