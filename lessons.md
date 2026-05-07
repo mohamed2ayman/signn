@@ -42,6 +42,7 @@
 27. Clause Extraction — مادة (N) prefix appearing in clause content
 28. Docker — Backend not rebuilt after colleague adds npm packages
 29. Security — Secrets Audit Before AWS Deployment
+30. Frontend — Hardcoded localhost:5174 CENVOX backlinks in SIGN layouts
 
 ---
 
@@ -1048,6 +1049,24 @@
 - Run secrets audit before every major deployment
 - Never hardcode passwords in seed files
 - Always check .gitignore covers all env and certificate patterns
+
+---
+
+## 30. Frontend — Hardcoded localhost:5174 CENVOX backlinks in SIGN layouts
+
+**Problem:**
+- 4 navigation links in SIGN hardcode localhost:5174 (CENVOX landing page URL)
+- Files: AuthLayout.tsx (lines 35, 60), AdminLayout.tsx (line 337), TopBar.tsx (line 57)
+- These are the "← CENVOX" and "Powered by CENVOX" attribution links required by brand rules
+
+**Fix:**
+- Replace all 4 with: `import.meta.env.VITE_CENVOX_URL || 'http://localhost:5174'`
+- Add `VITE_CENVOX_URL=http://localhost:5174` to apps/sign/.env and apps/sign/.env.example
+
+**Scheduled:** Phase 1.2
+
+**How to Avoid:**
+- Any cross-app URL should always use an env var, never a hardcoded localhost
 
 ---
 
