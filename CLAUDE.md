@@ -1,7 +1,7 @@
 # CLAUDE.md — Project Intelligence File
 > Read this entire file at the start of every Claude Code session before touching any code.
 > This file is the single source of truth for all architectural decisions, rules, and context.
-> Last updated: 2026-04-28 (Added: Arabic document processing, document priority system, clause extraction architecture, Celery rules)
+> Last updated: 2026-05-07 (Added: Security section — gitignore audit, seed passwords, pre-AWS checklist)
 
 ---
 
@@ -502,6 +502,15 @@ All work is local development only.
 | 10 | currentUser always null after page refresh | Add `refreshUserProfile()` in `useEffect` on mount in AppLayout and AdminLayout | Always test permission features after page refresh not just fresh login |
 | 11 | Portal chooser bypassed for existing sessions | Use `sessionStorage` flag `portal-chosen` in AdminLayout redirect check | Never put role-based redirect logic only in LoginPage |
 | 12 | مادة (N) prefix appearing in extracted clause content | `_strip_article_prefix()` called in `_parse_json()` on every clause | clause_number field stores the number — never repeat it in content |
+
+---
+
+## Security
+- .env.staging and .env.production are gitignored
+- Per-service .gitignore files exist in all 4 service folders
+- Seed passwords read from SEED_ADMIN_PASSWORD_1/2/3 env vars
+- DB fallback credentials in data-source.ts and settings.py → cleanup before AWS deployment
+- docker-compose.prod.yml needed before AWS deployment → reads DB password from env vars
 
 ---
 

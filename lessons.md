@@ -1,7 +1,7 @@
 # lessons.md — SIGN + CENVOX Platform
 > This file documents every bug, issue, and fix that took significant time to resolve.
 > Feed this file to Claude at the start of every session to avoid repeating mistakes.
-> Last updated: 2026-05-02
+> Last updated: 2026-05-07
 
 ---
 
@@ -41,6 +41,7 @@
 26. GitHub — Mac osxkeychain interfering with token
 27. Clause Extraction — مادة (N) prefix appearing in clause content
 28. Docker — Backend not rebuilt after colleague adds npm packages
+29. Security — Secrets Audit Before AWS Deployment
 
 ---
 
@@ -1025,6 +1026,31 @@
 
 ---
 
+## 29. Security — Secrets Audit Before AWS Deployment
+
+**What was found:**
+- Root .gitignore was missing .env.staging, .env.production, *.pem, *.key, *.p12, *.pfx
+- No per-service .gitignore files existed in backend/, ai-backend/, apps/sign/, apps/cenvox/
+- 3 seed passwords were hardcoded in admin-users.seed.ts
+- DB fallback credentials hardcoded in data-source.ts and settings.py (low priority)
+
+**What was fixed:**
+- Root .gitignore patched with 6 missing patterns
+- 4 per-service .gitignore files created
+- Seed passwords moved to SEED_ADMIN_PASSWORD_* env vars
+- Committed: 405058e
+
+**Still pending (before AWS only):**
+- Remove DB fallback credentials in data-source.ts and settings.py
+- Create docker-compose.prod.yml
+
+**How to avoid:**
+- Run secrets audit before every major deployment
+- Never hardcode passwords in seed files
+- Always check .gitignore covers all env and certificate patterns
+
+---
+
 ## 📝 Template for New Lessons
 
 ```
@@ -1051,5 +1077,5 @@
 
 ---
 
-*Last updated: 2026-05-02*
+*Last updated: 2026-05-07*
 *Feed this file to Claude at the start of every new session*
