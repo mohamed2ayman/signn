@@ -357,8 +357,11 @@ export class SubscriptionsService {
           planName = plan.name;
           if (!obj.currency) currency = plan.currency;
         }
-      } catch {
-        // ignore
+      } catch (error) {
+        this.logger.error(
+          `[webhook] Failed to parse Paymob webhook payload. Raw body may be malformed. Error: ${(error as Error).message}`,
+          (error as Error).stack,
+        );
       }
     }
 
@@ -374,9 +377,17 @@ export class SubscriptionsService {
         );
       } catch (error) {
         this.logger.error(
-          `Failed to activate subscription for org ${orgId}`,
-          error,
+          `[webhook] CRITICAL: Subscription activation failed for org ${orgId} after successful Paymob payment. User has been charged but will not have access. Manual intervention required. Error: ${(error as Error).message}`,
+          (error as Error).stack,
         );
+        // TODO(1.6): Cannot rethrow here — Paymob retries on non-200 responses
+        // which risks double-activation. This needs a proper fix that includes:
+        // 1) Idempotency check before activation (verify not already active)
+        // 2) DB flag/transaction log to track webhook processing state
+        // 3) Admin alert/notification when activation fails after payment
+        // 4) Only return non-200 to Paymob after idempotency is confirmed safe
+        // Blocked on: Paymob test API keys not yet configured in .env
+        // See NEXT_PHASES.md task 1.6 for full specification
       }
     }
 
