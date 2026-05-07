@@ -515,6 +515,49 @@ All work is local development only.
 
 ---
 
+## Phase 1 — Critical Bug Fixes (In Progress)
+
+### Phase 1.1 — Fix Wrong API URL (shipped)
+- Fixed socketService.ts: was connecting to localhost:3001 (wrong port). Now uses `VITE_SOCKET_URL || localhost:3000`
+- Fixed supportSocketService.ts: had fragile double `.replace()` chain. Now uses `VITE_SOCKET_URL || localhost:3000`
+- Fixed apps/cenvox/src/App.tsx: SIGN_URL was a bare hardcoded string. Now uses `VITE_SIGN_APP_URL` env var with fallback
+- Created apps/cenvox/.env.example with VITE_SIGN_APP_URL documented
+- Fixed orphaned clauses bug in document-processing `reprocess()` — now cleans up old clauses before reprocessing a document
+- Flagged: 4 localhost:5174 CENVOX backlinks remain in SIGN layouts (AuthLayout.tsx ×2, AdminLayout.tsx, TopBar.tsx) — scheduled for Phase 1.2 fix
+- Lesson #30 added to lessons.md
+
+### Phase 1.2 — Fix Seed Role Mismatch (shipped)
+- Root cause was wrong documentation, not wrong code
+- Seed script was already correct: youssef seeded as SYSTEM_ADMIN
+- CLAUDE.md seed table was wrong: showed OWNER_ADMIN
+- Fixed: updated CLAUDE.md seed table to show correct SYSTEM_ADMIN role
+- Updated seed note to document ON CONFLICT DO NOTHING idempotency behavior
+- No seed script changes, no database changes
+
+### Phase 1.3 — Complete DocuSign Flow (skipped)
+- Owner: Youssef
+- Blocked: requires DocuSign sandbox credentials
+- Status: postponed until Youssef sets up DocuSign sandbox
+
+### Phase 1.4 — Fix Silent try/catch Blocks (shipped)
+- Full audit of all 62 catch blocks across 32 files in 20 modules
+- 9 blocks were already correctly implemented — left untouched
+- 12 blocks fixed across 9 files in 6 commits
+- 41 blocks are intentional design (health checks, best-effort audit, WebSocket auth, version snapshots, email fallbacks) — left untouched
+- Zero cron jobs found in the entire backend
+- Key fixes: auth login security events, Paymob webhook parser, document extraction failures, DocuSign getSigningUrl, AI chat fallback, project findOne silent retry
+- CRITICAL: #59 subscriptions activateSubscription — added detailed TODO(1.6) comment. User can pay and never get access. Needs idempotency fix before proper error handling. Blocked on Paymob test keys.
+- Backend rebuilt with zero TypeScript errors after all fixes
+- One smart deviation: `doc.id` used instead of `docId` in extraction methods (doc: DocumentUpload parameter, not a string id)
+
+**Hard rules added from Phase 1.4 audit — never violate:**
+- `audit-log.interceptor.ts` catch block is INTENTIONALLY silent — if rethrown it breaks every request in the system. Never add rethrow here.
+- `admin-health` service catch blocks must return `{status:'down'}`, never throw
+- `contracts` version snapshot catch blocks are best-effort — rethrowing would break contract mutations for a non-critical side effect
+- Bull queue processor catch blocks: log only, no rethrow — Bull handles its own retries
+
+---
+
 ## Phase 3 — Recently Shipped
 
 ### Phase 3.1 — Microsoft Word Add-in (shipped)

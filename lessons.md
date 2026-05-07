@@ -42,7 +42,9 @@
 27. Clause Extraction — مادة (N) prefix appearing in clause content
 28. Docker — Backend not rebuilt after colleague adds npm packages
 29. Security — Secrets Audit Before AWS Deployment
-30. Frontend — Hardcoded localhost:5174 CENVOX backlinks in SIGN layouts
+30. Frontend — Hardcoded localhost:5174 CENVOX Backlinks in SIGN Layouts
+31. Backend — Silent Catch Blocks Masking Critical Failures
+32. Backend — Paymob Webhook Activation Needs Idempotency Before Fix
 
 ---
 
@@ -1052,21 +1054,77 @@
 
 ---
 
-## 30. Frontend — Hardcoded localhost:5174 CENVOX backlinks in SIGN layouts
+## 30. Frontend — Hardcoded localhost:5174 CENVOX Backlinks in SIGN Layouts
 
 **Problem:**
 - 4 navigation links in SIGN hardcode localhost:5174 (CENVOX landing page URL)
 - Files: AuthLayout.tsx (lines 35, 60), AdminLayout.tsx (line 337), TopBar.tsx (line 57)
-- These are the "← CENVOX" and "Powered by CENVOX" attribution links required by brand rules
+- These are the CENVOX attribution links required by brand rules in CLAUDE.md
+
+**Root Cause:**
+- Cross-app URLs were hardcoded instead of using env vars
 
 **Fix:**
 - Replace all 4 with: `import.meta.env.VITE_CENVOX_URL || 'http://localhost:5174'`
-- Add `VITE_CENVOX_URL=http://localhost:5174` to apps/sign/.env and apps/sign/.env.example
-
-**Scheduled:** Phase 1.2
+- Add `VITE_CENVOX_URL=http://localhost:5174` to apps/sign/.env and .env.example
+- Scheduled for Phase 1.2 (the localhost fix pass)
 
 **How to Avoid:**
-- Any cross-app URL should always use an env var, never a hardcoded localhost
+- Any URL pointing to another app must always use an env var, never hardcoded
+
+---
+
+## 31. Backend — Silent Catch Blocks Masking Critical Failures
+
+**Problem:**
+- 12 catch blocks across the backend were swallowing errors silently
+- Most critical: Paymob webhook activation failure returning 200 silently (user charged, never activated — zero visibility)
+- Document extraction failures saved FAILED status to DB but no log entry
+- DocuSign getSigningUrl failures returned misleading "not a pending signer" message when the real cause was DocuSign API being down
+
+**Root Cause:**
+- No standardised error logging pattern enforced across modules
+- Some blocks were copy-pasted without adding Logger
+
+**Fix:**
+- Added NestJS Logger.error/warn to all 12 silent blocks
+- Pattern: `logger.error('[MethodName] context: ${error.message}', error.stack)`
+- Non-critical catches (health checks, email fallbacks, snapshots): logger only
+- Critical catches: logger + rethrow
+- Cron/Bull processor catches: logger only, never rethrow
+
+**How to Avoid:**
+- Every catch block must have at minimum a logger.warn call
+- Run this after every new module to catch empty blocks early:
+  `grep -rn -A2 "} catch" backend/src --include="*.ts" | grep -v "logger\|Logger\|throw\|//\|return"`
+- Never use console.log in catch blocks — always NestJS Logger
+
+---
+
+## 32. Backend — Paymob Webhook Activation Needs Idempotency Before Fix
+
+**Problem:**
+- subscriptions.service.ts activateSubscription() fails silently inside webhook
+- User is charged but subscription never activated
+- Cannot simply rethrow — Paymob retries on non-200 responses which would cause double-activation
+
+**Root Cause:**
+- No idempotency check before activation
+- No DB flag to track webhook processing state
+
+**Temporary Fix (Phase 1.4):**
+- Added CRITICAL logger.error with full context
+- Added detailed TODO(1.6) comment explaining what needs to be done
+
+**Permanent Fix (Phase 1.6 — pending Paymob test keys):**
+- Add idempotency check before activation
+- Add DB flag/transaction log for webhook processing state
+- Add admin alert when activation fails after payment
+- Only return non-200 to Paymob after idempotency is confirmed safe
+
+**How to Avoid:**
+- Payment webhooks must always have idempotency before any state mutation
+- Never return 200 to a payment provider without confirming the action succeeded
 
 ---
 
