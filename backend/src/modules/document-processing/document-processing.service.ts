@@ -4,7 +4,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import {
   DocumentUpload,
   DocumentProcessingStatus,
@@ -482,6 +482,28 @@ export class DocumentProcessingService {
     if (!doc) {
       throw new NotFoundException('Document not found');
     }
+
+    // ── Cleanup: remove clauses from any previous extraction of this document ──
+    // Find all clause IDs that were extracted from this document upload.
+    const previousClauses = await this.clauseRepository.find({
+      where: { source_document_id: docId },
+      select: ['id'],
+    });
+
+    if (previousClauses.length > 0) {
+      const clauseIds = previousClauses.map((c) => c.id);
+
+      // Delete contract_clauses join records first (FK references clauses.id).
+      await this.contractClauseRepository.delete({ clause_id: In(clauseIds) });
+
+      // Then delete the clause records themselves.
+      await this.clauseRepository.delete({ source_document_id: docId });
+
+      this.logger.log(
+        `reprocess: cleaned up ${previousClauses.length} old clauses for document ${docId}`,
+      );
+    }
+    // ─────────────────────────────────────────────────────────────────────────
 
     doc.processing_status = DocumentProcessingStatus.UPLOADED;
     doc.error_message = null;
