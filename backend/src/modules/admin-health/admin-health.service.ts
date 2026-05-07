@@ -189,7 +189,7 @@ export class AdminHealthService {
         `[checkS3] S3 health check failed: ${(error as Error).message}`,
         (error as Error).stack,
       );
-      return { status: 'down', error: (error as Error).message };
+      return { status: 'down' };
     }
   }
 }
