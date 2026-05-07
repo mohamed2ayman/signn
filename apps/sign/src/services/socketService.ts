@@ -2,7 +2,7 @@ import { io, Socket } from 'socket.io-client';
 import { store } from '@/store';
 
 const SOCKET_URL =
-  (import.meta.env.VITE_API_URL || 'http://localhost:3001').replace('/api', '');
+  import.meta.env.VITE_SOCKET_URL || 'http://localhost:3000';
 
 let socket: Socket | null = null;
 

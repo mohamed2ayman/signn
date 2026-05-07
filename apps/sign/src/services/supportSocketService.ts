@@ -9,9 +9,8 @@ import { store } from '@/store';
  * this file mirrors its lifecycle but maintains its own connection.
  */
 
-const SOCKET_URL = (
-  import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1'
-).replace(/\/api\/v1\/?$/, '').replace(/\/api\/?$/, '');
+const SOCKET_URL =
+  import.meta.env.VITE_SOCKET_URL || 'http://localhost:3000';
 
 let socket: Socket | null = null;
 

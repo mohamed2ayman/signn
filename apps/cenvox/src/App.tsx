@@ -20,7 +20,7 @@ import OrbitalDiagram from './components/OrbitalDiagram';
    cursor: pointer is set on all interactive elements (see index.css)
    so hover states work alongside the custom cursor overlay.
    ═══════════════════════════════════════════════════════════════════ */
-const SIGN_URL = 'http://localhost:5173';
+const SIGN_URL = import.meta.env.VITE_SIGN_APP_URL || 'http://localhost:5173';
 const SIGN_LOGIN = SIGN_URL + '/auth/login';
 const SIGN_SIGNUP = SIGN_URL + '/auth/register';
 const SIGN_HOME = SIGN_URL + '/';
