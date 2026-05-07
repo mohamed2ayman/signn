@@ -30,21 +30,21 @@ interface AdminSeed {
 const ADMIN_USERS: AdminSeed[] = [
   {
     email: 'youssef141162@gmail.com',
-    password: 'Youssef@1997',
+    password: process.env.SEED_ADMIN_PASSWORD_1 || 'Youssef@1997',
     first_name: 'Youssef',
     last_name: 'Mabrouk',
     role: UserRole.SYSTEM_ADMIN,
   },
   {
     email: 'admin@sign.com',
-    password: 'Admin@Sign2026',
+    password: process.env.SEED_ADMIN_PASSWORD_2 || 'Admin@Sign2026',
     first_name: 'System',
     last_name: 'Admin',
     role: UserRole.SYSTEM_ADMIN,
   },
   {
     email: 'mohameddaaymande@gmail.com',
-    password: 'Mohamed@Sign2026',
+    password: process.env.SEED_ADMIN_PASSWORD_3 || 'Mohamed@Sign2026',
     first_name: 'Mohamed',
     last_name: 'Ayman',
     role: UserRole.SYSTEM_ADMIN,
