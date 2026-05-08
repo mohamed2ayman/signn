@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import * as Joi from 'joi';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { BullModule } from '@nestjs/bull';
 import { AuthModule } from './modules/auth/auth.module';
@@ -47,6 +48,66 @@ import { dataSourceOptions } from './config/data-source';
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',
+      validationSchema: Joi.object({
+
+        // ── Core App ─────────────────────────────────────────────
+        NODE_ENV: Joi.string()
+          .valid('development', 'production', 'test')
+          .default('development'),
+        PORT: Joi.number().default(3000),
+
+        // ── Database ─────────────────────────────────────────────
+        DATABASE_URL: Joi.string().required(),
+
+        // ── Auth ─────────────────────────────────────────────────
+        JWT_SECRET: Joi.string().min(16).required(),
+        JWT_EXPIRES_IN: Joi.string().default('7d'),
+        NESTJS_INTERNAL_TOKEN: Joi.string().required(),
+
+        // ── Redis ─────────────────────────────────────────────────
+        REDIS_URL: Joi.string().required(),
+
+        // ── Frontend ──────────────────────────────────────────────
+        FRONTEND_URL: Joi.string().uri().required(),
+
+        // ── AI Backend ───────────────────────────────────────────
+        AI_BACKEND_URL: Joi.string()
+          .uri()
+          .default('http://ai-backend:8000'),
+
+        // ── Anthropic AI (optional — AI features degrade gracefully)
+        ANTHROPIC_API_KEY: Joi.string().optional().allow(''),
+
+        // ── DocuSign (optional — blocked feature, no sandbox yet)
+        DOCUSIGN_INTEGRATION_KEY:     Joi.string().optional().allow(''),
+        DOCUSIGN_SECRET_KEY:          Joi.string().optional().allow(''),
+        DOCUSIGN_ACCOUNT_ID:          Joi.string().optional().allow(''),
+        DOCUSIGN_WEBHOOK_HMAC_SECRET: Joi.string().optional().allow(''),
+
+        // ── Paymob (optional — blocked feature, no test keys yet)
+        PAYMOB_API_KEY:        Joi.string().optional().allow(''),
+        PAYMOB_INTEGRATION_ID: Joi.string().optional().allow(''),
+        PAYMOB_IFRAME_ID:      Joi.string().optional().allow(''),
+        PAYMOB_HMAC_SECRET:    Joi.string().optional().allow(''),
+
+        // ── AWS / S3 (optional — not configured yet)
+        AWS_ACCESS_KEY_ID:     Joi.string().optional().allow(''),
+        AWS_SECRET_ACCESS_KEY: Joi.string().optional().allow(''),
+        AWS_REGION:            Joi.string().default('us-east-1'),
+        AWS_S3_BUCKET:         Joi.string().optional().allow(''),
+
+        // ── Email / SMTP (optional — not configured yet)
+        SMTP_HOST:        Joi.string().optional().allow(''),
+        SMTP_PORT:        Joi.number().optional(),
+        SMTP_USER:        Joi.string().optional().allow(''),
+        SMTP_PASS:        Joi.string().optional().allow(''),
+        SENDGRID_API_KEY: Joi.string().optional().allow(''),
+
+      }),
+      validationOptions: {
+        allowUnknown: true,   // allow extra vars not in schema
+        abortEarly: false,    // report ALL missing vars at once
+      },
     }),
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],

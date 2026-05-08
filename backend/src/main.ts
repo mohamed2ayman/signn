@@ -1,5 +1,5 @@
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { Logger, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import helmet from 'helmet';
@@ -48,6 +48,12 @@ async function bootstrap() {
   SwaggerModule.setup('api/docs', app, document);
 
   const port = configService.get<number>('PORT', 3000);
+
+  const logger = new Logger('Bootstrap');
+  logger.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+  logger.log(`Port: ${process.env.PORT || 3000}`);
+  logger.log('✅ All environment variables validated successfully');
+
   await app.listen(port);
   console.log(`SIGN Platform API running on port ${port}`);
 }
