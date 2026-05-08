@@ -9,6 +9,7 @@ import {
   ParseUUIDPipe,
   Query,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { PermissionLevelGuard } from '../../common/guards/permission-level.guard';
@@ -23,7 +24,10 @@ import { InitiateSignatureDto } from './dto/initiate-signature.dto';
 export class DocuSignController {
   private readonly logger = new Logger(DocuSignController.name);
 
-  constructor(private readonly docusignService: DocuSignService) {}
+  constructor(
+    private readonly docusignService: DocuSignService,
+    private readonly configService: ConfigService,
+  ) {}
 
   @Post(':id/initiate-signature')
   @RequirePermission(PermissionLevel.APPROVER)
@@ -34,7 +38,7 @@ export class DocuSignController {
     @Query('return_url') returnUrl?: string,
   ) {
     const frontendUrl =
-      returnUrl || `${process.env.FRONTEND_URL || 'http://localhost:5173'}/app/contracts/${contractId}?signed=true`;
+      returnUrl || `${this.configService.get<string>('FRONTEND_URL', 'http://localhost:5173')}/app/contracts/${contractId}?signed=true`;
 
     return this.docusignService.initiateSignature(
       contractId,
@@ -59,7 +63,7 @@ export class DocuSignController {
       return { signingUrl: null, message: 'No signature envelope found' };
     }
 
-    const url = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/app/contracts/${contractId}?signed=true`;
+    const url = `${this.configService.get<string>('FRONTEND_URL', 'http://localhost:5173')}/app/contracts/${contractId}?signed=true`;
 
     try {
       const signingUrl = await this.docusignService.getSigningUrl(

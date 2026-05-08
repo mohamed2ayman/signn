@@ -4,6 +4,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as crypto from 'crypto';
@@ -43,6 +44,7 @@ export class MfaAdminService {
     private readonly sessionService: SessionService,
     private readonly securityEvents: SecurityEventService,
     private readonly dispatch: NotificationDispatchService,
+    private readonly configService: ConfigService,
   ) {}
 
   async resetMfa(input: {
@@ -177,7 +179,7 @@ export class MfaAdminService {
       <p style="font-size:14px; color:#4B5563; line-height:1.6;">MFA is the single most effective way to protect your contracts and signing keys from unauthorized access. Set it up in under a minute from your profile page.</p>
       <table role="presentation" cellpadding="0" cellspacing="0" style="margin:28px auto;">
         <tr><td align="center">
-          <a href="${process.env.FRONTEND_URL || 'http://localhost:5173'}/app/settings/security"
+          <a href="${this.configService.get<string>('FRONTEND_URL', 'http://localhost:5173')}/app/settings/security"
              style="display:inline-block; padding:14px 32px; background-color:#4F6EF7; color:#ffffff !important; font-size:14px; font-weight:600; text-decoration:none; border-radius:8px;">Enable MFA Now</a>
         </td></tr>
       </table>

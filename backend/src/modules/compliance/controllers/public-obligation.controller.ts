@@ -1,4 +1,5 @@
 import { Controller, Get, Query, Res } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Response } from 'express';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -24,6 +25,7 @@ export class PublicObligationController {
     @InjectRepository(Obligation)
     private readonly obligationRepo: Repository<Obligation>,
     private readonly tokens: ObligationTokenService,
+    private readonly configService: ConfigService,
   ) {}
 
   @Get('mark-met')
@@ -75,7 +77,7 @@ a{display:inline-block;margin-top:24px;padding:12px 24px;background:#4F6EF7;colo
 <div class="icon">✓</div>
 <h1>${msg}</h1>
 <p>${this.escape(description)}</p>
-<a href="${process.env.FRONTEND_URL || 'http://localhost:5173'}/app/dashboard">View dashboard</a>
+<a href="${this.configService.get<string>('FRONTEND_URL', 'http://localhost:5173')}/app/dashboard">View dashboard</a>
 </body></html>`;
   }
 
