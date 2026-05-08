@@ -69,6 +69,7 @@ import { dataSourceOptions } from './config/data-source';
 
         // ── Frontend ──────────────────────────────────────────────
         FRONTEND_URL: Joi.string().uri().required(),
+        BASE_URL:     Joi.string().uri().required(),
 
         // ── AI Backend ───────────────────────────────────────────
         AI_BACKEND_URL: Joi.string()

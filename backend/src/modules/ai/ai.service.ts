@@ -14,7 +14,7 @@ export class AiService {
   ) {
     this.aiBackendUrl = this.configService.get<string>(
       'AI_BACKEND_URL',
-      'http://localhost:8000',
+      'http://ai-backend:8000',
     );
   }
 
