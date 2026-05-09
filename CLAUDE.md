@@ -581,6 +581,13 @@ All work is local development only.
 - Default to `.optional().default(...)` when possible — only use `.required()` when there is truly no safe default
 - When adding new npm packages to backend: run `docker-compose up --build --force-recreate --renew-anon-volumes -d backend` — a plain `--build` is NOT enough if the anonymous node_modules volume exists from a previous run
 
+### Phase 1.7 — Auth _finalizeLogin Silent Device Tracking Failure (deferred)
+- Phase 1.4 already added logger.error with full context inside the outer catch
+- Full monitoring/alerting (dead letter table + admin dashboard) requires Sentry or CloudWatch
+- Deferred to Phase 9 (Deployment Prep) where monitoring infrastructure will be wired up
+- File: `backend/src/modules/auth/auth.service.ts` line ~184
+- When Phase 9 starts, also revisit Phase 1.6 and the dead letter pattern can be built once and reused for both
+
 ---
 
 ## Phase 3 — Recently Shipped
