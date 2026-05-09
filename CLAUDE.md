@@ -556,6 +556,31 @@ All work is local development only.
 - `contracts` version snapshot catch blocks are best-effort — rethrowing would break contract mutations for a non-critical side effect
 - Bull queue processor catch blocks: log only, no rethrow — Bull handles its own retries
 
+### Phase 1.5 — Joi Startup Env Var Validation (shipped)
+- Installed `joi@^18.2.1` in backend
+- Added `import * as Joi from 'joi'` and `validationSchema` to `ConfigModule.forRoot()` in `app.module.ts`
+- Added startup Logger in `main.ts` — logs Environment, Port, and "✅ All environment variables validated successfully" before `app.listen()`
+- `abortEarly: false` — all missing vars reported at once on startup, never one-by-one
+- `allowUnknown: true` — extra vars in `.env` never break startup
+- Rewrote `backend/.env.example` with clean section grouping matching the schema
+- Migrated `FRONTEND_URL` from `process.env` to `ConfigService` in 3 files: `mfa-admin.service.ts`, `public-obligation.controller.ts`, `docusign.controller.ts`
+- Added `NESTJS_INTERNAL_TOKEN` to `.env.example` (was in `.env` but undocumented)
+- Added `BASE_URL` to Joi schema as `.required()` and to `.env` + `.env.example` (was used in 3 files but not validated)
+- Fixed `ai.service.ts` fallback default: `http://localhost:8000` → `http://ai-backend:8000` to match Joi schema default
+- Fail-fast verified: missing required var → hard crash with `Config validation error: "VAR_NAME" is required` — app never silently starts with broken config
+
+**Required vars (crash on missing):** `DATABASE_URL`, `JWT_SECRET` (min 16 chars), `NESTJS_INTERNAL_TOKEN`, `REDIS_URL`, `FRONTEND_URL` (URI), `BASE_URL` (URI)
+
+**Defaulted vars (safe fallback):** `NODE_ENV=development`, `PORT=3000`, `JWT_EXPIRES_IN=7d`, `AI_BACKEND_URL=http://ai-backend:8000`, `AWS_REGION=us-east-1`
+
+**Optional vars (allow empty string):** All DocuSign, Paymob, AWS credentials, SMTP, Anthropic, S3 — none are required for local dev
+
+**Hard rules added from Phase 1.5 — never violate:**
+- Any new `.required()` Joi var is a **breaking change** for every teammate — notify team BEFORE pushing
+- Always add the new var to `.env.example` with a description in the same commit that adds it to the schema
+- Default to `.optional().default(...)` when possible — only use `.required()` when there is truly no safe default
+- When adding new npm packages to backend: run `docker-compose up --build --force-recreate --renew-anon-volumes -d backend` — a plain `--build` is NOT enough if the anonymous node_modules volume exists from a previous run
+
 ---
 
 ## Phase 3 — Recently Shipped

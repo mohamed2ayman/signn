@@ -45,6 +45,8 @@
 30. Frontend — Hardcoded localhost:5174 CENVOX Backlinks in SIGN Layouts
 31. Backend — Silent Catch Blocks Masking Critical Failures
 32. Backend — Paymob Webhook Activation Needs Idempotency Before Fix
+33. Docker — New npm Package Not Found After Rebuild
+34. Backend — New Required Joi Var Breaks Teammates' Environments
 
 ---
 
@@ -1128,6 +1130,74 @@
 
 ---
 
+## 33. Docker — New npm Package Not Found After Rebuild
+
+**Problem:**
+- Added a new npm package (e.g. `joi`) to `backend/package.json`
+- Ran `docker-compose up --build -d backend`
+- Backend still crashed: `TS2307: Cannot find module 'joi' or its corresponding type declarations`
+- Error persisted even after repeated `--build` rebuilds
+
+**Root Cause:**
+- `docker-compose.yml` backend service has an anonymous volume: `- /app/node_modules`
+- This anonymous volume is created from the image on first run and then persists independently
+- `docker-compose up --build` rebuilds the image (running `npm ci` inside), but the container runtime MOUNTS the pre-existing anonymous volume OVER the image's node_modules directory
+- The container therefore uses the OLD stale node_modules, not the freshly installed one from the image
+- The new package exists in the image layer but is invisible at runtime because the volume shadows it
+
+**Fix:**
+```bash
+docker-compose up --build --force-recreate --renew-anon-volumes -d backend
+```
+- `--force-recreate` — recreates the container even if config hasn't changed
+- `--renew-anon-volumes` — destroys the anonymous `node_modules` volume and creates a fresh one from the new image layer
+- Plain `--build` alone is NOT sufficient when an anonymous `node_modules` volume exists
+
+**File:** `docker-compose.yml` (backend service `- /app/node_modules` anonymous volume)
+
+**How to Avoid:**
+- Whenever you add or update any npm package in `backend/package.json`, ALWAYS use the full command:
+  ```bash
+  docker-compose up --build --force-recreate --renew-anon-volumes -d backend
+  ```
+- If you see `Cannot find module` for a package you just installed → anonymous volume is stale
+- Check what volumes exist: `docker volume ls | grep node_modules`
+- Quick alternative (no rebuild): `docker exec sign-backend npm install <package-name>` then restart
+
+---
+
+## 34. Backend — New Required Joi Var Breaks Teammates' Environments
+
+**Problem:**
+- Added a new `.required()` entry to the Joi `validationSchema` in `app.module.ts`
+- Committed and pushed
+- Teammate pulls, runs `docker-compose up -d`, backend crashes immediately:
+  `Config validation error: "NEW_VAR" is required`
+- Teammate has no idea what `NEW_VAR` is or where to get it
+
+**Root Cause:**
+- NestJS Joi validation runs at bootstrap — the app refuses to start if any `.required()` var is missing
+- Adding `.required()` to the schema is a **breaking change** for every teammate's local environment
+- If the new var is not in `.env.example` (with a description) and the team is not notified, they have no way to know what to add or what value to use
+
+**Fix (process):**
+1. In the same commit that adds the new `.required()` var to `app.module.ts`:
+   - Add it to `backend/.env.example` with a description comment
+   - Add it to your own `backend/.env` with a real value
+2. Notify all teammates BEFORE or immediately AFTER pushing:
+   > "New required env var added: `NEW_VAR` — you must add it to your local `backend/.env` before next `docker-compose up`. See `.env.example` for description."
+3. Default to `.optional().allow('').default('...')` whenever there is a reasonable fallback — only use `.required()` when there is truly no safe default value
+
+**File:** `backend/src/app.module.ts` (Joi `validationSchema`)
+
+**How to Avoid:**
+- Treat every new `.required()` Joi var as a breaking change — same discipline as a DB migration
+- Never push a new `.required()` var without updating `.env.example` in the same commit
+- When in doubt: use `.optional().default('fallback')` — fail-fast is only worth it when there is no sane default
+- If a teammate reports "backend won't start after pull" → first check `docker logs sign-backend 2>&1 | grep "Config validation error"` — missing required env var is the most common cause
+
+---
+
 ## 📝 Template for New Lessons
 
 ```
@@ -1154,5 +1224,5 @@
 
 ---
 
-*Last updated: 2026-05-07*
+*Last updated: 2026-05-09*
 *Feed this file to Claude at the start of every new session*
