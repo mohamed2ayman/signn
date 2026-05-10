@@ -1198,6 +1198,128 @@ docker-compose up --build --force-recreate --renew-anon-volumes -d backend
 
 ---
 
+## 35. Testing — AuthService Has 14 Constructor Dependencies
+
+**Problem:**
+- Started writing AuthService unit tests by mocking only the obvious dependencies (User repo, JwtService)
+- TestingModule.compile() threw: "Nest can't resolve dependencies of the AuthService"
+- Each missing service had to be discovered one at a time by error message
+
+**Root Cause:**
+- AuthService has 14 constructor injections — 4 repositories, JwtService, ConfigService, EmailService, NotificationDispatchService, plus 6 Phase 3.3 security services (Session, KnownDevice, SuspiciousLogin, GeoLookup, UserAgent, SecurityEvent)
+- _finalizeLogin() is private and runs on EVERY successful login path — it touches all 6 Phase 3.3 services
+
+**Fix:**
+- Mock every single constructor dependency upfront — read the constructor signature first, write all mocks before instantiating the TestingModule
+- For _finalizeLogin testing: do not try to call the private method directly. Call login() and assert on mock call counts (e.g. expect(mockSessionService.create).toHaveBeenCalledTimes(1))
+
+**File:** `backend/src/modules/auth/auth.service.spec.ts`
+
+**How to Avoid:**
+- Before writing any service spec, count the constructor parameters and prepare ALL mocks first
+- Treat private methods as black boxes — observe behaviour through the public API and mock assertions
+
+---
+
+## 36. Testing — Vite Config Must Stay Untouched, Use Separate vitest.config.ts
+
+**Problem:**
+- First instinct was to add a `test: { ... }` block to vite.config.ts
+- This works, but pollutes the build config with test-only dependencies
+- Risk that future changes to vite.config.ts could affect tests, or vice versa
+
+**Root Cause:**
+- Vite and Vitest can share config, but they don't have to
+- Mixing them couples build behaviour to test behaviour — bad separation of concerns
+
+**Fix:**
+- Created a separate `apps/sign/vitest.config.ts` with its own defineConfig from vitest/config
+- vite.config.ts was never modified
+- Dev server, build output, and Vite plugins all completely unaffected
+
+**File:** `apps/sign/vitest.config.ts` (new), `apps/sign/vite.config.ts` (untouched)
+
+**How to Avoid:**
+- Always create a separate vitest.config.ts unless there is a specific reason to share
+- The "shared config" pattern is convenient for tiny projects but a liability for larger ones
+
+---
+
+## 37. Testing — Mock at Service Level Never at Axios Level
+
+**Problem:**
+- Considered mocking axios directly with vi.mock('axios') in frontend tests
+- Discovered apps/sign/src/services/api/axios.ts imports the Redux store as a side effect:
+  `import { store } from '@/store';`
+- This means importing axios.ts pulls store initialization into every test
+- Also: the response interceptor sets window.location.href = '/auth/login' on 401, which fires in jsdom
+
+**Root Cause:**
+- The axios instance is wired into the Redux store and the router — touching axios in tests means touching all of that
+- Service-layer mocks (authService, dashboardAnalyticsService) are completely independent of axios internals
+
+**Fix:**
+- Always mock at the service level: vi.mock('@/services/dashboard/dashboardAnalyticsService')
+- Never import axios.ts in tests
+- The store side effect and the redirect interceptor disappear entirely
+
+**File:** `apps/sign/src/pages/app/DashboardPage.test.tsx`, `apps/sign/src/pages/auth/LoginPage.test.tsx`
+
+**How to Avoid:**
+- Always mock the highest layer that gives you control — services, not transports
+- If a transport file (axios, fetch wrappers) imports stores or routers, mocking it is a trap
+
+---
+
+## 38. Testing — pytest.ini Must Set pythonpath = . or All Imports Fail
+
+**Problem:**
+- Created tests/test_clause_extractor.py with `from app.agents.clause_extractor import ClauseExtractorAgent`
+- pytest immediately failed: ModuleNotFoundError: No module named 'app'
+- pytest discovered tests but could not resolve the project root
+
+**Root Cause:**
+- pytest's default rootdir detection does not add the project directory to sys.path
+- Without explicit pythonpath config, "from app.X" cannot resolve
+- Inside Docker the same imports work because the container WORKDIR is /app/
+
+**Fix:**
+- Created ai-backend/pytest.ini with `pythonpath = .`
+- Now pytest treats ai-backend/ as the project root for imports
+
+**File:** `ai-backend/pytest.ini`
+
+**How to Avoid:**
+- For any new pytest project: create pytest.ini with pythonpath = . FIRST, before writing any test
+- Do not rely on conftest.py sys.path hacks — pytest.ini is the canonical solution
+
+---
+
+## 39. Testing — Celery bind=True Tasks Need .run(payload) Not task(None, payload)
+
+**Problem:**
+- Tried to call run_extract_clauses(None, request_data) directly in a test
+- Got: TypeError: run_extract_clauses() takes 2 positional arguments but 3 were given
+- Confusing because the function signature literally is (self, request_data) — that's 2 args
+
+**Root Cause:**
+- Celery's @task decorator with bind=True wraps the function in a Task object
+- Calling task(args) goes through the Task.__call__ proxy which auto-injects self
+- So task(None, payload) becomes (self=task_instance, None, payload) — 3 args total
+
+**Fix:**
+- Use task.run(payload) instead — .run() is the unwrapped function with self already bound
+- Pattern: `result = run_extract_clauses.run({"full_text": "..."})`
+- This bypasses the Celery proxy entirely and calls the raw function
+
+**File:** `ai-backend/tests/test_tasks.py`
+
+**How to Avoid:**
+- For bind=True Celery tasks, always use .run() in tests — never call the task object directly with self as the first arg
+- For bind=False tasks, calling the task directly works as expected
+
+---
+
 ## 📝 Template for New Lessons
 
 ```
@@ -1224,5 +1346,5 @@ docker-compose up --build --force-recreate --renew-anon-volumes -d backend
 
 ---
 
-*Last updated: 2026-05-09*
+*Last updated: 2026-05-10*
 *Feed this file to Claude at the start of every new session*

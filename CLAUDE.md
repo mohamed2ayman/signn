@@ -1,7 +1,7 @@
 # CLAUDE.md — Project Intelligence File
 > Read this entire file at the start of every Claude Code session before touching any code.
 > This file is the single source of truth for all architectural decisions, rules, and context.
-> Last updated: 2026-05-07 (Added: Security section — gitignore audit, seed passwords, pre-AWS checklist)
+> Last updated: 2026-05-10 (Added: Phase 2 — Testing & CI Pipeline; 32 tests across all 3 services + GitHub Actions CI workflow)
 
 ---
 
@@ -473,8 +473,8 @@ All work is local development only.
 1. **DocuSign webhook is a no-op** — returns 200 but never updates contract state. Do not build features depending on EXECUTED status until fixed.
 2. **axios.ts default URL is wrong** — points to port 3001 instead of 3000. Always use `VITE_API_URL`.
 3. **Guest Portal is a stub** — treat `/contractor/*` as not built. Needs full planning session before building.
-4. **No automated tests** — add tests for any new critical path built.
-5. **No CI pipeline** — do not assume code is safe just because it commits.
+4. **~~No automated tests~~** — resolved in Phase 2: 32 tests across all 3 services (16 backend, 8 frontend, 8 AI pipeline).
+5. **~~No CI pipeline~~** — resolved in Phase 2: GitHub Actions CI runs on every push and PR to main (3 parallel jobs).
 
 ### Local Development Workarounds (before deployment)
 | Integration | Free Local Workaround |
@@ -587,6 +587,114 @@ All work is local development only.
 - Deferred to Phase 9 (Deployment Prep) where monitoring infrastructure will be wired up
 - File: `backend/src/modules/auth/auth.service.ts` line ~184
 - When Phase 9 starts, also revisit Phase 1.6 and the dead letter pattern can be built once and reused for both
+
+---
+
+## Phase 2 — Recently Shipped
+
+### Phase 2.1 — Backend Tests (shipped — 2026-05-10)
+
+First-ever tests for the NestJS backend. Established baseline test infrastructure.
+
+**What was added:**
+- 3 spec files, 16 tests, all passing
+- `backend/src/health/health.controller.spec.ts` — 3 tests, 100% coverage on health controller
+- `backend/src/modules/contracts/contracts.service.spec.ts` — 6 tests covering create() and findAll()
+- `backend/src/modules/auth/auth.service.spec.ts` — 7 tests covering login success, wrong password, locked account, deactivated account, non-existent user, MFA flag
+
+**Confirmed before starting:**
+- All Jest packages already in devDependencies (jest, @nestjs/testing, ts-jest, supertest)
+- "test": "jest" script already existed
+- Jest config already in package.json with @/ alias mapped
+- Zero packages installed, zero Docker rebuilds, zero colleague impact
+
+**Hard rules — never violate:**
+- AuthService has 14 constructor dependencies — every single one must be mocked or TestingModule throws missing-provider errors
+- _finalizeLogin() is private — test indirectly via login() and assert on mock call counts
+- ContractsService.createVersionSnapshot() makes 3 extra repository calls after main save — all 3 mocks must return sensible values or create() throws TypeError on undefined
+- CollaborationGateway is a WebSocket gateway — must mock every emit* method used or "not a function" errors fire at runtime
+- Coverage baseline: 18.47% overall, 100% on health.controller.ts — correct starting point for a codebase this size
+
+### Phase 2.2 — Frontend Tests (shipped — 2026-05-10)
+
+First-ever tests for the SIGN React frontend. Vitest + React Testing Library.
+
+**What was added:**
+- 6 packages installed as devDependencies: vitest, @vitest/coverage-v8, @testing-library/react, @testing-library/user-event, @testing-library/jest-dom, jsdom
+- New file: `apps/sign/vitest.config.ts` — separate config from vite.config.ts (zero build impact)
+- New file: `apps/sign/src/test/setup.ts` — jest-dom matchers
+- New file: `apps/sign/src/pages/auth/LoginPage.test.tsx` — 5 tests
+- New file: `apps/sign/src/pages/app/DashboardPage.test.tsx` — 3 tests
+- 3 new scripts in apps/sign/package.json: test, test:watch, test:cov
+
+**Confirmed before starting:**
+- Zero test infrastructure existed in apps/sign — complete greenfield
+- Provider order in main.tsx: Provider → QueryClientProvider → BrowserRouter
+- LoginPage uses pure React useState (no react-hook-form)
+- DashboardPage has zero Redux dependency
+
+**Hard rules — never violate:**
+- vite.config.ts is NEVER touched — vitest config lives in a separate vitest.config.ts file. Mixing them risks affecting the dev server and build output.
+- Mock at the SERVICE level, never at the axios level — axios.ts imports the Redux store as a side effect, which would pull store initialization into every test
+- authSlice.initialState reads localStorage at module load — call localStorage.clear() in beforeEach for any test touching auth state
+- FormInput renders a `*` span inside the label, making accessible text "auth.email *" — use regex matchers (e.g. /auth\.email/i), never exact strings
+- i18n t() returns the key as fallback in tests — use literal keys like "auth.email" as selectors (no i18n initialization needed in test setup)
+- DashboardPage accesses deeply nested analytics properties — every field accessed must exist in the test fixture or component crashes with "Cannot read properties of undefined"
+- Frontend has 2 anonymous Docker volumes (/app/node_modules + /app/apps/sign/node_modules) — colleagues must run docker-compose up --build --force-recreate --renew-anon-volumes -d frontend after pulling
+
+### Phase 2.3 — AI Pipeline Tests (shipped — 2026-05-10)
+
+First-ever tests for the FastAPI + Celery AI backend. pytest + pytest-mock.
+
+**What was added:**
+- 2 packages added to ai-backend/requirements.txt: pytest>=8.0, pytest-mock>=3.12
+- New file: `ai-backend/pytest.ini` — `pythonpath = .` (mandatory for imports)
+- New file: `ai-backend/tests/__init__.py` — empty, marks tests/ as a package
+- New file: `ai-backend/tests/conftest.py` — autouse fixture clears get_settings.lru_cache between tests
+- New file: `ai-backend/tests/test_health.py` — 1 test (FastAPI /health smoke test)
+- New file: `ai-backend/tests/test_clause_extractor.py` — 4 tests (short doc, Arabic text, chunking path, invalid JSON graceful handling)
+- New file: `ai-backend/tests/test_tasks.py` — 3 tests (success, exception handling, missing key)
+- 8 tests passing, 44% coverage overall, 71% on clause_extractor.py
+
+**Confirmed before starting:**
+- Zero test infrastructure existed in ai-backend — complete greenfield
+- Architecture is poll-based — NO callback to NestJS, NESTJS_INTERNAL_TOKEN unused
+- ai-backend uses bind mounts (NOT anonymous volumes) — colleagues just need docker-compose up --build (no --renew-anon-volumes)
+
+**Hard rules — never violate:**
+- pytest.ini MUST have `pythonpath = .` — without it every "from app.agents..." import fails with ModuleNotFoundError
+- Anthropic client is created in ClauseExtractorAgent.__init__ — mock target is "app.agents.clause_extractor.Anthropic" and the patch must be in place BEFORE agent = ClauseExtractorAgent() is called
+- run_extract_clauses imports ClauseExtractorAgent lazily inside the function body — mock target is "app.agents.clause_extractor.ClauseExtractorAgent", NOT "app.tasks.ClauseExtractorAgent"
+- get_settings() uses @lru_cache — must clear in conftest.py autouse fixture or settings leak between tests
+- FastAPI TestClient must NOT be used as context manager — `with TestClient(app) as client:` triggers lifespan which calls Base.metadata.create_all(bind=engine) and tries to hit PostgreSQL. Use `client = TestClient(app)` directly.
+- Celery bind=True tasks: calling task(None, payload) injects an extra self causing TypeError. Correct pattern is task.run(payload) — self is already bound.
+- _parse_json() returns [] on any JSON parse failure — never raises. Test mocks must return valid JSON strings (not dicts) for meaningful assertions.
+
+### Phase 2.4 — CI Pipeline (shipped — 2026-05-10)
+
+First GitHub Actions workflow. CI ONLY — no CD until Phase 9 (Deployment Prep).
+
+**What was added:**
+- New file: `.github/workflows/ci.yml` — 3 parallel jobs (backend-tests, frontend-tests, ai-backend-tests)
+- New file: `README.md` at repo root with CI badge
+- Triggers: every push to main + every pull_request targeting main
+- Zero env vars, zero secrets, no Docker, no deployment
+
+**Confirmed before starting:**
+- GitHub repo: mohamed2ayman/signn
+- Root package.json IS an npm workspace (apps/* + packages/*) — frontend CI must run npm ci at REPO ROOT, not in apps/sign/
+- backend/ is independent (own lockfile, NOT in workspace)
+- Node 20, Python 3.11
+- ai-backend needs apt-get install tesseract-ocr tesseract-ocr-ara poppler-utils libpq-dev BEFORE pip install (for pytesseract and pdf2image)
+- apps/cenvox has no tests — skipped entirely
+
+**Hard rules — never violate:**
+- CI is unit-test ONLY — never start Docker containers, never use real database, never use real Redis, never use real Anthropic API
+- Frontend CI runs from repo root because @cenvox/tokens is a workspace dependency — running `cd apps/sign && npm ci` would fail to resolve it
+- Backend lint script has --fix which auto-fixes silently in CI — DO NOT add lint job until script is fixed (use eslint without --fix or skip entirely)
+- Frontend lint has --max-warnings 0 — DO NOT add lint job until codebase is verified clean of warnings
+- No CD/deployment in this phase — that comes in Phase 9 with staging environment, manual approval gates, blue-green deploy, and rollback strategy
+- AI backend CI MUST install system packages (tesseract-ocr, poppler-utils, libpq-dev) before pip install or installation fails
 
 ---
 

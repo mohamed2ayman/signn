@@ -10,3 +10,6 @@
 *.key
 *.p12
 *.pfx
+.coverage
+htmlcov/
+.pytest_cache/
