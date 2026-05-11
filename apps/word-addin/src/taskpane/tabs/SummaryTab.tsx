@@ -138,6 +138,37 @@ export function SummaryTab({ onAuthLost }: Props) {
           </button>
         </>
       )}
+      <div
+        style={{
+          borderLeft: '3px solid #7C3AED',
+          background: '#F5F3FF',
+          padding: '8px 12px',
+          marginTop: 12,
+          fontSize: 11,
+          color: '#6D28D9',
+          fontStyle: 'italic',
+        }}
+      >
+        ⚡ AI-Generated Summary — Not Legal Advice. Human review required.{' '}
+        <span
+          onClick={() => Office.context.ui.openBrowserWindow('https://www.sign.io/legal/ai-policy')}
+          style={{ cursor: 'pointer', textDecoration: 'underline' }}
+        >
+          AI Policy
+        </span>
+      </div>
+      <div
+        style={{
+          fontSize: 10,
+          color: '#CBD5E1',
+          textAlign: 'center',
+          marginTop: 16,
+          paddingTop: 8,
+          borderTop: '1px solid #E2E8F0',
+        }}
+      >
+        © 2025 SIGN Technologies LLC
+      </div>
     </div>
   );
 }

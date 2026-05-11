@@ -84,6 +84,27 @@ export function LoginTab({ onAuth }: Props) {
           >
             {busy ? 'Signing in…' : 'Sign in'}
           </button>
+          <p style={{ fontSize: 11, color: '#94A3B8', textAlign: 'center', marginTop: 8 }}>
+            By signing in, you agree to SIGN's{' '}
+            <span
+              onClick={() =>
+                Office.context.ui.openBrowserWindow('https://www.sign.io/legal/terms')
+              }
+              style={{ color: '#4F6EF7', cursor: 'pointer', textDecoration: 'underline' }}
+            >
+              Terms of Service
+            </span>{' '}
+            and{' '}
+            <span
+              onClick={() =>
+                Office.context.ui.openBrowserWindow('https://www.sign.io/legal/privacy')
+              }
+              style={{ color: '#4F6EF7', cursor: 'pointer', textDecoration: 'underline' }}
+            >
+              Privacy Policy
+            </span>
+            .
+          </p>
           {error && <div className="sign-error">{error}</div>}
         </form>
       ) : (

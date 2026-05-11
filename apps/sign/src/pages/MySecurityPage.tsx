@@ -1,8 +1,11 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { format, formatDistanceToNow } from 'date-fns';
+import { Shield, Gavel, Brain, Bell, Cookie, Trash2 } from 'lucide-react';
 import meService from '@/services/api/meService';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
+import { useCookieConsent } from '@/contexts/CookieConsentContext';
 
 /**
  * /app/settings/security — user-facing Profile + Security page.
@@ -13,6 +16,7 @@ import LoadingSpinner from '@/components/common/LoadingSpinner';
  */
 export default function MySecurityPage() {
   const qc = useQueryClient();
+  const { openPreferences } = useCookieConsent();
 
   const profile = useQuery({ queryKey: ['me-profile'], queryFn: meService.getProfile });
   const sessions = useQuery({ queryKey: ['me-sessions'], queryFn: meService.listSessions });
@@ -222,7 +226,7 @@ export default function MySecurityPage() {
         )}
       </Section>
 
-      <Section title="Your data (GDPR)">
+      <Section title="Data & Privacy Rights">
         <p className="text-sm text-gray-600">
           You can download a complete copy of every record we hold about you.
           Profile, contracts you created, audit history, sessions, and devices.
@@ -248,6 +252,34 @@ export default function MySecurityPage() {
           >
             {exportData.isPending ? 'Preparing…' : 'Request data export'}
           </button>
+        </div>
+
+        <div className="mt-4 space-y-3 border-t border-gray-100 pt-4">
+          <Link to="/legal/privacy" className="flex items-center gap-2 text-sm text-indigo-600 hover:underline">
+            <Shield size={14} /> View Full Privacy Policy
+          </Link>
+          <Link to="/legal/law-enforcement" className="flex items-center gap-2 text-sm text-indigo-600 hover:underline">
+            <Gavel size={14} /> Law Enforcement Request Policy
+          </Link>
+          <Link to="/legal/ai-policy" className="flex items-center gap-2 text-sm text-indigo-600 hover:underline">
+            <Brain size={14} /> AI Data Controls & Training Opt-Out
+          </Link>
+          <Link to="/app/settings/communications" className="flex items-center gap-2 text-sm text-indigo-600 hover:underline">
+            <Bell size={14} /> Communication Preferences
+          </Link>
+          <button
+            type="button"
+            onClick={openPreferences}
+            className="flex items-center gap-2 text-sm text-indigo-600 hover:underline"
+          >
+            <Cookie size={14} /> Manage Cookie Preferences
+          </button>
+          <a
+            href="mailto:privacy@sign.io?subject=Data Deletion Request"
+            className="flex items-center gap-2 text-sm text-red-500 hover:underline"
+          >
+            <Trash2 size={14} /> Request Data Deletion
+          </a>
         </div>
       </Section>
     </div>

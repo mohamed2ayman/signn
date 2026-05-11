@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useSearchParams, useNavigate, Link } from 'react-router-dom';
 import { Lock, User, CheckCircle } from 'lucide-react';
 import AuthLayout from '@/components/common/AuthLayout';
 import FormInput from '@/components/common/FormInput';
@@ -202,6 +202,18 @@ const AcceptInvitationPage: React.FC = () => {
         >
           {t('auth.acceptInvitation')}
         </Button>
+
+        <p className="mt-2 text-center text-xs text-gray-400">
+          By accepting this invitation, you agree to SIGN's{' '}
+          <Link to="/legal/terms" className="text-indigo-600 hover:underline">
+            Terms of Service
+          </Link>{' '}
+          and{' '}
+          <Link to="/legal/privacy" className="text-indigo-600 hover:underline">
+            Privacy Policy
+          </Link>
+          .
+        </p>
       </form>
     </AuthLayout>
   );

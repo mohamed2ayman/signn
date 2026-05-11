@@ -261,6 +261,14 @@ export default function ClaimsTab({ contractId }: Props) {
 
   return (
     <div className="space-y-4">
+      <div className="flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-700">
+        <span aria-hidden>ℹ️</span>
+        <p>
+          SIGN facilitates claims documentation only. SIGN does not determine the validity, merit,
+          or quantum of any claim. All decisions remain with the parties and their qualified legal
+          advisors.
+        </p>
+      </div>
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-gray-700">Claims ({claims.length})</h3>
         <button

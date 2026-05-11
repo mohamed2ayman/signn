@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import {
   Check,
   ExternalLink,
@@ -206,6 +207,13 @@ export default function SubscriptionSettingsPage() {
             No active subscription. Choose a plan below to get started.
           </p>
         )}
+        <p className="mt-3 text-sm text-gray-500">
+          Your subscription renews automatically. Cancel at least 5 business days before your
+          renewal date to avoid charges.{' '}
+          <Link to="/legal/cancellation" className="text-indigo-600 hover:underline font-medium">
+            View Cancellation & Refund Policy →
+          </Link>
+        </p>
       </div>
 
       {/* Usage Stats */}
