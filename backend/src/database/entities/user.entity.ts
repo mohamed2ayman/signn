@@ -221,6 +221,36 @@ export class User {
   @Column({ type: 'varchar', length: 20, default: 'none' })
   onboarding_level: string; // 'none' | 'quick' | 'comprehensive'
 
+  // ─── Consent & communication preferences (Phase 4 — Legal Layer) ──────
+  @Column({ type: 'timestamptz', nullable: true })
+  accepted_terms_at: Date | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  accepted_privacy_policy_at: Date | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  accepted_aup_at: Date | null;
+
+  @Column({ type: 'varchar', length: 20, nullable: true, default: '1.0' })
+  terms_version: string | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  cookie_consent_given_at: Date | null;
+
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  cookie_consent_version: string | null;
+
+  @Column({ type: 'boolean', default: false })
+  marketing_email_opt_in: boolean;
+
+  @Column({ type: 'boolean', default: false })
+  ai_training_opt_in: boolean;
+
+  // Added by AddComplianceMonitoring migration — declared here so TypeORM
+  // knows the field and we can drop `(user as any)` casts.
+  @Column({ type: 'boolean', default: false })
+  email_digest_opt_out: boolean;
+
   @CreateDateColumn({ type: 'timestamptz' })
   created_at: Date;
 

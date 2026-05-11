@@ -5,6 +5,8 @@ import {
   Matches,
   IsOptional,
   IsUUID,
+  IsBoolean,
+  Equals,
 } from 'class-validator';
 
 export class RegisterDto {
@@ -43,4 +45,14 @@ export class RegisterDto {
 
   @IsUUID()
   plan_id: string;
+
+  @IsBoolean()
+  @Equals(true, {
+    message: 'You must accept the Terms and Conditions to register',
+  })
+  agreed_to_terms: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  marketing_email_opt_in?: boolean;
 }

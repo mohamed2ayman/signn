@@ -180,7 +180,7 @@ export class ObligationReminderProcessor {
     let sent = 0;
     for (const [userId, items] of byUser) {
       const user = await this.userRepo.findOne({ where: { id: userId } });
-      if (!user || (user as any).email_digest_opt_out) continue;
+      if (!user || user.email_digest_opt_out) continue;
 
       // Filter to "next 30 days" + "overdue"
       const upcoming = items.filter((o) => {
