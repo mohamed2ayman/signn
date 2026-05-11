@@ -9,6 +9,7 @@ import complianceService, {
   type ContractObligation,
 } from '@/services/api/complianceService';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
+import AIDisclaimer from '@/components/common/AIDisclaimer';
 
 interface Props {
   contractId: string;
@@ -303,6 +304,8 @@ export default function ComplianceTab({ contractId, contractName, userEmail }: P
           {toast}
         </div>
       )}
+
+      <AIDisclaimer />
     </div>
   );
 }

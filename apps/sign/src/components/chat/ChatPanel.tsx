@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { BloomIcon } from '@/components/common/SignLogo';
+import AIDisclaimer from '@/components/common/AIDisclaimer';
 import {
   chatService,
   type ChatMessage,
@@ -500,6 +501,7 @@ export default function ChatPanel({
             AI responses are based on your contract content and knowledge
             base
           </p>
+          <AIDisclaimer compact />
         </div>
       </div>
     </>

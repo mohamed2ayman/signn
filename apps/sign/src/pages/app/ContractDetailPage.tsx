@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import type { RootState } from '@/store';
 import { contractService } from '@/services/api/contractService';
@@ -24,6 +24,7 @@ import { documentProcessingService } from '@/services/api/documentProcessingServ
 import { useDocumentProcessing } from '@/hooks/useDocumentProcessing';
 import ProcessingStatusCard from '@/components/common/ProcessingStatusCard';
 import { DocumentProcessingStatus } from '@/types';
+import AIDisclaimer from '@/components/common/AIDisclaimer';
 
 /* ── Status Badge ─────────────────────────────────────────────── */
 const statusStyles: Record<string, { bg: string; text: string; dot: string }> = {
@@ -1662,6 +1663,7 @@ export default function ContractDetailPage() {
               <p className="mt-1 text-xs text-gray-400">Risk analysis will appear here when clauses are analyzed</p>
             </div>
           )}
+          {risks.length > 0 && <AIDisclaimer />}
         </div>
       )}
 
@@ -2209,6 +2211,28 @@ export default function ContractDetailPage() {
                 </svg>
                 Add another signer
               </button>
+            </div>
+
+            <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+              <p className="font-semibold">⚖️ Electronic Signature Notice</p>
+              <p className="mt-1">
+                Electronic signatures executed through SIGN have legal effect under applicable
+                UAE/MENA e-signature law. You are responsible for verifying that electronic
+                execution is valid for your document type and jurisdiction. SIGN does not
+                guarantee signer identity beyond email verification.
+              </p>
+              <p className="mt-1">
+                Data collected during signing: signer name, email address, IP address, and
+                timestamp. See our Privacy Policy for details.
+              </p>
+              <p className="mt-2 flex flex-wrap gap-3">
+                <Link to="/legal/terms" className="font-medium text-amber-900 underline">
+                  View Terms
+                </Link>
+                <Link to="/legal/privacy" className="font-medium text-amber-900 underline">
+                  View Privacy Policy
+                </Link>
+              </p>
             </div>
 
             <div className="mt-5 flex justify-end gap-2.5 border-t border-gray-100 pt-4">

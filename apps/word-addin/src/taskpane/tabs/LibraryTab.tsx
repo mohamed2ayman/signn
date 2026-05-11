@@ -111,6 +111,18 @@ export function LibraryTab({ onAuthLost }: Props) {
           </button>
         </div>
       ))}
+      <div
+        style={{
+          fontSize: 10,
+          color: '#CBD5E1',
+          textAlign: 'center',
+          marginTop: 16,
+          paddingTop: 8,
+          borderTop: '1px solid #E2E8F0',
+        }}
+      >
+        © 2025 SIGN Technologies LLC
+      </div>
     </div>
   );
 }
