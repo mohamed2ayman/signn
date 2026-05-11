@@ -66,6 +66,23 @@ import ProjectObligationsPage from '@/pages/app/ProjectObligationsPage';
 import ContractorDashboardPage from '@/pages/contractor/ContractorDashboardPage';
 import AcceptPartyInvitationPage from '@/pages/contractor/AcceptInvitationPage';
 
+// Legal pages (public)
+import LegalHubPage from '@/pages/legal/LegalHubPage';
+import TermsPage from '@/pages/legal/TermsPage';
+import PrivacyPage from '@/pages/legal/PrivacyPage';
+import CookiePolicyPage from '@/pages/legal/CookiePolicyPage';
+import AIPolicyPage from '@/pages/legal/AIPolicyPage';
+import IPCopyrightPage from '@/pages/legal/IPCopyrightPage';
+import LawEnforcementPage from '@/pages/legal/LawEnforcementPage';
+import AcceptableUsePage from '@/pages/legal/AcceptableUsePage';
+import CancellationPage from '@/pages/legal/CancellationPage';
+import CommunicationsPolicyPage from '@/pages/legal/CommunicationsPolicyPage';
+import BCRPage from '@/pages/legal/BCRPage';
+
+// Cookie consent
+import CookieConsentBanner from '@/components/common/CookieConsentBanner';
+import { CookieConsentProvider } from '@/contexts/CookieConsentContext';
+
 // ─── 404 page ────────────────────────────────────────────────
 function NotFound() {
   return (
@@ -136,9 +153,24 @@ const contractorNavItems = [
 
 function App() {
   return (
-    <Routes>
+    <CookieConsentProvider>
+      <CookieConsentBanner />
+      <Routes>
       {/* Public landing page */}
       <Route path="/" element={<LandingPage />} />
+
+      {/* Legal pages (public — no auth required) */}
+      <Route path="/legal" element={<LegalHubPage />} />
+      <Route path="/legal/terms" element={<TermsPage />} />
+      <Route path="/legal/privacy" element={<PrivacyPage />} />
+      <Route path="/legal/cookies" element={<CookiePolicyPage />} />
+      <Route path="/legal/ai-policy" element={<AIPolicyPage />} />
+      <Route path="/legal/ip" element={<IPCopyrightPage />} />
+      <Route path="/legal/law-enforcement" element={<LawEnforcementPage />} />
+      <Route path="/legal/acceptable-use" element={<AcceptableUsePage />} />
+      <Route path="/legal/cancellation" element={<CancellationPage />} />
+      <Route path="/legal/communications" element={<CommunicationsPolicyPage />} />
+      <Route path="/legal/bcr" element={<BCRPage />} />
 
       {/* Auth routes (public) */}
       <Route path="/auth/login" element={<LoginPage />} />
@@ -254,7 +286,8 @@ function App() {
 
       {/* 404 catch-all */}
       <Route path="*" element={<NotFound />} />
-    </Routes>
+      </Routes>
+    </CookieConsentProvider>
   );
 }
 
