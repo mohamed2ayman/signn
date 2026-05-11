@@ -793,3 +793,24 @@ Five-layer compliance pipeline that uses the entire Knowledge Base — both SIGN
 **Frontend report request UX — never violate**: every "Email Report" button opens a confirmation dialog that says "Reports are sent by email for confidentiality purposes" — there is **no** browser download fallback. On confirm: `POST /contracts/:id/compliance-checks/:id/{report|conflict-report|obligations-report}` returns `{job_id, email}` and a toast confirms "Your report is being generated and will be sent to <email> within a few minutes."
 
 **Public mark-as-met flow**: email contains a button → `${BASE_URL}/api/v1/public/obligations/mark-met?token=<HMAC>` → no-auth controller verifies the HMAC, transitions status to `MET`, returns a small inline HTML confirmation page with a "View dashboard" link. Token includes `obligation_id`, `user_id`, `expires_at`, and a nonce; token verification is timing-safe.
+## Legal & Policy Layer
+
+A complete set of 10 legally drafted policy documents has been prepared for SIGN
+and is located in `/legal-docs/policies/`. These are the authoritative source for
+all /legal/* policy page content.
+
+See `/legal-docs/README.md` for the full document index and implementation guidance.
+
+See `/legal-docs/prompt/SIGN_Claude_Code_Prompt.docx` for the 18-task implementation
+prompt covering: cookie consent banner, T&C acceptance in registration, 11 new
+/legal/* routes, app footer, AI disclaimers, claims/e-signature notices, Word Add-In
+disclosures, communication preferences page, and backend consent column migration.
+
+### Critical Legal Gaps (implement before launch)
+1. No T&C checkbox in RegisterPage.tsx — users complete registration without consent
+2. No accepted_terms_at column in users entity — no consent record exists
+3. No cookie consent banner — no consent mechanism for future analytics
+4. All /legal/* routes return 404 — all footer policy links are broken
+5. No AI disclaimer on any AI output — transparency obligation unmet
+6. No communication preferences UI — email_digest_opt_out has no API surface
+7. Word Add-In LoginTab.tsx has no legal disclosures

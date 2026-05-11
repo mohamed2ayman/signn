@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SIGN — Legal Policy Placement Matrix</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Bricolage+Grotesque:wght@300;400;500;600;700;800&display=swap');
+:root{--navy:#0F1729;--indigo:#4F6EF7;--teal:#0D9488;--orange:#E86C29;--green:#16A34A;--amber:#D97706;--purple:#7C3AED;--red:#DC2626;--gray:#64748B;--border:#E2E8F0;--white:#FFFFFF;}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Bricolage Grotesque',sans-serif;background:#F1F5F9;color:var(--navy);padding:1.5rem;}
+.ph{background:var(--navy);border-radius:16px;padding:1.75rem 2rem;margin-bottom:1.5rem;display:flex;align-items:center;justify-content:space-between;gap:2rem;}
+.ph h1{font-size:1.4rem;font-weight:800;color:white;letter-spacing:-0.02em;}
+.ph p{color:#94A3B8;font-size:0.8rem;margin-top:0.2rem;}
+.legend{display:flex;flex-wrap:wrap;gap:0.5rem;}
+.li{display:flex;align-items:center;gap:0.35rem;font-size:0.68rem;font-weight:500;color:#CBD5E1;font-family:'DM Mono',monospace;}
+.ld{width:9px;height:9px;border-radius:50%;flex-shrink:0;}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;margin-bottom:1.5rem;}
+.sc{background:white;border-radius:12px;border:1px solid var(--border);padding:1.25rem 1.5rem;}
+.sc-num{font-size:2rem;font-weight:800;font-family:'DM Mono',monospace;line-height:1;}
+.sc-lbl{font-size:0.72rem;color:var(--gray);margin-top:0.2rem;}
+.sc-sub{font-size:0.67rem;color:var(--gray);margin-top:0.4rem;line-height:1.4;}
+.jw{background:white;border-radius:12px;padding:1.25rem 1.5rem;margin-bottom:1.25rem;border:1px solid var(--border);overflow-x:auto;}
+.jl{font-size:0.65rem;font-weight:700;letter-spacing:0.08em;color:var(--gray);text-transform:uppercase;margin-bottom:0.75rem;font-family:'DM Mono',monospace;}
+.js{display:flex;align-items:stretch;gap:0;min-width:860px;}
+.step{flex:1;position:relative;background:#F8FAFC;border:1px solid var(--border);padding:0.65rem 0.8rem;cursor:pointer;transition:all 0.15s;}
+.step:first-child{border-radius:8px 0 0 8px;}
+.step:last-child{border-radius:0 8px 8px 0;}
+.step:not(:last-child)::after{content:'›';position:absolute;right:-9px;top:50%;transform:translateY(-50%);font-size:1rem;color:var(--gray);z-index:2;background:white;padding:0 2px;}
+.step:hover,.step.active{background:#EFF6FF;border-color:var(--indigo);z-index:1;}
+.st{font-size:0.73rem;font-weight:700;color:var(--navy);margin-bottom:0.35rem;}
+.sb-wrap{display:flex;flex-direction:column;gap:3px;}
+.sb{font-size:0.58rem;font-weight:600;padding:1px 5px;border-radius:99px;font-family:'DM Mono',monospace;display:inline-block;}
+.dp{background:white;border-radius:12px;border:1px solid var(--border);padding:1.25rem 1.5rem;margin-bottom:1.25rem;display:none;}
+.dp.vis{display:block;}
+.dph{display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;}
+.dpt{font-size:1rem;font-weight:800;color:var(--navy);}
+.dpc{background:none;border:1px solid var(--border);border-radius:6px;padding:3px 10px;cursor:pointer;font-size:0.72rem;color:var(--gray);font-family:'DM Mono',monospace;}
+.dpg{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.75rem;}
+.dcard{background:#F8FAFC;border-radius:8px;padding:0.85rem;border:1px solid var(--border);}
+.dct{font-size:0.65rem;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--gray);margin-bottom:0.4rem;}
+.dcb{font-size:0.77rem;color:var(--navy);line-height:1.45;}
+.mw{background:white;border-radius:12px;border:1px solid var(--border);overflow:hidden;margin-bottom:1.25rem;}
+.mh{display:grid;grid-template-columns:200px repeat(9,1fr);background:var(--navy);position:sticky;top:0;z-index:10;}
+.mhc{padding:0.55rem 0.4rem;font-size:0.58rem;font-weight:700;color:#CBD5E1;text-align:center;letter-spacing:0.04em;border-right:1px solid #1E293B;line-height:1.3;font-family:'DM Mono',monospace;}
+.mhc:first-child{text-align:left;padding-left:0.85rem;color:white;}
+.mr{display:grid;grid-template-columns:200px repeat(9,1fr);border-bottom:1px solid var(--border);transition:background 0.1s;cursor:pointer;}
+.mr:last-child{border-bottom:none;}
+.mr:hover{background:#FAFBFF;}
+.rl{padding:0.65rem 0.4rem 0.65rem 0.85rem;border-right:1px solid var(--border);display:flex;flex-direction:column;gap:2px;}
+.rlt{font-size:0.73rem;font-weight:700;color:var(--navy);}
+.rls{font-size:0.58rem;color:var(--gray);font-family:'DM Mono',monospace;}
+.mc{padding:0.45rem 0.3rem;border-right:1px solid var(--border);display:flex;flex-direction:column;gap:3px;align-items:center;justify-content:center;min-height:56px;}
+.mc:last-child{border-right:none;}
+.mc:hover{background:#F0F4FF;}
+.ct{font-size:0.55rem;font-weight:600;padding:2px 4px;border-radius:3px;text-align:center;line-height:1.2;font-family:'DM Mono',monospace;width:100%;max-width:76px;}
+.em{color:#CBD5E1;font-size:0.85rem;}
+.gh{grid-column:1/-1;background:#F1F5F9;padding:0.35rem 0.85rem;font-size:0.6rem;font-weight:700;letter-spacing:0.07em;text-transform:uppercase;color:var(--gray);border-bottom:1px solid var(--border);font-family:'DM Mono',monospace;}
+.c-tc{background:#EFF6FF;color:#1D4ED8;}
+.c-pp{background:#F0FDFA;color:#0D9488;}
+.c-cp{background:#FFF7ED;color:#C2410C;}
+.c-ai{background:#F5F3FF;color:#6D28D9;}
+.c-ip{background:#FFFBEB;color:#B45309;}
+.c-le{background:#FEF2F2;color:#B91C1C;}
+.c-au{background:#FFF1F2;color:#BE123C;}
+.c-ca{background:#F0FDF4;color:#166534;}
+.c-cm{background:#EFF6FF;color:#1E40AF;}
+.l-tc{background:#1D4ED8;}
+.l-pp{background:#0D9488;}
+.l-cp{background:#C2410C;}
+.l-ai{background:#6D28D9;}
+.l-ip{background:#B45309;}
+.l-le{background:#B91C1C;}
+.l-au{background:#BE123C;}
+.l-ca{background:#166534;}
+.l-cm{background:#1E40AF;}
+</style>
+</head>
+<body>
+
+<div class="ph">
+  <div>
+    <h1>SIGN Platform — Legal Policy Placement Matrix</h1>
+    <p>Complete touchpoint map · 10 policies · 38 placement points · Click any row for implementation detail</p>
+  </div>
+  <div class="legend">
+    <div class="li"><div class="ld l-tc"></div>T&amp;C</div>
+    <div class="li"><div class="ld l-pp"></div>Privacy</div>
+    <div class="li"><div class="ld l-cp"></div>Cookie</div>
+    <div class="li"><div class="ld l-ai"></div>AI Policy</div>
+    <div class="li"><div class="ld l-ip"></div>IP/©</div>
+    <div class="li"><div class="ld l-le"></div>Law Enf.</div>
+    <div class="li"><div class="ld l-au"></div>AUP</div>
+    <div class="li"><div class="ld l-ca"></div>Cancel</div>
+    <div class="li"><div class="ld l-cm"></div>Comms</div>
+  </div>
+</div>
+
+<div class="stats">
+  <div class="sc"><div class="sc-num" style="color:#DC2626">0</div><div class="sc-lbl">Legal pages currently live</div><div class="sc-sub">All footer links resolve to #. No /legal/* routes exist. Zero policy pages built.</div></div>
+  <div class="sc"><div class="sc-num" style="color:#D97706">7</div><div class="sc-lbl">Critical regulatory gaps</div><div class="sc-sub">T&amp;C consent, Cookie banner, AI disclosure, Comms prefs API, Add-In notice, BCR, /legal hub</div></div>
+  <div class="sc"><div class="sc-num" style="color:#16A34A">38</div><div class="sc-lbl">Total placement touchpoints</div><div class="sc-sub">Across landing, signup, platform, settings, email footers, Add-In, and API responses</div></div>
+</div>
+
+<div class="jw">
+  <div class="jl">User Journey — Policy Touchpoints at a Glance (click a stage)</div>
+  <div class="js">
+    <div class="step" onclick="markStep(this)"><div class="st">🌐 Landing</div><div class="sb-wrap"><span class="sb c-cp">Cookie Banner</span><span class="sb c-pp">Privacy Link</span><span class="sb c-tc">T&amp;C Link</span></div></div>
+    <div class="step" onclick="markStep(this)"><div class="st">📝 Sign-Up</div><div class="sb-wrap"><span class="sb c-tc">T&amp;C ★</span><span class="sb c-pp">Privacy ★</span><span class="sb c-cm">Comms opt-in</span></div></div>
+    <div class="step" onclick="markStep(this)"><div class="st">🚀 Onboarding</div><div class="sb-wrap"><span class="sb c-ai">AI Disclosure ★</span><span class="sb c-pp">Data notice</span><span class="sb c-cm">Comms prefs</span></div></div>
+    <div class="step" onclick="markStep(this)"><div class="st">⚙️ Platform</div><div class="sb-wrap"><span class="sb c-ai">AI Labels ★</span><span class="sb c-au">AUP warnings</span><span class="sb c-ip">IP notice</span></div></div>
+    <div class="step" onclick="markStep(this)"><div class="st">✍️ E-Sign</div><div class="sb-wrap"><span class="sb c-tc">Legal notice ★</span><span class="sb c-pp">Data notice</span></div></div>
+    <div class="step" onclick="markStep(this)"><div class="st">💳 Billing</div><div class="sb-wrap"><span class="sb c-ca">Cancel Policy ★</span><span class="sb c-tc">T&amp;C ref</span></div></div>
+    <div class="step" onclick="markStep(this)"><div class="st">⚙️ Settings</div><div class="sb-wrap"><span class="sb c-cm">Comms Prefs ★</span><span class="sb c-pp">Data rights</span><span class="sb c-ai">AI controls</span></div></div>
+    <div class="step" onclick="markStep(this)"><div class="st">📚 Legal Hub</div><div class="sb-wrap"><span class="sb c-tc">All 10 docs</span><span class="sb c-le">LE Policy</span></div></div>
+    <div class="step" onclick="markStep(this)"><div class="st">📧 Emails</div><div class="sb-wrap"><span class="sb c-cm">Unsubscribe ★</span><span class="sb c-pp">Footer link</span><span class="sb c-tc">Footer link</span></div></div>
+  </div>
+</div>
+
+<div class="dp" id="dp">
+  <div class="dph"><div class="dpt" id="dpt">—</div><button class="dpc" onclick="document.getElementById('dp').classList.remove('vis')">✕ close</button></div>
+  <div class="dpg" id="dpg"></div>
+</div>
+
+<div class="mw">
+  <div class="mh">
+    <div class="mhc">Touchpoint / Surface</div>
+    <div class="mhc">T&amp;C</div><div class="mhc">Privacy</div><div class="mhc">Cookie</div>
+    <div class="mhc">AI Policy</div><div class="mhc">IP &amp; ©</div><div class="mhc">Law Enf.</div>
+    <div class="mhc">AUP</div><div class="mhc">Cancel</div><div class="mhc">Comms</div>
+  </div>
+
+  <!-- LANDING -->
+  <div class="mr"><div class="gh">LANDING PAGE &amp; PUBLIC SURFACES</div></div>
+
+  <div class="mr" onclick="show('Landing Page Footer','LandingPage.tsx ~line 1290 — footer already has Privacy Policy and Terms of Service as href=&quot;#&quot; placeholders. Must convert to real routes and add missing policies.','Policy','Action Required','T&C','Convert href=&quot;#&quot; → /legal/terms','Privacy','Convert href=&quot;#&quot; → /legal/privacy','Cookie Policy','Add Cookie Settings link to footer','AI Policy','Add link to footer Legal column','IP / Copyright','Add link to footer Legal column','Law Enforcement','Add link to footer (passive)','AUP','Add link to footer Legal column','Cancellation','Add link to footer Legal column','Comms Prefs','Add Preference Centre link to footer','File to edit','apps/sign/src/pages/LandingPage.tsx','Risk if missing','HIGH — legal links currently broken','Phase','Phase 1 — Day 1')">
+    <div class="rl"><div class="rlt">Footer — Landing Page</div><div class="rls">LandingPage.tsx ~line 1290</div></div>
+    <div class="mc"><span class="ct c-tc">Link</span></div><div class="mc"><span class="ct c-pp">Link</span></div>
+    <div class="mc"><span class="ct c-cp">Link</span></div><div class="mc"><span class="ct c-ai">Link</span></div>
+    <div class="mc"><span class="ct c-ip">Link</span></div><div class="mc"><span class="ct c-le">Link</span></div>
+    <div class="mc"><span class="ct c-au">Link</span></div><div class="mc"><span class="ct c-ca">Link</span></div>
+    <div class="mc"><span class="ct c-cm">Link</span></div>
+  </div>
+
+  <div class="mr" onclick="show('Cookie Consent Banner','NOT BUILT. New component: CookieConsentBanner.tsx mounted at App.tsx root. Fires on first load before any non-essential cookies. Accept All / Reject All / Manage Preferences. State in localStorage. Must gate all future analytics scripts.','Component','New: src/components/common/CookieConsentBanner.tsx','Mount point','App.tsx — above all routes','Trigger','First page load for any visitor','Cookie Policy','PRIMARY — Accept/Reject/Manage UI + link to /legal/cookies','Privacy Policy','Link inside banner','Analytics gating','All future GA/Hotjar scripts must check consent state before loading','Backend','None — frontend localStorage only (optional DB for logged-in users)','Risk if missing','HIGH — regulatory requirement','Phase','Phase 1 — Day 1')">
+    <div class="rl"><div class="rlt">Cookie Consent Banner</div><div class="rls">NEW — App.tsx root mount</div></div>
+    <div class="mc"><span class="em">—</span></div><div class="mc"><span class="ct c-pp">Ref link</span></div>
+    <div class="mc"><span class="ct c-cp">PRIMARY ★</span></div><div class="mc"><span class="em">—</span></div>
+    <div class="mc"><span class="em">—</span></div><div class="mc"><span class="em">—</span></div>
+    <div class="mc"><span class="em">—</span></div><div class="mc"><span class="em">—</span></div>
+    <div class="mc"><span class="em">—</span></div>
+  </div>
+
+  <!-- AUTH -->
+  <div class="mr"><div class="gh">AUTHENTICATION FLOWS</div></div>
+
+  <div class="mr" onclick="show('Registration — T&C Acceptance Checkbox','CRITICAL GAP. RegisterPage.tsx Step 2 has zero consent UI. Must add a checkbox (unchecked by default) with inline links. Submit button must be disabled until checked. Separate optional marketing opt-in checkbox below.','Status','COMPLETELY ABSENT — critical regulatory gap','File to edit','apps/sign/src/pages/auth/RegisterPage.tsx','Placement','Step 2 — below password/confirm fields, above submit button','T&C','Mandatory checkbox: I agree to Terms and Conditions (link to /legal/terms)','Privacy Policy','Same checkbox or separate: and Privacy Policy (link to /legal/privacy)','AUP','Incorporated by reference in checkbox text','Comms Prefs','Separate optional checkbox: I agree to receive marketing emails (default unchecked)','Submit button','Must be disabled until T&C checkbox is checked','Risk if missing','CRITICAL — no legal consent currently recorded at signup','Phase','Phase 1 — Day 1')">
+    <div class="rl"><div class="rlt">Registration — T&amp;C Checkbox</div><div class="rls">RegisterPage.tsx Step 2 — CRITICAL</div></div>
+    <div class="mc"><span class="ct c-tc">Checkbox ★</span></div><div class="mc"><span class="ct c-pp">Checkbox ★</span></div>
+    <div class="mc"><span class="em">—</span></div><div class="mc"><span class="ct c-ai">Note</span></div>
+    <div class="mc"><span class="em">—</span></div><div class="mc"><span class="em">—</span></div>
+    <div class="mc"><span class="ct c-au">By ref</span></div><div class="mc"><span class="em">—</span></div>
+    <div class="mc"><span class="ct c-cm">Opt-in ☐</span></div>
+  </div>
+
+  <div class="mr" onclick="show('Backend DB Migration — Consent Columns','Users entity has NO consent timestamps. New TypeORM migration required. All timestamps set server-side — never trusted from client.','Files to create/edit','user.entity.ts + new migration file in backend/src/database/migrations/','T&C','accepted_terms_at TIMESTAMPTZ — set server-side on POST /auth/register','Privacy Policy','accepted_privacy_policy_at TIMESTAMPTZ — same','AUP','accepted_aup_at TIMESTAMPTZ — same timestamp as T&C','Cookie','cookie_consent_given_at TIMESTAMPTZ + cookie_consent_version VARCHAR','AI Training','ai_training_opt_in BOOLEAN DEFAULT false','Marketing','marketing_email_opt_in BOOLEAN DEFAULT false','Terms Version','terms_version VARCHAR(20) — store current version string','DTO changes','RegisterDto: add agreed_to_terms: true (IsBoolean + IsTrue validation)','Risk if missing','CRITICAL — no evidence of consent recordable','Phase','Phase 1 — Day 1')">
+    <div class="rl"><div class="rlt">Backend — DB Migration</div><div class="rls">user.entity.ts + new migration file</div></div>
+    <div class="mc"><span class="ct c-tc">Column ★</span></div><div class="mc"><span class="ct c-pp">Column ★</span></div>
+    <div class="mc"><span class="ct c-cp">Column</span></div><div class="mc"><span class="ct c-ai">Column</span></div>
+    <div class="mc"><span class="em">—</span></div><div class="mc"><span class="em">—</span></div>
+    <div class="mc"><span class="ct c-au">Column</span></div><div class="mc"><span class="em">—</span></div>
+    <div class="mc"><span class="ct c-cm">Column</span></div>
+  </div>
+
+  <div class="mr" onclick="show('Invitation Accept Routes — Consent Notice','Two invitation routes exist: /auth/accept-invitation (team member) and /invitation/accept (contractor/guest). Both need a brief consent notice before the user completes their setup.','Route 1','/auth/accept-invitation — team member invitation','Route 2','/invitation/accept — contractor / guest signer invitation','T&C','Brief notice: By accepting this invitation you agree to T&C (link)','Privacy Policy','By accepting you acknowledge the Privacy Policy (link)','AUP','Brief reference incorporated in T&C note','Cookie','Covered by global banner — no separate notice needed','Implementation','Add a 2-line legal notice above the Accept button on both invitation pages','Risk if missing','MEDIUM — invited users have no record of consent','Phase','Phase 1')">
+    <div class="rl"><div class="rlt">Invitation Accept Pages</div><div class="rls">/auth/accept-invitation + /invitation/accept</div></div>
+    <div class="mc"><span class="ct c-tc">Notice</span></div><div class="mc"><span class="ct c-pp">Notice</span></div>
+    <div class="mc"><span class="em">—</span></div><div class="mc"><span class="em">—</span></div>
+    <div class="mc"><span class="em">—</span></div><div class="mc"><span class="em">—</span></div>
+    <div class="mc"><span class="ct c-au">By ref</span></div><div class="mc"><span class="em">—</span></div>
+    <div class="mc"><span class="em">—</span></div>
+  </div>
+
+  <!-- ONBOARDING -->
+  <div class="mr"><div class="gh">ONBOARDING FLOW (/app/onboarding)</div></div>
+
+  <div class="mr" onclick="show('Onboarding — AI Feature Disclosure Step','OnboardingPage.tsx exists at /app/onboarding. Before first AI feature use, user must see an AI Policy disclosure. Add as a dedicated step or modal in the onboarding tour — not skippable.','File to edit','apps/sign/src/pages/app/OnboardingPage.tsx','AI Policy','Disclosure: AI outputs are not legal advice, human review required, outputs may contain errors','Training opt-in','Toggle: Allow SIGN to use my contract data to improve AI models (default OFF)','Privacy','Brief note: what data AI features process','AUP','Brief: prohibited AI uses reference','Comms Prefs','Communication preferences opt-in step (email, notification channels)','Implementation','New step card in onboarding flow with AI icon, disclosure text, opt-in toggle','Backend needed','New PATCH /me/ai-preferences endpoint to save ai_training_opt_in flag','Risk if missing','HIGH — AI transparency obligation','Phase','Phase 1')">
+    <div class="rl"><div class="rlt">Onboarding — AI Disclosure</div><div class="rls">OnboardingPage.tsx — new step</div></div>
+    <div class="mc"><span class="em">—</span></div><div class="mc"><span class="ct c-pp">Brief</span></div>
+    <div class="mc"><span class="em">—</span></div><div class="mc"><span class="ct c-ai">Step ★</span></div>
+    <div class="mc"><span class="em">—</span></div><div class="mc"><span class="em">—</span></div>
+    <div class="mc"><span class="ct c-au">Brief</span></div><div class="mc"><span class="em">—</span></div>
+    <div class="mc"><span class="ct c-cm">Opt-in</span></div>
+  </div>
+
+  <!-- PLATFORM CORE -->
+  <div class="mr"><div class="gh">PLATFORM — AI FEATURES (CONTRACT REVIEW, COMPLIANCE, Q&amp;A)</div></div>
+
+  <div class="mr" onclick="show('AI Output — Disclaimer Labels','EVERY AI-generated output must be clearly labelled. This is required by AI Policy Section 8.4 and is SIGN&apos;s core transparency commitment. No AI output should appear without a label and disclaimer.','Scope','Every AI result: risk ratings, clause suggestions, compliance flags, summaries, Q&A responses','Label text','AI-Generated Analysis — Not Legal Advice — Human Review Required','Implementation','Add a reusable AIDisclaimer component rendered below every AI output block','Language','Arabic translation: تحليل بالذكاء الاصطناعي — ليس استشارة قانونية','Design','Small banner: purple/indigo background, robot icon, italic text, link to /legal/ai-policy','Risk if missing','HIGH — core AI transparency obligation','Phase','Phase 1')">
+    <div class="rl"><div class="rlt">AI Output — Disclaimer Labels</div><div class="rls">All AI result components platform-wide</div></div>
+    <div class="mc"><span class="em">—</span></div><div class="mc"><span class="em">—</span></div>
+    <div class="mc"><span class="em">—</span></div><div class="mc"><span class="ct c-ai">Label ★</span></div>
+    <div class="mc"><span class="em">—</span></div><div class="mc"><span class="em">—</span></div>
+    <div class="mc"><span class="em">—</span></div><div class="mc"><span class="em">—</span></div>
+    <div class="mc"><span class="em">—</span></div>
+  </div>
+
+  <div class="mr" onclick="show('AI Data Controls — Account Settings','The ai_training_opt_in DB column must have a UI surface. Currently it has NO API endpoint and NO settings page. Needs both a new API endpoint AND a new settings section.','Status','DB column planned but NO API surface and NO UI','New API needed','PATCH /me/ai-preferences — saves ai_training_opt_in boolean','New UI section','Add to ProfilePage.tsx or new /app/settings/ai route: AI Data Controls card','Toggle','Allow SIGN to use my contract data to improve AI models — default OFF','Policy link','Link to /legal/ai-policy for full details','Opt-out confirmation','Toast: Your AI training preference has been saved','Risk if missing','HIGH — AI training opt-out right with no mechanism','Phase','Phase 1')">
+    <div class="rl"><div class="rlt">AI Data Controls — Settings</div><div class="rls">ProfilePage.tsx or /settings/ai — new section</div></div>
+    <div class="mc"><span class="em">—</span></div><div class="mc"><span class="ct c-pp">Note</span></div>
+    <div class="mc"><span class="em">—</span></div><div class="mc"><span class="ct c-ai">Toggle ★</span></div>
+    <div class="mc"><span class="em">—</span></div><div class="mc"><span class="em">—</span></div>
+    <div class="mc"><span class="em">—</span></div><div class="mc"><span class="em">—</span></div>
+    <div class="mc"><span class="em">—</span></div>
+  </div>
+
+  <!-- NOTICES & CLAIMS -->
+  <div class="mr"><div class="gh">PLATFORM — NOTICES &amp; CLAIMS MANAGEMENT</div></div>
+
+  <div class="mr" onclick="show('Notices Module — Pre-Submit Warning','When a user submits a formal contractual notice, a pre-submission confirmation must include a legal responsibility notice. Required by AUP Section 4.2 and T&C Section 9.','Placement','Notice submission confirmation step / modal','Warning text','SIGN templates are aids only. You are responsible for ensuring this notice meets your contract&apos;s requirements. Submission does not constitute legal advice.','T&C','Inline reference: per SIGN Terms Section 9','AUP','Warning reference','If AI-drafted','Add additional AI disclaimer if notice was AI-drafted','Implementation','Add disclaimer text to the existing notice submission confirmation modal','Risk if missing','MEDIUM','Phase','Phase 2')">
+    <div class="rl"><div class="rlt">Notices — Pre-Submit Warning</div><div class="rls">Notice submission confirmation modal</div></div>
+    <div class="mc"><span class="ct c-tc">Section 9</span></div><div class="mc"><span class="em">—</span></div>
+    <div class="mc"><span class="em">—</span></div><div class="mc"><span class="ct c-ai">If AI</span></div>
+    <div class="mc"><span class="em">—</span></div><div class="mc"><span class="em">—</span></div>
+    <div class="mc"><span class="ct c-au">Warning ★</span></div><div class="mc"><span class="em">—</span></div>
+    <div class="mc"><span class="em">—</span></div>
+  </div>
+
+  <div class="mr" onclick="show('Claims Module — Legal Disclaimer','Formal claim submissions and settlement agreement execution must include mandatory legal disclaimers. Required by T&C Section 10 and AUP Section 4.3.','Scope','Claim submission form + Settlement Agreement execution modal','Disclaimer text','SIGN does not determine the validity, merit, or quantum of any claim. All decisions remain with the parties and their qualified advisors.','Settlement Agreement','Additional warning: Obtain independent legal advice before executing a settlement agreement through SIGN.','T&C reference','Per SIGN Terms Section 10','AUP','Per SIGN AUP Section 4.3','Implementation','Persistent info banner at top of claims module + modal disclaimer on settlement execution','Risk if missing','HIGH — liability exposure if relied upon as legal determination','Phase','Phase 1')">
+    <div class="rl"><div class="rlt">Claims — Legal Disclaimer</div><div class="rls">Claims module + settlement execution</div></div>
+    <div class="mc"><span class="ct c-tc">Section 10</span></div><div class="mc"><span class="em">—</span></div>
+    <div class="mc"><span class="em">—</span></div><div class="mc"><span class="ct c-ai">If AI</span></div>
+    <div class="mc"><span class="em">—</span></div><div class="mc"><span class="em">—</span></div>
+    <div class="mc"><span class="ct c-au">Warning ★</span></div><div class="mc"><span class="em">—</span></div>
+    <div class="mc"><span class="em">—</span></div>
+  </div>
+
+  <!-- E-SIGNATURE -->
+  <div class="mr"><div class="gh">E-SIGNATURE WORKFLOWS (DOCUSIGN INTEGRATION)</div></div>
+
+  <div class="mr" onclick="show('E-Signature — Pre-Execution Legal Notice','Before initiating a signing workflow, a notice must appear. Required by T&C Section 8.2.','Notice text','Electronic signatures executed through SIGN have legal effect under applicable UAE/MENA e-signature law. You are responsible for verifying that e-signature is valid for your document type and jurisdiction. SIGN does not verify signer identity beyond email.','Privacy note','Data collected during signing: name, email, IP address, timestamp, device. See Privacy Policy.','Placement','Signing initiation modal — before the DocuSign flow is triggered','T&C','Section 8.2 reference + link to /legal/terms#section-8','Privacy','Brief data collection note + link to /legal/privacy','Implementation','Add disclosure step to signing initiation modal','Risk if missing','HIGH','Phase','Phase 1')">
+    <div class="rl"><div class="rlt">E-Signature — Pre-Execution Notice</div><div class="rls">Signing initiation modal</div></div>
+    <div class="mc"><span class="ct c-tc">Notice ★</span></div><div class="mc"><span class="ct c-pp">Data note</span></div>
+    <div class="mc"><span class="em">—</span></div><div class="mc"><span class="em">—</span></div>
+    <div class="mc"><span class="em">—</span></div><div class="mc"><span class="em">—</span></div>
+    <div class="mc"><span class="em">—</span></div><div class="mc"><span class="em">—</span></div>
+    <div class="mc"><span class="em">—</span></div>
+  </div>
+
+  <div class="mr" onclick="show('Guest Signer — Data &amp; Cookie Notice','/invitation/accept route hosts Guest Signers who are NOT registered SIGN users. They must receive a simplified privacy notice and a minimal cookie notice (strictly necessary only — no marketing cookies for guests).','Route','/invitation/accept — ContractorDashboardPage (currently stub)','Cookie notice','Strictly necessary cookies only — no marketing/analytics. Brief notice at top of page.','Privacy notice','Data collected during signing: name, email, IP, timestamp, device. Used to verify your identity and create the e-signature audit trail. See Privacy Policy (link).','T&C','Brief: By signing you acknowledge the SIGN Terms of Service (link)','No full banner','Guest signers do not need the full cookie consent banner — simplified inline notice only','Risk if missing','HIGH — personal data processed without notice','Phase','Phase 1')">
+    <div class="rl"><div class="rlt">Guest Signer — Data &amp; Cookie Notice</div><div class="rls">/invitation/accept route</div></div>
+    <div class="mc"><span class="ct c-tc">Brief</span></div><div class="mc"><span class="ct c-pp">Notice ★</span></div>
+    <div class="mc"><span class="ct c-cp">Simplified</span></div><div class="mc"><span class="em">—</span></div>
+    <div class="mc"><span class="em">—</span></div><div class="mc"><span class="em">—</span></div>
+    <div class="mc"><span class="em">—</span></div><div class="mc"><span class="em">—</span></div>
+    <div class="mc"><span class="em">—</span></div>
+  </div>
+
+  <!-- SETTINGS -->
+  <div class="mr"><div class="gh">ACCOUNT SETTINGS PAGES</div></div>
+
+  <div class="mr" onclick="show('Billing Pages — Cancellation Policy Link','BillingPage.tsx and SubscriptionSettingsPage.tsx must both include a visible link to the Cancellation &amp; Downgrade Policy. Required by UAE Consumer Protection Law (Federal Law No. 15/2020).','Files to edit','apps/sign/src/pages/app/BillingPage.tsx + SubscriptionSettingsPage.tsx','Placement','Below the current plan card on BillingPage + within the plan expiry warning on SubscriptionSettingsPage','Cancellation Policy','Prominent link: View Cancellation &amp; Refund Policy → /legal/cancellation','Auto-renewal notice','Add: Your subscription auto-renews on [date]. Cancel at least 5 business days before.','T&C reference','See SIGN Terms Section 5 link','Risk if missing','HIGH — UAE consumer protection requires clear cancellation info','Phase','Phase 1')">
+    <div class="rl"><div class="rlt">Billing Pages — Cancel Policy Link</div><div class="rls">BillingPage.tsx + SubscriptionSettingsPage.tsx</div></div>
+    <div class="mc"><span class="ct c-tc">Section 5</span></div><div class="mc"><span class="em">—</span></div>
+    <div class="mc"><span class="em">—</span></div><div class="mc"><span class="em">—</span></div>
+    <div class="mc"><span class="em">—</span></div><div class="mc"><span class="em">—</span></div>
+    <div class="mc"><span class="em">—</span></div><div class="mc"><span class="ct c-ca">Link ★</span></div>
+    <div class="mc"><span class="em">—</span></div>
+  </div>
+
+  <div class="mr" onclick="show('Communication Preferences — New Page (COMPLETELY ABSENT)','CommunicationPreferencesPage.tsx does not exist. The email_digest_opt_out DB flag has no API surface. Must build from zero.','Route','New: /app/settings/communications','New API needed','PATCH /me/communication-preferences — expose email_digest_opt_out + marketing_email_opt_in','Sections','1. Email Notifications (digest frequency, categories) 2. Marketing & Updates (opt-in/out) 3. In-Platform Notifications 4. Communication language (Arabic/English)','Sidebar','Add Communications link to Sidebar.tsx navigation','Comms Policy','Link to /legal/communications for full details','Unsubscribe','One-click Unsubscribe from all marketing button','Risk if missing','HIGH — GDPR/UAE PDPL right to object to marketing requires mechanism','Phase','Phase 1')">
+    <div class="rl"><div class="rlt">Comms Preferences — New Page</div><div class="rls">NEW: /app/settings/communications — ABSENT</div></div>
+    <div class="mc"><span class="em">—</span></div><div class="mc"><span class="ct c-pp">Note</span></div>
+    <div class="mc"><span class="em">—</span></div><div class="mc"><span class="em">—</span></div>
+    <div class="mc"><span class="em">—</span></div><div class="mc"><span class="em">—</span></div>
+    <div class="mc"><span class="em">—</span></div><div class="mc"><span class="em">—</span></div>
+    <div class="mc"><span class="ct c-cm">Primary ★</span></div>
+  </div>
+
+  <div class="mr" onclick="show('Security/Privacy Page — Expand Data Rights Section','MySecurityPage.tsx has a basic GDPR export button. Must expand to a full Data &amp; Privacy Rights section with links to all relevant policies and rights mechanisms.','File to edit','apps/sign/src/pages/MySecurityPage.tsx','Rename section','GDPR → Data &amp; Privacy Rights (covers all MENA jurisdictions)','Add','Link to /legal/privacy for full rights explanation','Add','Link to /legal/law-enforcement','Add','Request Data Deletion button (email link — admin-side only currently)','Add','Link to AI Data Controls toggle','Add','Link to Communication Preferences','Cookie settings','Link: Manage Cookie Preferences → opens CookiePrefModal','BCR for Enterprise','Show DPA Request button only if user is on Enterprise plan','Risk if missing','MEDIUM','Phase','Phase 2')">
+    <div class="rl"><div class="rlt">Security Page — Data &amp; Privacy Rights</div><div class="rls">MySecurityPage.tsx — expand existing</div></div>
+    <div class="mc"><span class="em">—</span></div><div class="mc"><span class="ct c-pp">Rights ★</span></div>
+    <div class="mc"><span class="ct c-cp">Pref link</span></div><div class="mc"><span class="ct c-ai">Controls</span></div>
+    <div class="mc"><span class="em">—</span></div><div class="mc"><span class="ct c-le">Link</span></div>
+    <div class="mc"><span class="em">—</span></div><div class="mc"><span class="em">—</span></div>
+    <div class="mc"><span class="ct c-cm">Link</span></div>
+  </div>
+
+  <!-- LEGAL HUB -->
+  <div class="mr"><div class="gh">LEGAL HUB — ALL NEW ROUTES (ZERO EXIST — MUST BUILD FROM SCRATCH)</div></div>
+
+  <div class="mr" onclick="show('/legal — Legal Hub Index Page','New route: /legal. A public-facing grid of all 10 policy documents. Must be accessible without authentication (public route). Cards show policy name, last-updated date, brief description, and link to individual page.','Route','/legal — new public route','Component','New: src/pages/legal/LegalHubPage.tsx','Layout','Standalone layout (no sidebar/topbar — just header + footer)','Cards','10 policy cards: T&C, Privacy, Cookie, AI Policy, IP, Law Enforcement, AUP, Cancellation, Comms, BCR','Language toggle','Arabic/English toggle — content switches language','Auth','Public — no auth required','Risk if missing','HIGH — legal hub is referenced in all 10 policy documents','Phase','Phase 1')">
+    <div class="rl"><div class="rlt">/legal — Legal Hub Index</div><div class="rls">NEW PUBLIC ROUTE — policy grid</div></div>
+    <div class="mc"><span class="ct c-tc">Card ★</span></div><div class="mc"><span class="ct c-pp">Card ★</span></div>
+    <div class="mc"><span class="ct c-cp">Card ★</span></div><div class="mc"><span class="ct c-ai">Card ★</span></div>
+    <div class="mc"><span class="ct c-ip">Card ★</span></div><div class="mc"><span class="ct c-le">Card ★</span></div>
+    <div class="mc"><span class="ct c-au">Card ★</span></div><div class="mc"><span class="ct c-ca">Card ★</span></div>
+    <div class="mc"><span class="ct c-cm">Card ★</span></div>
+  </div>
+
+  <div class="mr" onclick="show('Individual Legal Policy Pages — 10 Routes','Each policy requires its own dedicated page at /legal/{slug}. All pages render inline HTML content (not PDF download). All are public routes. All use a shared LegalPageLayout component with: sticky ToC sidebar, last-updated date, language toggle, print button, and breadcrumb nav back to /legal.','Shared layout','New: src/pages/legal/LegalPageLayout.tsx — sticky sidebar ToC + header + footer','Routes to create','/legal/terms  /legal/privacy  /legal/cookies  /legal/ai-policy  /legal/ip  /legal/law-enforcement  /legal/acceptable-use  /legal/cancellation  /legal/communications  /legal/bcr','Content source','Policy content stored as structured data (TypeScript objects or MDX) — not fetched from API','Language','Each policy page has Arabic/English toggle — policy text stored in both languages','Cookie page special','Embeds Cookie Preference Centre widget inline in /legal/cookies page','Risk if missing','CRITICAL — all policy links currently broken','Phase','Phase 1')">
+    <div class="rl"><div class="rlt">10 Individual /legal/* Pages</div><div class="rls">/terms /privacy /cookies /ai-policy /ip /le /aup /cancel /comms /bcr</div></div>
+    <div class="mc"><span class="ct c-tc">Primary ★</span></div><div class="mc"><span class="ct c-pp">Primary ★</span></div>
+    <div class="mc"><span class="ct c-cp">Primary ★</span></div><div class="mc"><span class="ct c-ai">Primary ★</span></div>
+    <div class="mc"><span class="ct c-ip">Primary ★</span></div><div class="mc"><span class="ct c-le">Primary ★</span></div>
+    <div class="mc"><span class="ct c-au">Primary ★</span></div><div class="mc"><span class="ct c-ca">Primary ★</span></div>
+    <div class="mc"><span class="ct c-cm">Primary ★</span></div>
+  </div>
+
+  <!-- APP LAYOUT FOOTER -->
+  <div class="mr"><div class="gh">APP LAYOUT — AUTHENTICATED PLATFORM (CURRENTLY NO FOOTER AT ALL)</div></div>
+
+  <div class="mr" onclick="show('App Layout — Minimal Footer Strip','AppLayout.tsx has NO footer. All /app/* pages are completely devoid of legal links. A compact sticky footer strip (max 36px height) must be added to AppLayout.tsx.','File to edit','apps/sign/src/components/layout/AppLayout.tsx','Component','New: src/components/layout/AppFooter.tsx — minimal strip','Contents','© 2025 SIGN Technologies LLC  |  Legal  |  Privacy  |  Terms  |  Cookie Settings  |  Security','Legal link','/legal — opens Legal Hub','Cookie Settings','Opens CookiePreferenceModal (same as banner manage button)','Height','max-height: 36px — non-intrusive','Admin layout','Do NOT add to AdminLayout — admin users are not end-consumers','Risk if missing','HIGH — authenticated users have no access to legal info inside platform','Phase','Phase 1')">
+    <div class="rl"><div class="rlt">App Layout — Footer Strip</div><div class="rls">AppLayout.tsx — add AppFooter.tsx</div></div>
+    <div class="mc"><span class="ct c-tc">Strip</span></div><div class="mc"><span class="ct c-pp">Strip</span></div>
+    <div class="mc"><span class="ct c-cp">Settings ★</span></div><div class="mc"><span class="em">—</span></div>
+    <div class="mc"><span class="ct c-ip">© notice</span></div><div class="mc"><span class="em">—</span></div>
+    <div class="mc"><span class="em">—</span></div><div class="mc"><span class="em">—</span></div>
+    <div class="mc"><span class="em">—</span></div>
+  </div>
+
+  <!-- WORD ADD-IN -->
+  <div class="mr"><div class="gh">MICROSOFT WORD ADD-IN (apps/word-addin/)</div></div>
+
+  <div class="mr" onclick="show('Word Add-In — Login Screen &amp; Tab Disclosures','LoginTab.tsx has ZERO legal links or disclosures. RiskTab.tsx and SummaryTab.tsx have no AI disclaimers. Must add both.','LoginTab.tsx','Add below login button: By signing in you agree to SIGN Terms of Service and Privacy Policy (links open in system browser using Office.context.ui.openBrowserWindow)','RiskTab.tsx','Add AI disclaimer strip at bottom: AI-Generated Risk Analysis — Not Legal Advice — Human Review Required','SummaryTab.tsx','Add AI disclaimer strip: AI-Generated Summary — Verify independently before relying on this content','Footer','Add copyright: © 2025 SIGN Technologies LLC in each tab footer','Link method','Use Office.context.ui.openBrowserWindow(url) — cannot use regular anchor tags in Add-In','Risk if missing','HIGH — first-run users have no policy disclosure in Add-In','Phase','Phase 1')">
+    <div class="rl"><div class="rlt">Word Add-In — Login &amp; AI Tab Notices</div><div class="rls">LoginTab.tsx + RiskTab.tsx + SummaryTab.tsx</div></div>
+    <div class="mc"><span class="ct c-tc">Login ★</span></div><div class="mc"><span class="ct c-pp">Login ★</span></div>
+    <div class="mc"><span class="em">—</span></div><div class="mc"><span class="ct c-ai">Tab note ★</span></div>
+    <div class="mc"><span class="ct c-ip">© footer</span></div><div class="mc"><span class="em">—</span></div>
+    <div class="mc"><span class="em">—</span></div><div class="mc"><span class="em">—</span></div>
+    <div class="mc"><span class="em">—</span></div>
+  </div>
+
+  <!-- EMAIL -->
+  <div class="mr"><div class="gh">EMAIL TEMPLATES (backend/src/modules/notifications/templates/)</div></div>
+
+  <div class="mr" onclick="show('Email Templates — Legal Footer Block','All transactional emails sent by the NestJS backend must include a standardized legal footer block. Templates are in backend/src/modules/notifications/templates/.','Footer content','© 2025 SIGN Technologies LLC · Dubai Internet City, Dubai, UAE','Footer links','Privacy Policy  |  Terms of Service  |  Unsubscribe (marketing emails only)','Unsubscribe URL','${FRONTEND_URL}/unsubscribe?token=${unsubToken} — generates a signed unsubscribe token','T&C link','${FRONTEND_URL}/legal/terms','Privacy link','${FRONTEND_URL}/legal/privacy','Marketing only','Unsubscribe link only in marketing/promotional emails — not in transactional (invoices, security alerts, etc.)','New endpoint needed','GET /unsubscribe?token=xxx — validates token, sets marketing_email_opt_in = false','Risk if missing','HIGH — UAE/MENA anti-spam law + GDPR right to object require unsubscribe mechanism','Phase','Phase 1')">
+    <div class="rl"><div class="rlt">Email Templates — Legal Footer</div><div class="rls">backend notifications templates — all emails</div></div>
+    <div class="mc"><span class="ct c-tc">Footer</span></div><div class="mc"><span class="ct c-pp">Footer</span></div>
+    <div class="mc"><span class="em">—</span></div><div class="mc"><span class="em">—</span></div>
+    <div class="mc"><span class="ct c-ip">© footer</span></div><div class="mc"><span class="em">—</span></div>
+    <div class="mc"><span class="em">—</span></div><div class="mc"><span class="ct c-ca">Unsub</span></div>
+    <div class="mc"><span class="ct c-cm">Unsub ★</span></div>
+  </div>
+
+  <!-- ENTERPRISE -->
+  <div class="mr"><div class="gh">ENTERPRISE — BCR &amp; DPA (PHASE 2)</div></div>
+
+  <div class="mr" onclick="show('Enterprise — BCR &amp; DPA Access','Enterprise plan users need access to the BCR Privacy Code and a DPA request mechanism. Gate by subscription plan.','Route','/legal/bcr — BCR Privacy Code page (public, but primarily for Enterprise)','DPA Request button','In Security/Privacy settings — only visible if user org is on Enterprise plan','DPA button action','mailto:legal@sign.io?subject=DPA Request — [Org Name]','Plan gating','Check subscription plan from /subscriptions/current response — show button only for Enterprise','BCR Policy link','Link from Privacy Policy → /legal/bcr','Risk if missing','LOW (Phase 2 — Enterprise customers may require this)','Phase','Phase 2')">
+    <div class="rl"><div class="rlt">Enterprise — BCR &amp; DPA Access</div><div class="rls">/legal/bcr + Settings (Enterprise gated)</div></div>
+    <div class="mc"><span class="ct c-tc">Corp ref</span></div><div class="mc"><span class="ct c-pp">BCR ref</span></div>
+    <div class="mc"><span class="em">—</span></div><div class="mc"><span class="ct c-ai">AI Attach</span></div>
+    <div class="mc"><span class="em">—</span></div><div class="mc"><span class="em">—</span></div>
+    <div class="mc"><span class="em">—</span></div><div class="mc"><span class="ct c-ca">Entprise</span></div>
+    <div class="mc"><span class="ct c-cm">DPA req</span></div>
+  </div>
+
+</div>
+
+<script>
+function show(title, desc, ...pairs) {
+  const dp = document.getElementById('dp');
+  document.getElementById('dpt').textContent = title;
+  let html = `<div class="dcard" style="grid-column:1/-1;background:#EFF6FF;border-color:#BFDBFE">
+    <div class="dct" style="color:#1D4ED8">Implementation Note</div>
+    <div class="dcb">${desc}</div></div>`;
+  for (let i = 0; i < pairs.length; i += 2) {
+    if (!pairs[i+1] || pairs[i+1] === '—') continue;
+    html += `<div class="dcard"><div class="dct">${pairs[i]}</div><div class="dcb">${pairs[i+1]}</div></div>`;
+  }
+  document.getElementById('dpg').innerHTML = html;
+  dp.classList.add('vis');
+  dp.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+function markStep(el) {
+  document.querySelectorAll('.step').forEach(s=>s.classList.remove('active'));
+  el.classList.add('active');
+}
+</script>
+</body>
+</html>
