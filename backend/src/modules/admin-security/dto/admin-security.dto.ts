@@ -26,6 +26,12 @@ export class ChangePasswordDto {
   @IsString() @Length(8, 128) new_password: string;
 }
 
+export class UpdateCommunicationPreferencesDto {
+  @IsOptional() @IsBoolean() marketing_email_opt_in?: boolean;
+  @IsOptional() @IsBoolean() email_digest_opt_out?: boolean;
+  @IsOptional() @IsBoolean() ai_training_opt_in?: boolean;
+}
+
 // ─── Security Policy ──────────────────────────────────────
 
 export class UpdateSecurityPolicyDto {

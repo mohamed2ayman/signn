@@ -24,6 +24,7 @@ import { SECURITY_EVENT_TYPES } from '../../../common/enums/security-event-types
 import {
   ChangePasswordDto,
   UpdateProfileDto,
+  UpdateCommunicationPreferencesDto,
 } from '../dto/admin-security.dto';
 import { GdprExportService } from '../services/gdpr-export.service';
 
@@ -143,6 +144,44 @@ export class ProfileController {
       actorId: user.id,
       ipAddress: this.ipOf(req),
     });
+  }
+
+  // ─── Communication preferences ───────────────────────────────
+  @Get('communication-preferences')
+  async getCommunicationPreferences(@CurrentUser() user: User) {
+    const fresh = await this.userRepo.findOne({ where: { id: user.id } });
+    if (!fresh) throw new BadRequestException('User not found');
+    return {
+      marketing_email_opt_in: fresh.marketing_email_opt_in,
+      email_digest_opt_out: fresh.email_digest_opt_out,
+      ai_training_opt_in: fresh.ai_training_opt_in,
+    };
+  }
+
+  @Patch('communication-preferences')
+  async updateCommunicationPreferences(
+    @CurrentUser() user: User,
+    @Body() dto: UpdateCommunicationPreferencesDto,
+  ) {
+    const patch: {
+      marketing_email_opt_in?: boolean;
+      email_digest_opt_out?: boolean;
+      ai_training_opt_in?: boolean;
+    } = {};
+    if (dto.marketing_email_opt_in !== undefined) {
+      patch.marketing_email_opt_in = dto.marketing_email_opt_in;
+    }
+    if (dto.email_digest_opt_out !== undefined) {
+      patch.email_digest_opt_out = dto.email_digest_opt_out;
+    }
+    if (dto.ai_training_opt_in !== undefined) {
+      patch.ai_training_opt_in = dto.ai_training_opt_in;
+    }
+    if (Object.keys(patch).length === 0) {
+      return this.getCommunicationPreferences(user);
+    }
+    await this.userRepo.update(user.id, patch);
+    return this.getCommunicationPreferences(user);
   }
 
   private ipOf(req: Request): string | null {

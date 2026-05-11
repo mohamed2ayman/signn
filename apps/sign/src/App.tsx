@@ -61,6 +61,7 @@ import AdminSecurityDashboardPage from '@/pages/admin/AdminSecurityDashboardPage
 import AdminSecurityAuditPage from '@/pages/admin/AdminSecurityAuditPage';
 import MySecurityPage from '@/pages/MySecurityPage';
 import ProjectObligationsPage from '@/pages/app/ProjectObligationsPage';
+import CommunicationPreferencesPage from '@/pages/app/CommunicationPreferencesPage';
 
 // Guest Portal pages
 import ContractorDashboardPage from '@/pages/contractor/ContractorDashboardPage';
@@ -123,6 +124,7 @@ const clientNavItems = [
   { label: 'nav.knowledge', path: '/app/knowledge-assets', icon: '📚' },
   { label: 'nav.obligations', path: '/app/obligations', icon: '📋' },
   { label: 'nav.notifications', path: '/app/notifications', icon: '🔔' },
+  { label: 'nav.communications', path: '/app/settings/communications', icon: '📣' },
   { label: 'nav.approvals', path: '/app/approvals', icon: '✅' },
   { label: 'nav.team', path: '/app/team', icon: '👥' },
   { label: 'nav.store', path: '/app/store', icon: '🛒' },
@@ -231,6 +233,7 @@ function App() {
         <Route path="store/contract/:id" element={<ContractStoreDetailPage />} />
         <Route path="profile" element={<ProfilePage />} />
         <Route path="settings/security" element={<MySecurityPage />} />
+        <Route path="settings/communications" element={<CommunicationPreferencesPage />} />
         <Route path="settings/billing" element={<BillingPage />} />
         <Route path="settings/subscription" element={<SubscriptionSettingsPage />} />
         <Route path="approvals" element={<ApprovalsPage />} />
