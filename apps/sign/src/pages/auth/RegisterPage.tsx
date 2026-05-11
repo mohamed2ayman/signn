@@ -33,6 +33,8 @@ const RegisterPage: React.FC = () => {
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [apiError, setApiError] = useState('');
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
+  const [marketingOptIn, setMarketingOptIn] = useState(false);
 
   useEffect(() => {
     if (isAuthenticated && user) {
@@ -104,6 +106,11 @@ const RegisterPage: React.FC = () => {
 
     if (!validateStep2()) return;
 
+    if (!agreedToTerms) {
+      setApiError('You must accept the Terms and Conditions to register.');
+      return;
+    }
+
     const result = await register({
       email: formData.email,
       password: formData.password,
@@ -113,6 +120,8 @@ const RegisterPage: React.FC = () => {
       industry: formData.industry || undefined,
       country: formData.country || undefined,
       plan_id: selectedPlanId,
+      agreed_to_terms: agreedToTerms,
+      marketing_email_opt_in: marketingOptIn,
     });
 
     if (result.error) {
@@ -368,7 +377,47 @@ const RegisterPage: React.FC = () => {
           {t('auth.passwordHint', 'Min 8 characters, 1 uppercase, 1 number, 1 special character')}
         </p>
 
-        <div className="flex gap-3">
+        <div className="mt-4 space-y-3 rounded-lg border border-gray-100 bg-gray-50 p-3">
+          <label className="flex items-start gap-2 text-sm text-gray-700">
+            <input
+              type="checkbox"
+              checked={agreedToTerms}
+              onChange={(e) => setAgreedToTerms(e.target.checked)}
+              aria-label="Agree to Terms and Conditions and Privacy Policy"
+              className="mt-0.5 h-4 w-4 accent-indigo-600"
+              required
+            />
+            <span>
+              I agree to the{' '}
+              <Link to="/legal/terms" className="text-indigo-600 hover:underline">
+                Terms and Conditions
+              </Link>{' '}
+              and{' '}
+              <Link to="/legal/privacy" className="text-indigo-600 hover:underline">
+                Privacy Policy
+              </Link>
+              <span className="mt-0.5 block text-xs text-gray-500">
+                By agreeing, you also accept our{' '}
+                <Link to="/legal/acceptable-use" className="text-indigo-600 hover:underline">
+                  Acceptable Use Policy
+                </Link>
+                .
+              </span>
+            </span>
+          </label>
+          <label className="flex items-start gap-2 text-sm text-gray-700">
+            <input
+              type="checkbox"
+              checked={marketingOptIn}
+              onChange={(e) => setMarketingOptIn(e.target.checked)}
+              aria-label="Agree to receive marketing emails"
+              className="mt-0.5 h-4 w-4 accent-indigo-600"
+            />
+            <span>I agree to receive marketing emails and product updates from SIGN</span>
+          </label>
+        </div>
+
+        <div className="mt-4 flex gap-3">
           <button
             type="button"
             onClick={() => setStep(1)}
@@ -380,6 +429,7 @@ const RegisterPage: React.FC = () => {
             type="submit"
             fullWidth
             isLoading={isLoading}
+            disabled={!agreedToTerms}
             size="lg"
           >
             {t('auth.signUp')}

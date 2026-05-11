@@ -5,6 +5,7 @@ import type { RootState } from '@/store';
 import { useAuth } from '@/hooks/useAuth';
 import Sidebar from './Sidebar';
 import TopBar from './TopBar';
+import AppFooter from './AppFooter';
 import LiveChatWidget from '@/components/support-chat/LiveChatWidget';
 
 interface AppLayoutProps {
@@ -43,6 +44,7 @@ export default function AppLayout({ navItems }: AppLayoutProps) {
         <div className="p-6 lg:p-8">
           <Outlet />
         </div>
+        <AppFooter />
       </main>
       {/*
         Live Chat Support — floating bottom-right launcher. Visible on every

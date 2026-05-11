@@ -19,6 +19,8 @@ export interface RegisterRequest {
   industry?: string;
   country?: string;
   plan_id: string;
+  agreed_to_terms: boolean;
+  marketing_email_opt_in?: boolean;
 }
 
 export interface VerifyMfaRequest {

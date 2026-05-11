@@ -1334,7 +1334,7 @@ export default function LandingPage() {
             <div>
               <h4 className="mb-4" style={{ color: 'white', fontWeight: 600, fontSize: 14 }}>Company</h4>
               <ul className="space-y-2.5">
-                {['About Us', 'Contact Us', 'Privacy Policy', 'Terms of Service'].map((l) => (
+                {['About Us', 'Contact Us'].map((l) => (
                   <li key={l}>
                     <a href="#" className="text-sm transition-colors" style={{ color: '#94A3B8' }} onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = 'white'; }} onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = '#94A3B8'; }}>
                       {l}
@@ -1342,10 +1342,34 @@ export default function LandingPage() {
                   </li>
                 ))}
                 <li>
+                  <a href="#" className="text-sm transition-colors" style={{ color: '#94A3B8' }} onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = 'white'; }} onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = '#94A3B8'; }}>
+                    Help Center
+                  </a>
+                </li>
+                <li>
                   <a href="#" className="text-sm transition-colors" style={{ color: '#94A3B8', fontFamily: 'Cairo, sans-serif', direction: 'rtl' }} onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = 'white'; }} onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = '#94A3B8'; }}>
                     {'\u0645\u0631\u0643\u0632 \u0627\u0644\u0645\u0633\u0627\u0639\u062F\u0629'}
                   </a>
                 </li>
+              </ul>
+
+              <h4 className="mb-4 mt-6" style={{ color: 'white', fontWeight: 600, fontSize: 14 }}>Legal</h4>
+              <ul className="space-y-2.5">
+                {[
+                  { label: 'Legal Hub', to: '/legal' },
+                  { label: 'Privacy Policy', to: '/legal/privacy' },
+                  { label: 'Terms of Service', to: '/legal/terms' },
+                  { label: 'Cookie Policy', to: '/legal/cookies' },
+                  { label: 'AI Policy', to: '/legal/ai-policy' },
+                  { label: 'Acceptable Use', to: '/legal/acceptable-use' },
+                  { label: 'Cancellation Policy', to: '/legal/cancellation' },
+                ].map((l) => (
+                  <li key={l.to}>
+                    <Link to={l.to} className="text-sm transition-colors" style={{ color: '#94A3B8' }} onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = 'white'; }} onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = '#94A3B8'; }}>
+                      {l.label}
+                    </Link>
+                  </li>
+                ))}
               </ul>
 
               {/* Footer language selector */}
