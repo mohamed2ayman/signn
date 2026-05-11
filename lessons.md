@@ -1520,3 +1520,234 @@ When deploying to production, every `http://localhost:5175` reference becomes `h
 
 *Last updated: 2026-05-13*
 *Feed this file to Claude at the start of every new session*
+
+---
+
+## Legal & Policy Layer Implementation — May 2025
+
+**Context:** Full implementation of the SIGN Platform legal and compliance layer across 5 commits on `feat/legal-layer`. Covered: 10 policy documents, 11 new public routes, cookie consent, T&C acceptance, DB migration, AI disclaimers, communications preferences, and Word Add-In disclosures.
+
+### Lesson 1 — Always Fast-Forward Before Committing to a Shared Branch
+
+**What happened:** When the legal-docs commit was pushed to `main`, local `main` was 3 commits behind `origin/main`. The push would have been rejected if changes had been committed first.
+
+**Fix:** Always run `git pull origin <branch>` or `git fetch && git merge` before committing when working on a shared branch with a colleague.
+
+**Rule:** Before any commit+push sequence on a shared branch, run:
+
+```bash
+git fetch origin
+git status
+git pull origin HEAD
+```
+
+### Lesson 2 — Feature Branches Are Non-Negotiable for Large Changes
+
+**What happened:** The initial prompt scripted direct commits to `main` for a 25-file, 2-endpoint, 1-migration change. Claude Code correctly flagged this as risky before executing.
+
+**Fix:** Used `feat/legal-layer` feature branch instead. All 5 commits landed there. PR opened for colleague review before merge to main.
+
+**Rule:** Any change touching more than 5 files, any DB migration, or any NestJS endpoint addition must go on a feature branch and through a PR. Never commit directly to `main` for changes of this scope.
+
+### Lesson 3 — class-validator Does Not Ship @IsTrue — Use @Equals(true)
+
+**What happened:** The `RegisterDto` implementation required a validator that ensures `agreed_to_terms` must be boolean `true` (not just truthy). The prompt specified `@IsTrue()` but `class-validator` does not export that decorator.
+
+**Fix:** Used `@Equals(true)` instead, which produces identical server-side behavior and is the canonical class-validator equivalent.
+
+**Rule:** When validating that a boolean field must be `true` (e.g. consent checkboxes), use:
+
+```typescript
+@IsBoolean()
+@Equals(true, { message: 'You must accept the Terms and Conditions' })
+agreed_to_terms: boolean;
+```
+
+Do not use `@IsTrue()` — it does not exist in `class-validator`.
+
+### Lesson 4 — TypeORM Migration Timestamps Must Be Unique and Current
+
+**What happened:** The `AddConsentColumns` migration needed a timestamp prefix in its filename (e.g. `1746950000001-AddConsentColumns.ts`). Using a stale or duplicate timestamp causes TypeORM to misorder migrations or skip them.
+
+**Fix:** Always use the actual current Unix millisecond timestamp when naming a new migration file. Do not copy a timestamp from an existing migration.
+
+**Rule:** Generate migration filenames with:
+
+```bash
+date +%s%3N
+```
+
+Use that output as the prefix: `{timestamp}-MigrationName.ts`.
+
+### Lesson 5 — Public Routes Must Be Declared Before ProtectedRoute in App.tsx
+
+**What happened:** All 11 `/legal/*` routes needed to be accessible without authentication. If placed inside the `ProtectedRoute` wrapper, unauthenticated users (including Google crawlers, guest signers, and users reading the T&C before registering) would be redirected to `/auth/login`.
+
+**Fix:** All `/legal/*` routes were added BEFORE the `ProtectedRoute` wrapper in `App.tsx`.
+
+**Rule:** In React Router DOM v6 with a `ProtectedRoute` pattern, any route that must be publicly accessible (legal pages, landing, auth pages) must be declared outside and before the `ProtectedRoute` element in the Routes tree. Structure:
+
+```tsx
+<Routes>
+  <Route path="/" element={<LandingPage />} />          {/* public */}
+  <Route path="/legal" element={<LegalHubPage />} />    {/* public */}
+  <Route path="/legal/*" element={<.../>} />            {/* public */}
+  <Route path="/auth/*" element={<.../>} />             {/* public */}
+  <Route element={<ProtectedRoute />}>                  {/* auth required */}
+    <Route path="/app/*" element={<.../>} />
+  </Route>
+</Routes>
+```
+
+### Lesson 6 — Cookie Consent State Belongs in localStorage, Not Redux
+
+**What happened:** Cookie consent state needs to persist across sessions and be accessible before the React app fully hydrates (to prevent flash of unconsented analytics loading). Redux state is lost on page refresh.
+
+**Fix:** Cookie consent is stored in `localStorage` under the key `'sign_cookie_consent'` as a JSON object with `status`, `timestamp`, `version`, and `categories`. A `CookieConsentContext` wraps the app to share the `openPreferences()` function without prop drilling.
+
+**Rule:** Any state that must survive page refresh AND must be readable before React hydration (consent flags, language preference, theme) belongs in `localStorage`, not Redux. Use a context to expose the setter.
+
+### Lesson 7 — Office Add-In Links Cannot Use Regular Anchor Tags
+
+**What happened:** The Word Add-In (`apps/word-addin/`) runs inside Microsoft Office's sandboxed webview. Regular `<a href="...">` tags either do nothing or throw security errors when pointing to external URLs.
+
+**Fix:** All external links in the Add-In use:
+
+```typescript
+Office.context.ui.openBrowserWindow('https://www.sign.io/legal/terms')
+```
+
+Wrapped in a `<span onClick={...}>` element styled to look like a link.
+
+**Rule:** Never use `<a href>` for external navigation inside any Office Add-In component. Always use `Office.context.ui.openBrowserWindow(url)`. This applies to all tabs: LoginTab, RiskTab, SummaryTab, LibraryTab, UploadTab, ChatTab.
+
+### Lesson 8 — Sidebar Navigation Is Emoji-Driven, Not Lucide-React
+
+**What happened:** The implementation prompt specified adding a Communications entry to the Sidebar with a lucide-react `Bell` icon, matching the pattern used in other platform components. But the `clientNavItems` array in `App.tsx` uses emoji strings as icons, not React components.
+
+**Fix:** Added the Communications sidebar entry using the 📣 emoji to match the existing convention rather than rewriting the sidebar schema.
+
+**Rule:** Before adding any navigation item to `Sidebar.tsx`, check the schema of the existing nav items array. The SIGN sidebar uses emoji strings `{ label, path, icon: string }` — not lucide-react components. If the sidebar is ever refactored to use lucide-react, update all entries at once.
+
+### Lesson 9 — DB Columns for Compliance Flags Need API Surface Immediately
+
+**What happened:** The `email_digest_opt_out` column was added in a previous migration (Phase 3.4 compliance) but had no API endpoint to read or update it. It could only be changed via direct SQL. This meant the feature existed in the DB but was completely inaccessible to users for months.
+
+**Fix:** In this session, `PATCH /me/communication-preferences` was added to expose `email_digest_opt_out` alongside the new `marketing_email_opt_in` and `ai_training_opt_in` columns. All three are now settable via the `CommunicationPreferencesPage`.
+
+**Rule:** Every time a new boolean preference or flag column is added to the `users` table, the corresponding API endpoint (GET + PATCH) and UI toggle must be shipped in the same PR. Never ship a DB column without its API surface.
+
+### Lesson 10 — Legal Pages Need a Standalone Layout With No Sidebar
+
+**What happened:** Legal pages (`/legal/*`) are public-facing and must be accessible without authentication. They also need a different visual structure from the authenticated app (no sidebar, no app topbar, different header with breadcrumb back to `/legal`).
+
+**Fix:** Created `LegalPageLayout.tsx` as a standalone layout component used exclusively by all `/legal/*` pages. It has its own header, sticky ToC sidebar, content area, and footer — completely independent of `AppLayout` and `AdminLayout`.
+
+**Rule:** When adding public-facing pages to a platform that has an authenticated layout, always create a separate standalone layout component. Do not try to conditionally hide the sidebar/topbar in the existing `AppLayout` — that approach creates visual flicker and couples public pages to auth state.
+
+### Lesson 11 — AI Output Components Must Always Show Disclaimer Labels
+
+**What happened:** The SIGN platform's AI features (contract risk analysis, compliance checking, Q&A chat) produced outputs with no indication that the content was AI-generated or that it was not legal advice. This creates both regulatory risk and user misunderstanding.
+
+**Fix:** Created a reusable `AIDisclaimer` component added to the top-level rendering parent of each AI output: ContractDetailPage (Risk tab), ComplianceTab, and ChatPanel.
+
+**Rule:** Every component that renders AI-generated output must include `<AIDisclaimer />` immediately below the output. The `compact={true}` prop is for inline use within tight layouts. The full version is for dedicated output panels. Never remove or make the disclaimer conditional on user preference — it is a transparency obligation, not a feature.
+
+### Lesson 12 — T&C Acceptance Requires Both Frontend and Backend Enforcement
+
+**What happened:** The registration flow had no T&C acceptance at all. Adding it required changes in three places: the frontend checkbox + disabled button state, the `RegisterDto` validation, and the `auth.service` timestamp recording.
+
+**Fix:** All three layers implemented in the same commit:
+- **Frontend:** `agreedToTerms` state, `disabled={!agreedToTerms}` on submit button
+- **DTO:** `@Equals(true)` validation on `agreed_to_terms`
+- **Service:** `accepted_terms_at = new Date()` set server-side on registration
+
+**Rule:** Consent acceptance must be enforced at all three layers. Frontend disabling is UX — a user can bypass it with DevTools. DTO validation is the real enforcement. Server-side timestamp recording is the legal evidence. All three must ship together.
+
+### Lesson 13 — Settlement Agreement Acknowledgment Deferred — Track It
+
+**What happened:** The legal layer required a mandatory acknowledgment checkbox before executing a settlement agreement through the Claims module. The settlement execution modal does not yet exist in the codebase.
+
+**Status:** DEFERRED. The persistent claims disclaimer banner shipped. The settlement acknowledgment checkbox will be added when the settlement execution modal is built.
+
+**Backlog item:** When building the Claims settlement execution modal, add a mandatory checkbox above the confirm button:
+
+```tsx
+<label className="flex items-start gap-3 cursor-pointer">
+  <input
+    type="checkbox"
+    checked={settlementAcknowledged}
+    onChange={(e) => setSettlementAcknowledged(e.target.checked)}
+    className="mt-0.5 accent-amber-600"
+  />
+  <span className="text-sm text-amber-800">
+    I understand that executing this settlement agreement has legal
+    consequences. I have obtained independent legal advice or
+    waive my right to do so. This action cannot be undone.
+  </span>
+</label>
+```
+
+Disable the confirm button while `settlementAcknowledged` is false.
+
+### Lesson 14 — Verify Columns After Every Migration, Not Just After Running It
+
+**What happened:** The migration ran successfully but we still ran `\d users` separately to confirm all 8 columns were actually present. This caught an important distinction — a successful migration log does not guarantee the columns are there if the migration file had errors.
+
+**Fix:** After every migration, always run the column verification step:
+
+```bash
+docker-compose exec postgres psql -U sign_user -d sign_db -c "\d users"
+```
+
+And visually confirm each expected column appears in the output.
+
+**Rule:** Migration success message ≠ column presence confirmed. Always verify the DB state directly after running migrations, especially for migrations that add columns depended on by new API endpoints or frontend features.
+
+### Lesson 15 — Large Feature Branches Need Phased Commits, Not One Mega-Commit
+
+**What happened:** The initial implementation prompt had one final commit at the end covering all 20 tasks. Claude Code correctly flagged that a single mega-commit for ~25 new files and ~15 modified files would be very difficult to review, revert, or debug.
+
+**Fix:** Used 4 logical commit batches:
+- **Commit 1:** DB layer (migration + entity + DTO + service)
+- **Commit 2:** Frontend pages (legal hub + 10 policy pages + cookie banner + footer)
+- **Commit 3:** Disclaimers (AI labels + claims + e-sign + billing + invite + Add-In)
+- **Commit 4:** Communications (endpoint + page + sidebar)
+
+**Rule:** For any feature branch with more than 10 file changes, plan commits by logical layer rather than by task number. Group: DB changes → API changes → Frontend pages → Frontend components → Integration/wiring. Each commit should be independently deployable and reviewable.
+
+### Lesson 16 — Document Legal Policy Decisions in /legal-docs, Not Just in Code
+
+**What happened:** 10 legally drafted policy documents (Terms, Privacy, Cookie, AI Policy, IP, Law Enforcement, AUP, Cancellation, Communications, BCR) were created specifically for SIGN and needed to be accessible to both the development team and legal reviewers.
+
+**Fix:** Created `/legal-docs/` folder at project root with:
+- `/policies/` — 10 DOCX files (authoritative source of truth)
+- `/placement/` — Interactive HTML placement matrix
+- `/prompt/` — Claude Code implementation prompt
+- `README.md` — document index and usage guide
+- `CLAUDE.md` updated with legal context
+
+**Rule:** Legal documents are not code and must not live only in the frontend as TypeScript strings. Keep the authoritative DOCX versions in `/legal-docs/policies/` and treat them as source of truth. The TypeScript content files in `apps/sign/src/pages/legal/content/` are derived from these documents, not the other way around.
+
+### Summary — Legal Layer Phase 1 Complete
+
+- **Branch:** `feat/legal-layer` (5 commits ahead of `main`)
+- **PR:** https://github.com/mohamed2ayman/signn/pull/new/feat/legal-layer
+- **Verification:** 15/15 checks pass
+- **TypeScript:** Clean (0 legal-layer errors)
+- **Migration:** `AddConsentColumns1746950000001` executed
+- **New columns:** 8 (all verified present)
+- **New routes:** 11 (`/legal/*`)
+- **New files:** ~25
+- **Modified files:** ~15
+
+**Remaining for Phase 2:**
+- Merge `feat/legal-layer` to `main`
+- Run migration on production/shared DB after merge
+- Settlement agreement acknowledgment checkbox (when modal is built)
+- Arabic translations for all policy content (i18n keys stubbed)
+- BCR/DPA request button gated by Enterprise plan (account settings)
+
+---
+
+*Last updated: 2026-05-12 (legal layer Phase 1)*
