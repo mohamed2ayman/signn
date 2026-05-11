@@ -268,6 +268,7 @@ export class AuthService {
     const savedOrganization =
       await this.organizationRepository.save(organization);
 
+    const consentTimestamp = dto.agreed_to_terms ? new Date() : null;
     const user = this.userRepository.create({
       email: dto.email,
       password_hash: passwordHash,
@@ -277,6 +278,11 @@ export class AuthService {
       organization_id: savedOrganization.id,
       is_active: true,
       is_email_verified: false,
+      accepted_terms_at: consentTimestamp,
+      accepted_privacy_policy_at: consentTimestamp,
+      accepted_aup_at: consentTimestamp,
+      terms_version: '1.0',
+      marketing_email_opt_in: dto.marketing_email_opt_in ?? false,
     });
     const savedUser = await this.userRepository.save(user);
 
