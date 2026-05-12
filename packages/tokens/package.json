@@ -1,7 +1,7 @@
 {
-  "name": "@cenvox/tokens",
+  "name": "@managex/tokens",
   "version": "1.0.0",
   "private": true,
-  "main": "cenvox.css",
-  "files": ["cenvox.css"]
+  "main": "managex.css",
+  "files": ["managex.css"]
 }

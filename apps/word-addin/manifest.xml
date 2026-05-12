@@ -19,13 +19,13 @@
 
   <Id>9b3a8e74-0c0a-4b5d-9f1e-2c6d7e8f9a01</Id>
   <Version>0.1.0.0</Version>
-  <ProviderName>CENVOX</ProviderName>
+  <ProviderName>MANAGEX</ProviderName>
   <DefaultLocale>en-US</DefaultLocale>
   <DisplayName DefaultValue="SIGN for Word" />
   <Description DefaultValue="Contract intelligence for construction inside Microsoft Word." />
   <IconUrl DefaultValue="${ADDIN_ORIGIN}/assets/icon-32.png" />
   <HighResolutionIconUrl DefaultValue="${ADDIN_ORIGIN}/assets/icon-128.png" />
-  <SupportUrl DefaultValue="https://cenvox.ai" />
+  <SupportUrl DefaultValue="https://managex.ai" />
 
   <AppDomains>
     <AppDomain>${ADDIN_ORIGIN}</AppDomain>
@@ -96,7 +96,7 @@
         <bt:Image id="Icon.80x80" DefaultValue="${ADDIN_ORIGIN}/assets/icon-80.png" />
       </bt:Images>
       <bt:Urls>
-        <bt:Url id="GetStarted.LearnMoreUrl" DefaultValue="https://cenvox.ai" />
+        <bt:Url id="GetStarted.LearnMoreUrl" DefaultValue="https://managex.ai" />
         <bt:Url id="Commands.Url" DefaultValue="${ADDIN_ORIGIN}/commands.html" />
         <bt:Url id="Taskpane.Url" DefaultValue="${ADDIN_ORIGIN}/taskpane.html" />
       </bt:Urls>

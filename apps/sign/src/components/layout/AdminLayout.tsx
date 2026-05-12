@@ -15,7 +15,7 @@ import SignLogo from '@/components/common/SignLogo';
  *
  *  Slim 48px top utility bar  +  64px icon-only side rail.
  *    · Top bar holds: logo + "Admin Portal" label · search · language ·
- *      notifications · user menu · CENVOX backlink.
+ *      notifications · user menu · MANAGEX backlink.
  *    · Side rail holds ONLY navigation — icons with hover tooltips,
  *      grouped with thin dividers. No labels in the rail itself.
  *
@@ -245,7 +245,7 @@ export default function AdminLayout() {
           />
         </div>
 
-        {/* ── Right: search, language, bell, user, CENVOX ── */}
+        {/* ── Right: search, language, bell, user, MANAGEX ── */}
         <div className="flex items-center gap-2 flex-shrink-0">
           {/* Search */}
           <div className="relative hidden md:block">
@@ -332,15 +332,15 @@ export default function AdminLayout() {
             )}
           </div>
 
-          {/* CENVOX backlink (small muted, furthest right) */}
+          {/* MANAGEX backlink (small muted, furthest right) */}
           <a
-            href="http://localhost:5174"
-            className="cenvox-backlink ml-2 text-[12px] transition-colors"
+            href="http://localhost:5175"
+            className="managex-backlink ml-2 text-[12px] transition-colors"
             style={{ color: 'rgba(255,255,255,0.3)' }}
             onMouseEnter={(e) => (e.currentTarget.style.color = 'rgba(255,255,255,0.7)')}
             onMouseLeave={(e) => (e.currentTarget.style.color = 'rgba(255,255,255,0.3)')}
           >
-            &larr; CENVOX
+            &larr; MANAGEX
           </a>
         </div>
       </header>

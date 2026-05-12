@@ -70,7 +70,7 @@ export default function App() {
         <div className="sign-body">
           <div className="sign-progress">Loading…</div>
         </div>
-        <CenvoxAttribution />
+        <ManagexAttribution />
       </div>
     );
   }
@@ -82,7 +82,7 @@ export default function App() {
         <div className="sign-body">
           <LoginTab onAuth={setAuth} />
         </div>
-        <CenvoxAttribution />
+        <ManagexAttribution />
       </div>
     );
   }
@@ -120,7 +120,7 @@ export default function App() {
           <ChatTab auth={auth} onAuthLost={onAuthLost} />
         </TabPanel>
       </div>
-      <CenvoxAttribution />
+      <ManagexAttribution />
       {reLoginOpen && (
         <ReLoginInline
           onSuccess={onReLoginSuccess}
@@ -179,6 +179,6 @@ function Header({
   );
 }
 
-function CenvoxAttribution() {
-  return <div className="sign-cenvox-attribution">Powered by CENVOX</div>;
+function ManagexAttribution() {
+  return <div className="sign-managex-attribution">Powered by MANAGEX</div>;
 }

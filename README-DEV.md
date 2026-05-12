@@ -19,7 +19,7 @@ This starts both frontends in one terminal with color-coded output:
 | App | URL | Color |
 |-----|-----|-------|
 | SIGN (main app) | http://localhost:5173 | Blue |
-| CENVOX (landing page) | http://localhost:5174 | Magenta |
+| MANAGEX (landing page) | http://localhost:5175 | Cyan |
 
 Press `Ctrl+C` to stop both.
 
@@ -27,7 +27,7 @@ You can also run them individually:
 
 ```bash
 npm run dev:sign    # SIGN app only → http://localhost:5173
-npm run dev:cenvox  # CENVOX landing only → http://localhost:5174
+npm run dev:managex  # MANAGEX landing only → http://localhost:5175
 ```
 
 ### Option B — Docker frontends only
@@ -62,8 +62,8 @@ docker-compose up -d
 
 ```
 apps/sign/        → Main frontend (port 5173)
-apps/cenvox/      → Landing page (port 5174)
-packages/tokens/  → Shared design tokens (@cenvox/tokens)
+apps/managex/     → Landing page (port 5175)
+packages/tokens/  → Shared design tokens (@managex/tokens)
 backend/          → NestJS API (port 3000)
 ai-backend/       → Python AI service (port 8000)
 ```
@@ -78,7 +78,7 @@ To enable fully automatic startup when your Mac boots:
 3. Enable "Start Docker Desktop when you log in"
 
 After that, every time you turn on your Mac, Docker will start automatically
-and all containers (SIGN frontend, CENVOX, backend, AI backend, database,
+and all containers (SIGN frontend, MANAGEX, backend, AI backend, database,
 Redis, Celery worker) will come back up on their own with no manual commands needed.
 
 To manually start everything:

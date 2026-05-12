@@ -39,7 +39,7 @@ jobs:
   # ─────────────────────────────────────────────────────────────────────────────
   # Job 2 — SIGN frontend unit tests (Vitest + React Testing Library)
   # Must install from workspace root because apps/sign depends on
-  # @cenvox/tokens via npm workspaces — cd apps/sign && npm ci would fail.
+  # @managex/tokens via npm workspaces — cd apps/sign && npm ci would fail.
   # ─────────────────────────────────────────────────────────────────────────────
   frontend-tests:
     name: Frontend Tests (SIGN)
@@ -60,7 +60,7 @@ jobs:
         run: npm ci
 
       - name: Run SIGN frontend tests
-        run: npm -w @cenvox/sign run test
+        run: npm -w @managex/sign run test
 
   # ─────────────────────────────────────────────────────────────────────────────
   # Job 3 — AI backend unit tests (pytest)

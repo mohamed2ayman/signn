@@ -1,18 +1,18 @@
 {
-  "name": "cenvox",
+  "name": "managex",
   "version": "1.0.0",
   "private": true,
-  "description": "CENVOX — AI intelligence platform for construction",
+  "description": "MANAGEX — AI project management platform for construction",
   "workspaces": [
     "apps/*",
     "packages/*"
   ],
   "scripts": {
-    "dev:sign": "npm -w @cenvox/sign run dev",
-    "dev:cenvox": "npm -w @cenvox/landing run dev",
-    "dev:all": "concurrently -n sign,cenvox -c blue,magenta \"npm run dev:sign\" \"npm run dev:cenvox\"",
-    "build:sign": "npm -w @cenvox/sign run build",
-    "build:cenvox": "npm -w @cenvox/landing run build"
+    "dev:sign": "npm -w @managex/sign run dev",
+    "dev:managex": "npm -w @managex/landing run dev",
+    "dev:all": "concurrently -n sign,managex -c blue,cyan \"npm run dev:sign\" \"npm run dev:managex\"",
+    "build:sign": "npm -w @managex/sign run build",
+    "build:managex": "npm -w @managex/landing run build"
   },
   "repository": {
     "type": "git",
