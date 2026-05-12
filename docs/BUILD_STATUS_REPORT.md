@@ -136,7 +136,7 @@ The biggest cross-cutting risks are: (1) **no automated tests** anywhere in the 
 
 ## A.4 Backend API (NestJS 10)
 
-**Entry:** `backend/src/main.ts` sets global prefix `api/v1`, helmet, CORS (FRONTEND_URL + 5180/5174 in dev), `ValidationPipe({ whitelist: true, transform: true })`, Swagger UI at `/api/docs`.
+**Entry:** `backend/src/main.ts` sets global prefix `api/v1`, helmet, CORS (FRONTEND_URL + 5180/5175 in dev), `ValidationPipe({ whitelist: true, transform: true })`, Swagger UI at `/api/docs`.
 
 **App module:** 32 feature modules + Health + TypeOrmModule.forRootAsync (`autoLoadEntities: true`) + BullModule.forRootAsync (Redis URL).
 

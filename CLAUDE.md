@@ -1,20 +1,28 @@
 # CLAUDE.md — Project Intelligence File
 > Read this entire file at the start of every Claude Code session before touching any code.
 > This file is the single source of truth for all architectural decisions, rules, and context.
-> Last updated: 2026-05-13 (Added: Phase 3 — Input Security; sanitize-html installed, @MaxLength on 16 DTOs, @Transform on 5 XSS-risk fields, support ticket defense-in-depth)
+> Last updated: 2026-05-13 (Rebrand: CENVOX → MANAGEX rebased onto main. Combines: Phase 3 — Input Security (sanitize-html, @MaxLength on 16 DTOs, @Transform on 5 XSS-risk fields, support ticket defense-in-depth) AND landing page rebuild + SIGN attribution + parent backlink + --cx-* tokens retired in favor of --mx-* / scoped --mx-sign-* / --mx-navy-*.)
 
 ---
 
-## CENVOX — Parent Brand Context
+## MANAGEX — Parent Brand Context
 
-### What CENVOX Is
-CENVOX is the parent brand and AI intelligence platform purpose-built for the construction industry.
+### What MANAGEX Is
+MANAGEX is the parent brand and AI project management platform purpose-built for the construction industry.
 Tagline: "Build Smarter. Deliver Certain."
-Domain: cenvox.ai
-Mission: Transform how the world builds — unifying fragmented construction disciplines into one intelligent ecosystem through AI-powered platforms.
-CENVOX is a House of Brands — it owns 6 products, each covering a distinct construction discipline.
+Domain: managex.ai
+Mission: Give every construction professional the clarity to walk into every project meeting knowing exactly where they stand — on risk, cost, time, and contract.
+MANAGEX is a House of Brands — it owns 6 products, each covering a distinct construction discipline.
 
-### The 6 CENVOX Products
+### MANAGEX Landing Page — Codebase Map
+- Folder: `apps/managex/` (renamed from `apps/cenvox/`)
+- Workspace name: `@managex/landing`
+- Tokens package: `@managex/tokens` → `packages/tokens/managex.css`
+- Logo: `apps/managex/src/components/ManagexLogo.tsx` — geometry copied verbatim from `managex_logo_final.svg`
+- Dev URL: http://localhost:5175/ (Vite). Preview launches on 5175 when host 5175 is occupied by Docker.
+- All `--cx-*` tokens were retired. Brand-level dark/light tokens are now `--mx-*` (dark, light, mx-cyan, etc.). SIGN's blue palette lives at `--mx-sign-primary*` / `--mx-navy-*` / `--mx-success|warning|danger`.
+
+### The 6 MANAGEX Products
 
 | Product | Discipline | Domain | Brand Color | Status |
 |---------|-----------|--------|-------------|--------|
@@ -25,25 +33,28 @@ CENVOX is a House of Brands — it owns 6 products, each covering a distinct con
 | **GUARDIA** | Safety & Compliance | guardia.ai | Green `#22C55E` | 🔵 Coming Soon |
 | **DOXEN** | Document Management | doxen.ai | Yellow `#EAB308` | 🔵 Coming Soon |
 
-### CENVOX Brand Identity
-- Primary accent: `--cx-fire: #FF4D1C` (combustion orange)
-- Secondary accent: `--cx-ember: #FF7A45`
-- Page background: `--cx-void: #06060A`
-- Typography: Syne (headings 700/800) · Instrument Sans (body) · JetBrains Mono (labels/code)
-- Logo: Abstract C+V geometric mark inside hexagonal frame, rendered in --cx-fire
+### MANAGEX Brand Identity
+- Primary accent: `--mx-cyan: #00D4FF` (electric cyan)
+- Secondary accent: `--mx-cyan-d: #0099CC` (deep cyan — used on light surfaces)
+- Dark zone bg: `--dark: #07080D` (hero, why section, footer)
+- Light zone bg: `--light: #FFFFFF` / `--light-2: #F7F8FA` (lifecycle, products, testimonials, CTA)
+- Typography: Bricolage Grotesque (display 700/800, also 400 for hero subtitle) · DM Sans (body 300/400/500) · JetBrains Mono (labels/code)
+- Logo: rounded square + 3 vertical pillars (M silhouette) + 2 diagonal lines converging on a luminous cyan dot (the X). Wordmark "MANAGE" + dominant cyan "X". See `apps/managex/src/components/ManagexLogo.tsx`.
+- Design pattern: split dark/light layout — sections alternate between `--dark` zones and `--light`/`--light-2` zones with smooth gradient fades at boundaries.
 
-### CENVOX Brand Rules — Never Violate
-1. CENVOX is the parent — SIGN is a child product. Never confuse the two.
-2. The SIGN app must always carry CENVOX brand attribution ("Powered by CENVOX" in footer, "← CENVOX" back-link in nav).
-3. SIGN's indigo `#4F6EF7` is SIGN-specific. CENVOX `#FF4D1C` is parent-level only — never use inside SIGN app UI.
-4. Do not build any other CENVOX product — VENDRIX, SPANTEC, CLAIMX, GUARDIA, DOXEN are placeholders only.
-5. The CENVOX landing page (`apps/cenvox/`) is a separate app — never mix its codebase, styles, or dependencies with SIGN.
+### MANAGEX Brand Rules — Never Violate
+1. MANAGEX is the parent — SIGN is a child product. Never confuse the two.
+2. The SIGN app must always carry MANAGEX brand attribution ("Powered by MANAGEX" in footer, "← MANAGEX" back-link in nav).
+3. SIGN's indigo `#4F6EF7` is SIGN-specific. MANAGEX cyan `#00D4FF` is parent-level only — never use inside SIGN app UI (and never use the retired CENVOX orange `#FF4D1C`).
+4. Do not build any other MANAGEX product — VENDRIX, SPANTEC, CLAIMX, GUARDIA, DOXEN are placeholders only.
+5. The MANAGEX landing page (`apps/managex/`) is a separate app — never mix its codebase, styles, or dependencies with SIGN.
 6. Every SIGN feature must align with SIGN's discipline: Contract & Legal Intelligence for the construction industry.
+7. The MANAGEX wordmark always uses split font sizes: a smaller "MANAGE" + a dominant, lower-line-height "X" in cyan. Never render them at the same size.
 
 ---
 
 ## What This Project Is
-SIGN is an AI-powered contract management platform for the construction industry, built as part of the CENVOX product suite. It handles contract creation, risk analysis, claims, notices, obligations, and e-signatures for construction contracts following FIDIC, NEC, and JCT standards.
+SIGN is an AI-powered contract management platform for the construction industry, built as part of the MANAGEX product suite. It handles contract creation, risk analysis, claims, notices, obligations, and e-signatures for construction contracts following FIDIC, NEC, and JCT standards.
 
 ---
 
@@ -51,7 +62,7 @@ SIGN is an AI-powered contract management platform for the construction industry
 ```
 apps/
   sign/        → React + Vite frontend (localhost:5173)
-  cenvox/      → CENVOX landing page (localhost:5174)
+  managex/     → MANAGEX landing page (localhost:5175)
 backend/       → NestJS API (localhost:3000)
 ai-backend/    → FastAPI + Celery AI service (localhost:8000)
 ```
@@ -62,7 +73,7 @@ ai-backend/    → FastAPI + Celery AI service (localhost:8000)
 | Service | Port |
 |---------|------|
 | SIGN frontend | 5173 |
-| CENVOX landing | 5174 |
+| MANAGEX landing | 5175 (canonical — the prior port was retired due to Docker port-bind collision; see lesson #42) |
 | NestJS backend | 3000 |
 | FastAPI AI | 8000 |
 | PostgreSQL | 5432 |
@@ -385,7 +396,7 @@ docker-compose up --force-recreate --renew-anon-volumes -d backend
 docker-compose exec backend npm run migration:run
 
 # Port 3000 conflict — run only frontends
-docker-compose up --build sign cenvox
+docker-compose up --build sign managex
 
 # Full clean restart
 docker-compose down && docker-compose up --build
@@ -420,7 +431,7 @@ docker exec sign-postgres psql -U sign_user -d sign_db -c \
 | 4 — AI Pipeline | Risk, summarize, compliance, chat, obligations, diff | Contract layer |
 | 5 — Claims / Notices / Sub-Contracts | Post-contract modules | Contract core layer |
 | 6 — Admin Portal | All /admin/* pages and admin API | User-facing layers |
-| 7 — CENVOX | Landing page only | SIGN layers |
+| 7 — MANAGEX | Landing page only | SIGN layers |
 | 8 — Store & Payments | Paymob, templates, licensing | Auth layer |
 | 9 — Guest Portal | /contractor/* invited-party access only | Client portal layer |
 
@@ -467,7 +478,7 @@ All work is local development only.
 - Obligations dashboard (manual entry)
 - Admin portal (user management, plan CRUD)
 - Audit trail
-- CENVOX landing page
+- MANAGEX landing page
 
 ### Critical Known Bugs — Do Not Build On Top Of These
 1. **DocuSign webhook is a no-op** — returns 200 but never updates contract state. Do not build features depending on EXECUTED status until fixed.
@@ -497,8 +508,8 @@ All work is local development only.
 | 4 | Login breaks after laptop restart | Seed chained to migration:run in docker entrypoint | `command: sh -c "npm run migration:run && npm start"` |
 | 5 | Stale node_modules after git pull | `docker-compose up --force-recreate --renew-anon-volumes -d backend` | Use named volumes |
 | 6 | Admin portal inaccessible after restart | SYSTEM_ADMIN seed user missing | Seed is idempotent — runs on every startup |
-| 7 | Port 3000 conflict | Stop local backend before docker-compose up | Use `docker-compose up frontend cenvox` to skip backend |
-| 8 | CENVOX not accessible | Frontend not started | Run `npm run dev` inside `apps/cenvox` |
+| 7 | Port 3000 conflict | Stop local backend before docker-compose up | Use `docker-compose up frontend managex` to skip backend |
+| 8 | MANAGEX not accessible | Frontend not started | Run `npm run dev` inside `apps/managex` |
 | 9 | Orphaned clauses inflate dashboard count | `DELETE FROM clauses WHERE id NOT IN (SELECT DISTINCT clause_id FROM contract_clauses)` | Check for orphans after any killed extraction task |
 | 10 | currentUser always null after page refresh | Add `refreshUserProfile()` in `useEffect` on mount in AppLayout and AdminLayout | Always test permission features after page refresh not just fresh login |
 | 11 | Portal chooser bypassed for existing sessions | Use `sessionStorage` flag `portal-chosen` in AdminLayout redirect check | Never put role-based redirect logic only in LoginPage |
@@ -523,7 +534,7 @@ All work is local development only.
 - Fixed apps/cenvox/src/App.tsx: SIGN_URL was a bare hardcoded string. Now uses `VITE_SIGN_APP_URL` env var with fallback
 - Created apps/cenvox/.env.example with VITE_SIGN_APP_URL documented
 - Fixed orphaned clauses bug in document-processing `reprocess()` — now cleans up old clauses before reprocessing a document
-- Flagged: 4 localhost:5174 CENVOX backlinks remain in SIGN layouts (AuthLayout.tsx ×2, AdminLayout.tsx, TopBar.tsx) — scheduled for Phase 1.2 fix
+- Flagged: 4 localhost:5175 CENVOX backlinks remain in SIGN layouts (AuthLayout.tsx ×2, AdminLayout.tsx, TopBar.tsx) — scheduled for Phase 1.2 fix
 - Lesson #30 added to lessons.md
 
 ### Phase 1.2 — Fix Seed Role Mismatch (shipped)
@@ -686,11 +697,11 @@ First GitHub Actions workflow. CI ONLY — no CD until Phase 9 (Deployment Prep)
 - backend/ is independent (own lockfile, NOT in workspace)
 - Node 20, Python 3.11
 - ai-backend needs apt-get install tesseract-ocr tesseract-ocr-ara poppler-utils libpq-dev BEFORE pip install (for pytesseract and pdf2image)
-- apps/cenvox has no tests — skipped entirely
+- apps/managex (formerly apps/cenvox) has no tests — skipped entirely
 
 **Hard rules — never violate:**
 - CI is unit-test ONLY — never start Docker containers, never use real database, never use real Redis, never use real Anthropic API
-- Frontend CI runs from repo root because @cenvox/tokens is a workspace dependency — running `cd apps/sign && npm ci` would fail to resolve it
+- Frontend CI runs from repo root because @managex/tokens is a workspace dependency — running `cd apps/sign && npm ci` would fail to resolve it
 - Backend lint script has --fix which auto-fixes silently in CI — DO NOT add lint job until script is fixed (use eslint without --fix or skip entirely)
 - Frontend lint has --max-warnings 0 — DO NOT add lint job until codebase is verified clean of warnings
 - No CD/deployment in this phase — that comes in Phase 9 with staging environment, manual approval gates, blue-green deploy, and rollback strategy
@@ -871,3 +882,48 @@ disclosures, communication preferences page, and backend consent column migratio
 5. No AI disclaimer on any AI output — transparency obligation unmet
 6. No communication preferences UI — email_digest_opt_out has no API surface
 7. Word Add-In LoginTab.tsx has no legal disclosures
+
+---
+
+## Phase 4 — CENVOX → MANAGEX Rebrand (shipped — 2026-05-12)
+
+End-to-end rebrand of the parent brand from CENVOX to MANAGEX. Landing page completely rebuilt with a new design system (dark/light split, electric cyan accent, Bricolage Grotesque display + DM Sans body + JetBrains Mono mono).
+
+### What changed
+- `apps/cenvox/` → `apps/managex/`. Workspace name `@cenvox/landing` → `@managex/landing`. Docker compose service, container name, volume paths, and Dockerfile all updated.
+- `packages/tokens/cenvox.css` → `packages/tokens/managex.css`. Package `@cenvox/tokens` → `@managex/tokens`. The token file no longer carries the orange (`--cx-fire`, `--cx-ember`) or void (`--cx-void`, `--cx-void2`) palette. New `--mx-*` token system with split dark/light zones, plus SIGN-namespaced `--mx-sign-primary*` / `--mx-navy-*` extension palette for the SIGN app to keep working.
+- Apps/sign: import path `@managex/tokens/managex.css`, package name `@managex/sign`, CSS classes `.cenvox-backlink` / `.cenvox-attribution` / `.sign-cenvox-attribution` renamed (and recolored to cyan). Backlink label "← CENVOX" → "← MANAGEX". Footer attribution "Powered by CENVOX" → "Powered by MANAGEX". Auth page sub-brand tag "A CENVOX product" → "A MANAGEX product". The orange SVG glyph in the auth footer was replaced with the small MANAGEX mark (rounded-square + 3 pillars + cyan accent dot).
+- Word Add-in: `CenvoxAttribution` component renamed to `ManagexAttribution`; CSS class `.sign-cenvox-attribution` → `.sign-managex-attribution`; copy "Powered by CENVOX" → "Powered by MANAGEX".
+- Root `package.json` workspace scripts and name updated. `.claude/launch.json` config renamed (port 5175 → preview falls back to 5175 when Docker holds 5175). README.md banner updated.
+- Old landing components removed entirely: `CenvoxLogo.tsx`, `StatsTicker.tsx`, `OrbitalDiagram.tsx`, `PhaseCard.tsx`, `ProductCard.tsx`, `TestimonialCard.tsx`. The custom-cursor system from the old landing is gone too.
+
+### New landing page structure (apps/managex/)
+- `src/components/ManagexLogo.tsx` — `ManagexMark` (88×88 viewBox, geometry copied verbatim from `managex_logo_final.svg`) + `ManagexLogo` lockup with split font sizes ("MANAGE" smaller, dominant "X" in cyan with `top: 2px` baseline offset). Three variants: `nav` (30px mark, 17/28 wordmark), `footer` (24px mark, 16/24), `sidebar` (20px mark, 13/20).
+- `src/components/HeroDashboard.tsx` — static dashboard mockup inside browser chrome: sidebar nav + 3 stat cards + 3 contract rows. Pure decoration.
+- `src/App.tsx` — single page with sections: Nav · Hero · Logos bar · Lifecycle (light) · Products (light-2) · Why MANAGEX (dark, 3 alternating rows) · Testimonials (light) · Mission (dark-2) · CTA (light-2) · Footer (dark).
+- `src/index.css` — Tailwind base + extensive custom CSS using only `--mx-*` and the new dark/light/product tokens. No `--cx-*` references anywhere.
+
+### Hard rules added from rebrand — never violate
+1. **Logo geometry is sacrosanct.** The mark SVG is copied verbatim from `managex_logo_final.svg` (88×88 viewBox: rounded-rect frame, 3 vertical pillars at x=17/40/63, two diagonals converging on (46, 39), 5px cyan accent dot). Do not redraw or "improve" it.
+2. **Wordmark always uses split sizes.** "MANAGE" font-size sits below the dominant cyan "X" font-size. Line-height on "X" is 0.82 with `position: relative; top: 2px;` to align baselines. Rendering them at the same size is wrong.
+3. **MANAGEX cyan `#00D4FF` is parent-level only.** Never use it inside the SIGN app UI body — SIGN uses its own indigo `#4F6EF7`. The only MANAGEX-cyan elements inside SIGN are the "← MANAGEX" backlink and the "Powered by MANAGEX" attribution.
+4. **Dark/light split is the brand pattern.** The MANAGEX landing alternates dark and light sections with a 280px gradient fade at the bottom of the hero. Do not put a third color zone in between — it breaks the rhythm.
+5. **Logo color rules for surface contrast.** On dark surfaces the mark uses white pillars + bright cyan (`#00D4FF`) accent. On light surfaces, dark pillars (`#0A0F1E`) + deep cyan (`#0099CC`) accent. `ManagexLogo` and `ManagexMark` both take an `onLight` prop for this; never hardcode.
+6. **Preview port quirk.** Docker holds 5175 when `docker-compose up` has been run on this machine. The Vite preview server cannot bind 5175 in that state — `.claude/launch.json` is configured for port 5175 with `--strictPort` to keep this deterministic. Don't switch back to 5175 unless Docker is stopped.
+
+### Targeted copy & visual revisions (applied 2026-05-12 in the same session)
+Fourteen targeted text and visual changes were applied after the initial landing build:
+1. Hero eyebrow: "AI Platform for Construction Intelligence"
+2. Hero subtitle: "Six AI products. One platform. Built for the professionals…" (Bricolage Grotesque 400, clamp(18px, 2.5vw, 24px), `rgba(244,246,255,0.55)`, line-height 1.5)
+3. Hero body: "We built MANAGEX because the construction industry deserves better…"
+4. Logos bar: "Powering the teams building tomorrow's world"
+5. Lifecycle body: "Construction doesn't happen in phases — it happens in one connected, high-stakes continuum…"
+6. Products body: "We didn't build one product and call it a platform…"
+7. Why row 1 body: extended with "Not the internet. … the way a commercial manager does."
+8. Why row 1 visual: two-zone card. Zone 1 = "Trained on construction." (white) + "Not the internet." (cyan). Cyan-to-transparent gradient divider. Zone 2 = "⚠ Delay detected" (mono, #EAB308) + "Critical path · 26 days at risk" (DM Sans 400, d-mid) + "Identified 6 weeks early." (DM Sans 500, cyan). Implemented via the `WhyRow1Visual` component when `row.visual === null`.
+9. Why row 2 body: extended with "One platform. One source of truth. Zero information lost between disciplines."
+10. Why row 3 body: extended with "Not reactive. Not retrospective. Predictive."
+11. Mission quote: "We believe every construction professional deserves to walk into every project meeting **knowing exactly where they stand** — on risk, on cost, on time, on contract. We built MANAGEX to make that possible." (`knowing exactly where they stand` wrapped in `var(--mx-cyan)`).
+12. Mission body: "Through six AI-powered products, we give construction organisations the clarity to plan precisely… For every project."
+13. CTA heading: "Start building with intelligence on your side." (`intelligence on your side` uses the dark-cyan→#0066AA gradient via `.mx-grad-cyan-d`).
+14. CTA body: "One platform. Six products. Every phase covered. Join the teams already building smarter with MANAGEX."

@@ -171,7 +171,12 @@
       "Bash(mkdir -p /Users/youssefhazem/.claude/plans)",
       "Read(//Users/youssefhazem/.claude/plans/**)",
       "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3000/api/v1/health)",
-      "Bash(curl -s -f -o /dev/null http://localhost:3000/api/v1/health)"
+      "Bash(curl -s -f -o /dev/null http://localhost:3000/api/v1/health)",
+      "Bash(grep -v \":0$\")",
+      "Bash(kill -9 95520)",
+      "Bash(grep -v -E \"^\\(849|1829\\)$\")",
+      "Bash(xargs -r kill -9)",
+      "Bash(ps -p 1829 -o command=)"
     ]
   }
 }

@@ -2,7 +2,7 @@
 
 A Microsoft Word add-in that brings SIGN's contract intelligence into the document the user is actually editing — risk analysis, AI summary, clause library, AI chat, and one-click upload to the SIGN platform.
 
-Part of the CENVOX product suite. The add-in is a separate deliverable from the SIGN web app and is hosted under `apps/word-addin/` in the SIGN monorepo.
+Part of the MANAGEX product suite. The add-in is a separate deliverable from the SIGN web app and is hosted under `apps/word-addin/` in the SIGN monorepo.
 
 ---
 
@@ -205,4 +205,4 @@ The add-in calls the following SIGN backend endpoints. They were either pre-exis
 
 ---
 
-Powered by **CENVOX** — Build Smarter. Deliver Certain.
+Powered by **MANAGEX** — Build Smarter. Deliver Certain.

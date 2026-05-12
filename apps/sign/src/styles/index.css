@@ -1,5 +1,5 @@
-@import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=Instrument+Sans:wght@300;400;500&family=JetBrains+Mono:wght@300;400&display=swap');
-@import '@cenvox/tokens/cenvox.css';
+@import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300;12..96,400;12..96,500;12..96,600;12..96,700;12..96,800&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&family=JetBrains+Mono:wght@300;400&display=swap');
+@import '@managex/tokens/managex.css';
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -86,34 +86,34 @@
   animation: sign-chat-message-in 0.22s ease-out both;
 }
 
-/* ── CENVOX Parent Brand Elements ─────────────────────────────── */
+/* ── MANAGEX Parent Brand Elements ────────────────────────────── */
 
-.cenvox-backlink {
+.managex-backlink {
   font-family: var(--font-mono, 'JetBrains Mono', monospace);
   font-size: 11px;
   font-weight: 400;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: rgba(255, 77, 28, 0.6);
+  color: rgba(0, 212, 255, 0.7);
   text-decoration: none;
   padding: 4px 10px;
-  border: 1px solid rgba(255, 77, 28, 0.2);
+  border: 1px solid rgba(0, 212, 255, 0.25);
   border-radius: 4px;
   margin-right: 16px;
   transition: color 0.2s ease, border-color 0.2s ease;
   white-space: nowrap;
 }
 
-.cenvox-backlink:hover {
-  color: #FF4D1C;
-  border-color: rgba(255, 77, 28, 0.5);
+.managex-backlink:hover {
+  color: #00D4FF;
+  border-color: rgba(0, 212, 255, 0.55);
 }
 
 @media (max-width: 768px) {
-  .cenvox-backlink { display: none; }
+  .managex-backlink { display: none; }
 }
 
-.cenvox-attribution {
+.managex-attribution {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -125,14 +125,14 @@
   color: rgba(100, 116, 139, 0.5);
 }
 
-.cenvox-attribution-link {
-  color: rgba(255, 77, 28, 0.5);
+.managex-attribution-link {
+  color: rgba(0, 212, 255, 0.65);
   text-decoration: none;
   transition: color 0.2s;
 }
 
-.cenvox-attribution-link:hover {
-  color: #FF4D1C;
+.managex-attribution-link:hover {
+  color: #00D4FF;
 }
 
 .sign-parent-tag {
@@ -147,11 +147,11 @@
 }
 
 .sign-parent-link {
-  color: rgba(255, 77, 28, 0.55);
+  color: rgba(0, 212, 255, 0.65);
   text-decoration: none;
   transition: color 0.2s;
 }
 
 .sign-parent-link:hover {
-  color: #FF4D1C;
+  color: #00D4FF;
 }

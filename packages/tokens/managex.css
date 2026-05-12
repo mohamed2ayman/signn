@@ -1,0 +1,86 @@
+/* ═══════════════════════════════════════════════════════════════════
+   MANAGEX Design Tokens
+   Shared design system for MANAGEX (parent brand) and all products
+   (SIGN, VENDRIX, SPANTEC, CLAIMX, GUARDIA, DOXEN).
+   ═══════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ── MANAGEX Brand ────────────────────────────────────────────── */
+  --mx-cyan:        #00D4FF;
+  --mx-cyan-d:      #0099CC;
+  --mx-cyan-10:     rgba(0, 212, 255, 0.10);
+  --mx-cyan-20:     rgba(0, 212, 255, 0.20);
+
+  /* ── Dark Zone — hero, why section, footer ───────────────────── */
+  --dark:           #07080D;
+  --dark-2:         #0C0E16;
+  --dark-3:         #12151F;
+  --dark-4:         #1A1E2C;
+  --d-border:       rgba(255, 255, 255, 0.08);
+  --d-border2:      rgba(255, 255, 255, 0.14);
+  --d-muted:        rgba(255, 255, 255, 0.38);
+  --d-mid:          rgba(255, 255, 255, 0.65);
+  --d-bright:       #F4F6FF;
+
+  /* ── Light Zone — content sections ───────────────────────────── */
+  --light:          #FFFFFF;
+  --light-2:        #F7F8FA;
+  --light-3:        #EFF1F5;
+  --l-border:       rgba(0, 0, 0, 0.08);
+  --l-muted:        rgba(0, 0, 0, 0.38);
+  --l-mid:          rgba(0, 0, 0, 0.60);
+  --l-dark:         #0C0E14;
+
+  /* ── Product Colors ──────────────────────────────────────────── */
+  --color-sign:     #4F6EF7;
+  --color-vendrix:  #FF8C42;
+  --color-spantec:  #38BDF8;
+  --color-claimx:   #A855F7;
+  --color-guardia:  #22C55E;
+  --color-doxen:    #EAB308;
+
+  /* ── Typography ──────────────────────────────────────────────── */
+  --f-display:      'Bricolage Grotesque', system-ui, sans-serif;
+  --f-body:         'DM Sans', system-ui, sans-serif;
+  --f-mono:         'JetBrains Mono', ui-monospace, monospace;
+
+  /* ───────────────────────────────────────────────────────────────
+     SIGN App Extended Palette (used by apps/sign)
+     SIGN's blue product palette — namespaced under --mx- so the
+     parent brand owns the scope. Tailwind in apps/sign/ keeps its
+     own hardcoded mirror; these CSS vars exist for ad-hoc use.
+     ─────────────────────────────────────────────────────────────── */
+  --mx-sign-primary:      #0D6EFD;
+  --mx-sign-primary-50:   #EBF2FF;
+  --mx-sign-primary-100:  #D6E4FF;
+  --mx-sign-primary-200:  #ADC8FF;
+  --mx-sign-primary-300:  #84ADFF;
+  --mx-sign-primary-400:  #5B91FF;
+  --mx-sign-primary-500:  #0D6EFD;
+  --mx-sign-primary-600:  #0B5ED7;
+  --mx-sign-primary-700:  #084DB1;
+  --mx-sign-primary-800:  #063D8B;
+  --mx-sign-primary-900:  #042C65;
+
+  --mx-navy-50:   #F8FAFC;
+  --mx-navy-100:  #F1F5F9;
+  --mx-navy-200:  #E2E8F0;
+  --mx-navy-300:  #CBD5E1;
+  --mx-navy-400:  #94A3B8;
+  --mx-navy-500:  #64748B;
+  --mx-navy-600:  #475569;
+  --mx-navy-700:  #334155;
+  --mx-navy-800:  #1E293B;
+  --mx-navy-900:  #0F172A;
+  --mx-navy-950:  #020617;
+
+  --mx-success:   #10B981;
+  --mx-warning:   #F59E0B;
+  --mx-danger:    #EF4444;
+
+  /* Font aliases for legacy SIGN code paths */
+  --font-display: var(--f-display);
+  --font-body:    var(--f-body);
+  --font-mono:    var(--f-mono);
+  --font-arabic:  'Cairo', system-ui, sans-serif;
+}

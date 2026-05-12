@@ -16,7 +16,7 @@ async function bootstrap() {
   const allowedOrigins = frontendUrl.split(',').map(o => o.trim());
   // In development, also allow the Vite preview port
   if (process.env.NODE_ENV !== 'production') {
-    allowedOrigins.push('http://localhost:5180', 'http://localhost:5174');
+    allowedOrigins.push('http://localhost:5180', 'http://localhost:5175');
   }
   app.enableCors({
     origin: allowedOrigins,

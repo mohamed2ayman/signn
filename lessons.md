@@ -1,7 +1,7 @@
-# lessons.md — SIGN + CENVOX Platform
+# lessons.md — SIGN + MANAGEX Platform
 > This file documents every bug, issue, and fix that took significant time to resolve.
 > Feed this file to Claude at the start of every session to avoid repeating mistakes.
-> Last updated: 2026-05-13
+> Last updated: 2026-05-13 (Lessons #40, #41, #42 — CENVOX→MANAGEX rebrand, Vite-vs-Docker port collision on 5175, canonical port 5175. Plus Phase 3.2 lessons from main.)
 
 ---
 
@@ -42,7 +42,7 @@
 27. Clause Extraction — مادة (N) prefix appearing in clause content
 28. Docker — Backend not rebuilt after colleague adds npm packages
 29. Security — Secrets Audit Before AWS Deployment
-30. Frontend — Hardcoded localhost:5174 CENVOX Backlinks in SIGN Layouts
+30. Frontend — Hardcoded localhost:5175 CENVOX Backlinks in SIGN Layouts
 31. Backend — Silent Catch Blocks Masking Critical Failures
 32. Backend — Paymob Webhook Activation Needs Idempotency Before Fix
 33. Docker — New npm Package Not Found After Rebuild
@@ -1056,10 +1056,10 @@
 
 ---
 
-## 30. Frontend — Hardcoded localhost:5174 CENVOX Backlinks in SIGN Layouts
+## 30. Frontend — Hardcoded localhost:5175 CENVOX Backlinks in SIGN Layouts
 
 **Problem:**
-- 4 navigation links in SIGN hardcode localhost:5174 (CENVOX landing page URL)
+- 4 navigation links in SIGN hardcode localhost:5175 (CENVOX landing page URL)
 - Files: AuthLayout.tsx (lines 35, 60), AdminLayout.tsx (line 337), TopBar.tsx (line 57)
 - These are the CENVOX attribution links required by brand rules in CLAUDE.md
 
@@ -1067,8 +1067,8 @@
 - Cross-app URLs were hardcoded instead of using env vars
 
 **Fix:**
-- Replace all 4 with: `import.meta.env.VITE_CENVOX_URL || 'http://localhost:5174'`
-- Add `VITE_CENVOX_URL=http://localhost:5174` to apps/sign/.env and .env.example
+- Replace all 4 with: `import.meta.env.VITE_CENVOX_URL || 'http://localhost:5175'`
+- Add `VITE_CENVOX_URL=http://localhost:5175` to apps/sign/.env and .env.example
 - Scheduled for Phase 1.2 (the localhost fix pass)
 
 **How to Avoid:**
@@ -1413,6 +1413,82 @@ docker-compose up --build --force-recreate --renew-anon-volumes -d backend
 - For any npm package typed with `export =`: use `import * as X from 'pkg'`
 - Check `@types/pkg/index.d.ts` — if the last line is `export = something`, you need namespace import
 - `allowSyntheticDefaultImports: true` in tsconfig is a trap — it hides the error at compile time but not at runtime
+
+---
+
+## 44. Rebrand — Parent Brand Switched from CENVOX to MANAGEX
+
+**Problem:**
+The product needed a full parent-brand rebrand from CENVOX (orange combustion theme, hexagonal C+V mark, Syne/Instrument Sans typography) to MANAGEX (electric-cyan, M+X mark with 3 pillars and luminous dot, Bricolage Grotesque/DM Sans typography). The landing page, the SIGN app attribution, the workspace package names, and Docker config all had to change in one session without breaking the SIGN app.
+
+**Root Cause:**
+- Brand naming had leaked into 18 source files (including workspace package names `@cenvox/landing`, `@cenvox/sign`, `@cenvox/tokens`) and into Docker service names, the launch.json config, and the SIGN app's CSS class names (`.cenvox-backlink`, `.cenvox-attribution`, `.sign-cenvox-attribution`).
+- Token file `cenvox.css` exposed `--cx-*` variables that the landing page used heavily but the SIGN app didn't reference (confirmed by greps returning zero hits inside `apps/sign`). This meant the dark/orange landing tokens could be retired safely but the SIGN-app extension palette (`--cx-brand-primary*`, `--cx-navy-*`) had to be preserved (renamed to `--mx-sign-primary*` / `--mx-navy-*`).
+
+**Fix:**
+- Renamed `apps/cenvox` → `apps/managex` and `packages/tokens/cenvox.css` → `packages/tokens/managex.css` via `git mv` (preserves history).
+- Replaced the token file contents with a new `--mx-*` system (split dark/light zones + cyan brand) and a SIGN-namespaced extension palette so SIGN app keeps compiling.
+- Rebuilt the landing page from scratch: new `ManagexLogo` + `HeroDashboard` components, a single `App.tsx` covering Nav → Hero → Logos → Lifecycle → Products → Why → Testimonials → Mission → CTA → Footer, and a fresh `index.css` with `mx-*` class names.
+- Updated SIGN: `apps/sign/src/styles/index.css` imports `@managex/tokens/managex.css`; replaced `.cenvox-backlink` → `.managex-backlink`, recolored from orange to cyan; rewrote the auth-page orange SVG glyph as the small MANAGEX mark.
+- Updated docker-compose service `cenvox` → `managex`, container `sign-cenvox` → `sign-managex`, Dockerfile paths, `.claude/launch.json`, root `package.json` scripts.
+
+**File(s):** `apps/managex/**`, `packages/tokens/**`, `apps/sign/src/styles/index.css`, `apps/sign/src/components/layout/{TopBar.tsx,AdminLayout.tsx}`, `apps/sign/src/components/common/AuthLayout.tsx`, `apps/sign/package.json`, `apps/word-addin/src/taskpane/{App.tsx,styles/global.css}`, `docker-compose.yml`, `docker-compose.frontend.yml`, `apps/managex/Dockerfile`, `.claude/launch.json`, `package.json`, `README.md`, `CLAUDE.md`.
+
+**How to Avoid:**
+- For any future brand swap, run `grep -ri "BRANDNAME"` and `grep -r "\-\-cx-"` (or whichever token prefix is in scope) BEFORE starting work so you understand the blast radius. The grep returning zero hits in the SIGN app meant the landing-only `--cx-*` palette could be removed without touching SIGN.
+- Use `git mv` instead of cp + rm so renames are tracked as renames and reviewers can diff cleanly.
+- Always rename the workspace package name AND every `dependencies` reference in the same commit, or `npm ci` will fail at build time.
+- After renaming a Docker service, also rename its container_name and the anonymous-volume path under it (`/app/apps/managex/node_modules`) — otherwise the next `docker-compose up` will spin up two parallel containers.
+- Keep the orange/CENVOX SVG glyph code archived (in this lesson) in case the rebrand has to be partially rolled back.
+
+---
+
+## 45. Preview — Vite Cannot Bind 5175 While Docker Is Running
+
+**Problem:**
+After the rebrand, running the MANAGEX landing page in the Claude preview pane reported `Port 5175 is required by this server but is in use by another process`. `lsof -ti :5175` returned a single PID belonging to `com.docker.backend services` — Docker itself was holding the port.
+
+**Root Cause:**
+The repo's `docker-compose.yml` exposes the `managex` (formerly `cenvox`) service on host port 5175. Once `docker-compose up` has been executed, Docker's backend daemon continues to hold port 5175 even after the container is stopped, until Docker Desktop itself is restarted. The preview tool's autoPort mechanism injects a `PORT` env var, but Vite reads `--port` and ignores `PORT`, so autoPort had no effect on the dev server's actual bind address.
+
+**Fix:**
+- Updated `.claude/launch.json` to use port 5175 with explicit `--port 5175 --strictPort` flags passed to Vite via `runtimeArgs: ["run", "dev", "--", "--port", "5175", "--strictPort"]`. Kept `autoPort: false` so the preview pane targets the known port deterministically.
+- Documented in CLAUDE.md "Preview port quirk" — 5175 is reserved for Docker, 5175 is the local dev port.
+
+**File:** `.claude/launch.json`
+
+**How to Avoid:**
+- When picking a preview port for a service that also has a docker-compose mapping, do not reuse the docker host port. Pick a sibling port (5175, 8081, etc.) and document it.
+- Vite respects `--port` and ignores `PORT` — if you want a port to actually take effect, pass it via CLI args, not env vars.
+- For preview-tool autoPort to work with Vite, the start command must read the PORT env (e.g., `vite --port $PORT`); otherwise leave autoPort off and hardcode the port.
+
+---
+
+## 46. Ports — 5175 Is the Canonical MANAGEX Landing Port
+
+**Decision:**
+Port 5175 is now the canonical local-development port for the MANAGEX landing page across the entire monorepo. The previous port (one less than 5175) is retired and must not be reintroduced anywhere — code, configs, docs, Dockerfiles, docker-compose, env files, or markdown.
+
+**Root cause for the migration:**
+Docker Desktop's `com.docker.backend` daemon keeps the prior host port bound after `docker-compose up` is run, so Vite (and the Claude preview tool) cannot bind it again without restarting Docker. Rather than fight this, the old port was abandoned. Every reference was rewritten to 5175 in one global pass.
+
+**Files touched in the global migration (2026-05-13):**
+- `apps/managex/vite.config.ts` (server.port)
+- `apps/managex/Dockerfile` (EXPOSE + CMD --port)
+- `docker-compose.yml` (managex service host:container mapping)
+- `docker-compose.frontend.yml` (managex service host:container mapping)
+- `backend/src/main.ts` (CORS allowlist entry)
+- `apps/sign/src/components/layout/AdminLayout.tsx` (MANAGEX backlink href)
+- `apps/sign/src/components/common/AuthLayout.tsx` (sub-brand tag + footer attribution hrefs)
+- `CLAUDE.md`, `lessons.md`, `README-DEV.md`, `docs/BUILD_STATUS_REPORT.md` (all docs)
+
+**Production rule:**
+When deploying to production, every `http://localhost:5175` reference becomes `https://managex.ai/`. There is no other place the MANAGEX landing will be served from.
+
+**How to Avoid Regressions:**
+- Before merging any PR, run `grep -r "517" . --exclude-dir=node_modules --exclude-dir=.git` and confirm the only port digit-strings present are 5173 (SIGN dev), 5175 (MANAGEX), and 5180 (SIGN dev override). The previous MANAGEX port must not reappear.
+- New landing-page features that need a port must use 5175. Tooling defaults (Vite's 5173, etc.) are off-limits — both are claimed by SIGN's dev server.
+- If a teammate proposes restoring the prior MANAGEX port because "Docker holds 5175 now," investigate Docker state instead — never split the port between environments.
 
 ---
 

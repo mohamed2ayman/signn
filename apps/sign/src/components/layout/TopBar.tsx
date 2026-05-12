@@ -53,9 +53,9 @@ export default function TopBar({ sidebarCollapsed = false }: TopBarProps) {
     >
       {/* Left section */}
       <div className="flex items-center gap-4">
-        {/* CENVOX back-link */}
-        <a href="http://localhost:5174" className="cenvox-backlink">
-          &larr; CENVOX
+        {/* MANAGEX back-link */}
+        <a href="http://localhost:5175/" className="managex-backlink">
+          &larr; MANAGEX
         </a>
 
         {/* Search */}

@@ -7,12 +7,16 @@ export default {
   theme: {
     extend: {
       colors: {
-        void: '#06060A',
-        void2: '#0C0C14',
-        cxsurface: '#11111C',
-        cxwhite: '#FAFAF8',
-        fire: '#FF4D1C',
-        ember: '#FF7A45',
+        cyan: '#00D4FF',
+        cyanDark: '#0099CC',
+        dark: '#07080D',
+        dark2: '#0C0E16',
+        dark3: '#12151F',
+        dark4: '#1A1E2C',
+        light: '#FFFFFF',
+        light2: '#F7F8FA',
+        light3: '#EFF1F5',
+        ldark: '#0C0E14',
         sign: '#4F6EF7',
         vendrix: '#FF8C42',
         spantec: '#38BDF8',
@@ -21,8 +25,8 @@ export default {
         doxen: '#EAB308',
       },
       fontFamily: {
-        display: ['Syne', 'system-ui', 'sans-serif'],
-        body: ['Instrument Sans', 'system-ui', 'sans-serif'],
+        display: ['Bricolage Grotesque', 'system-ui', 'sans-serif'],
+        body: ['DM Sans', 'system-ui', 'sans-serif'],
         mono: ['JetBrains Mono', 'ui-monospace', 'monospace'],
       },
     },

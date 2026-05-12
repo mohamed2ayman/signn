@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/mohamed2ayman/signn/actions/workflows/ci.yml/badge.svg)](https://github.com/mohamed2ayman/signn/actions/workflows/ci.yml)
 
-Part of the **CENVOX** product suite — AI intelligence platform for the construction industry.
+Part of the **MANAGEX** product suite — AI project management platform for the construction industry.
 
 ## Documentation
 

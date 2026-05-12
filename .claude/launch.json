@@ -10,11 +10,12 @@
       "cwd": "apps/sign"
     },
     {
-      "name": "cenvox",
+      "name": "managex",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
-      "port": 5174,
-      "cwd": "apps/cenvox"
+      "runtimeArgs": ["run", "dev", "--", "--port", "5175", "--strictPort"],
+      "port": 5175,
+      "autoPort": false,
+      "cwd": "apps/managex"
     }
   ]
 }
