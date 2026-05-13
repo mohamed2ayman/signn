@@ -5,14 +5,17 @@ import {
   IsInt,
   IsBoolean,
   IsObject,
+  MaxLength,
 } from 'class-validator';
 
 export class CreatePlanDto {
   @IsString()
+  @MaxLength(500)
   name: string;
 
   @IsOptional()
   @IsString()
+  @MaxLength(20000)
   description?: string;
 
   @IsNumber()
@@ -20,6 +23,7 @@ export class CreatePlanDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(500)
   currency?: string;
 
   @IsInt()

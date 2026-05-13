@@ -4,6 +4,7 @@ import { ObligationStatus } from '../../../database/entities';
 export class UpdateObligationDto {
   @IsOptional()
   @IsString()
+  @MaxLength(20000)
   description?: string;
 
   @IsOptional()

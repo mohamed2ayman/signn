@@ -1,15 +1,18 @@
-import { IsString, IsOptional, IsDateString } from 'class-validator';
+import { IsString, IsOptional, IsDateString, MaxLength } from 'class-validator';
 
 export class CreateProjectDto {
   @IsString()
+  @MaxLength(500)
   name: string;
 
   @IsOptional()
   @IsString()
+  @MaxLength(10000)
   objective?: string;
 
   @IsOptional()
   @IsString()
+  @MaxLength(500)
   country?: string;
 
   @IsOptional()

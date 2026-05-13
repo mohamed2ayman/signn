@@ -40,8 +40,11 @@ export class SupportController {
   }
 
   @Get('tickets/:id')
-  async getTicket(@Param('id', ParseUUIDPipe) id: string) {
-    return this.supportService.getTicketById(id);
+  async getTicket(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: any,
+  ) {
+    return this.supportService.getTicketById(id, user);
   }
 
   @Post('tickets/:id/replies')

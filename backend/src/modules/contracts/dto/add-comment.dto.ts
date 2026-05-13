@@ -1,7 +1,11 @@
-import { IsString, IsUUID, IsOptional } from 'class-validator';
+import { IsString, IsUUID, IsOptional, MaxLength } from 'class-validator';
+import { Transform } from 'class-transformer';
+import { stripHtml } from '../../../common/utils/sanitize';
 
 export class AddCommentDto {
   @IsString()
+  @Transform(({ value }) => stripHtml(value))
+  @MaxLength(10000)
   content: string;
 
   @IsOptional()

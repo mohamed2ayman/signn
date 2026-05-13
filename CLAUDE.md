@@ -1,7 +1,7 @@
 # CLAUDE.md — Project Intelligence File
 > Read this entire file at the start of every Claude Code session before touching any code.
 > This file is the single source of truth for all architectural decisions, rules, and context.
-> Last updated: 2026-05-10 (Added: Phase 2 — Testing & CI Pipeline; 32 tests across all 3 services + GitHub Actions CI workflow)
+> Last updated: 2026-05-13 (Added: Phase 3 — Input Security; sanitize-html installed, @MaxLength on 16 DTOs, @Transform on 5 XSS-risk fields, support ticket defense-in-depth)
 
 ---
 
@@ -695,6 +695,63 @@ First GitHub Actions workflow. CI ONLY — no CD until Phase 9 (Deployment Prep)
 - Frontend lint has --max-warnings 0 — DO NOT add lint job until codebase is verified clean of warnings
 - No CD/deployment in this phase — that comes in Phase 9 with staging environment, manual approval gates, blue-green deploy, and rollback strategy
 - AI backend CI MUST install system packages (tesseract-ocr, poppler-utils, libpq-dev) before pip install or installation fails
+
+---
+
+## Phase 3 — Input Security (in progress)
+
+### Phase 3.2 — Input Sanitization (shipped — 2026-05-13)
+
+**Scope:** NestJS backend — all user-supplied string inputs hardened against oversized payloads and stored-XSS injection.
+
+**What was built:**
+
+1. **`@MaxLength` on 16 DTOs** (12 create + 4 standalone update) across 11 modules:
+   - Tiers: 500 (identifiers), 10,000 (comments/chat/objectives), 20,000 (descriptions/ticket bodies), 500,000 (clause content/negotiation text)
+   - Applies to both create and update DTOs — never protect only the create path
+
+2. **`sanitize-html` installed** (`backend/package.json` deps + `@types/sanitize-html` devDeps)
+   - `backend/src/common/utils/sanitize.ts` — central `stripHtml()` helper (null-safe, strips all tags/attributes)
+   - Import pattern: `import * as sanitizeHtml` — required because tsconfig has no `esModuleInterop` and `@types/sanitize-html` uses `export =`
+
+3. **`@Transform` on 5 high-XSS-risk fields** across 4 DTOs:
+   - `CreateClauseDto.content` + `UpdateClauseDto.content` (clause bodies)
+   - `AddCommentDto.content` (contract inline comments)
+   - `CreateNegotiationEventDto.original_text` + `new_text` (redline negotiation text)
+
+4. **Support ticket defense-in-depth** (2 fixes):
+   - `AddReplyDto.is_internal_note` was silently stripped by ValidationPipe (no class-validator decorator) — fixed with `@IsBoolean()`
+   - `SupportService.getTicketById` now filters `is_internal_note = false` at DB level for non-staff users (was frontend-only filter before)
+
+**Files changed:**
+- `backend/src/common/utils/sanitize.ts` (new)
+- `backend/src/modules/clauses/dto/create-clause.dto.ts`
+- `backend/src/modules/clauses/dto/update-clause.dto.ts`
+- `backend/src/modules/contracts/dto/add-comment.dto.ts`
+- `backend/src/modules/negotiation/dto/create-negotiation-event.dto.ts`
+- `backend/src/modules/support/dto/create-ticket.dto.ts`
+- `backend/src/modules/support/support.service.ts`
+- `backend/src/modules/support/support.controller.ts`
+- `backend/src/modules/contracts/dto/add-clause.dto.ts`
+- `backend/src/modules/contracts/dto/update-clause-order.dto.ts`
+- `backend/src/modules/chat/dto/send-message.dto.ts`
+- `backend/src/modules/contracts/dto/review-approval.dto.ts`
+- `backend/src/modules/knowledge-assets/dto/create-knowledge-asset.dto.ts`
+- `backend/src/modules/knowledge-assets/dto/update-knowledge-asset.dto.ts`
+- `backend/src/modules/obligations/dto/create-obligation.dto.ts`
+- `backend/src/modules/obligations/dto/update-obligation.dto.ts`
+- `backend/src/modules/organizations/dto/update-organization.dto.ts`
+- `backend/src/modules/projects/dto/create-project.dto.ts`
+- `backend/src/modules/projects/dto/update-project.dto.ts`
+- `backend/src/modules/subscriptions/dto/create-plan.dto.ts`
+- `backend/src/modules/subscriptions/dto/update-plan.dto.ts`
+
+**Hard rules — never violate:**
+- Every free-text `@IsString()` field MUST have `@MaxLength()` — no unbounded strings in DTOs
+- Apply `@MaxLength` to BOTH create AND update DTOs — standalone update DTOs inherit nothing from create
+- Use `import * as sanitizeHtml` (never default import) when `esModuleInterop` is absent
+- `@Transform` fires on `undefined` for optional fields — always null-guard in the transformer function
+- `is_internal_note` visibility must be enforced at DB level (service query), never only in frontend
 
 ---
 

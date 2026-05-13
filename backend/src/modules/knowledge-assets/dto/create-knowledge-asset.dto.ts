@@ -9,6 +9,7 @@ export class CreateKnowledgeAssetDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(20000)
   description?: string;
 
   @IsEnum(AssetType)

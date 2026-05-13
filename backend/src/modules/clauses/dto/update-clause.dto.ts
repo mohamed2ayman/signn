@@ -1,4 +1,6 @@
 import { IsString, IsOptional, IsBoolean, MaxLength } from 'class-validator';
+import { Transform } from 'class-transformer';
+import { stripHtml } from '../../../common/utils/sanitize';
 
 export class UpdateClauseDto {
   @IsOptional()
@@ -8,6 +10,8 @@ export class UpdateClauseDto {
 
   @IsOptional()
   @IsString()
+  @Transform(({ value }) => stripHtml(value))
+  @MaxLength(500000)
   content?: string;
 
   @IsOptional()

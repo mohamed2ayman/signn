@@ -10,6 +10,7 @@ export class CreateObligationDto {
   contract_clause_id?: string;
 
   @IsString()
+  @MaxLength(20000)
   description: string;
 
   @IsOptional()

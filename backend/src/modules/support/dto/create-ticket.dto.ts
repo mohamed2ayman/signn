@@ -1,4 +1,4 @@
-import { IsString, IsOptional, MaxLength, IsIn } from 'class-validator';
+import { IsString, IsOptional, IsBoolean, MaxLength, IsIn } from 'class-validator';
 
 export class CreateTicketDto {
   @IsString()
@@ -25,14 +25,17 @@ export class CreateTicketDto {
   subject: string;
 
   @IsString()
+  @MaxLength(20000)
   description: string;
 }
 
 export class AddReplyDto {
   @IsString()
+  @MaxLength(20000)
   content: string;
 
   @IsOptional()
+  @IsBoolean()
   is_internal_note?: boolean;
 }
 

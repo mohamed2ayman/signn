@@ -1,7 +1,7 @@
 # lessons.md — SIGN + CENVOX Platform
 > This file documents every bug, issue, and fix that took significant time to resolve.
 > Feed this file to Claude at the start of every session to avoid repeating mistakes.
-> Last updated: 2026-05-07
+> Last updated: 2026-05-13
 
 ---
 
@@ -1320,6 +1320,102 @@ docker-compose up --build --force-recreate --renew-anon-volumes -d backend
 
 ---
 
+## 40. DTOs — Fields Without Class-Validator Decorators Are Silently Stripped
+
+**Problem:**
+- `AddReplyDto.is_internal_note` had a TypeScript type (`?: boolean`) but zero class-validator decorators
+- NestJS ValidationPipe with `whitelist: true` stripped it silently on every request
+- Every intended internal note was saved as a public reply — no error, no warning
+
+**Root Cause:**
+- `whitelist: true` removes any property that has no class-validator decorator, regardless of TypeScript type
+- TypeScript types are compile-time only — class-validator decorators are runtime metadata
+- A property typed as `boolean` but missing `@IsBoolean()` is invisible to the ValidationPipe
+
+**Fix:**
+- Added `@IsBoolean()` to `AddReplyDto.is_internal_note`
+- Rule: every DTO property that should reach the handler MUST have at least one class-validator decorator
+
+**File:** `backend/src/modules/support/dto/create-ticket.dto.ts`
+
+**How to Avoid:**
+- When adding a field to a DTO, always add a class-validator decorator at the same time — never a bare TypeScript type
+- Audit DTOs by looking for `@IsOptional()` without any other decorator — those fields are stripped
+
+---
+
+## 41. Defense-in-Depth — Frontend Filters Are Never Enough
+
+**Problem:**
+- The only filter hiding internal notes from customers was a `.filter()` call in the React component
+- Any API client (curl, Postman, mobile app) bypassed it entirely
+
+**Root Cause:**
+- Single-layer security where the only enforcement was client-side
+- Backend returned all replies including `is_internal_note = true` for all users
+
+**Fix:**
+- Added DB-level `WHERE is_internal_note = false` filter in `SupportService.getTicketById` for non-staff users
+- Added ownership check (`ForbiddenException`) so users can only view their own tickets
+- Frontend filter now serves as a UX layer only, not security enforcement
+
+**File:** `backend/src/modules/support/support.service.ts`
+
+**How to Avoid:**
+- Every access-control decision must be enforced at the service/DB layer
+- Frontend visibility filters are UX only — treat them as if they don't exist when reasoning about security
+
+---
+
+## 42. @MaxLength — Apply to BOTH Create AND Update DTOs
+
+**Problem:**
+- Added `@MaxLength` to all create DTOs but initially missed standalone update DTOs
+- A PATCH request to `/projects/:id` with a 100,000-character `objective` bypassed all limits
+
+**Root Cause:**
+- `PartialType(CreateXxxDto)` inherits all decorators — but standalone update DTOs inherit nothing
+- 4 update DTOs (`update-project.dto.ts`, `update-obligation.dto.ts`, `update-plan.dto.ts`, `update-knowledge-asset.dto.ts`) were standalone classes, not PartialType wrappers
+
+**Fix:**
+- Added same `@MaxLength` tiers to all 4 standalone update DTOs
+- Tiers: 500 (identifiers), 10,000 (comments), 20,000 (descriptions), 500,000 (clause content)
+
+**File:** All `update-*.dto.ts` files in backend/src/modules/*
+
+**How to Avoid:**
+- When adding validation to a create DTO, immediately check whether the update DTO uses `PartialType` or is standalone
+- If standalone — apply the same constraints manually
+
+---
+
+## 43. sanitize-html — Correct Import Syntax When esModuleInterop Is Off
+
+**Problem:**
+- Used `import sanitizeHtml from 'sanitize-html'` (default import)
+- TypeScript compiled it with `allowSyntheticDefaultImports: true` — no TS error
+- At runtime: `sanitize_html_1.default is not a function` — the default export was `undefined`
+
+**Root Cause:**
+- `@types/sanitize-html` uses `export = sanitize` (CommonJS `module.exports = ...`)
+- `allowSyntheticDefaultImports` silences the TypeScript error but provides NO runtime shim
+- `esModuleInterop` is required for a runtime shim — the project's tsconfig doesn't have it
+- Without the shim, `import X from 'pkg'` for a `module.exports =` package gives `undefined` at runtime
+
+**Fix:**
+- `import * as sanitizeHtml from 'sanitize-html'` — correct for `export =` modules without `esModuleInterop`
+- Null guard in the helper: `if (value == null || typeof value !== 'string') return value`
+- Reason for null guard: `@Transform` fires on `undefined` for optional fields — must not pass to sanitizer
+
+**File:** `backend/src/common/utils/sanitize.ts`
+
+**How to Avoid:**
+- For any npm package typed with `export =`: use `import * as X from 'pkg'`
+- Check `@types/pkg/index.d.ts` — if the last line is `export = something`, you need namespace import
+- `allowSyntheticDefaultImports: true` in tsconfig is a trap — it hides the error at compile time but not at runtime
+
+---
+
 ## 📝 Template for New Lessons
 
 ```
@@ -1346,5 +1442,5 @@ docker-compose up --build --force-recreate --renew-anon-volumes -d backend
 
 ---
 
-*Last updated: 2026-05-10*
+*Last updated: 2026-05-13*
 *Feed this file to Claude at the start of every new session*

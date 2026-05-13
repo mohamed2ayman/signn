@@ -9,6 +9,7 @@ export class UpdateKnowledgeAssetDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(20000)
   description?: string;
 
   @IsOptional()

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import {
@@ -6,6 +6,7 @@ import {
   SupportTicketReply,
   OrganizationSubscription,
   SubscriptionStatus,
+  UserRole,
 } from '../../database/entities';
 
 /**
@@ -112,7 +113,10 @@ export class SupportService {
     })) as AdminTicket[];
   }
 
-  async getTicketById(ticketId: string): Promise<SupportTicket & { replies: SupportTicketReply[] }> {
+  async getTicketById(
+    ticketId: string,
+    requestingUser: { id: string; role: UserRole },
+  ): Promise<SupportTicket & { replies: SupportTicketReply[] }> {
     const ticket = await this.ticketRepository.findOne({
       where: { id: ticketId },
       relations: ['user', 'organization', 'assignee'],
@@ -122,8 +126,25 @@ export class SupportService {
       throw new NotFoundException('Support ticket not found');
     }
 
+    // Only staff roles can view any ticket; customers can only view their own.
+    const isStaff = [
+      UserRole.SYSTEM_ADMIN,
+      UserRole.OPERATIONS,
+    ].includes(requestingUser.role);
+
+    if (!isStaff && ticket.user_id !== requestingUser.id) {
+      throw new ForbiddenException('Cannot view this ticket');
+    }
+
+    // Defense-in-depth: strip internal notes from non-staff responses.
+    // The frontend filter is a second layer; this is the authoritative gate.
+    const replyWhere: Record<string, unknown> = { ticket_id: ticketId };
+    if (!isStaff) {
+      replyWhere.is_internal_note = false;
+    }
+
     const replies = await this.replyRepository.find({
-      where: { ticket_id: ticketId },
+      where: replyWhere,
       relations: ['user'],
       order: { created_at: 'ASC' },
     });

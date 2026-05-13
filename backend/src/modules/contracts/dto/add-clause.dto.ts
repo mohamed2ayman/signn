@@ -1,4 +1,4 @@
-import { IsUUID, IsOptional, IsString, IsInt, MaxLength } from 'class-validator';
+import { IsUUID, IsOptional, IsString, IsInt, IsObject, MaxLength } from 'class-validator';
 
 export class AddClauseDto {
   @IsUUID()
@@ -14,5 +14,6 @@ export class AddClauseDto {
   order_index?: number;
 
   @IsOptional()
+  @IsObject()
   customizations?: Record<string, unknown>;
 }

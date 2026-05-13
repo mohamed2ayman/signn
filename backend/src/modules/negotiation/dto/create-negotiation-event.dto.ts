@@ -5,7 +5,9 @@ import {
   IsUUID,
   MaxLength,
 } from 'class-validator';
+import { Transform } from 'class-transformer';
 import { NegotiationEventType } from '../../../database/entities';
+import { stripHtml } from '../../../common/utils/sanitize';
 
 export class CreateNegotiationEventDto {
   @IsUUID()
@@ -20,9 +22,13 @@ export class CreateNegotiationEventDto {
 
   @IsOptional()
   @IsString()
+  @Transform(({ value }) => stripHtml(value))
+  @MaxLength(500000)
   original_text?: string;
 
   @IsOptional()
   @IsString()
+  @Transform(({ value }) => stripHtml(value))
+  @MaxLength(500000)
   new_text?: string;
 }

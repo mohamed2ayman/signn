@@ -1,4 +1,4 @@
-import { IsUUID, IsInt, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsInt, IsOptional, IsString, IsObject, MaxLength } from 'class-validator';
 
 export class UpdateClauseOrderDto {
   @IsOptional()
@@ -11,5 +11,6 @@ export class UpdateClauseOrderDto {
   section_number?: string;
 
   @IsOptional()
+  @IsObject()
   customizations?: Record<string, unknown>;
 }

@@ -1,4 +1,4 @@
-import { IsEnum, IsOptional, IsString } from 'class-validator';
+import { IsEnum, IsOptional, IsString, MaxLength } from 'class-validator';
 import { ApproverStatus } from '../../../database/entities';
 
 export class ReviewApprovalDto {
@@ -7,5 +7,6 @@ export class ReviewApprovalDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(10000)
   comment?: string;
 }
