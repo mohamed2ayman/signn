@@ -1,7 +1,7 @@
 # CLAUDE.md — Project Intelligence File
 > Read this entire file at the start of every Claude Code session before touching any code.
 > This file is the single source of truth for all architectural decisions, rules, and context.
-> Last updated: 2026-05-13 (Rebrand: CENVOX → MANAGEX rebased onto main. Combines: Phase 3 — Input Security (sanitize-html, @MaxLength on 16 DTOs, @Transform on 5 XSS-risk fields, support ticket defense-in-depth) AND landing page rebuild + SIGN attribution + parent backlink + --cx-* tokens retired in favor of --mx-* / scoped --mx-sign-* / --mx-navy-*.)
+> Last updated: 2026-05-16 (Added: Team Coordination Rules section — "done" definition, pre-PR checklist, rebrand sweep rule, gitignored files rule, gh CLI workflow scope, feature branch lifetime rule. Derived from Phase 3.2 + MANAGEX + Legal Layer rebase coordination, May 2026.)
 
 ---
 
@@ -927,3 +927,90 @@ Fourteen targeted text and visual changes were applied after the initial landing
 12. Mission body: "Through six AI-powered products, we give construction organisations the clarity to plan precisely… For every project."
 13. CTA heading: "Start building with intelligence on your side." (`intelligence on your side` uses the dark-cyan→#0066AA gradient via `.mx-grad-cyan-d`).
 14. CTA body: "One platform. Six products. Every phase covered. Join the teams already building smarter with MANAGEX."
+
+---
+
+## Team Coordination Rules (Learned May 2026)
+
+These rules were extracted from a painful multi-day coordination exercise involving the Phase 3.2 security work, the MANAGEX rebrand, and the legal layer — three branches that had to be cleanly rebased onto each other before merging.
+
+### "Done" Definition
+Work is NEVER done until it is on main with green CI. A pushed branch is work in progress. Never tell a teammate "it's done" until the PR is merged and CI has passed.
+
+| State | Meaning |
+|-------|---------|
+| "I pushed the branch" | Work in progress |
+| "PR is open" | Work in progress |
+| "PR merged to main + CI green" | **Done** |
+
+### Pre-PR Checklist (MANDATORY before opening any PR)
+Run these commands before creating any PR:
+
+1. Fetch latest main:
+   `git fetch origin`
+
+2. Check if you're behind:
+   `git log HEAD..origin/main --oneline`
+   (If ANY output appears → rebase before PR)
+
+3. Rebase if needed:
+   `git rebase origin/main`
+
+4. Resolve conflicts — keep BOTH sides for CLAUDE.md / lessons.md
+
+5. Verify Phase 3.2 artifacts survived (all 5 must pass):
+   ```
+   ls backend/src/common/utils/sanitize.ts
+   grep "sanitize-html" backend/package.json
+   grep "@MaxLength" backend/src/modules/clauses/dto/create-clause.dto.ts
+   grep "@Transform" backend/src/modules/clauses/dto/create-clause.dto.ts
+   grep "is_internal_note" backend/src/modules/support/support.service.ts
+   ```
+
+6. Run all tests locally before pushing
+
+7. Force-push with lease:
+   `git push --force-with-lease origin <branch>`
+
+8. Create PR and wait for green CI before merging
+
+**Rule:** Never open a PR from a branch that is behind `origin/main`.
+
+### Rebrand Sweep Rule
+Any rename (brand, package, URL, service name) must end with a NEGATIVE-filter grep sweep:
+
+```bash
+grep -rni "OLD_NAME" . \
+  --exclude-dir=node_modules \
+  --exclude-dir=.git \
+  --exclude-dir=dist \
+  --exclude-dir=build \
+  --exclude-dir=coverage \
+  --exclude="*.lock" \
+  --exclude="*.log"
+```
+
+Never use `--include` for a final sweep. Files with no extension (Dockerfile), `.xml`, and `.md` active instructions will always be missed by positive-filter greps.
+
+### gitignored Files After a Rename
+After any rename touching service names or config:
+- Manually check `docker-compose.override.yml` (gitignored — won't appear in any automated check)
+- Update it to match new service names
+- The file is local-only but WILL break `docker-compose up` if stale
+
+### gh CLI Authentication
+The gh CLI requires the `workflow` scope to push changes to `.github/workflows/` files. Default login scopes exclude it.
+
+Always authenticate with:
+```
+gh auth login --scopes "repo,workflow,read:org,gist" --web
+```
+
+Verify before any push touching CI files:
+```
+gh auth status | grep "Token scopes"
+```
+Must show: `workflow`
+
+### Feature Branch Lifetime Rule
+Open a DRAFT PR the same day you start a branch. Mark it "Ready for review" when complete. Merge within 24–48 hours of creation. The rebase cost grows non-linearly — a branch 10 days old can take 10× longer to rebase than a branch 1 day old.

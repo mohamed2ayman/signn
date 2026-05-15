@@ -1,7 +1,7 @@
 # lessons.md — SIGN + MANAGEX Platform
 > This file documents every bug, issue, and fix that took significant time to resolve.
 > Feed this file to Claude at the start of every session to avoid repeating mistakes.
-> Last updated: 2026-05-13 (Lessons #40, #41, #42 — CENVOX→MANAGEX rebrand, Vite-vs-Docker port collision on 5175, canonical port 5175. Plus Phase 3.2 lessons from main.)
+> Last updated: 2026-05-16 (Lessons #40, #41, #42 — CENVOX→MANAGEX rebrand, Vite-vs-Docker port collision on 5175, canonical port 5175. Plus Phase 3.2 lessons from main.)
 
 ---
 
@@ -1492,6 +1492,200 @@ When deploying to production, every `http://localhost:5175` reference becomes `h
 
 ---
 
+## 47. Coordination — "Done" = On Main With Green CI, Never "Pushed to a Branch"
+
+**Problem:**
+Two feature branches (MANAGEX rebrand and legal layer) were considered "done" by the developer because the code was pushed to a remote branch. Both went undiscovered for days. When found:
+- Both had to be rebased because main had moved forward
+- The MANAGEX branch required 4 CI fix cycles
+- The legal layer branch required a clean rebase over Phase 3.2 AND the MANAGEX commit
+- Hours of coordination time could have been saved with immediate PRs
+
+**Root Cause:**
+No shared definition of "done." "I pushed the branch" was treated as completion, not as work-in-progress.
+
+**Fix:**
+Work is NOT done until: (1) branch pushed, (2) PR opened against main, (3) CI green on all 3 jobs, (4) PR merged to main. Any earlier state = work in progress.
+
+**File:** Team agreement — applies to every developer.
+
+**How to Avoid:**
+- Never say "it's done" or "I shipped it" without a merged PR link
+- Use GitHub PR status as the canonical source of truth, not branch existence
+
+---
+
+## 48. Rebrand — Always Run a Negative-Filter Sweep After a Big Rename
+
+**Problem:**
+The MANAGEX rebrand (71 files) used a positive-filter grep (`--include="*.ts,*.tsx,*.json"`). This missed:
+- `.github/workflows/ci.yml` — found during CI failure
+- `apps/sign/Dockerfile` — found in post-CI sweep
+- `apps/word-addin/manifest.xml` ProviderName — found in third sweep
+- `apps/word-addin/manifest.localhost.xml` — found in third sweep
+- `apps/word-addin/README.md` — found in third sweep
+- `README-DEV.md` dev commands — found in third sweep
+- `package-lock.json` stale workspace entry — found in third sweep
+
+**Root Cause:**
+`--include` silently excludes files with no extension (Dockerfile), unusual extensions (.xml), and generated files (.lock).
+
+**Fix:**
+Use a NEGATIVE filter as the final verification for any rename:
+```bash
+grep -rni "OLD_NAME" . \
+  --exclude-dir=node_modules --exclude-dir=.git \
+  --exclude-dir=dist --exclude-dir=build \
+  --exclude-dir=coverage \
+  --exclude="*.lock" --exclude="*.log"
+```
+Then classify each hit: "functional" (change it) vs "historical" (leave it).
+
+**File:** Any rename operation.
+
+**How to Avoid:**
+Never use `--include` for a rebrand sweep — always use a blanket grep with targeted exclusions.
+
+---
+
+## 49. Coordination — Rebasing Requires Pulling BEFORE Opening a PR
+
+**Problem:**
+Two PRs were opened from branches that were cut weeks before the current state of main:
+- `feat/legal-layer` was cut from `be13d6b` (Phase 2) — would have silently dropped Phase 3.2 security work if merged without rebasing
+- `claude/quirky-khorana-1d5fcc` was cut from `602cf77` (before Phase 3.2) — same risk
+
+**Root Cause:**
+Developers opened PRs without checking whether their branch was behind `origin/main`.
+
+**Fix:**
+Before opening any PR, always run:
+```
+git fetch origin
+git log HEAD..origin/main --oneline
+```
+If this returns ANYTHING, rebase first:
+```
+git rebase origin/main
+```
+Resolve conflicts on YOUR branch, then force-push, then open the PR. CI confirms everything coexists.
+
+**File:** Pre-PR workflow — applies to every developer.
+
+**How to Avoid:**
+Make `git log HEAD..origin/main --oneline` a muscle-memory habit before every `gh pr create`.
+
+---
+
+## 50. gitignored Files Are Invisible to Rebrand Sweeps
+
+**Problem:**
+`docker-compose.override.yml` is gitignored (local-only). The MANAGEX rebrand correctly renamed all committed files, but the override still had `cenvox:` service references. After pulling the rebrand, `docker-compose up` failed with `service "cenvox" has neither an image nor a build context` on Ayman's machine.
+
+**Root Cause:**
+gitignored files are invisible to code review, CI, and all grep sweeps against the git tree. They have to be checked manually.
+
+**Fix:**
+After any rename touching docker-compose.yml service names:
+1. Check if `docker-compose.override.yml` exists locally
+2. Manually update any stale service name references in it
+3. Consider adding a `docker-compose.override.yml.example` to the repo so new developers know the file must exist
+
+**File:** `docker-compose.override.yml` (gitignored — update manually after any service rename)
+
+**How to Avoid:**
+Add "check gitignored override files" as the final step of any rename that touches docker-compose service names.
+
+---
+
+## 51. gh CLI — workflow Scope Required to Push CI Workflow Files
+
+**Problem:**
+Default `gh auth login` scopes (`gist`, `read:org`, `repo`) do NOT include `workflow`. Any push touching `.github/workflows/` is rejected:
+> "refusing to allow an OAuth App to create or update workflow without workflow scope"
+
+This blocked the MANAGEX rebrand force-push for over an hour across 3–4 attempts.
+
+**Root Cause:**
+GitHub silently rejects `workflow`-less pushes at the remote — git reports the push as successful but the ref is not updated. The error only appears in verbose output or when checking the remote afterward.
+
+**Fix:**
+On first-time setup, or after any re-authentication:
+```
+gh auth login --scopes "repo,workflow,read:org,gist" --web
+```
+If already logged in without the scope:
+```
+gh auth logout --hostname github.com
+gh auth login --scopes "repo,workflow,read:org,gist" --web
+```
+Verify after login:
+```
+gh auth status | grep "Token scopes"
+```
+Must show `workflow`.
+
+**File:** One-time machine setup — persists until next logout.
+
+**How to Avoid:**
+Run `gh auth status | grep "Token scopes"` before any push that touches `.github/workflows/`. If `workflow` is missing, re-auth before pushing.
+
+---
+
+## 52. Coordination — Open a DRAFT PR Within 24–48 Hours of Branch Creation
+
+**Problem:**
+Long-lived branches compound rebase cost non-linearly:
+- `feat/legal-layer` lived 4+ days before merge → required rebasing over Phase 3.2 + MANAGEX
+- `claude/quirky-khorana-1d5fcc` lived 3+ days → required rebasing over Phase 3.2
+
+A branch 10 days old can take 10× longer to rebase than a branch 1 day old.
+
+**Root Cause:**
+No convention around when to open PRs. Developers treated "open PR" as the last step, not the first.
+
+**Fix:**
+Open a DRAFT PR the same day you create a branch. This:
+1. Makes the work visible to teammates immediately
+2. Allows early feedback before it hardens
+3. Creates pressure to finish and merge quickly
+4. Means CI runs early — issues found before they compound
+
+When ready: convert to "Ready for review," request merge.
+
+**File:** Team convention — applies to every developer.
+
+**How to Avoid:**
+`gh pr create --draft` on day 1. Never let a branch exist for more than 48 hours without a PR.
+
+---
+
+## 53. Post-Merge — Always Verify Phase 3.2 Artifacts Survived
+
+**Problem:**
+Every merge during the May 2026 coordination period carried a real risk that Phase 3.2 security work would be silently dropped if conflict resolution was done incorrectly. The MANAGEX rebase specifically dropped `sanitize.ts`, all `@MaxLength`, and `@Transform` decorators — caught only because of a deliberate 5-check post-merge verification.
+
+**Root Cause:**
+Conflict resolution on CLAUDE.md / lessons.md / App.tsx favored "their side" without checking whether "our side" contained critical backend security changes.
+
+**Fix:**
+Run the 5-check verification after EVERY merge that touches backend code, CLAUDE.md, or lessons.md:
+```
+ls backend/src/common/utils/sanitize.ts
+grep "sanitize-html" backend/package.json
+grep "@MaxLength" backend/src/modules/clauses/dto/create-clause.dto.ts
+grep "@Transform" backend/src/modules/clauses/dto/create-clause.dto.ts
+grep "is_internal_note" backend/src/modules/support/support.service.ts
+```
+All 5 must return matches. If ANY fails, the merge dropped Phase 3.2 security work — do not proceed.
+
+**File:** Post-merge checklist — permanent fixture for any backend-touching merge.
+
+**How to Avoid:**
+Treat these 5 checks as non-negotiable. Add them to the Pre-PR checklist in CLAUDE.md (done — May 2026).
+
+---
+
 ## 📝 Template for New Lessons
 
 ```
@@ -1518,7 +1712,7 @@ When deploying to production, every `http://localhost:5175` reference becomes `h
 
 ---
 
-*Last updated: 2026-05-13*
+*Last updated: 2026-05-16*
 *Feed this file to Claude at the start of every new session*
 
 ---
