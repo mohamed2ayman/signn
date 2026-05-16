@@ -12,6 +12,7 @@ import * as crypto from 'crypto';
 import { KnowledgeAsset, AssetReviewStatus } from '../../database/entities';
 import { StorageService, UploadedFile } from '../storage/storage.service';
 import { CreateKnowledgeAssetDto, UpdateKnowledgeAssetDto, ReviewAssetDto } from './dto';
+import { escapeLikeParam } from '../../common/utils/escape-like';
 
 // ─── Format allowlist ─────────────────────────────────────────────────────────
 const ALLOWED_MIME_TYPES = new Set([
@@ -72,7 +73,7 @@ export class KnowledgeAssetsService {
     if (filters?.search) {
       qb.andWhere(
         '(asset.title ILIKE :search OR asset.description ILIKE :search)',
-        { search: `%${filters.search}%` },
+        { search: `%${escapeLikeParam(filters.search)}%` },
       );
     }
 

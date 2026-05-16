@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { escapeLikeParam } from '../../common/utils/escape-like';
 import {
   Organization,
   OrganizationSubscription,
@@ -109,7 +110,7 @@ export class AdminOrganizationsService {
 
     if (query.search) {
       qb.andWhere('(o.name ILIKE :s OR o.crn ILIKE :s)', {
-        s: `%${query.search}%`,
+        s: `%${escapeLikeParam(query.search)}%`,
       });
     }
     if (query.country) qb.andWhere('o.country = :country', { country: query.country });
@@ -176,7 +177,7 @@ export class AdminOrganizationsService {
       ).andWhere('"latest_sub"."plan_id" = :pid', { pid: query.planId });
     }
     if (query.search) {
-      qb.andWhere('(o.name ILIKE :s OR o.crn ILIKE :s)', { s: `%${query.search}%` });
+      qb.andWhere('(o.name ILIKE :s OR o.crn ILIKE :s)', { s: `%${escapeLikeParam(query.search)}%` });
     }
     if (query.country) qb.andWhere('o.country = :country', { country: query.country });
     if (query.industry) qb.andWhere('o.industry = :industry', { industry: query.industry });

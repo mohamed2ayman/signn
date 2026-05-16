@@ -6,6 +6,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Clause } from '../../database/entities';
 import { CreateClauseDto, UpdateClauseDto } from './dto';
+import { escapeLikeParam } from '../../common/utils/escape-like';
 
 @Injectable()
 export class ClausesService {
@@ -35,7 +36,7 @@ export class ClausesService {
     if (filters?.search) {
       qb.andWhere(
         '(clause.title ILIKE :search OR clause.content ILIKE :search)',
-        { search: `%${filters.search}%` },
+        { search: `%${escapeLikeParam(filters.search)}%` },
       );
     }
 

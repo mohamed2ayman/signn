@@ -28,6 +28,7 @@ import {
   AddCommentDto,
   UpdateStatusDto,
 } from './dto';
+import { escapeLikeParam } from '../../common/utils/escape-like';
 import { CollaborationGateway } from '../collaboration/collaboration.gateway';
 import { ContractTemplatesService, isStandardForm, getLicenseOrg } from '../contract-templates/contract-templates.service';
 import { EmailService } from '../notifications/email.service';
@@ -83,7 +84,7 @@ export class ContractsService {
 
     if (filters?.search) {
       qb.andWhere('contract.name ILIKE :search', {
-        search: `%${filters.search}%`,
+        search: `%${escapeLikeParam(filters.search)}%`,
       });
     }
 

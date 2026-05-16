@@ -764,6 +764,48 @@ First GitHub Actions workflow. CI ONLY — no CD until Phase 9 (Deployment Prep)
 - `@Transform` fires on `undefined` for optional fields — always null-guard in the transformer function
 - `is_internal_note` visibility must be enforced at DB level (service query), never only in frontend
 
+### Phase 3.1 — SQL Injection Prevention (shipped — 2026-05-16)
+
+Full audit of all database query patterns across the backend.
+
+**Audit findings:**
+- TypeORM named parameter binding used consistently across all
+  28 query builder files — zero injection vulnerabilities found
+- Zero raw SQL with user input (only one hardcoded SELECT 1
+  health check ping)
+- Zero dangerous ORDER BY patterns with user input
+- Zero dynamic table/column names
+- AI backend has no SQL at all — pure HTTP delegation
+- pgvector queries: TypeScript side fully parameterized
+
+**One gap found and fixed — LIKE wildcard leakage:**
+- 8 ILIKE search patterns used correct named parameter binding
+  (no injection possible) but did not escape %, _, \ characters
+- User searching for "100%" would match "1000", "100abc" etc.
+  because % is a PostgreSQL wildcard — not injection, but wrong
+- 6 sites patched (2 sites in admin-security module are on an
+  unmerged branch — patch when that branch merges)
+
+**What was added:**
+- New helper: backend/src/common/utils/escape-like.ts
+  exports escapeLikeParam(value: string): string
+  escapes \, %, _ in correct order with null guard
+- Applied at 6 ILIKE sites across 4 files:
+  admin-audit-log/admin-audit-log.service.ts (1 site)
+  admin-organizations/admin-organizations.service.ts (2 sites)
+  clauses/clauses.service.ts (1 site)
+  contracts/contracts.service.ts (1 site)
+  knowledge-assets/knowledge-assets.service.ts (1 site)
+
+**Hard rules — never violate:**
+- LIKE/ILIKE queries must ALWAYS use escapeLikeParam() on the
+  user input before wrapping in %
+- Backslash must be escaped FIRST in the helper — reordering
+  the replace() calls causes double-escaping bugs
+- The % wrapping stays at the call site, NOT inside the helper
+- When admin-security module merges, apply escapeLikeParam()
+  to admin-activity-log.service.ts and security-audit-log.service.ts
+
 ---
 
 ## Phase 3 — Recently Shipped

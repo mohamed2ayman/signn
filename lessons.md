@@ -1944,4 +1944,74 @@ And visually confirm each expected column appears in the output.
 
 ---
 
+## 54. SQL Injection — TypeORM Parameterization Is Already There by Default
+
+**Finding:**
+Full audit of 28 query builder files, all migrations, all raw
+query calls, and the AI backend found zero SQL injection
+vulnerabilities. TypeORM's named parameter binding
+(.where("col = :val", { val: input })) is used consistently
+throughout the codebase.
+
+**Implication:**
+When a security audit finds nothing, that IS the result.
+"Phase 3.1 complete" sometimes means "verified clean" not
+"fixed X vulnerabilities." Document the audit and move on.
+
+**What to watch for on new code:**
+- Always use named parameters: .where("col = :val", { val })
+- Never use template literals in query strings:
+  .where(`col = '${userInput}'`) ← NEVER do this
+- Never concatenate user input into query strings
+
+---
+
+## 55. LIKE Wildcard Leakage vs SQL Injection — Different Problems
+
+**Problem:**
+8 ILIKE search patterns used correct TypeORM named parameter
+binding (no SQL injection possible) but did not escape the
+PostgreSQL wildcard characters % and _ in user input.
+
+Result: searching for "100%" matched "1000", "100abc", etc.
+This is a correctness/UX bug, NOT a security vulnerability.
+
+**Fix:**
+Created backend/src/common/utils/escape-like.ts with
+escapeLikeParam() helper. Applied at all 6 existing ILIKE sites.
+
+**Pattern — always use this for ILIKE/LIKE:**
+import { escapeLikeParam } from '../../common/utils/escape-like';
+
+.andWhere('col ILIKE :search', {
+  search: `%${escapeLikeParam(userInput)}%`
+})
+
+**Escape order matters:**
+1. Backslash first: \ → \\
+2. Percent: % → \%
+3. Underscore: _ → \_
+
+Reordering causes double-escaping bugs.
+
+---
+
+## 56. New ILIKE Sites Need escapeLikeParam() When Branches Merge
+
+**Context:**
+Phase 3.1 investigation found 8 ILIKE sites but only 6 were
+patchable — the admin-security module containing the other 2
+was on an unmerged branch at the time.
+
+**Rule:**
+When any branch adds a new LIKE/ILIKE query, it MUST apply
+escapeLikeParam() before merging. The pre-PR check (ship.sh)
+will not catch this automatically — it requires code review.
+
+**Files to patch when admin-security merges:**
+- admin-security/services/admin-activity-log.service.ts
+- admin-security/services/security-audit-log.service.ts
+
+---
+
 *Last updated: 2026-05-12 (legal layer Phase 1)*

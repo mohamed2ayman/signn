@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AuditLog } from '../../database/entities';
 import { AuditLogQueryDto, AuditLogExportQueryDto } from './dto/audit-log-query.dto';
+import { escapeLikeParam } from '../../common/utils/escape-like';
 
 @Injectable()
 export class AdminAuditLogService {
@@ -117,7 +118,7 @@ export class AdminAuditLogService {
       qb.andWhere('log.user_id = :userId', { userId });
     }
     if (action) {
-      qb.andWhere('log.action ILIKE :action', { action: `%${action}%` });
+      qb.andWhere('log.action ILIKE :action', { action: `%${escapeLikeParam(action)}%` });
     }
     if (entityType) {
       qb.andWhere('log.entity_type = :entityType', { entityType });
