@@ -2014,4 +2014,88 @@ will not catch this automatically — it requires code review.
 
 ---
 
-*Last updated: 2026-05-12 (legal layer Phase 1)*
+## 57. Mass Assignment via Partial<Entity> — Never Use Entities as DTOs
+
+**Context:**
+compliance-obligations.controller.ts used `@Body() body: Partial<Obligation>`
+with `Object.assign(entity, body)`. The Obligation entity exposes ALL database
+columns including id, contract_id, created_at, and relation fields. An attacker
+could send `{ "id": "other-uuid", "contract_id": "other-contract" }` and
+overwrite protected fields directly.
+
+**Root cause:**
+Using the entity class directly as a DTO is a classic mass assignment
+vulnerability. TypeORM entities are database mirrors — they expose everything.
+DTOs are input contracts — they expose only what the endpoint should accept.
+
+**Fix:**
+Created `UpdateObligationInlineDto` with only `status` and `completed_at`.
+The controller now only receives and applies those two fields.
+
+**Rule:**
+Never use `Partial<SomeEntity>` as a `@Body()` type. Always create a dedicated
+DTO class with only the fields the endpoint should accept. If the entity has 20
+fields and the endpoint should update 2, the DTO has 2 fields.
+
+---
+
+## 58. Plain TypeScript Interfaces Get Zero Validation from class-validator
+
+**Context:**
+`ObligationFilters` was a plain TypeScript interface used as
+`@Query() filters: ObligationFilters`. class-validator decorators
+(like @IsEnum, @IsDateString) only work on class instances — they have no
+effect on plain interfaces. Result: the status field accepted any string,
+causing raw PostgreSQL errors when an invalid enum value reached TypeORM.
+
+**Root cause:**
+TypeScript interfaces exist only at compile time. At runtime, they are plain
+objects with no metadata. class-validator's ValidationPipe uses reflect-metadata
+to read decorators — which only exist on class instances.
+
+**Fix:**
+Converted `ObligationFilters` interface to `ObligationFiltersDto` class with
+`@IsOptional() @IsEnum(ObligationStatus)` on status, `@IsDateString()` on
+from/to, and `@IsString()` on string fields.
+
+**Rule:**
+Never use a plain interface for `@Query()` or `@Body()` parameters that need
+validation. Always use a class with class-validator decorators. If you see
+`interface XxxFilters` being used in `@Query()` or `@Body()`, it needs to be
+converted to a class.
+
+---
+
+## 59. Every Inline @Body() Object Is a Validation Gap
+
+**Context:**
+Found 6 endpoints using inline `@Body()` objects instead of DTOs:
+- `@Body() body: { clauses: { id: string; order_index: number }[] }`
+- `@Body() body: { status: ComplianceFindingStatus }`
+- `@Body() body: { level: string }`
+- `@Body() body: { clause_ids: string[] }`
+- `@Body() body: { party_first_name?: string; party_second_name?: string }`
+- `@Body() body: { change_summary: string }`
+
+None of these get validated by the global ValidationPipe. The pipe only
+validates class instances with decorators. An inline `{ field: type }` object
+is structurally typed at compile time only — at runtime it is unvalidated.
+
+**Consequences found:**
+- No UUID validation on IDs → raw PostgreSQL errors
+- No array size limits → unbounded DB operations
+- No enum validation → service receives invalid values
+- No MaxLength → unbounded strings saved to DB
+
+**Fix:**
+Created a proper DTO class for each endpoint. Applied `@IsUUID`,
+`@ArrayMaxSize`, `@IsEnum`, `@MaxLength` as needed.
+
+**Rule:**
+Every `@Body()` and `@Query()` parameter MUST be a class with class-validator
+decorators. Never use inline object types. Code review checklist: grep for
+`"@Body() [a-z]"` and verify every match is a DTO class, not an inline type.
+
+---
+
+*Last updated: 2026-05-16 (Phase 3.3 Input Validation)*

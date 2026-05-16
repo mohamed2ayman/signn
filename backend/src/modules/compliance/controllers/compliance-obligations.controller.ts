@@ -16,14 +16,8 @@ import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { Obligation, ObligationStatus, User } from '../../../database/entities';
 import { IcalExportService } from '../services/ical-export.service';
-
-interface ObligationFilters {
-  party?: string;
-  type?: string;
-  status?: ObligationStatus;
-  from?: string;
-  to?: string;
-}
+import { ObligationFiltersDto } from '../dto/obligation-filters.dto';
+import { UpdateObligationInlineDto } from '../dto/update-obligation-inline.dto';
 
 @Controller()
 @UseGuards(JwtAuthGuard)
@@ -37,7 +31,7 @@ export class ComplianceObligationsController {
   @Get('contracts/:contractId/obligations')
   async listForContract(
     @Param('contractId') contractId: string,
-    @Query() filters: ObligationFilters,
+    @Query() filters: ObligationFiltersDto,
   ): Promise<Obligation[]> {
     return this.applyFilters(
       this.obligationRepo
@@ -52,7 +46,7 @@ export class ComplianceObligationsController {
   @Patch('contracts/:contractId/obligations/:obligationId')
   async update(
     @Param('obligationId') id: string,
-    @Body() body: Partial<Obligation>,
+    @Body() body: UpdateObligationInlineDto,
     @CurrentUser() user: User,
   ): Promise<Obligation> {
     const o = await this.obligationRepo.findOne({ where: { id } });
@@ -93,7 +87,7 @@ export class ComplianceObligationsController {
   @Get('projects/:projectId/obligations')
   async listForProject(
     @Param('projectId') projectId: string,
-    @Query() filters: ObligationFilters,
+    @Query() filters: ObligationFiltersDto,
   ): Promise<Obligation[]> {
     return this.applyFilters(
       this.obligationRepo
@@ -108,7 +102,7 @@ export class ComplianceObligationsController {
 
   // ─── Helpers ────────────────────────────────────────────
 
-  private applyFilters<T>(qb: any, f: ObligationFilters): any {
+  private applyFilters<T>(qb: any, f: ObligationFiltersDto): any {
     if (f.party) qb.andWhere('o.responsible_party = :party', { party: f.party });
     if (f.type) qb.andWhere('o.obligation_type = :type', { type: f.type });
     if (f.status) qb.andWhere('o.status = :status', { status: f.status });

@@ -28,6 +28,7 @@ import {
   VerifyRecoveryDto,
   ChangePasswordDto,
 } from './dto';
+import { CompleteOnboardingDto } from './dto/complete-onboarding.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
@@ -133,7 +134,7 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   async completeOnboarding(
     @CurrentUser('id') userId: string,
-    @Body() body: { level: string },
+    @Body() body: CompleteOnboardingDto,
   ) {
     await this.authService.completeOnboarding(userId, body.level);
     return { message: 'Onboarding completed' };

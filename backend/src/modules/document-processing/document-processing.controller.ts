@@ -17,6 +17,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { OrganizationId } from '../../common/decorators/organization.decorator';
 import { DocumentProcessingService } from './document-processing.service';
 import { UploadDocumentDto } from './dto';
+import { ClauseIdsDto } from './dto/clause-ids.dto';
 import { ClauseReviewStatus } from '../../database/entities';
 
 @Controller('contracts/:contractId')
@@ -110,7 +111,7 @@ export class DocumentProcessingController {
 
   @Post('review/clauses/bulk-approve')
   async bulkApproveReview(
-    @Body() body: { clause_ids: string[] },
+    @Body() body: ClauseIdsDto,
     @CurrentUser() user: any,
   ) {
     await this.documentProcessingService.bulkApproveReview(

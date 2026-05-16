@@ -6,6 +6,7 @@ import {
   IsBoolean,
   IsObject,
   MaxLength,
+  Min,
 } from 'class-validator';
 
 export class UpdatePlanDto {
@@ -21,6 +22,7 @@ export class UpdatePlanDto {
 
   @IsOptional()
   @IsNumber()
+  @Min(0)
   price?: number;
 
   @IsOptional()
@@ -30,18 +32,22 @@ export class UpdatePlanDto {
 
   @IsOptional()
   @IsInt()
+  @Min(1)
   duration_days?: number;
 
   @IsOptional()
   @IsInt()
+  @Min(1)
   max_projects?: number;
 
   @IsOptional()
   @IsInt()
+  @Min(1)
   max_users?: number;
 
   @IsOptional()
   @IsInt()
+  @Min(1)
   max_contracts_per_project?: number;
 
   @IsOptional()

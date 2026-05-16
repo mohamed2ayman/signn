@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsDateString, IsInt, IsEnum, MaxLength } from 'class-validator';
+import { IsString, IsOptional, IsDateString, IsInt, IsEnum, MaxLength, Min, Max } from 'class-validator';
 import { ObligationStatus } from '../../../database/entities';
 
 export class UpdateObligationDto {
@@ -27,6 +27,8 @@ export class UpdateObligationDto {
 
   @IsOptional()
   @IsInt()
+  @Min(0)
+  @Max(365)
   reminder_days_before?: number;
 
   @IsOptional()

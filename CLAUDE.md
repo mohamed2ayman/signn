@@ -806,6 +806,37 @@ Full audit of all database query patterns across the backend.
 - When admin-security module merges, apply escapeLikeParam()
   to admin-activity-log.service.ts and security-audit-log.service.ts
 
+### Phase 3.3 — Input Validation (shipped — 2026-05-16)
+
+Fixed raw @Body() mass assignment vulnerabilities and missing DTO validation across 5 controllers.
+
+**6 HIGH findings fixed — raw @Body() bypassing class-validator:**
+- H1: compliance-obligations — `Partial<Obligation>` mass assignment replaced with `UpdateObligationInlineDto` (status + completed_at only)
+- H2: compliance-obligations — `ObligationFilters` plain interface replaced with `ObligationFiltersDto` class with @IsEnum, @IsDateString
+- H3: contracts — reorderClauses raw body replaced with `ReorderClausesDto` (@IsUUID each + @ValidateNested + @ArrayMaxSize(500))
+- H4: compliance — inline `{status}` body replaced with `UpdateFindingStatusDto` (@IsEnum(ComplianceFindingStatus))
+- H5: auth — inline `{level: string}` replaced with `CompleteOnboardingDto` (@IsIn(['none','quick','comprehensive']))
+- H6: document-processing — inline `{clause_ids}` replaced with `ClauseIdsDto` (@IsUUID each + @ArrayMaxSize(500))
+
+**6 MEDIUM findings fixed — missing range/format validators:**
+- M4: contracts — party name update now uses `UpdatePartiesDto` (@MaxLength(255) on both party name fields)
+- M5: contracts — change summary now uses `UpdateChangeSummaryDto` (@MaxLength(1000))
+- M6: contracts — comment content update now uses `UpdateCommentContentDto` (@MaxLength(5000))
+- M1: obligations — @Min(0) @Max(365) on reminder_days_before
+- M2: subscriptions — @Min(0) on price
+- M3: subscriptions — @Min(1) on duration_days, max_projects, max_users, max_contracts_per_project
+
+**Deferred to Phase 3.5:**
+- AI controller raw @Body() patterns (JWT-guarded, Bull queue)
+- @IsUrl() on logo_url and evidence_url
+- @ArrayMaxSize() on tags and approver arrays
+
+**Hard rules — never violate:**
+- NEVER use `Partial<Entity>` as a @Body() type — entities expose all database fields including id, created_at, relations. Always create a dedicated DTO that exposes only what the endpoint should accept.
+- NEVER use a plain TypeScript interface for @Query() or @Body() — class-validator decorators only work on classes, not interfaces. A plain interface gets zero validation silently.
+- Every raw `@Body()` inline object (`{ field: type }`) must become a proper DTO class before merging. Inline objects bypass the global ValidationPipe entirely.
+- When admin-security module merges, apply escapeLikeParam() to admin-activity-log.service.ts and security-audit-log.service.ts (deferred from Phase 3.1)
+
 ---
 
 ## Phase 3 — Recently Shipped

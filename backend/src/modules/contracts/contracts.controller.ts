@@ -29,6 +29,10 @@ import {
   RequestApprovalDto,
   ReviewApprovalDto,
 } from './dto';
+import { ReorderClausesDto } from './dto/reorder-clauses.dto';
+import { UpdatePartiesDto } from './dto/update-parties.dto';
+import { UpdateChangeSummaryDto } from './dto/update-change-summary.dto';
+import { UpdateCommentContentDto } from './dto/update-comment-content.dto';
 
 @Controller('contracts')
 @UseGuards(JwtAuthGuard, RolesGuard, PermissionLevelGuard)
@@ -98,7 +102,7 @@ export class ContractsController {
   @RequirePermission(PermissionLevel.EDITOR)
   async updateParties(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() body: { party_first_name?: string | null; party_second_name?: string | null },
+    @Body() body: UpdatePartiesDto,
   ) {
     return this.contractsService.updateParties(id, body);
   }
@@ -146,9 +150,9 @@ export class ContractsController {
   @RequirePermission(PermissionLevel.EDITOR)
   async reorderClauses(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() body: { clauses: { id: string; order_index: number }[] },
+    @Body() dto: ReorderClausesDto,
   ) {
-    await this.contractsService.reorderClauses(id, body.clauses);
+    await this.contractsService.reorderClauses(id, dto.clauses);
     return { message: 'Clauses reordered successfully' };
   }
 
@@ -185,7 +189,7 @@ export class ContractsController {
   @RequirePermission(PermissionLevel.EDITOR)
   async saveNewVersion(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() body: { change_summary: string },
+    @Body() body: UpdateChangeSummaryDto,
     @CurrentUser() user: any,
   ) {
     return this.contractsService.saveNewVersion(
@@ -228,7 +232,7 @@ export class ContractsController {
   async updateComment(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('commentId', ParseUUIDPipe) commentId: string,
-    @Body() body: { content: string },
+    @Body() body: UpdateCommentContentDto,
     @CurrentUser() user: any,
   ) {
     return this.contractsService.updateComment(id, commentId, user.id, body.content);

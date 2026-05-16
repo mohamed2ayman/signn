@@ -13,10 +13,8 @@ import { Response } from 'express';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { User } from '../../../database/entities';
-import {
-  ComplianceFindingStatus,
-} from '../../../database/entities/compliance-finding.entity';
 import { ComplianceReportType } from '../../../database/entities/compliance-report-job.entity';
+import { UpdateFindingStatusDto } from '../dto/update-finding-status.dto';
 import { ComplianceService } from '../services/compliance.service';
 import { ComplianceFindingService } from '../services/compliance-finding.service';
 import { ComplianceReportService } from '../services/compliance-report.service';
@@ -96,7 +94,7 @@ export class ComplianceController {
   @Patch(':checkId/findings/:findingId')
   async updateFinding(
     @Param('findingId') findingId: string,
-    @Body() body: { status: ComplianceFindingStatus },
+    @Body() body: UpdateFindingStatusDto,
     @CurrentUser() user: User,
   ) {
     return this.findings.updateStatus(findingId, body.status, user.id);
