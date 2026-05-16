@@ -2098,4 +2098,77 @@ decorators. Never use inline object types. Code review checklist: grep for
 
 ---
 
-*Last updated: 2026-05-16 (Phase 3.3 Input Validation)*
+## 60. multer memoryStorage Has No Size Limit by Default
+
+**Problem:**
+All 5 upload endpoints used `FileInterceptor('field')` with no options. multer's default is no file size limit. The entire uploaded file is buffered to Node.js heap before any application code runs. A 1GB upload exhausts server memory before the handler even executes.
+
+**The trap:**
+Service-level size checks (like `chat-attachment.validator.ts`'s 10MB check) run AFTER the file is already fully in memory. They prevent the file from being saved, but the memory damage is already done.
+
+**Fix:**
+Always pass limits to FileInterceptor:
+```typescript
+FileInterceptor('file', { limits: { fileSize: 50 * 1024 * 1024 } })
+```
+This causes multer to reject the upload mid-stream before the full file reaches memory.
+
+**Also:** Handle the resulting MulterError in your exception filter — otherwise `LIMIT_FILE_SIZE` surfaces as a 500 instead of a clean 413 Payload Too Large.
+
+---
+
+## 61. Path Traversal in File Serving — Always Contain Paths
+
+**Problem:**
+`storage.service.ts` computed file paths by stripping a URL prefix and joining with the upload directory:
+```typescript
+const relativePath = fileUrl.replace(baseUrl + '/uploads/', '');
+const filePath = path.join(uploadDir, relativePath);
+```
+If `fileUrl` contained `../` sequences after the prefix (e.g. `http://localhost:3000/uploads/../../../etc/passwd`), `path.join()` would resolve to `/etc/passwd` — outside the upload directory entirely.
+
+**The subtle fix detail:**
+A naive `startsWith('/app/uploads')` check is bypassable: `/app/uploads-evil` starts with `/app/uploads` — false positive!
+
+The correct check appends `path.sep` to the base:
+```typescript
+filePath.startsWith(path.resolve(uploadDir) + path.sep)
+```
+This ensures only paths INSIDE the directory pass.
+
+**Fix applied to:**
+- `storage.service.ts`: `assertContained()` at getFilePath, getFileBuffer, deleteFile
+- `compliance.controller.ts`: `path.resolve` + `startsWith` before `res.sendFile()`
+
+**Rule:**
+Any time you compute a file path from a URL, database value, or user input, ALWAYS verify the resolved path starts with the expected directory + `path.sep` before reading, writing, or serving.
+
+---
+
+## 62. Optional Chaining on Methods That Return Objects
+
+**Problem:**
+`organizations.service.ts` had:
+```typescript
+const fileUrl = await this.storageService.uploadFile?.(file) ?? file.originalname;
+```
+Two bugs:
+1. `uploadFile()` returns `StorageResult` (object), not a string. Storing the whole object as `file_url` saved `[object Object]`.
+2. The `??` fallback stored raw `file.originalname` as a URL — a latent path injection risk.
+
+**Root cause:**
+Optional chaining (`?.`) suppresses TypeScript errors if the method doesn't exist, masking the type mismatch. The object was stored without complaint.
+
+**Fix:**
+```typescript
+const uploaded = await this.storageService.uploadFile(file as any, 'policies');
+if (!uploaded) throw new InternalServerErrorException('File upload failed');
+file_url: uploaded.file_url  // explicit field access
+```
+
+**Rule:**
+Never use optional chaining on a method call whose return value you immediately use as a primitive. The `?.` suppresses type errors AND runtime errors simultaneously. If the method might not exist, handle that explicitly with a proper guard and type-safe field access.
+
+---
+
+*Last updated: 2026-05-16 (Phase 3.4 File Upload Security)*

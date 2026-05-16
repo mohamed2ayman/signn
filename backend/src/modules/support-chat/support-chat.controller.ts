@@ -61,7 +61,7 @@ export class SupportChatController {
 
   /** #4 POST /support/chat/:id/message — send message + optional attachment */
   @Post(':id/message')
-  @UseInterceptors(FileInterceptor('attachment'))
+  @UseInterceptors(FileInterceptor('attachment', { limits: { fileSize: 10 * 1024 * 1024 } }))
   async sendMessage(
     @CurrentUser() user: any,
     @Param('id', ParseUUIDPipe) id: string,

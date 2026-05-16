@@ -75,7 +75,7 @@ export class KnowledgeAssetsController {
   }
 
   @Post()
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 50 * 1024 * 1024 } }))
   async create(
     @Body() dto: CreateKnowledgeAssetDto,
     @UploadedFile() file: any,

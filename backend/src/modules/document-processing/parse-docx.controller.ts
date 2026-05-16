@@ -12,6 +12,12 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { OrganizationId } from '../../common/decorators/organization.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ParseDocxService, ParseDocxResult } from './parse-docx.service';
+import { ParseDocxBodyDto } from './dto/parse-docx-body.dto';
+import {
+  validateFileType,
+  ALLOWED_DOCX_MIMES,
+  ALLOWED_DOCX_EXTENSIONS,
+} from '../../common/utils/file-validation';
 
 /**
  * Endpoint used by the SIGN Word Add-in to parse a Word document into clauses
@@ -38,10 +44,10 @@ export class ParseDocxController {
   constructor(private readonly parseDocxService: ParseDocxService) {}
 
   @Post('parse-from-docx')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 20 * 1024 * 1024 } }))
   async parseFromDocx(
     @UploadedFile() file: Express.Multer.File | undefined,
-    @Body() body: { text?: string; contract_type?: string },
+    @Body() body: ParseDocxBodyDto,
     @CurrentUser('id') userId: string,
     @OrganizationId() orgId: string,
   ): Promise<ParseDocxResult> {
@@ -49,6 +55,10 @@ export class ParseDocxController {
       throw new BadRequestException(
         'Either a multipart `file` field or a JSON `text` field is required.',
       );
+    }
+
+    if (file) {
+      validateFileType(file, ALLOWED_DOCX_MIMES, ALLOWED_DOCX_EXTENSIONS, 'DOCX');
     }
 
     return this.parseDocxService.parse({

@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  ForbiddenException,
   Get,
   Param,
   Patch,
@@ -10,6 +11,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { Response } from 'express';
+import * as path from 'path';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { User } from '../../../database/entities';
@@ -120,11 +122,18 @@ export class ComplianceReportDownloadController {
       res.status(410).send('This download link has expired or is invalid.');
       return;
     }
+    const uploadBase =
+      path.resolve(process.env['UPLOAD_DIR'] ?? path.join(process.cwd(), 'uploads')) +
+      path.sep;
+    const resolvedPath = path.resolve(job.file_path);
+    if (!resolvedPath.startsWith(uploadBase)) {
+      throw new ForbiddenException('Invalid file path');
+    }
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader(
       'Content-Disposition',
       `inline; filename="sign-compliance-${job.id}.pdf"`,
     );
-    res.sendFile(job.file_path);
+    res.sendFile(resolvedPath);
   }
 }

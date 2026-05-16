@@ -19,6 +19,11 @@ import { DocumentProcessingService } from './document-processing.service';
 import { UploadDocumentDto } from './dto';
 import { ClauseIdsDto } from './dto/clause-ids.dto';
 import { ClauseReviewStatus } from '../../database/entities';
+import {
+  validateFileType,
+  ALLOWED_CONTRACT_MIMES,
+  ALLOWED_CONTRACT_EXTENSIONS,
+} from '../../common/utils/file-validation';
 
 @Controller('contracts/:contractId')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -30,7 +35,7 @@ export class DocumentProcessingController {
   // ─── Document Upload & Processing ─────────────────────────
 
   @Post('documents')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 50 * 1024 * 1024 } }))
   async uploadDocument(
     @Param('contractId', ParseUUIDPipe) contractId: string,
     @UploadedFile() file: Express.Multer.File,
@@ -38,6 +43,7 @@ export class DocumentProcessingController {
     @CurrentUser() user: any,
     @OrganizationId() orgId: string,
   ) {
+    validateFileType(file, ALLOWED_CONTRACT_MIMES, ALLOWED_CONTRACT_EXTENSIONS, 'PDF/DOCX');
     return this.documentProcessingService.uploadAndProcess(
       contractId,
       file as any,

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
@@ -9,6 +9,11 @@ import {
   AssetReviewStatus,
 } from '../../database/entities';
 import { StorageService } from '../storage/storage.service';
+import {
+  validateFileType,
+  ALLOWED_PDF_MIMES,
+  ALLOWED_PDF_EXTENSIONS,
+} from '../../common/utils/file-validation';
 import { UpdateOrganizationDto } from './dto/update-organization.dto';
 import { UploadPolicyDto } from './dto/upload-policy.dto';
 
@@ -66,8 +71,12 @@ export class OrganizationsService {
       throw new NotFoundException('Organization not found');
     }
 
-    // Upload file to storage
-    const fileUrl = await this.storageService.uploadFile?.(file) ?? file.originalname;
+    validateFileType(file, ALLOWED_PDF_MIMES, ALLOWED_PDF_EXTENSIONS, 'PDF');
+
+    const uploaded = await this.storageService.uploadFile(file as any, 'policies');
+    if (!uploaded) {
+      throw new InternalServerErrorException('File upload failed');
+    }
 
     const knowledgeAsset = this.knowledgeAssetRepository.create({
       organization_id: orgId,
@@ -75,7 +84,7 @@ export class OrganizationsService {
       description: dto.description ?? null,
       asset_type: AssetType.ORGANIZATION_POLICY,
       review_status: AssetReviewStatus.AUTO_APPROVED,
-      file_url: fileUrl,
+      file_url: uploaded.file_url,
       file_name: file.originalname,
       created_by: userId,
     } as any);
