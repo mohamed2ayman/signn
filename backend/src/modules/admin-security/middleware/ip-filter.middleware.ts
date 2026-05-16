@@ -3,6 +3,7 @@ import { NextFunction, Request, Response } from 'express';
 import { IpFilterService } from '../services/ip-filter.service';
 import { SecurityEventService } from '../services/security-event.service';
 import { SECURITY_EVENT_TYPES } from '../../../common/enums/security-event-types';
+import { getClientIp } from '../../../common/utils/get-client-ip.util';
 
 /**
  * Hard gate for inbound traffic. Runs before the JWT guard so an
@@ -28,7 +29,7 @@ export class IpFilterMiddleware implements NestMiddleware {
       return next();
     }
 
-    const ip = this.extractIp(req);
+    const ip = getClientIp(req);
     const decision = await this.ipFilter.check(ip);
     if (decision.allowed) return next();
 
@@ -46,11 +47,5 @@ export class IpFilterMiddleware implements NestMiddleware {
       metadata: { reason: decision.reason, path },
     });
     throw new ForbiddenException('Access denied from this network');
-  }
-
-  private extractIp(req: Request): string | null {
-    const xff = req.headers['x-forwarded-for'];
-    const first = Array.isArray(xff) ? xff[0] : xff?.split(',')[0]?.trim();
-    return first || req.ip || req.socket?.remoteAddress || null;
   }
 }

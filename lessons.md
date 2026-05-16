@@ -2098,4 +2098,129 @@ decorators. Never use inline object types. Code review checklist: grep for
 
 ---
 
-*Last updated: 2026-05-16 (Phase 3.3 Input Validation)*
+---
+
+## 60. IP Extraction Must Use a Single Shared Utility
+
+**Context:**
+Phase 4.1 found IP-extraction logic duplicated in 3 places — the auth
+controller (`ctxOf()`), the admin-security IP filter middleware
+(`extractIp()`), and the audit-log interceptor. Two of the three parsed
+`X-Forwarded-For` consistently; the third just used
+`req.headers['x-forwarded-for']` verbatim (never splitting the
+comma-separated list). Any future trust-proxy or fallback change would
+have to be made in all three.
+
+**Fix:**
+Created `backend/src/common/utils/get-client-ip.util.ts` exporting a single
+`getClientIp(source: ExecutionContext | Request)` helper. Order: first XFF
+entry → `req.ip` (honors `trust proxy`) → `socket.remoteAddress` → `'0.0.0.0'`
+fallback so it never returns null. Replaced the 3 duplicates with calls to it.
+
+**Rule:**
+Always use `getClientIp()` when reading the client IP in guards, middleware,
+interceptors, controllers, or throttler `getTracker` callbacks. Never
+re-implement XFF parsing. The utility is the only place that gets to change
+when the proxy topology changes.
+
+---
+
+## 61. `app.set('trust proxy', ...)` Must Be Set Before Any IP-Based Middleware
+
+**Context:**
+Phase 4.1 introduced rate limiting keyed on client IP. Without
+`app.set('trust proxy', 1)` in `main.ts`, Express does **not** honor the
+`X-Forwarded-For` header behind a reverse proxy — `req.ip` returns the
+proxy's IP instead. In production (Render/Vercel/nginx) every request would
+have looked like it came from the same IP, making rate limiting useless and
+the existing IP-filter middleware unable to block real attackers.
+
+**Fix:**
+Added `app.set('trust proxy', 1)` to `main.ts` before `helmet()` and before
+any IP-based middleware mounts. Also typed the Nest app as
+`NestExpressApplication` so `.set()` is on the type. `1` trusts exactly one
+hop — the reverse proxy — and refuses to trust chained XFF values.
+
+**Rule:**
+`app.set('trust proxy', 1)` must run before helmet, before rate limiting,
+before any IP-based middleware or guard. Without it, every IP-based
+security control is silently broken in production.
+
+---
+
+## 62. Auth Error Messages Must Never Distinguish Between Failure Reasons
+
+**Context:**
+The Phase 4.1 audit found `/auth/verify-mfa` and `/auth/verify-recovery`
+returned different `UnauthorizedException` messages for "unknown email" vs
+"wrong code" vs "expired OTP". An attacker could call those endpoints with
+a candidate email and infer from the error string whether the email had an
+account at all — full user enumeration without needing valid credentials.
+
+**Fix:**
+Normalized every failure mode in `verifyMfa()` to
+`'Invalid verification code'` and every failure mode in `verifyRecoveryCode()`
+to `'Invalid recovery code'`. Defined the message as a single `GENERIC_ERROR`
+constant at the top of each method so no future edit can drift back to
+descriptive errors. Same hard rule already applied to `login()` (audit found
+it correct — both "user not found" and "wrong password" already returned
+`'Invalid email or password'`).
+
+**Rule:**
+Auth-endpoint error messages must be identical regardless of whether the
+failure is unknown user, wrong password, wrong code, expired token, or
+missing MFA state. Different messages allow user enumeration. Always use
+a single generic message constant per endpoint.
+
+---
+
+## 63. Rate-Limit Storage Must Be Redis-Backed in Production
+
+**Context:**
+Phase 4.1 wired up `@nestjs/throttler`. The default in-memory storage
+resets on every restart and cannot be shared across multiple backend
+instances — meaning, in production, an attacker would just need to wait
+for a deploy or hit a different replica to bypass the limit.
+
+**Fix:**
+Configured `@nest-lab/throttler-storage-redis` with the same `REDIS_URL`
+that Bull queues already use. One Redis URL serves queues + rate limiting
++ admin-health pings.
+
+**Rule:**
+Throttler storage must always be the Redis-backed implementation. In-memory
+storage is fine for tests only — production and staging always Redis. Do
+not introduce a separate Redis connection variable; reuse `REDIS_URL`.
+
+---
+
+## 64. Named Throttlers Are Not Per-Method — You Must Skip the Others
+
+**Context:**
+The `@nestjs/throttler` `ThrottlerGuard` iterates EVERY named throttler
+configured at the module level on every request, unless explicitly skipped.
+With 8 named buckets (`login`, `register`, `forgot`, `reset`, `mfa`,
+`recovery`, `refresh`, `invitation`) configured globally, applying just
+`@Throttle({ login: {} })` to the login endpoint still activated all 7
+other buckets with their default limits — so login would have been blocked
+at the strictest cross-bucket limit (3/hr from `register`), not its
+intended 5/10min. `@Throttle({foo: {}})` only OVERRIDES bucket `foo`'s
+settings — it does not narrow the set of active buckets.
+
+**Fix:**
+Created `@ThrottleOnly(name)` decorator
+(`backend/src/common/decorators/throttle-only.decorator.ts`) that composes
+`@UseGuards(ThrottlerGuard) + @Throttle({name: {}}) + @SkipThrottle({...all others true})`.
+Methods now use a single `@ThrottleOnly('login')` and only the named bucket
+applies.
+
+**Rule:**
+With named throttlers at module level, always use `@ThrottleOnly(name)` on
+methods — never raw `@Throttle()` alone. If a new throttler bucket is
+added to `ThrottlerModule.forRootAsync()`, also add its name to the
+`THROTTLER_NAMES` constant in `throttle-only.decorator.ts`, or it won't
+be auto-skipped on the other endpoints.
+
+---
+
+*Last updated: 2026-05-16 (Phase 4.1 Rate Limiting — lessons #60-64)*

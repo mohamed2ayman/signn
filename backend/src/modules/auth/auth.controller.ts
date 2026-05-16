@@ -15,6 +15,7 @@ import {
 import { Request } from 'express';
 
 import { AuthService } from './auth.service';
+import { ThrottleOnly } from '../../common/decorators/throttle-only.decorator';
 import {
   RegisterDto,
   LoginDto,
@@ -31,45 +32,53 @@ import {
 import { CompleteOnboardingDto } from './dto/complete-onboarding.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { getClientIp } from '../../common/utils/get-client-ip.util';
 
 function ctxOf(req: Request) {
-  const xff = req.headers['x-forwarded-for'];
-  const first = Array.isArray(xff) ? xff[0] : xff?.split(',')[0]?.trim();
   return {
-    ip: first || req.ip || req.socket?.remoteAddress || null,
+    ip: getClientIp(req),
     user_agent: (req.headers['user-agent'] as string) ?? null,
   };
 }
 
+// NOTE: ThrottlerGuard is applied per-method on the 8 unauthenticated
+// auth endpoints below. The other (JWT-guarded) endpoints in this
+// controller are deliberately NOT throttled — they require a valid
+// session, so brute-force is irrelevant.
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('register')
+  @ThrottleOnly('register')
   async register(@Body() dto: RegisterDto, @Req() req: Request) {
     return this.authService.register(dto, ctxOf(req));
   }
 
   @Post('login')
   @HttpCode(HttpStatus.OK)
+  @ThrottleOnly('login')
   async login(@Body() dto: LoginDto, @Req() req: Request) {
     return this.authService.login(dto, ctxOf(req));
   }
 
   @Post('verify-mfa')
   @HttpCode(HttpStatus.OK)
+  @ThrottleOnly('mfa')
   async verifyMfa(@Body() dto: VerifyMfaDto, @Req() req: Request) {
     return this.authService.verifyMfa(dto, ctxOf(req));
   }
 
   @Post('verify-recovery')
   @HttpCode(HttpStatus.OK)
+  @ThrottleOnly('recovery')
   async verifyRecovery(@Body() dto: VerifyRecoveryDto, @Req() req: Request) {
     return this.authService.verifyRecoveryCode(dto.email, dto.recovery_code, ctxOf(req));
   }
 
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
+  @ThrottleOnly('refresh')
   async refreshToken(@Body() dto: RefreshTokenDto, @Req() req: Request) {
     return this.authService.refreshToken(dto.refresh_token, ctxOf(req));
   }
@@ -89,18 +98,21 @@ export class AuthController {
   }
 
   @Post('accept-invitation')
+  @ThrottleOnly('invitation')
   async acceptInvitation(@Body() dto: AcceptInvitationDto) {
     return this.authService.acceptInvitation(dto);
   }
 
   @Post('forgot-password')
   @HttpCode(HttpStatus.OK)
+  @ThrottleOnly('forgot')
   async forgotPassword(@Body() dto: ForgotPasswordDto) {
     return this.authService.forgotPassword(dto);
   }
 
   @Post('reset-password')
   @HttpCode(HttpStatus.OK)
+  @ThrottleOnly('reset')
   async resetPassword(@Body() dto: ResetPasswordDto) {
     return this.authService.resetPassword(dto);
   }
