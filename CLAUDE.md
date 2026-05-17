@@ -517,6 +517,60 @@ All work is local development only.
 
 ---
 
+## Rate Limiting Policy
+
+Auth endpoints are rate-limited at the network layer via `@nestjs/throttler`
+backed by Redis (same `REDIS_URL` Bull uses — no separate connection).
+Account-level lockout in `AuthService` (5 wrong passwords → 30 min) still runs
+on top — the two layers are complementary, never redundant.
+
+### Thresholds (canonical — keep table and `app.module.ts` in lock-step)
+
+| Endpoint                       | Throttler   | Limit                  |
+|--------------------------------|-------------|------------------------|
+| POST /auth/login               | `login`     | 5 per 10 min per IP    |
+| POST /auth/register            | `register`  | 3 per hour per IP      |
+| POST /auth/forgot-password     | `forgot`    | 3 per hour per IP      |
+| POST /auth/reset-password      | `reset`     | 5 per 15 min per IP    |
+| POST /auth/verify-mfa          | `mfa`       | 5 per 10 min per IP    |
+| POST /auth/verify-recovery     | `recovery`  | 3 per hour per IP      |
+| POST /auth/refresh             | `refresh`   | 20 per 15 min per IP   |
+| POST /auth/accept-invitation   | `invitation`| 5 per hour per IP      |
+
+Thresholds were modeled after Stripe, Okta, and AWS Cognito — strict limits
+appropriate for a legal/contract platform handling sensitive documents.
+
+### Hard rules — never violate
+1. ThrottlerGuard is applied **per-method**, NOT globally and NOT per-controller.
+   Only the 8 unauthenticated auth endpoints carry throttle decoration. Use
+   the `@ThrottleOnly(name)` helper at `backend/src/common/decorators/throttle-only.decorator.ts`
+   — it composes `@UseGuards(ThrottlerGuard) + @Throttle + @SkipThrottle` so a
+   method only obeys its own bucket. Plain `@Throttle({foo: {}})` would also
+   activate all 7 other named throttlers with their module defaults.
+2. Storage is **Redis-backed** (`@nest-lab/throttler-storage-redis`). In-memory
+   storage resets on restart and does not work across instances — never use it
+   in production.
+3. Every 429 response carries a `Retry-After` header AND a JSON body shaped
+   `{ statusCode, error, message, retryAfter }`. Both come from
+   `ThrottlerExceptionFilter` registered globally in `main.ts`.
+4. `app.set('trust proxy', 1)` in `main.ts` is **required** for IP-based
+   throttling to key on the real client behind Render/Vercel/nginx. Without
+   it the throttler keys on the proxy IP and the entire control is useless.
+5. The IP tracker is `getClientIp()` from `backend/src/common/utils/get-client-ip.util.ts` —
+   the single source of truth for client-IP extraction across throttler,
+   audit logs, IP-filter middleware, and auth controller.
+
+### How to change a threshold safely
+1. Edit the `throttlers: [...]` array in `backend/src/app.module.ts`.
+2. Update the table above so docs match code.
+3. Add or update a `lessons.md` entry if the change captures a learning.
+4. **Never lower a limit without discussing the security implications first** —
+   we err strict on auth endpoints. Raising a limit on a non-auth endpoint is
+   fine; lowering it (or any change to login/register/forgot/reset/mfa/recovery)
+   needs review.
+
+---
+
 ## Security
 - .env.staging and .env.production are gitignored
 - Per-service .gitignore files exist in all 4 service folders

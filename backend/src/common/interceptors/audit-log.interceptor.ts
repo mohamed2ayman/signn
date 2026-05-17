@@ -9,6 +9,7 @@ import { Repository } from 'typeorm';
 import { Observable } from 'rxjs';
 import { tap } from 'rxjs/operators';
 import { AuditLog } from '../../database/entities';
+import { getClientIp } from '../utils/get-client-ip.util';
 
 @Injectable()
 export class AuditLogInterceptor implements NestInterceptor {
@@ -19,7 +20,8 @@ export class AuditLogInterceptor implements NestInterceptor {
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
     const request = context.switchToHttp().getRequest();
-    const { method, url, ip } = request;
+    const { method, url } = request;
+    const ip = getClientIp(request);
     const user = request.user;
 
     const entityType = this.extractEntityType(url);
@@ -32,7 +34,7 @@ export class AuditLogInterceptor implements NestInterceptor {
             organization_id: user?.organization_id ?? undefined,
             action: `${method} ${url}`,
             entity_type: entityType,
-            ip_address: ip || (request.headers['x-forwarded-for'] as string) || undefined,
+            ip_address: ip || undefined,
           } as any);
 
           await this.auditLogRepository.save(auditLog);

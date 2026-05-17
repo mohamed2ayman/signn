@@ -3,6 +3,9 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import * as Joi from 'joi';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { BullModule } from '@nestjs/bull';
+import { ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerStorageRedisService } from '@nest-lab/throttler-storage-redis';
+import { getClientIp } from './common/utils/get-client-ip.util';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { OrganizationsModule } from './modules/organizations/organizations.module';
@@ -123,6 +126,35 @@ import { dataSourceOptions } from './config/data-source';
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({
         redis: configService.get<string>('REDIS_URL', 'redis://localhost:6379'),
+      }),
+    }),
+    // ─── Rate Limiting ────────────────────────────────────────────────
+    // Storage is Redis-backed (same REDIS_URL as Bull). Thresholds and
+    // policy live in CLAUDE.md → "Rate Limiting Policy". ThrottlerGuard
+    // is applied per-controller (auth), NOT globally — only auth flows
+    // need brute-force protection at the network layer.
+    ThrottlerModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService) => ({
+        // Key requests by real client IP (works with `trust proxy = 1`
+        // in main.ts). All throttlers share this tracker. The cast is
+        // safe — throttler hands us the underlying Express Request.
+        getTracker: (req: Record<string, unknown>) =>
+          getClientIp(req as unknown as import('express').Request),
+        storage: new ThrottlerStorageRedisService(
+          configService.get<string>('REDIS_URL', 'redis://localhost:6379'),
+        ),
+        throttlers: [
+          { name: 'login',      ttl: 600_000,    limit: 5  },
+          { name: 'register',   ttl: 3_600_000,  limit: 3  },
+          { name: 'forgot',     ttl: 3_600_000,  limit: 3  },
+          { name: 'reset',      ttl: 900_000,    limit: 5  },
+          { name: 'mfa',        ttl: 600_000,    limit: 5  },
+          { name: 'recovery',   ttl: 3_600_000,  limit: 3  },
+          { name: 'refresh',    ttl: 900_000,    limit: 20 },
+          { name: 'invitation', ttl: 3_600_000,  limit: 5  },
+        ],
       }),
     }),
     AuthModule,

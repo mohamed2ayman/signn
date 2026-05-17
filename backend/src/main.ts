@@ -1,14 +1,21 @@
 import { NestFactory } from '@nestjs/core';
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
+import { ThrottlerExceptionFilter } from './common/filters/throttler-exception.filter';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, { rawBody: true });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { rawBody: true });
   const configService = app.get(ConfigService);
+
+  // Trust the first reverse proxy hop (Render/Vercel/nginx/etc.).
+  // Required for req.ip and rate limiting to key on the real client IP
+  // via X-Forwarded-For. Must run before helmet and any IP-based middleware.
+  app.set('trust proxy', 1);
 
   app.use(helmet());
 
@@ -36,7 +43,9 @@ async function bootstrap() {
     }),
   );
 
-  app.useGlobalFilters(new HttpExceptionFilter());
+  // ThrottlerExceptionFilter is registered before the catch-all filter so
+  // 429s emit the standardized Retry-After + JSON envelope.
+  app.useGlobalFilters(new ThrottlerExceptionFilter(), new HttpExceptionFilter());
 
   const swaggerConfig = new DocumentBuilder()
     .setTitle('SIGN Platform API')

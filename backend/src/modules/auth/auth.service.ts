@@ -464,34 +464,40 @@ export class AuthService {
   }
 
   async verifyMfa(dto: VerifyMfaDto, ctx: { ip?: string | null; user_agent?: string | null } = {}) {
+    // Single, generic failure message for ALL failure modes to prevent
+    // user-existence enumeration. Anything that goes wrong below — unknown
+    // email, missing MFA state, expired OTP, wrong code — must surface
+    // the SAME error string and HTTP status to the caller.
+    const GENERIC_ERROR = 'Invalid verification code';
+
     const user = await this.userRepository.findOne({
       where: { email: dto.email },
     });
     if (!user) {
-      throw new UnauthorizedException('Invalid verification request');
+      throw new UnauthorizedException(GENERIC_ERROR);
     }
 
     if (user.mfa_method === 'totp') {
       // TOTP verification
       if (!user.mfa_totp_secret) {
-        throw new UnauthorizedException('TOTP not configured');
+        throw new UnauthorizedException(GENERIC_ERROR);
       }
       const isValid = authenticator.verify({
         token: dto.otp_code,
         secret: user.mfa_totp_secret,
       });
       if (!isValid) {
-        throw new UnauthorizedException('Invalid authenticator code');
+        throw new UnauthorizedException(GENERIC_ERROR);
       }
     } else {
       // Email OTP verification
       if (!user.mfa_secret) {
-        throw new UnauthorizedException('No MFA verification pending');
+        throw new UnauthorizedException(GENERIC_ERROR);
       }
 
       const separatorIndex = user.mfa_secret.lastIndexOf('|');
       if (separatorIndex === -1) {
-        throw new UnauthorizedException('Invalid MFA state');
+        throw new UnauthorizedException(GENERIC_ERROR);
       }
 
       const otpHash = user.mfa_secret.substring(0, separatorIndex);
@@ -500,12 +506,12 @@ export class AuthService {
       const otpIssueTime = parseInt(otpTimestamp, 10);
       const elapsed = Date.now() - otpIssueTime;
       if (elapsed > OTP_VALIDITY_MINUTES * 60 * 1000) {
-        throw new UnauthorizedException('OTP has expired. Please login again.');
+        throw new UnauthorizedException(GENERIC_ERROR);
       }
 
       const isOtpValid = await this.validatePassword(dto.otp_code, otpHash);
       if (!isOtpValid) {
-        throw new UnauthorizedException('Invalid OTP code');
+        throw new UnauthorizedException(GENERIC_ERROR);
       }
     }
 
@@ -533,13 +539,17 @@ export class AuthService {
   }
 
   async verifyRecoveryCode(email: string, recoveryCode: string, ctx: { ip?: string | null; user_agent?: string | null } = {}) {
+    // Single, generic failure message — see verifyMfa above for the
+    // same enumeration-prevention reasoning.
+    const GENERIC_ERROR = 'Invalid recovery code';
+
     const user = await this.userRepository.findOne({ where: { email } });
     if (!user || !user.mfa_enabled) {
-      throw new UnauthorizedException('Invalid recovery request');
+      throw new UnauthorizedException(GENERIC_ERROR);
     }
 
     if (!user.mfa_recovery_codes || user.mfa_recovery_codes.length === 0) {
-      throw new UnauthorizedException('No recovery codes available');
+      throw new UnauthorizedException(GENERIC_ERROR);
     }
 
     // Find matching recovery code
@@ -556,7 +566,7 @@ export class AuthService {
     }
 
     if (matchIndex === -1) {
-      throw new UnauthorizedException('Invalid recovery code');
+      throw new UnauthorizedException(GENERIC_ERROR);
     }
 
     // Remove the used recovery code (single-use)
