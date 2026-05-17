@@ -69,9 +69,12 @@ async function bootstrap() {
     }),
   );
 
-  // ThrottlerExceptionFilter is registered before the catch-all filter so
-  // 429s emit the standardized Retry-After + JSON envelope.
-  app.useGlobalFilters(new ThrottlerExceptionFilter(), new HttpExceptionFilter());
+  // NestJS scans global filters in reverse-registration order, matching
+  // the most-recently-registered first. The specific ThrottlerExceptionFilter
+  // must come LAST so it wins over the @Catch() catch-all HttpExceptionFilter
+  // for ThrottlerException — otherwise 429s fall through to the generic
+  // INTERNAL_ERROR envelope and lose the Retry-After contract.
+  app.useGlobalFilters(new HttpExceptionFilter(), new ThrottlerExceptionFilter());
 
   const swaggerConfig = new DocumentBuilder()
     .setTitle('SIGN Platform API')
