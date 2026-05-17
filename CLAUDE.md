@@ -1,7 +1,7 @@
 # CLAUDE.md — Project Intelligence File
 > Read this entire file at the start of every Claude Code session before touching any code.
 > This file is the single source of truth for all architectural decisions, rules, and context.
-> Last updated: 2026-05-16 (Added: Team Coordination Rules section — "done" definition, pre-PR checklist, rebrand sweep rule, gitignored files rule, gh CLI workflow scope, feature branch lifetime rule. Derived from Phase 3.2 + MANAGEX + Legal Layer rebase coordination, May 2026.)
+> Last updated: 2026-05-17 (Added: Phase 3.5 — XSS Prevention. escapeHtml() utility + all 9 email templates hardened, explicit CSP in helmet(), JWT localStorage risk documented.)
 
 ---
 
@@ -923,6 +923,78 @@ Fixed path traversal, missing size limits, missing type validation, and a broken
 - NEVER use `file.originalname` in a file path — UUID filename generation in StorageService is the correct pattern
 - NEVER use optional chaining result directly as a string — `uploadFile?.(file)` returns StorageResult not string; always access the specific field (`uploaded.file_url`)
 - When admin-security module merges, apply escapeLikeParam() to its ILIKE search patterns (deferred from Phase 3.1)
+
+### Phase 3.5 — XSS Prevention (shipped — 2026-05-17)
+
+Audited all XSS vectors across the full stack. React frontend
+is essentially XSS-proof. Two active fixes applied.
+
+**XSS surface audit results:**
+- dangerouslySetInnerHTML: ZERO uses anywhere in the codebase ✅
+- innerHTML / outerHTML: ZERO uses ✅
+- document.write / eval: ZERO uses ✅
+- React auto-escaping: covers all normal {variable} renders ✅
+- Phase 3.2 sanitize-html: covers all stored backend fields ✅
+- pdfmake: uses text fields (plain text, not HTML) ✅
+- AI output: rendered via normal React renders (auto-escaped) ✅
+- Third-party JS: none in index.html ✅
+- Open redirects: none (all navigate() targets hardcoded) ✅
+- Helmet: active with explicit CSP configuration ✅
+
+**Fix 1 — Email HTML injection prevention:**
+- New helper: `backend/src/common/utils/escape-html-email.ts`
+  exports `escapeHtml()` — escapes &, <, >, ", ' in correct order
+- Applied to all 9 email template functions in `templates/index.ts`
+  38 call sites covering all user-supplied strings:
+  inviterName, organizationName, contractName, projectName,
+  requesterName, reviewerName, comments, recipientName,
+  sharedByName, permission, userName, obligationDescription,
+  dueDate, subject, category, priority, entityName, reason,
+  operationsUserName, ticketIdDisplay
+- System-generated values (OTP codes, UUIDs, enum keys, numbers)
+  intentionally NOT escaped — documented with inline comments
+- Prevents: malicious display name injecting HTML/JS into every
+  invitation or approval email sent from the platform
+
+**Fix 2 — Explicit CSP configuration in helmet():**
+- Replaced bare `helmet()` with fully documented CSP directives
+- `scriptSrc 'self'`: blocks all inline scripts and eval
+- `connectSrc` includes BASE_URL from config: production API
+  calls won't break (missing connectSrc was the critical gap)
+- `frameAncestors 'none'`: clickjacking protection
+- `objectSrc 'none'`: no Flash or plugin injection
+- `crossOriginEmbedderPolicy: false`: preserved for pdfmake
+  blob: URL compatibility
+
+**Fix 3 — JWT localStorage documented as known risk:**
+- Code comment added to `authSlice.ts` at localStorage lines
+- Current risk level: LOW (no XSS vector exists to exploit it)
+- Migration path to httpOnly cookies documented for Phase 6
+
+**Known deferred item (Phase 6 — Pre-Deployment Security):**
+- JWT migration from localStorage to httpOnly cookies
+- Requires: Set-Cookie header (backend) + remove localStorage
+  (frontend) + axios withCredentials: true + refresh token
+  endpoint reads from cookie instead of Authorization header
+- ~1 day coordinated backend + frontend effort
+- Not urgent: no current XSS vector to exploit the tokens
+
+**Hard rules — never violate:**
+- NEVER use `dangerouslySetInnerHTML` with API or user content.
+  If you need to render HTML from the server, run it through
+  DOMPurify first: `import DOMPurify from 'dompurify'`
+- ALWAYS use `escapeHtml()` on user-supplied strings before
+  interpolating them into email template literals
+- The `&` replacement MUST be first in `escapeHtml()` — otherwise
+  you double-escape the `&` in `&lt;`, `&gt;` etc.
+- This `escapeHtml()` is for EMAIL OUTPUT only — do not use it
+  for input sanitization (use `sanitize.ts`/`stripHtml` for that)
+- `connectSrc` in CSP MUST include the production API origin —
+  omitting it causes all fetch/XHR calls to fail silently
+- Do NOT add `'unsafe-inline'` or `'unsafe-eval'` to `scriptSrc` —
+  that defeats the entire purpose of CSP
+- `crossOriginEmbedderPolicy` MUST stay false — setting it to
+  true breaks pdfmake blob: URL generation
 
 ---
 

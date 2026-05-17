@@ -17,7 +17,33 @@ async function bootstrap() {
   // via X-Forwarded-For. Must run before helmet and any IP-based middleware.
   app.set('trust proxy', 1);
 
-  app.use(helmet());
+  const baseUrl = configService.get<string>('BASE_URL', 'http://localhost:3000');
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          scriptSrc: ["'self'"],
+          styleSrc: ["'self'", 'https:', "'unsafe-inline'"],
+          fontSrc: ["'self'", 'https://fonts.gstatic.com', 'data:'],
+          imgSrc: ["'self'", 'data:', 'blob:'],
+          connectSrc: [
+            "'self'",
+            baseUrl,
+            'ws://localhost:*',
+            'wss://localhost:*',
+          ],
+          frameSrc: ["'none'"],
+          frameAncestors: ["'none'"],
+          objectSrc: ["'none'"],
+          upgradeInsecureRequests: [],
+        },
+      },
+      // crossOriginEmbedderPolicy must stay false — pdfmake uses blob: URLs
+      // which COEP 'require-corp' blocks, causing PDF generation to fail
+      crossOriginEmbedderPolicy: false,
+    }),
+  );
 
   const frontendUrl = configService.get<string>('FRONTEND_URL', 'http://localhost:5173');
   const allowedOrigins = frontendUrl.split(',').map(o => o.trim());

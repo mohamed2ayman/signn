@@ -7,6 +7,7 @@
  */
 
 import { baseEmailLayout } from './base-layout';
+import { escapeHtml } from '../../../common/utils/escape-html-email';
 
 const BRAND_COLOR = '#4F6EF7';
 
@@ -61,14 +62,17 @@ export function teamInvitationEmail(data: {
   inviterName: string;
   invitationLink: string;
 }): string {
+  const inviterName = escapeHtml(data.inviterName);
+  const organizationName = escapeHtml(data.organizationName);
+  const role = escapeHtml(data.role);
   const content = `
     ${heading("You've Been Invited!")}
-    ${paragraph(`${data.inviterName} has invited you to join <strong>${data.organizationName}</strong> on Sign as a <strong>${data.role}</strong>.`)}
+    ${paragraph(`${inviterName} has invited you to join <strong>${organizationName}</strong> on Sign as a <strong>${role}</strong>.`)}
     ${paragraph('Sign is a smart contract management platform powered by AI. Accept your invitation to get started.')}
     ${ctaButton('Accept Invitation', data.invitationLink)}
     ${smallNote('This invitation expires in 48 hours. If you did not expect this invitation, you can safely ignore this email.')}
   `;
-  return baseEmailLayout(content, { preheader: `${data.inviterName} invited you to ${data.organizationName}` });
+  return baseEmailLayout(content, { preheader: `${inviterName} invited you to ${organizationName}` });
 }
 
 // ─── 2. Contractor Invitation ────────────────────────────
@@ -81,18 +85,22 @@ export function contractorInvitationEmail(data: {
   inviterName: string;
   invitationLink: string;
 }): string {
+  const inviterName = escapeHtml(data.inviterName);
+  const organizationName = escapeHtml(data.organizationName);
+  const projectName = escapeHtml(data.projectName);
+  const role = escapeHtml(data.role);
   const content = `
     ${heading('Project Collaboration Invite')}
-    ${paragraph(`<strong>${data.inviterName}</strong> from <strong>${data.organizationName}</strong> has invited you to collaborate on a project as a <strong>${data.role}</strong>.`)}
+    ${paragraph(`<strong>${inviterName}</strong> from <strong>${organizationName}</strong> has invited you to collaborate on a project as a <strong>${role}</strong>.`)}
     ${infoBlock([
-      ['Project', data.projectName],
-      ['Organization', data.organizationName],
-      ['Your Role', data.role],
+      ['Project', projectName],
+      ['Organization', organizationName],
+      ['Your Role', role],
     ])}
     ${ctaButton('View & Accept', data.invitationLink)}
     ${smallNote('This invitation expires in 7 days. If you did not expect this, please ignore this email.')}
   `;
-  return baseEmailLayout(content, { preheader: `Collaboration invite for ${data.projectName}` });
+  return baseEmailLayout(content, { preheader: `Collaboration invite for ${projectName}` });
 }
 
 // ─── 3. Approval Requested ──────────────────────────────
@@ -104,18 +112,22 @@ export function approvalRequestedEmail(data: {
   requesterName: string;
   contractLink: string;
 }): string {
+  const reviewerName = escapeHtml(data.reviewerName);
+  const contractName = escapeHtml(data.contractName);
+  const projectName = escapeHtml(data.projectName);
+  const requesterName = escapeHtml(data.requesterName);
   const content = `
     ${heading('Approval Required')}
-    ${paragraph(`Hi ${data.reviewerName}, <strong>${data.requesterName}</strong> has submitted a contract for your review and approval.`)}
+    ${paragraph(`Hi ${reviewerName}, <strong>${requesterName}</strong> has submitted a contract for your review and approval.`)}
     ${infoBlock([
-      ['Contract', data.contractName],
-      ['Project', data.projectName],
-      ['Requested By', data.requesterName],
+      ['Contract', contractName],
+      ['Project', projectName],
+      ['Requested By', requesterName],
     ])}
     ${ctaButton('Review Contract', data.contractLink)}
     ${smallNote('Please review and respond at your earliest convenience.')}
   `;
-  return baseEmailLayout(content, { preheader: `${data.contractName} needs your approval` });
+  return baseEmailLayout(content, { preheader: `${contractName} needs your approval` });
 }
 
 // ─── 4. Approval Decision ───────────────────────────────
@@ -129,6 +141,11 @@ export function approvalDecisionEmail(data: {
   comments?: string;
   contractLink: string;
 }): string {
+  const requesterName = escapeHtml(data.requesterName);
+  const contractName = escapeHtml(data.contractName);
+  const projectName = escapeHtml(data.projectName);
+  const reviewerName = escapeHtml(data.reviewerName);
+  const comments = escapeHtml(data.comments);
   const decisionLabels: Record<string, { label: string; color: string; icon: string }> = {
     approved: { label: 'Approved', color: '#059669', icon: '✓' },
     rejected: { label: 'Rejected', color: '#DC2626', icon: '✕' },
@@ -138,21 +155,21 @@ export function approvalDecisionEmail(data: {
 
   const content = `
     ${heading('Contract Review Decision')}
-    ${paragraph(`Hi ${data.requesterName}, <strong>${data.reviewerName}</strong> has reviewed your contract.`)}
+    ${paragraph(`Hi ${requesterName}, <strong>${reviewerName}</strong> has reviewed your contract.`)}
     <div style="text-align:center; margin:20px 0;">
       <span style="display:inline-block; padding:8px 20px; background-color:${d.color}15; color:${d.color}; font-size:15px; font-weight:700; border-radius:8px; letter-spacing:0.3px;">
         ${d.icon} &nbsp;${d.label}
       </span>
     </div>
     ${infoBlock([
-      ['Contract', data.contractName],
-      ['Project', data.projectName],
-      ['Reviewed By', data.reviewerName],
+      ['Contract', contractName],
+      ['Project', projectName],
+      ['Reviewed By', reviewerName],
     ])}
-    ${data.comments ? `<div style="background-color:#FFFBEB; border-left:3px solid #D97706; padding:12px 16px; border-radius:0 8px 8px 0; margin:16px 0;"><p style="margin:0; font-size:13px; color:#92400E; font-weight:600;">Reviewer Comments:</p><p style="margin:6px 0 0; font-size:14px; color:#78350F;">${data.comments}</p></div>` : ''}
+    ${comments ? `<div style="background-color:#FFFBEB; border-left:3px solid #D97706; padding:12px 16px; border-radius:0 8px 8px 0; margin:16px 0;"><p style="margin:0; font-size:13px; color:#92400E; font-weight:600;">Reviewer Comments:</p><p style="margin:6px 0 0; font-size:14px; color:#78350F;">${comments}</p></div>` : ''}
     ${ctaButton('View Contract', data.contractLink)}
   `;
-  return baseEmailLayout(content, { preheader: `${data.contractName} — ${d.label} by ${data.reviewerName}` });
+  return baseEmailLayout(content, { preheader: `${contractName} — ${d.label} by ${reviewerName}` });
 }
 
 // ─── 5. Contract Shared ─────────────────────────────────
@@ -165,19 +182,24 @@ export function contractSharedEmail(data: {
   expiresAt?: string;
   shareLink: string;
 }): string {
+  const recipientName = escapeHtml(data.recipientName);
+  const contractName = escapeHtml(data.contractName);
+  const sharedByName = escapeHtml(data.sharedByName);
+  const permission = escapeHtml(data.permission);
+  const expiresAt = escapeHtml(data.expiresAt);
   const content = `
     ${heading('Contract Shared With You')}
-    ${paragraph(`${data.recipientName ? `Hi ${data.recipientName}, ` : ''}<strong>${data.sharedByName}</strong> has shared a contract with you.`)}
+    ${paragraph(`${recipientName ? `Hi ${recipientName}, ` : ''}<strong>${sharedByName}</strong> has shared a contract with you.`)}
     ${infoBlock([
-      ['Contract', data.contractName],
-      ['Shared By', data.sharedByName],
-      ['Permission', data.permission],
-      ...(data.expiresAt ? [['Expires', data.expiresAt] as [string, string]] : []),
+      ['Contract', contractName],
+      ['Shared By', sharedByName],
+      ['Permission', permission],
+      ...(expiresAt ? [['Expires', expiresAt] as [string, string]] : []),
     ])}
     ${ctaButton('View Contract', data.shareLink)}
     ${smallNote('This is a secure link. Do not forward this email if you want to keep the contract private.')}
   `;
-  return baseEmailLayout(content, { preheader: `${data.sharedByName} shared "${data.contractName}" with you` });
+  return baseEmailLayout(content, { preheader: `${sharedByName} shared "${contractName}" with you` });
 }
 
 // ─── 6. Obligation Reminder ─────────────────────────────
@@ -190,26 +212,31 @@ export function obligationReminderEmail(data: {
   daysRemaining: number;
   obligationLink: string;
 }): string {
+  const userName = escapeHtml(data.userName);
+  const obligationDescription = escapeHtml(data.obligationDescription);
+  const contractName = escapeHtml(data.contractName);
+  const dueDate = escapeHtml(data.dueDate);
+  // daysRemaining is a number — safe, no escaping needed
   const urgencyColor = data.daysRemaining <= 1 ? '#DC2626' : data.daysRemaining <= 3 ? '#D97706' : '#059669';
   const urgencyLabel = data.daysRemaining <= 0 ? 'OVERDUE' : data.daysRemaining === 1 ? 'Due Tomorrow' : `${data.daysRemaining} days remaining`;
 
   const content = `
     ${heading('Obligation Reminder')}
-    ${paragraph(`Hi ${data.userName}, you have an upcoming obligation that requires your attention.`)}
+    ${paragraph(`Hi ${userName}, you have an upcoming obligation that requires your attention.`)}
     <div style="text-align:center; margin:16px 0;">
       <span style="display:inline-block; padding:6px 16px; background-color:${urgencyColor}15; color:${urgencyColor}; font-size:13px; font-weight:700; border-radius:20px;">
         ⏰ ${urgencyLabel}
       </span>
     </div>
     ${infoBlock([
-      ['Obligation', data.obligationDescription],
-      ['Contract', data.contractName],
-      ['Due Date', data.dueDate],
+      ['Obligation', obligationDescription],
+      ['Contract', contractName],
+      ['Due Date', dueDate],
     ])}
     ${ctaButton('View Details', data.obligationLink)}
     ${smallNote('You are receiving this because you are assigned to this obligation.')}
   `;
-  return baseEmailLayout(content, { preheader: `Obligation due: ${data.obligationDescription}` });
+  return baseEmailLayout(content, { preheader: `Obligation due: ${obligationDescription}` });
 }
 
 // ─── 7. Risk Analysis Complete ──────────────────────────
@@ -223,14 +250,18 @@ export function riskAnalysisCompleteEmail(data: {
   lowRisks: number;
   contractLink: string;
 }): string {
+  const userName = escapeHtml(data.userName);
+  const contractName = escapeHtml(data.contractName);
+  const projectName = escapeHtml(data.projectName);
+  // risk counts are numbers — safe, no escaping needed
   const totalRisks = data.highRisks + data.mediumRisks + data.lowRisks;
 
   const content = `
     ${heading('Risk Analysis Complete')}
-    ${paragraph(`Hi ${data.userName}, the AI risk analysis for <strong>${data.contractName}</strong> is now complete.`)}
+    ${paragraph(`Hi ${userName}, the AI risk analysis for <strong>${contractName}</strong> is now complete.`)}
     ${infoBlock([
-      ['Contract', data.contractName],
-      ['Project', data.projectName],
+      ['Contract', contractName],
+      ['Project', projectName],
     ])}
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:16px 0;">
       <tr>
@@ -257,7 +288,7 @@ export function riskAnalysisCompleteEmail(data: {
     ${data.highRisks > 0 ? `<div style="background-color:#FEF2F2; border-left:3px solid #DC2626; padding:12px 16px; border-radius:0 8px 8px 0; margin:12px 0;"><p style="margin:0; font-size:13px; color:#991B1B; font-weight:600;">⚠️ ${data.highRisks} high-risk ${data.highRisks === 1 ? 'issue requires' : 'issues require'} immediate attention</p></div>` : ''}
     ${ctaButton('Review Risks', data.contractLink)}
   `;
-  return baseEmailLayout(content, { preheader: `${totalRisks} risks found in ${data.contractName}` });
+  return baseEmailLayout(content, { preheader: `${totalRisks} risks found in ${contractName}` });
 }
 
 // ─── 8. Support Ticket Created ──────────────────────────
@@ -270,6 +301,12 @@ export function supportTicketCreatedEmail(data: {
   priority: string;
   ticketLink: string;
 }): string {
+  const userName = escapeHtml(data.userName);
+  const subject = escapeHtml(data.subject);
+  const category = escapeHtml(data.category);
+  const priority = escapeHtml(data.priority);
+  // ticketId is a UUID — slice(0,8).toUpperCase() is safe hex chars only, but escape defensively
+  const ticketIdDisplay = escapeHtml(data.ticketId.slice(0, 8).toUpperCase());
   const priorityColors: Record<string, string> = {
     low: '#059669',
     medium: '#D97706',
@@ -279,17 +316,17 @@ export function supportTicketCreatedEmail(data: {
 
   const content = `
     ${heading('Support Ticket Created')}
-    ${paragraph(`Hi ${data.userName}, your support ticket has been created successfully. Our team will review it shortly.`)}
+    ${paragraph(`Hi ${userName}, your support ticket has been created successfully. Our team will review it shortly.`)}
     ${infoBlock([
-      ['Ticket ID', `#${data.ticketId.slice(0, 8).toUpperCase()}`],
-      ['Subject', data.subject],
-      ['Category', data.category],
-      ['Priority', `<span style="color:${priorityColors[data.priority.toLowerCase()] || '#6B7280'}">${data.priority}</span>`],
+      ['Ticket ID', `#${ticketIdDisplay}`],
+      ['Subject', subject],
+      ['Category', category],
+      ['Priority', `<span style="color:${priorityColors[priority.toLowerCase()] || '#6B7280'}">${priority}</span>`],
     ])}
     ${ctaButton('View Ticket', data.ticketLink)}
     ${smallNote('You will receive updates when our team responds to your ticket.')}
   `;
-  return baseEmailLayout(content, { preheader: `Support ticket created: ${data.subject}` });
+  return baseEmailLayout(content, { preheader: `Support ticket created: ${subject}` });
 }
 
 // ─── 9. Operations Review Needed ────────────────────────
@@ -303,6 +340,12 @@ export function operationsReviewNeededEmail(data: {
   reason: string;
   reviewLink: string;
 }): string {
+  const operationsUserName = escapeHtml(data.operationsUserName);
+  const entityName = escapeHtml(data.entityName);
+  const organizationName = escapeHtml(data.organizationName);
+  const reason = escapeHtml(data.reason);
+  // urgency and entityType are enum-constrained — safe in map lookups; escape urgency text content in badge
+  const urgencyText = escapeHtml(data.urgency);
   const urgencyColors = { low: '#059669', medium: '#D97706', high: '#DC2626' };
   const entityLabels = {
     contract: 'Contract',
@@ -313,17 +356,17 @@ export function operationsReviewNeededEmail(data: {
 
   const content = `
     ${heading('Review Required')}
-    ${paragraph(`Hi ${data.operationsUserName}, an item requires your review and action.`)}
+    ${paragraph(`Hi ${operationsUserName}, an item requires your review and action.`)}
     <div style="text-align:center; margin:16px 0;">
       <span style="display:inline-block; padding:6px 16px; background-color:${urgencyColors[data.urgency]}15; color:${urgencyColors[data.urgency]}; font-size:12px; font-weight:700; border-radius:20px; text-transform:uppercase; letter-spacing:0.5px;">
-        ${data.urgency} priority
+        ${urgencyText} priority
       </span>
     </div>
     ${infoBlock([
       ['Type', entityLabels[data.entityType]],
-      ['Name', data.entityName],
-      ['Organization', data.organizationName],
-      ['Reason', data.reason],
+      ['Name', entityName],
+      ['Organization', organizationName],
+      ['Reason', reason],
     ])}
     ${ctaButton('Review Now', data.reviewLink)}
     ${smallNote('You are receiving this because you are assigned as Operations staff.')}
