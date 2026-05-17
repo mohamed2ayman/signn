@@ -36,7 +36,7 @@ export class OrganizationsController {
   }
 
   @Post('me/policies')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 10 * 1024 * 1024 } }))
   async uploadOrgPolicy(
     @OrganizationId() orgId: string,
     @CurrentUser() user: User,

@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -72,10 +72,18 @@ export class StorageService {
     };
   }
 
+  private assertContained(filePath: string): void {
+    const base = path.resolve(this.uploadDir) + path.sep;
+    if (!path.resolve(filePath).startsWith(base)) {
+      throw new BadRequestException('Invalid file path');
+    }
+  }
+
   async deleteFile(fileUrl: string): Promise<void> {
     try {
       const relativePath = fileUrl.replace(`${this.baseUrl}/uploads/`, '');
       const filePath = path.join(this.uploadDir, relativePath);
+      this.assertContained(filePath);
 
       if (fs.existsSync(filePath)) {
         await fs.promises.unlink(filePath);
@@ -89,6 +97,7 @@ export class StorageService {
   async getFileBuffer(fileUrl: string): Promise<Buffer> {
     const relativePath = fileUrl.replace(`${this.baseUrl}/uploads/`, '');
     const filePath = path.join(this.uploadDir, relativePath);
+    this.assertContained(filePath);
 
     if (!fs.existsSync(filePath)) {
       throw new Error(`File not found: ${filePath}`);
@@ -99,7 +108,9 @@ export class StorageService {
 
   getFilePath(fileUrl: string): string {
     const relativePath = fileUrl.replace(`${this.baseUrl}/uploads/`, '');
-    return path.join(this.uploadDir, relativePath);
+    const filePath = path.join(this.uploadDir, relativePath);
+    this.assertContained(filePath);
+    return filePath;
   }
 
   async extractTextFromFile(fileUrl: string): Promise<string> {

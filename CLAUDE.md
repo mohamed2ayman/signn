@@ -891,6 +891,39 @@ Fixed raw @Body() mass assignment vulnerabilities and missing DTO validation acr
 - Every raw `@Body()` inline object (`{ field: type }`) must become a proper DTO class before merging. Inline objects bypass the global ValidationPipe entirely.
 - When admin-security module merges, apply escapeLikeParam() to admin-activity-log.service.ts and security-audit-log.service.ts (deferred from Phase 3.1)
 
+### Phase 3.4 — File Upload Security (shipped — 2026-05-16)
+
+Audited all 5 file upload endpoints across 4 modules.
+Fixed path traversal, missing size limits, missing type validation, and a broken file URL assignment.
+
+**Upload architecture:**
+- multer uses memoryStorage — entire file buffered in Node.js heap before any code runs
+- StorageService.uploadFile() manually writes buffer to disk with UUID filename — user filename never appears in stored path
+- Local disk only, /app/uploads mounted as Docker named volume
+- All endpoints JWT-guarded — no unauthenticated upload possible
+- No static file serving of /uploads/ directory
+
+**5 HIGH findings fixed:**
+- H1: File size limits added to all 5 FileInterceptor() calls at the multer level (50MB/20MB/10MB/50MB/10MB per endpoint). Previously: multer had no limit — any file size accepted, entire file buffered to Node.js heap before any check ran
+- H2: File type validation (MIME + extension dual guard) added to document-processing (PDF+DOCX), parse-docx (DOCX only), organizations policy (PDF only). New shared helper: `backend/src/common/utils/file-validation.ts`
+- H3: Path traversal prevention in storage.service.ts — `assertContained()` added to getFilePath, getFileBuffer, deleteFile — resolves both paths, appends path.sep to base, throws BadRequestException if path escapes upload directory
+- H4: Path containment before res.sendFile() in compliance.controller.ts — job.file_path resolved and verified to start with upload dir before Express serves the file
+- H5: organizations.service.ts fileUrl bug fixed — `uploadFile?.(file)` returns StorageResult object — was storing the entire object (then falling back to raw originalname) as the file_url. Fixed to use `uploaded.file_url` (string)
+
+**1 MEDIUM finding fixed:**
+- M4: ParseDocxBodyDto created with @MaxLength(500000) on text field — deferred from Phase 3.3, now fixed
+
+**Bonus fix:**
+- HttpExceptionFilter updated to catch MulterError LIMIT_FILE_SIZE and return 413 Payload Too Large instead of 500
+
+**Hard rules — never violate:**
+- Every FileInterceptor() MUST have a `limits: { fileSize: N }` option — never call `FileInterceptor('field')` with no options
+- ALWAYS use `assertContained()` or equivalent before using any file path derived from a URL or database value
+- `path.resolve()` MUST be used on BOTH sides of the `startsWith()` check AND the base path must have `path.sep` appended to prevent prefix-bypass attacks (e.g. `/app/uploads-evil` bypasses `startsWith('/app/uploads')` without the separator)
+- NEVER use `file.originalname` in a file path — UUID filename generation in StorageService is the correct pattern
+- NEVER use optional chaining result directly as a string — `uploadFile?.(file)` returns StorageResult not string; always access the specific field (`uploaded.file_url`)
+- When admin-security module merges, apply escapeLikeParam() to its ILIKE search patterns (deferred from Phase 3.1)
+
 ---
 
 ## Phase 3 — Recently Shipped

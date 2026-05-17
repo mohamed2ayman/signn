@@ -6,6 +6,7 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { Response } from 'express';
+import { MulterError } from 'multer';
 
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
@@ -17,7 +18,11 @@ export class HttpExceptionFilter implements ExceptionFilter {
     let message = 'Internal server error';
     let error = 'INTERNAL_ERROR';
 
-    if (exception instanceof HttpException) {
+    if (exception instanceof MulterError && exception.code === 'LIMIT_FILE_SIZE') {
+      statusCode = HttpStatus.PAYLOAD_TOO_LARGE;
+      message = 'File too large';
+      error = 'PAYLOAD_TOO_LARGE';
+    } else if (exception instanceof HttpException) {
       statusCode = exception.getStatus();
       const exceptionResponse = exception.getResponse();
 
