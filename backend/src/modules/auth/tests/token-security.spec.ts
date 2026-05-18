@@ -136,6 +136,11 @@ describe('AuthService — Phase 4.2 token security', () => {
       });
       return n;
     }),
+    // Phase 4.2 fix: listByFamily returns ALL sessions in a family so the
+    // caller can blacklist their JTIs before revoking the DB rows.
+    listByFamily: jest.fn(async (familyId: string) => {
+      return sessions.filter((s) => s.family_id === familyId);
+    }),
   };
 
   const mockTokenBlacklist = {
