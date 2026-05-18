@@ -362,6 +362,58 @@ describe('AuthService — Phase 4.2 token security', () => {
   });
 
   // ─────────────────────────────────────────────────────────────────────
+  // TEST 6 — Family revocation blacklists ALL JTIs in Redis with TTL > 0
+  //
+  // Regression test for fix 501d48f.
+  // Before the fix, revokeFamily() only marked rows as revoked in DB.
+  // Existing access tokens remained valid for up to 15 minutes because
+  // JwtStrategy.validate() reads the Redis blacklist, not the sessions table.
+  // The fix adds a listByFamily() call that blacklists every family JTI
+  // in Redis before touching the DB rows.
+  // ─────────────────────────────────────────────────────────────────────
+  it('revokeFamily blacklists all family JTIs in Redis with TTL > 0', async () => {
+    // 1. Login — creates session A with JTI_A stored in sessions[0].jti
+    const loginResult = (await service.login({ email: MOCK_USER.email!, password: 'pw' })) as any;
+    const refreshA = loginResult.refresh_token as string;
+
+    // 2. Rotate A → B — revokes A in DB, creates session B with JTI_B
+    await service.refreshToken(refreshA);
+
+    // Sanity: two sessions exist sharing the same family_id
+    expect(sessions).toHaveLength(2);
+    const familyId = sessions[0].family_id;
+    expect(sessions[1].family_id).toBe(familyId);
+
+    // Guard: sessions must carry JTIs for this test to have meaning
+    const familyJtis = sessions.map(s => s.jti).filter((j): j is string => !!j);
+    expect(familyJtis.length).toBeGreaterThanOrEqual(1);
+
+    // 3. Replay the already-rotated token A → triggers reuse detection
+    await expect(service.refreshToken(refreshA)).rejects.toThrow(UnauthorizedException);
+
+    // 4. listByFamily must have been called so the service can collect JTIs
+    expect(mockSessionService.listByFamily).toHaveBeenCalledWith(familyId);
+
+    // 5. Every family JTI must now be in the Redis blacklist
+    //    (isBlacklisted reads from the same in-memory Set the mock writes to)
+    for (const jti of familyJtis) {
+      expect(await mockTokenBlacklist.isBlacklisted(jti)).toBe(true);
+    }
+
+    // 6. blacklistToken was called with a TTL > 0 for every call
+    //    (TTL ensures Redis self-cleans; a zero/omitted TTL would make the
+    //     key permanent and cause memory growth on every reuse event)
+    const blacklistCalls = mockTokenBlacklist.blacklistToken.mock.calls as [string, number][];
+    const blacklistedJtis = blacklistCalls.map(([jti]) => jti);
+    for (const jti of familyJtis) {
+      expect(blacklistedJtis).toContain(jti);
+    }
+    for (const [, ttl] of blacklistCalls) {
+      expect(ttl).toBeGreaterThan(0);
+    }
+  });
+
+  // ─────────────────────────────────────────────────────────────────────
   // TEST 5 — Every access token carries a distinct UUID jti
   // ─────────────────────────────────────────────────────────────────────
   it('every access token carries a distinct UUID jti claim', async () => {
