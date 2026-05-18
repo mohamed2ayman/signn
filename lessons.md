@@ -1,7 +1,7 @@
 # lessons.md — SIGN + MANAGEX Platform
 > This file documents every bug, issue, and fix that took significant time to resolve.
 > Feed this file to Claude at the start of every session to avoid repeating mistakes.
-> Last updated: 2026-05-18 (Lessons #71–77 — Phase 4.2 JWT hardening, post-ship bug fix, and test mock patterns.)
+> Last updated: 2026-05-18 (Lessons #71–78 — Phase 4.2 JWT hardening, post-ship bug fix, test mock patterns, and revokeFamily dual-operation requirement.)
 
 ---
 
@@ -2660,3 +2660,41 @@ refresh-token validation path.
   the new store can be silently broken without anyone noticing.
 - Write a migration that DROPS the old column with `DROP COLUMN IF EXISTS`
   so the cleanup is idempotent and safe to deploy multiple times.
+
+---
+
+## 78. revokeFamily Must Blacklist JTIs in Redis AND Revoke Sessions in DB
+
+**Context:**
+Phase 4.2 added refresh token family tracking to detect reuse attacks.
+When a replayed (already-rotated) refresh token is detected, the entire
+token family must be invalidated. The initial `revokeFamily()` implementation
+only revoked sessions in `user_sessions` (DB rows set to `is_revoked = true`).
+
+**The Gap:**
+Revoking the DB row stops future refresh-token exchanges but does NOT
+invalidate access tokens that were already issued from that family.
+Access tokens are stateless JWTs — they carry no DB row. A compromised
+access token remains valid for up to 15 minutes after the session row is
+revoked, giving an attacker a live window.
+
+**Fix (commit 501d48f):**
+On reuse detection, BOTH operations must happen:
+1. `listByFamily(familyId)` — fetch all sessions in the compromised family
+2. `blacklistToken(jti, accessTtlSec)` — add each session's JTI to the
+   Redis blacklist with TTL = remaining access token lifetime
+3. `revokeFamily(familyId)` — flip `is_revoked = true` on all DB rows
+
+`JwtStrategy.validate()` checks `isBlacklisted(jti)` on every authenticated
+request, so the Redis blacklist provides the real-time revocation gate.
+
+**Rule:**
+- DB-only revocation of a token family is insufficient. Always pair it
+  with Redis JTI blacklisting for the access tokens.
+- The order matters: collect JTIs first (before rows are revoked), then
+  blacklist, then revoke. Revoke before listing risks missing active JTIs.
+- `blacklistToken()` must be called with TTL > 0. A TTL of 0 or negative
+  is a no-op in `TokenBlacklistService` — always derive TTL from the
+  access token's `exp` claim minus the current epoch.
+- Regression test in `backend/src/modules/auth/tests/token-security.spec.ts`
+  (TEST 6) verifies this behavior end-to-end in the unit test layer.
