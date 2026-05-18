@@ -22,6 +22,10 @@ export interface CreateSessionInput {
   is_suspicious?: boolean;
   suspicious_reason?: SuspiciousReason | null;
   expires_at: Date;
+  // Phase 4.2 — token family tracking
+  family_id?: string;
+  parent_token_hash?: string | null;
+  jti?: string | null;
 }
 
 /**
@@ -62,6 +66,10 @@ export class SessionService {
       suspicious_reason: input.suspicious_reason ?? null,
       last_active_at: new Date(),
       expires_at: input.expires_at,
+      // Phase 4.2 — token family tracking
+      ...(input.family_id ? { family_id: input.family_id } : {}),
+      parent_token_hash: input.parent_token_hash ?? null,
+      jti: input.jti ?? null,
     });
     return this.sessionRepo.save(session);
   }
@@ -71,6 +79,36 @@ export class SessionService {
     return this.sessionRepo.findOne({
       where: { token_hash: hash, revoked_at: undefined as any },
     });
+  }
+
+  /** Look up the (possibly revoked) session by raw refresh JWT. */
+  async findAnyByRawToken(rawJwt: string): Promise<UserSession | null> {
+    const hash = SessionService.hashToken(rawJwt);
+    return this.sessionRepo.findOne({ where: { token_hash: hash } });
+  }
+
+  /** Look up an active session by access-token jti. Used by middleware. */
+  async findActiveByJti(jti: string): Promise<UserSession | null> {
+    return this.sessionRepo
+      .createQueryBuilder('s')
+      .where('s.jti = :jti', { jti })
+      .andWhere('s.revoked_at IS NULL')
+      .getOne();
+  }
+
+  /**
+   * Phase 4.2 — revoke every session in a family. Used on detected
+   * refresh-token reuse: the entire chain is burned so the attacker
+   * cannot continue rotating.
+   */
+  async revokeFamily(familyId: string): Promise<number> {
+    const result = await this.sessionRepo
+      .createQueryBuilder()
+      .update()
+      .set({ revoked_at: new Date() })
+      .where('family_id = :familyId AND revoked_at IS NULL', { familyId })
+      .execute();
+    return result.affected ?? 0;
   }
 
   /** Returns active (non-revoked, non-expired) sessions for a user, newest first. */

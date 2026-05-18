@@ -27,6 +27,12 @@ export const SECURITY_EVENT_TYPES = {
   SUSPICIOUS_LOGIN: 'security.suspicious_login',
   GDPR_EXPORT: 'security.gdpr_export',
   GDPR_DELETE: 'security.gdpr_delete',
+  /**
+   * Phase 4.2 — a previously rotated refresh token was replayed.
+   * Either the user's token store was compromised or the original token
+   * was leaked. The entire token family is revoked atomically.
+   */
+  REFRESH_TOKEN_REUSE_DETECTED: 'security.refresh_token_reuse_detected',
 } as const;
 
 export type SecurityEventType =

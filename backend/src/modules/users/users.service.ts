@@ -67,7 +67,6 @@ export class UsersService {
       mfa_secret,
       mfa_totp_secret,
       mfa_recovery_codes,
-      refresh_token_hash,
       invitation_token,
       ...profile
     } = user;
@@ -237,7 +236,6 @@ export class UsersService {
 
     await this.userRepository.update(userId, {
       is_active: false,
-      refresh_token_hash: null as unknown as string,
     });
 
     return {
@@ -360,7 +358,7 @@ export class UsersService {
       inviterName,
     );
 
-    const { password_hash, mfa_secret, mfa_totp_secret, mfa_recovery_codes, refresh_token_hash, invitation_token, ...safeUser } = saved;
+    const { password_hash, mfa_secret, mfa_totp_secret, mfa_recovery_codes, invitation_token, ...safeUser } = saved;
     return safeUser;
   }
 

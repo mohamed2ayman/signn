@@ -41,6 +41,30 @@ function ctxOf(req: Request) {
   };
 }
 
+/**
+ * Phase 4.2 — extract jti + exp from the bearer access token without
+ * verifying its signature. The JWT guard has already verified the token
+ * by the time this runs (it sits behind @UseGuards(JwtAuthGuard)), so
+ * a decode is sufficient and avoids re-paying the verify cost.
+ */
+function decodeAccessTokenClaims(req: Request): { jti: string | null; exp: number | null } {
+  try {
+    const auth = req.headers.authorization;
+    if (!auth?.startsWith('Bearer ')) return { jti: null, exp: null };
+    const raw = auth.slice('Bearer '.length).trim();
+    const parts = raw.split('.');
+    if (parts.length !== 3) return { jti: null, exp: null };
+    const payload = JSON.parse(
+      Buffer.from(parts[1], 'base64url').toString('utf-8'),
+    );
+    const jti = typeof payload?.jti === 'string' ? payload.jti : null;
+    const exp = typeof payload?.exp === 'number' ? payload.exp : null;
+    return { jti, exp };
+  } catch {
+    return { jti: null, exp: null };
+  }
+}
+
 // NOTE: ThrottlerGuard is applied per-method on the 8 unauthenticated
 // auth endpoints below. The other (JWT-guarded) endpoints in this
 // controller are deliberately NOT throttled — they require a valid
@@ -91,16 +115,23 @@ export class AuthController {
     @Body() body: { refresh_token?: string },
     @Req() req: Request,
   ) {
+    // Phase 4.2 — extract jti + exp from the access token so the
+    // service can add it to the Redis blacklist for its remaining TTL.
+    // Decode-only (no verify) is safe: JwtAuthGuard already verified
+    // the signature, and we only read jti/exp claims.
+    const { jti, exp } = decodeAccessTokenClaims(req);
     return this.authService.logout(userId, {
       ip: ctxOf(req).ip,
       refreshToken: body?.refresh_token ?? null,
+      accessJti: jti,
+      accessExp: exp,
     });
   }
 
   @Post('accept-invitation')
   @ThrottleOnly('invitation')
-  async acceptInvitation(@Body() dto: AcceptInvitationDto) {
-    return this.authService.acceptInvitation(dto);
+  async acceptInvitation(@Body() dto: AcceptInvitationDto, @Req() req: Request) {
+    return this.authService.acceptInvitation(dto, ctxOf(req));
   }
 
   @Post('forgot-password')

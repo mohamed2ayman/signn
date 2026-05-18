@@ -24,6 +24,7 @@ import { SuspiciousLoginService } from '../admin-security/services/suspicious-lo
 import { GeoLookupService } from '../admin-security/services/geo-lookup.service';
 import { UserAgentService } from '../admin-security/services/user-agent.service';
 import { SecurityEventService } from '../admin-security/services/security-event.service';
+import { TokenBlacklistService } from '../../common/services/token-blacklist.service';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared fixture — a normal active user, no MFA, no org (skips plan-MFA check)
@@ -46,7 +47,6 @@ const MOCK_USER: Partial<User> = {
   mfa_secret: null as unknown as string,
   mfa_totp_secret: null as unknown as string,
   mfa_recovery_codes: null as unknown as string[],
-  refresh_token_hash: null as unknown as string,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -133,6 +133,11 @@ const mockSecurityEventService = {
   recordAtomic: jest.fn().mockResolvedValue(undefined),
 };
 
+const mockTokenBlacklistService = {
+  blacklistToken: jest.fn().mockResolvedValue(undefined),
+  isBlacklisted: jest.fn().mockResolvedValue(false),
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Test suite
 // ─────────────────────────────────────────────────────────────────────────────
@@ -178,6 +183,7 @@ describe('AuthService', () => {
         { provide: GeoLookupService,                        useValue: mockGeoLookupService },
         { provide: UserAgentService,                        useValue: mockUserAgentService },
         { provide: SecurityEventService,                    useValue: mockSecurityEventService },
+        { provide: TokenBlacklistService,                   useValue: mockTokenBlacklistService },
       ],
     }).compile();
 

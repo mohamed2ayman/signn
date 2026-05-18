@@ -39,6 +39,8 @@ export enum SuspiciousReason {
   'country_code',
   'created_at',
 ])
+@Index('idx_user_sessions_family_id', ['family_id'])
+@Index('idx_user_sessions_jti', ['jti'])
 export class UserSession {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -97,4 +99,26 @@ export class UserSession {
 
   @Column({ type: 'timestamptz', nullable: true })
   revoked_at: Date | null;
+
+  // ─── Phase 4.2 — Token family tracking ────────────────────────
+  /**
+   * Identifies a chain of rotated refresh tokens. All sessions produced
+   * by sequential rotations share the same family_id; if a previously
+   * rotated refresh token is replayed, every row in the family is revoked
+   * atomically.
+   */
+  @Column({ type: 'uuid' })
+  family_id: string;
+
+  /** SHA-256 hex of the previous session's token_hash. NULL on first login. */
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  parent_token_hash: string | null;
+
+  /**
+   * UUID claim from the access token issued alongside this refresh token.
+   * Used by SessionTrackingMiddleware to bump last_active_at and to
+   * correlate Redis blacklist entries with database sessions.
+   */
+  @Column({ type: 'varchar', length: 36, nullable: true })
+  jti: string | null;
 }

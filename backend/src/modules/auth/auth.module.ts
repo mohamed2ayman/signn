@@ -32,7 +32,9 @@ import { AdminSecurityModule } from '../admin-security/admin-security.module';
       useFactory: (configService: ConfigService) => ({
         secret: configService.get<string>('JWT_SECRET'),
         signOptions: {
-          expiresIn: '15m',
+          // Default — AuthService.generateTokens() overrides this per call
+          // with env-driven values (JWT_ACCESS_EXPIRES_IN / JWT_REFRESH_EXPIRES_IN).
+          expiresIn: configService.get<string>('JWT_ACCESS_EXPIRES_IN') || '15m',
         },
       }),
     }),

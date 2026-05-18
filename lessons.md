@@ -2390,3 +2390,145 @@ email body), ask two questions:
 1. Was it sanitized at input? (database-stored content)
 2. Is it escaped at output? (before HTML interpolation)
 Both should be YES for user-supplied content.
+
+---
+
+## 71. Token Family Tracking Is the Correct Reuse-Attack Response
+
+**Context:**
+Phase 4.2 added refresh-token rotation. The naive implementation revokes
+the old refresh token when a new one is issued — but that doesn't help
+if an attacker has captured the OLD token. They simply present the old
+one and the legitimate user's just-rotated session looks identical to
+their stolen one.
+
+**Lesson:**
+The industry-standard answer (OAuth 2.0 BCP §4.13, Auth0, DocuSign,
+Ironclad) is **token family tracking**. Every refresh token belongs to
+a family identified by a `family_id` UUID. On each rotation the new
+token inherits the family. When a previously-rotated (already revoked)
+refresh token is presented, you don't just reject it — you revoke EVERY
+session that shares its family_id. The legitimate user's current session
+is burned, but they can re-login; the attacker also can't make any
+further progress.
+
+**Rule:**
+- Refresh tokens MUST carry a `family_id` claim.
+- The `user_sessions` row MUST persist family_id, parent_token_hash, and
+  the rotation chain.
+- On detected reuse, `SessionService.revokeFamily()` must be a single
+  atomic UPDATE — not a loop.
+- A `security.refresh_token_reuse_detected` event MUST be recorded with
+  the family_id in metadata.
+
+---
+
+## 72. Access Token Blacklisting Requires jti Claims
+
+**Context:**
+Phase 4.2 set out to close the "logout but my access token still works
+for 15 minutes" abuse window. The plan was to add a Redis blacklist on
+logout. But you cannot blacklist a token by its full string — that
+defeats the point of stateless JWTs (and the strings are too long).
+
+**Lesson:**
+Every access token needs a `jti` (JWT ID) claim — a short, unique
+identifier. You blacklist the jti, not the token. The blacklist entry
+TTL equals the access token's remaining lifetime (`exp - now`), so
+Redis self-cleans expired entries — no garbage collection job needed.
+
+**Rule:**
+- `generateTokens()` MUST stamp a `randomUUID()` jti on every access token.
+- The Redis key format is `blacklist:jti:{jti}` — value unused, only
+  EXISTS is checked.
+- `JwtStrategy.validate()` MUST check the blacklist when payload.jti is
+  present. Missing-jti tokens get a logged warning, not a rejection
+  (grace window for pre-Phase-4.2 tokens still in circulation).
+- The blacklist service MUST fail-OPEN on Redis errors. A Redis outage
+  should not lock everyone out — the session row revocation still
+  catches refresh-token reuse.
+
+---
+
+## 73. Every Login Path Must Call _finalizeLogin
+
+**Context:**
+Phase 3.3 introduced `_finalizeLogin()` to handle UserSession creation,
+device tracking, suspicious-login detection, and the new-device email.
+Five login paths (register, login, verifyMfa, verifyRecoveryCode,
+refreshToken) called it. One — `acceptInvitation` — did not.
+
+**Lesson:**
+A new user accepted an invitation, the inline `generateTokens()` call
+issued them a working JWT, but no `user_sessions` row existed. The
+SessionTrackingMiddleware had no row to update, the user couldn't be
+seen in the admin "Active sessions" list, and the new-device email was
+never sent. The bug was silent — there was no error, just missing
+telemetry until the user happened to refresh their token.
+
+**Rule:**
+- Any code path that issues a new refresh token MUST call
+  `_finalizeLogin()` with that token. No exceptions.
+- When you add a NEW auth flow (SSO, social login, magic link, etc.),
+  open `auth.service.ts` and copy the `_finalizeLogin()` call pattern
+  from `login()` verbatim — don't reinvent it.
+- The grep `grep -n "this.generateTokens" backend/src/modules/auth/auth.service.ts`
+  must always be followed within ~20 lines by a `this._finalizeLogin(`
+  call. If it isn't, you have a bug.
+
+---
+
+## 74. SessionTrackingMiddleware Must Key on jti, Not Token Hash
+
+**Context:**
+Phase 3.3 wrote `SessionTrackingMiddleware` to bump `last_active_at`
+on each authenticated request. The implementation hashed the bearer
+**access** token and looked it up in `user_sessions.token_hash`. The
+lookup never matched, because `user_sessions.token_hash` stores
+SHA-256 of the **refresh** token, not the access token. The middleware
+ran on every request, swallowed the silent miss, and never updated
+last_active_at — for months.
+
+**Lesson:**
+When a middleware "works" but has no observable effect, it's almost
+always a key-mismatch bug. The fix in Phase 4.2 was to:
+1. Add a `jti` column to `user_sessions` (stamped at session creation).
+2. Have the middleware decode (no verify) the bearer to extract `jti`.
+3. Look up the session by jti.
+
+**Rule:**
+- When a middleware reads from a database to side-effect a row, write
+  ONE failing test asserting the side-effect actually happens — not
+  just that the middleware doesn't throw. The Phase 3.3 test suite
+  had no such assertion, which is why the bug survived production.
+- If the lookup key is derived from the JWT, write down on paper what
+  the column actually contains. "It's a hash of the JWT" is ambiguous
+  — which JWT? Access or refresh? Different things.
+
+---
+
+## 75. Dual Storage Is Technical Debt That Must Be Retired Promptly
+
+**Context:**
+Phase 3.3 introduced `user_sessions` as the new home for refresh-token
+state, replacing the single-token `users.refresh_token_hash` column.
+But it did NOT remove the old column. For ~6 weeks, every login wrote
+to BOTH stores (`user_sessions.token_hash` AND `users.refresh_token_hash`),
+and `refreshToken()` validated against the OLD column. The new table
+existed but was decorative for the refresh-validation path.
+
+**Lesson:**
+Dual storage during a migration is fine for a few days. Past that, the
+old store accumulates write traffic but no read traffic, and someone
+eventually writes new code reading from the WRONG store. The Phase 4.2
+audit caught this only because the team specifically looked at the
+refresh-token validation path.
+
+**Rule:**
+- When you introduce a replacement store, open a ticket the same day
+  to delete the old store. Don't let it linger past one sprint.
+- During the transition, the read path MUST go through the NEW store
+  exclusively — never fall back to the old one. Falling back means
+  the new store can be silently broken without anyone noticing.
+- Write a migration that DROPS the old column with `DROP COLUMN IF EXISTS`
+  so the cleanup is idempotent and safe to deploy multiple times.

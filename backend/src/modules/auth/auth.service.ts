@@ -12,6 +12,7 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
+import { randomUUID } from 'crypto';
 import { authenticator } from 'otplib';
 import * as QRCode from 'qrcode';
 
@@ -32,6 +33,7 @@ import { GeoLookupService } from '../admin-security/services/geo-lookup.service'
 import { UserAgentService } from '../admin-security/services/user-agent.service';
 import { SecurityEventService } from '../admin-security/services/security-event.service';
 import { SECURITY_EVENT_TYPES } from '../../common/enums/security-event-types';
+import { TokenBlacklistService } from '../../common/services/token-blacklist.service';
 import { baseEmailLayout } from '../notifications/templates/base-layout';
 import {
   RegisterDto,
@@ -71,6 +73,7 @@ export class AuthService {
     private readonly geo: GeoLookupService,
     private readonly ua: UserAgentService,
     private readonly securityEvents: SecurityEventService,
+    private readonly tokenBlacklist: TokenBlacklistService,
   ) {}
 
   // ─── Phase 3.3: post-login session + suspicious detection ─────
@@ -89,6 +92,10 @@ export class AuthService {
     userAgent?: string | null;
     /** Pass already-known failure count to skip a query. */
     recentFailureCount?: number;
+    // Phase 4.2 — token family tracking + jti correlation
+    family_id?: string;
+    parent_token_hash?: string | null;
+    accessJti?: string | null;
   }): Promise<void> {
     try {
       const ip = input.ip ?? null;
@@ -119,6 +126,10 @@ export class AuthService {
         is_suspicious: evaluation.is_suspicious,
         suspicious_reason: evaluation.reason,
         expires_at: expiresAt,
+        // Phase 4.2 — token family tracking
+        family_id: input.family_id,
+        parent_token_hash: input.parent_token_hash ?? null,
+        jti: input.accessJti ?? null,
       });
 
       const deviceResult = await this.devices.upsert({
@@ -301,9 +312,7 @@ export class AuthService {
 
     const tokens = await this.generateTokens(savedUser);
 
-    const refreshTokenHash = await this.hashData(tokens.refresh_token);
     await this.userRepository.update(savedUser.id, {
-      refresh_token_hash: refreshTokenHash,
       password_changed_at: new Date(),
     });
 
@@ -312,6 +321,9 @@ export class AuthService {
       refreshToken: tokens.refresh_token,
       ip: ctx.ip ?? null,
       userAgent: ctx.user_agent ?? null,
+      family_id: tokens.family_id,
+      parent_token_hash: null,
+      accessJti: tokens.jti,
     });
 
     return {
@@ -421,16 +433,17 @@ export class AuthService {
       if (requiresMfaSetup) {
         // Issue full tokens but flag that MFA setup is required
         const tokens = await this.generateTokens(user);
-        const refreshTokenHash = await this.hashData(tokens.refresh_token);
         await this.userRepository.update(user.id, {
           last_login_at: new Date(),
-          refresh_token_hash: refreshTokenHash,
         });
         await this._finalizeLogin({
           user,
           refreshToken: tokens.refresh_token,
           ip: ctx.ip ?? null,
           userAgent: ctx.user_agent ?? null,
+          family_id: tokens.family_id,
+          parent_token_hash: null,
+          accessJti: tokens.jti,
         });
         return {
           user: this.sanitizeUser(user),
@@ -443,10 +456,8 @@ export class AuthService {
 
     const tokens = await this.generateTokens(user);
 
-    const refreshTokenHash = await this.hashData(tokens.refresh_token);
     await this.userRepository.update(user.id, {
       last_login_at: new Date(),
-      refresh_token_hash: refreshTokenHash,
     });
 
     await this._finalizeLogin({
@@ -454,6 +465,9 @@ export class AuthService {
       refreshToken: tokens.refresh_token,
       ip: ctx.ip ?? null,
       userAgent: ctx.user_agent ?? null,
+      family_id: tokens.family_id,
+      parent_token_hash: null,
+      accessJti: tokens.jti,
     });
 
     return {
@@ -517,11 +531,9 @@ export class AuthService {
 
     const tokens = await this.generateTokens(user);
 
-    const refreshTokenHash = await this.hashData(tokens.refresh_token);
     await this.userRepository.update(user.id, {
       mfa_secret: null as unknown as string,
       last_login_at: new Date(),
-      refresh_token_hash: refreshTokenHash,
     });
 
     await this._finalizeLogin({
@@ -529,6 +541,9 @@ export class AuthService {
       refreshToken: tokens.refresh_token,
       ip: ctx.ip ?? null,
       userAgent: ctx.user_agent ?? null,
+      family_id: tokens.family_id,
+      parent_token_hash: null,
+      accessJti: tokens.jti,
     });
 
     return {
@@ -575,13 +590,11 @@ export class AuthService {
     );
 
     const tokens = await this.generateTokens(user);
-    const refreshTokenHash = await this.hashData(tokens.refresh_token);
 
     await this.userRepository.update(user.id, {
       mfa_secret: null as unknown as string,
       mfa_recovery_codes: updatedCodes.length > 0 ? updatedCodes : null as unknown as string[],
       last_login_at: new Date(),
-      refresh_token_hash: refreshTokenHash,
     });
 
     await this._finalizeLogin({
@@ -589,6 +602,9 @@ export class AuthService {
       refreshToken: tokens.refresh_token,
       ip: ctx.ip ?? null,
       userAgent: ctx.user_agent ?? null,
+      family_id: tokens.family_id,
+      parent_token_hash: null,
+      accessJti: tokens.jti,
     });
 
     return {
@@ -778,7 +794,18 @@ export class AuthService {
   // ─── Auth Helpers ──────────────────────────────────────────────
 
   async refreshToken(refreshToken: string, ctx: { ip?: string | null; user_agent?: string | null } = {}) {
-    let payload: { sub: string; email: string };
+    // Phase 4.2 — refresh token rotation with reuse-attack detection.
+    //
+    // 1. Verify signature.
+    // 2. Look up the session row by SHA-256(refresh_token).
+    // 3. If row not found OR revoked → REUSE DETECTED:
+    //      - revoke the entire family (every chained rotation)
+    //      - log security.refresh_token_reuse_detected
+    //      - return 401
+    // 4. Otherwise rotate: new session inherits family_id, gets
+    //    parent_token_hash = old.token_hash. Old session is revoked.
+
+    let payload: { sub: string; email: string; family_id?: string };
     try {
       payload = this.jwtService.verify(refreshToken, {
         secret: this.configService.get<string>('JWT_REFRESH_SECRET'),
@@ -787,40 +814,58 @@ export class AuthService {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
 
-    const user = await this.userRepository.findOne({
-      where: { id: payload.sub },
-    });
+    // Look up the session (even if revoked) by token hash.
+    const session = await this.sessions.findAnyByRawToken(refreshToken);
+
+    // Reuse attack: the hash matches no row OR matches a revoked row.
+    if (!session || session.revoked_at) {
+      const familyId = session?.family_id ?? payload.family_id ?? null;
+      if (familyId) {
+        await this.sessions.revokeFamily(familyId);
+      }
+      try {
+        await this.securityEvents.record({
+          type: SECURITY_EVENT_TYPES.REFRESH_TOKEN_REUSE_DETECTED,
+          actor_id: payload.sub,
+          user_id: payload.sub,
+          ip_address: ctx.ip ?? null,
+          metadata: {
+            family_id: familyId,
+            replayed_at: new Date().toISOString(),
+            had_session_row: !!session,
+          },
+        });
+      } catch (err) {
+        this.logger.warn(
+          `[refreshToken] Failed to record reuse event: ${(err as Error).message}`,
+        );
+      }
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+
+    // Check expiry on the row defensively.
+    if (session.expires_at && session.expires_at < new Date()) {
+      throw new UnauthorizedException('Invalid or expired refresh token');
+    }
+
+    const user = await this.userRepository.findOne({ where: { id: payload.sub } });
     if (!user || !user.is_active) {
       throw new UnauthorizedException('User not found or inactive');
     }
 
-    if (!user.refresh_token_hash) {
-      throw new UnauthorizedException('No active session found');
-    }
-
-    const isTokenValid = await this.validatePassword(
-      refreshToken,
-      user.refresh_token_hash,
-    );
-    if (!isTokenValid) {
-      throw new UnauthorizedException('Invalid refresh token');
-    }
-
-    const tokens = await this.generateTokens(user);
-
-    const refreshTokenHash = await this.hashData(tokens.refresh_token);
-    await this.userRepository.update(user.id, {
-      refresh_token_hash: refreshTokenHash,
-    });
-
-    // Revoke the old session and create a new one — keeps UserSession
-    // table in sync with the actual valid refresh token.
+    // Rotate: revoke old session first, then mint a new one inheriting family.
     await this.sessions.revokeByToken(refreshToken);
+
+    const tokens = await this.generateTokens(user, { family_id: session.family_id });
+
     await this._finalizeLogin({
       user,
       refreshToken: tokens.refresh_token,
       ip: ctx.ip ?? null,
       userAgent: ctx.user_agent ?? null,
+      family_id: tokens.family_id,
+      parent_token_hash: session.token_hash,
+      accessJti: tokens.jti,
     });
 
     return {
@@ -829,26 +874,45 @@ export class AuthService {
     };
   }
 
-  async logout(userId: string, ctx: { ip?: string | null; refreshToken?: string | null } = {}) {
+  async logout(
+    userId: string,
+    ctx: {
+      ip?: string | null;
+      refreshToken?: string | null;
+      // Phase 4.2 — access-token jti + exp (epoch seconds) for Redis blacklist
+      accessJti?: string | null;
+      accessExp?: number | null;
+    } = {},
+  ) {
     if (ctx.refreshToken) {
       await this.sessions.revokeByToken(ctx.refreshToken);
     } else {
       await this.sessions.revokeAllForUser(userId);
     }
+
+    // Phase 4.2 — blacklist the access token's jti for its remaining lifetime.
+    // This closes the 15-min "logout but token still works" abuse window.
+    if (ctx.accessJti && typeof ctx.accessExp === 'number') {
+      const ttl = ctx.accessExp - Math.floor(Date.now() / 1000);
+      if (ttl > 0) {
+        await this.tokenBlacklist.blacklistToken(ctx.accessJti, ttl);
+      }
+    }
+
     await this.securityEvents.record({
       type: SECURITY_EVENT_TYPES.LOGOUT,
       actor_id: userId,
       user_id: userId,
       ip_address: ctx.ip ?? null,
     });
-    await this.userRepository.update(userId, {
-      refresh_token_hash: null as unknown as string,
-    });
 
     return { success: true };
   }
 
-  async acceptInvitation(dto: AcceptInvitationDto) {
+  async acceptInvitation(
+    dto: AcceptInvitationDto,
+    ctx: { ip?: string | null; user_agent?: string | null } = {},
+  ) {
     const user = await this.userRepository.findOne({
       where: { invitation_token: dto.token },
     });
@@ -870,6 +934,8 @@ export class AuthService {
       is_email_verified: true,
       invitation_token: null as unknown as string,
       invitation_expires_at: null as unknown as Date,
+      last_login_at: new Date(),
+      password_changed_at: new Date(),
     });
 
     const updatedUser = await this.userRepository.findOne({
@@ -878,10 +944,18 @@ export class AuthService {
 
     const tokens = await this.generateTokens(updatedUser!);
 
-    const refreshTokenHash = await this.hashData(tokens.refresh_token);
-    await this.userRepository.update(updatedUser!.id, {
-      refresh_token_hash: refreshTokenHash,
-      last_login_at: new Date(),
+    // Phase 4.2 — bring acceptInvitation into the same session-tracking
+    // path as login/register/verifyMfa. Previously this method skipped
+    // _finalizeLogin entirely, leaving no UserSession row for the user
+    // until their first refresh.
+    await this._finalizeLogin({
+      user: updatedUser!,
+      refreshToken: tokens.refresh_token,
+      ip: ctx.ip ?? null,
+      userAgent: ctx.user_agent ?? null,
+      family_id: tokens.family_id,
+      parent_token_hash: null,
+      accessJti: tokens.jti,
     });
 
     return {
@@ -1009,31 +1083,60 @@ export class AuthService {
     return { plain, hashed };
   }
 
-  private async generateTokens(user: User) {
-    const payload = {
+  /**
+   * Phase 4.2 — token generation now:
+   *   - stamps a random `jti` on every access token (Redis blacklist key)
+   *   - propagates a `family_id` UUID through the refresh-token chain
+   *     (new family for fresh logins, inherited on rotation)
+   *   - reads expiry durations from JWT_ACCESS_EXPIRES_IN / JWT_REFRESH_EXPIRES_IN
+   */
+  private async generateTokens(
+    user: User,
+    opts: { family_id?: string } = {},
+  ): Promise<{
+    access_token: string;
+    refresh_token: string;
+    jti: string;
+    family_id: string;
+  }> {
+    const jti = randomUUID();
+    const family_id = opts.family_id ?? randomUUID();
+
+    const accessPayload = {
       sub: user.id,
       email: user.email,
       role: user.role,
       organization_id: user.organization_id,
+      jti,
     };
 
+    const refreshPayload = {
+      sub: user.id,
+      email: user.email,
+      family_id,
+    };
+
+    const accessExpiresIn =
+      this.configService.get<string>('JWT_ACCESS_EXPIRES_IN') || '15m';
+    const refreshExpiresIn =
+      this.configService.get<string>('JWT_REFRESH_EXPIRES_IN') || '7d';
+
     const [accessToken, refreshToken] = await Promise.all([
-      this.jwtService.signAsync(payload, {
+      this.jwtService.signAsync(accessPayload, {
         secret: this.configService.get<string>('JWT_SECRET'),
-        expiresIn: '15m',
+        expiresIn: accessExpiresIn,
       }),
-      this.jwtService.signAsync(
-        { sub: user.id, email: user.email },
-        {
-          secret: this.configService.get<string>('JWT_REFRESH_SECRET'),
-          expiresIn: '7d',
-        },
-      ),
+      this.jwtService.signAsync(refreshPayload, {
+        secret: this.configService.get<string>('JWT_REFRESH_SECRET'),
+        expiresIn: refreshExpiresIn,
+      }),
     ]);
 
     return {
       access_token: accessToken,
       refresh_token: refreshToken,
+      jti,
+      family_id,
     };
   }
 
@@ -1060,7 +1163,6 @@ export class AuthService {
       mfa_secret,
       mfa_totp_secret,
       mfa_recovery_codes,
-      refresh_token_hash,
       ...sanitized
     } = user;
     return sanitized;

@@ -246,7 +246,6 @@ export class GdprExportService {
       ? {
           ...profile,
           password_hash: '[redacted]',
-          refresh_token_hash: '[redacted]',
           mfa_secret: '[redacted]',
           mfa_recovery_codes: '[redacted]',
         }

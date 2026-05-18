@@ -44,6 +44,7 @@ import { AdminBillingModule } from './modules/admin-billing/admin-billing.module
 import { NegotiationModule } from './modules/negotiation/negotiation.module';
 import { AdminSecurityModule } from './modules/admin-security/admin-security.module';
 import { ComplianceModule } from './modules/compliance/compliance.module';
+import { TokenBlacklistModule } from './common/services/token-blacklist.module';
 import { dataSourceOptions } from './config/data-source';
 
 @Module({
@@ -64,6 +65,9 @@ import { dataSourceOptions } from './config/data-source';
 
         // ── Auth ─────────────────────────────────────────────────
         JWT_SECRET: Joi.string().min(16).required(),
+        JWT_REFRESH_SECRET: Joi.string().min(32).required(),
+        JWT_ACCESS_EXPIRES_IN: Joi.string().default('15m'),
+        JWT_REFRESH_EXPIRES_IN: Joi.string().default('7d'),
         JWT_EXPIRES_IN: Joi.string().default('7d'),
         NESTJS_INTERNAL_TOKEN: Joi.string().required(),
 
@@ -157,6 +161,7 @@ import { dataSourceOptions } from './config/data-source';
         ],
       }),
     }),
+    TokenBlacklistModule,
     AuthModule,
     UsersModule,
     OrganizationsModule,
