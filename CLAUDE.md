@@ -1282,6 +1282,19 @@ dual-storage `users.refresh_token_hash` column.
 - Token-family invalidation MUST be atomic — `SessionService.revokeFamily()`
   uses a single UPDATE … WHERE family_id = $1 statement. Do not split it
   into a loop of per-row revokes.
+- **`revokeFamily()` alone is NOT sufficient to invalidate active access tokens.**
+  DB revocation only prevents new refresh operations — already-issued access
+  tokens remain valid for their full TTL (default 15 min) unless their JTIs
+  are also blacklisted in Redis. The `JwtStrategy` checks Redis on every
+  request; it does NOT hit the database. ALWAYS blacklist JTIs BEFORE
+  revoking the DB family rows, in this exact order:
+  1. Call `SessionService.listByFamily(familyId)` to fetch all session rows
+  2. For each row with a `jti`, call `tokenBlacklist.blacklistToken(jti, ttlSeconds)`
+     where `ttlSeconds = parseExpiryToSeconds(JWT_ACCESS_EXPIRES_IN)`
+  3. Only then call `SessionService.revokeFamily(familyId)`
+  Skipping step 2 leaves all rotated access tokens live through their full TTL
+  even after a reuse attack is detected. This was a post-ship bug found during
+  manual testing — fix commits `501d48f` + `ef13a1e`.
 
 ---
 

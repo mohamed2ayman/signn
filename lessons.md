@@ -1,7 +1,7 @@
 # lessons.md — SIGN + MANAGEX Platform
 > This file documents every bug, issue, and fix that took significant time to resolve.
 > Feed this file to Claude at the start of every session to avoid repeating mistakes.
-> Last updated: 2026-05-17 (Lessons #63-67 — Phase 4.1 Rate Limiting. Lessons #68-70 — Phase 3.5 XSS Prevention.)
+> Last updated: 2026-05-18 (Lessons #71–77 — Phase 4.2 JWT hardening, post-ship bug fix, and test mock patterns.)
 
 ---
 
@@ -47,6 +47,49 @@
 32. Backend — Paymob Webhook Activation Needs Idempotency Before Fix
 33. Docker — New npm Package Not Found After Rebuild
 34. Backend — New Required Joi Var Breaks Teammates' Environments
+35. Testing — AuthService Has 14 Constructor Dependencies
+36. Testing — Vite Config Must Stay Untouched, Use Separate vitest.config.ts
+37. Testing — Mock at Service Level Never at Axios Level
+38. Testing — pytest.ini Must Set pythonpath = . or All Imports Fail
+39. Testing — Celery bind=True Tasks Need .run(payload) Not task(None, payload)
+40. DTOs — Fields Without Class-Validator Decorators Are Silently Stripped
+41. Defense-in-Depth — Frontend Filters Are Never Enough
+42. @MaxLength — Apply to BOTH Create AND Update DTOs
+43. sanitize-html — Correct Import Syntax When esModuleInterop Is Off
+44. Rebrand — Parent Brand Switched from CENVOX to MANAGEX
+45. Preview — Vite Cannot Bind 5175 While Docker Is Running
+46. Ports — 5175 Is the Canonical MANAGEX Landing Port
+47. Coordination — "Done" = On Main With Green CI, Never "Pushed to a Branch"
+48. Rebrand — Always Run a Negative-Filter Sweep After a Big Rename
+49. Coordination — Rebasing Requires Pulling BEFORE Opening a PR
+50. gitignored Files Are Invisible to Rebrand Sweeps
+51. gh CLI — workflow Scope Required to Push CI Workflow Files
+52. Coordination — Open a DRAFT PR Within 24–48 Hours of Branch Creation
+53. Post-Merge — Always Verify Phase 3.2 Artifacts Survived
+54. SQL Injection — TypeORM Parameterization Is Already There by Default
+55. LIKE Wildcard Leakage vs SQL Injection — Different Problems
+56. New ILIKE Sites Need escapeLikeParam() When Branches Merge
+57. Mass Assignment via Partial<Entity> — Never Use Entities as DTOs
+58. Plain TypeScript Interfaces Get Zero Validation from class-validator
+59. Every Inline @Body() Object Is a Validation Gap
+60. multer memoryStorage Has No Size Limit by Default
+61. Path Traversal in File Serving — Always Contain Paths
+62. Optional Chaining on Methods That Return Objects
+63. IP Extraction Must Use a Single Shared Utility
+64. app.set('trust proxy', ...) Must Be Set Before Any IP-Based Middleware
+65. Auth Error Messages Must Never Distinguish Between Failure Reasons
+66. Rate-Limit Storage Must Be Redis-Backed in Production
+67. Named Throttlers Are Not Per-Method — You Must Skip the Others
+68. Email Template Injection — User Strings Must Be HTML-Escaped at Output
+69. CSP connectSrc Must Include Your Production API Origin
+70. Two Types of HTML Escaping — Input Sanitization vs Output Escaping
+71. Token Family Tracking Is the Correct Reuse-Attack Response
+72. Access Token Blacklisting Requires jti Claims
+73. Every Login Path Must Call _finalizeLogin
+74. SessionTrackingMiddleware Must Key on jti, Not Token Hash
+75. Dual Storage Is Technical Debt That Must Be Retired Promptly
+76. DB Family Revocation Does Not Invalidate Live Access Tokens
+77. Stale Service Mocks Break CI When New Methods Are Added
 
 ---
 
@@ -1686,6 +1729,91 @@ Treat these 5 checks as non-negotiable. Add them to the Pre-PR checklist in CLAU
 
 ---
 
+## 76. DB Family Revocation Does Not Invalidate Live Access Tokens
+
+**Problem:**
+Phase 4.2 shipped with `revokeFamily()` that correctly marked all session
+rows as revoked in the database. However, `JwtStrategy` only checks the
+Redis blacklist — it does NOT query the database on every request (that
+would be too slow). Result: when a token reuse attack was detected and the
+family was "revoked," the attacker's already-issued access tokens kept
+passing `JwtStrategy` validation for up to 15 minutes (the full access
+token TTL) because their JTIs were never added to Redis.
+
+**Root cause:**
+Two separate revocation systems exist:
+- **DB revocation**: prevents new refresh operations (checked by `refreshToken()`)
+- **Redis blacklist**: invalidates live access tokens (checked by `JwtStrategy` on every request)
+
+`revokeFamily()` only handled the DB side. The Redis side was missing.
+
+**Fix:**
+Before calling `revokeFamily()`, the reuse-detection path now:
+1. Calls `listByFamily(familyId)` to fetch all session rows in the family
+2. Blacklists each session's `jti` in Redis with TTL = remaining access
+   token lifetime (computed via `parseExpiryToSeconds(JWT_ACCESS_EXPIRES_IN)`)
+3. Only then calls `revokeFamily()` to mark DB rows as revoked
+
+Both systems must be updated atomically on family revocation.
+
+**Files fixed:**
+- `session.service.ts`: added `listByFamily()`
+- `auth.service.ts`: added `parseExpiryToSeconds()` + fixed reuse-detection block
+
+**Commits:** `501d48f` (bug fix) + `ef13a1e` (CI fix — see lesson #77)
+
+**Rule:**
+Whenever you add a new revocation path, ask: *"Does this also invalidate
+live access tokens in Redis?"* DB changes alone are never sufficient —
+Redis is the runtime gate, the DB is the persistence layer. For family
+revocation the order is always: blacklist JTIs → revoke DB rows.
+
+---
+
+## 77. Stale Service Mocks Break CI When New Methods Are Added
+
+**Problem:**
+Adding `listByFamily()` to `SessionService` caused CI to fail on the
+next run. `token-security.spec.ts` had a hand-written `mockSessionService`
+object created when Phase 4.2 was first implemented — before
+`listByFamily()` existed. When `auth.service.ts` called `listByFamily()`
+in the reuse-detection path, Jest threw:
+
+```
+TypeError: this.sessions.listByFamily is not a function
+```
+
+This caused a CI failure that required a separate hotfix commit (`ef13a1e`)
+— an entire extra CI cycle that could have been avoided.
+
+**Root cause:**
+Hand-written mocks in NestJS specs list methods explicitly. They don't
+automatically pick up new methods added to the real service. The gap
+between the real service and its mock is invisible at author time — it
+only surfaces when the new code path is exercised in tests.
+
+**Fix:**
+Added `listByFamily: jest.fn(async (familyId: string) => sessions.filter(s => s.family_id === familyId))` to `mockSessionService` in `token-security.spec.ts`.
+
+**Rule:**
+When you add a method to ANY service that has mocks in spec files,
+immediately grep for every mock of that service:
+
+```bash
+grep -rn "mockSessionService\|SessionService.*useValue\|provide.*SessionService" \
+  backend/src --include="*.spec.ts"
+```
+
+Add the new method to every mock found. Do this **in the same commit** as
+the service change — never in a follow-up. A `jest.fn().mockResolvedValue([])`
+stub is enough if the specific test doesn't need real behavior.
+
+**Alternative:** Use `jest.createMockFromModule()` or `@golevelup/ts-jest`'s
+`createMock<ServiceType>()` which auto-mocks all methods. Eliminates the
+staleness problem entirely.
+
+---
+
 ## 📝 Template for New Lessons
 
 ```
@@ -2296,7 +2424,7 @@ be auto-skipped on the other endpoints.
 ---
 
 
-*Last updated: 2026-05-17 (Phase 4.1 Rate Limiting — lessons #63-67. Phase 3.5 XSS Prevention — lessons #68-70.)*
+*Last updated: 2026-05-18 (Phase 4.2 JWT hardening — lessons #71–77. Includes post-ship bug fix and test mock patterns.)*
 
 ---
 
