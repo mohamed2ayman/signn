@@ -111,6 +111,14 @@ export class SessionService {
     return result.affected ?? 0;
   }
 
+  /**
+   * Phase 4.2 fix — fetch every session row in a family so callers can
+   * blacklist their JTIs in Redis before marking the rows revoked.
+   */
+  async listByFamily(familyId: string): Promise<UserSession[]> {
+    return this.sessionRepo.find({ where: { family_id: familyId } });
+  }
+
   /** Returns active (non-revoked, non-expired) sessions for a user, newest first. */
   async listActive(userId: string): Promise<UserSession[]> {
     const now = new Date();

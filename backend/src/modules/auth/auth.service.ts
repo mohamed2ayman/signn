@@ -48,6 +48,20 @@ const BCRYPT_SALT_ROUNDS = 10;
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCKOUT_DURATION_MINUTES = 30;
 const OTP_VALIDITY_MINUTES = 10;
+
+/**
+ * Parse a JWT expiry shorthand (e.g. "15m", "7d", "900s") into seconds.
+ * Falls back to 900 (15 min) for any unrecognised format.
+ * Used to derive the Redis TTL when blacklisting tokens whose exp claim
+ * is not stored server-side (family-revocation path).
+ */
+function parseExpiryToSeconds(expiry: string): number {
+  const m = /^(\d+)(s|m|h|d)$/.exec((expiry ?? '').trim());
+  if (!m) return 900;
+  const n = parseInt(m[1], 10);
+  const multipliers: Record<string, number> = { s: 1, m: 60, h: 3600, d: 86400 };
+  return n * (multipliers[m[2]] ?? 1);
+}
 const RECOVERY_CODE_COUNT = 8;
 
 @Injectable()
@@ -821,6 +835,23 @@ export class AuthService {
     if (!session || session.revoked_at) {
       const familyId = session?.family_id ?? payload.family_id ?? null;
       if (familyId) {
+        // Phase 4.2 fix: before revoking the DB rows, blacklist every JTI in
+        // the family so existing access tokens are immediately rejected by
+        // JwtStrategy. Without this, rotated access tokens keep working for
+        // their full 15-min lifetime even after family revocation.
+        const familySessions = await this.sessions.listByFamily(familyId);
+        const accessTtlSec = parseExpiryToSeconds(
+          this.configService.get<string>('JWT_ACCESS_EXPIRES_IN') ?? '15m',
+        );
+        await Promise.all(
+          familySessions
+            .filter(s => !!s.jti)
+            .map(s =>
+              this.tokenBlacklist.blacklistToken(s.jti!, accessTtlSec).catch(err =>
+                this.logger.warn(`[refreshToken] Failed to blacklist jti ${s.jti}: ${(err as Error).message}`),
+              ),
+            ),
+        );
         await this.sessions.revokeFamily(familyId);
       }
       try {
