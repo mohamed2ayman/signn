@@ -1,7 +1,7 @@
 # CLAUDE.md — Project Intelligence File
 > Read this entire file at the start of every Claude Code session before touching any code.
 > This file is the single source of truth for all architectural decisions, rules, and context.
-> Last updated: 2026-05-17 (Added: Phase 3.5 — XSS Prevention. escapeHtml() utility + all 9 email templates hardened, explicit CSP in helmet(), JWT localStorage risk documented.)
+> Last updated: 2026-05-18 (Added: Phase 4.2 — JWT & Refresh Token Hardening. Token family tracking + reuse-attack detection, Redis jti blacklist on logout, env-driven token expiries, JWT_REFRESH_SECRET required at startup, legacy users.refresh_token_hash retired, SessionTrackingMiddleware fixed to use jti.)
 
 ---
 
@@ -568,6 +568,59 @@ appropriate for a legal/contract platform handling sensitive documents.
    we err strict on auth endpoints. Raising a limit on a non-auth endpoint is
    fine; lowering it (or any change to login/register/forgot/reset/mfa/recovery)
    needs review.
+
+---
+
+## JWT & Token Security Policy
+
+This policy was finalised in Phase 4.2. Every JWT-touching change MUST
+adhere to these rules.
+
+- **Access token expiry is env-driven.** `JWT_ACCESS_EXPIRES_IN` (default `15m`)
+  is read by `AuthService.generateTokens()`. Do NOT hardcode `'15m'` anywhere
+  in `backend/src/modules/auth/`.
+- **Refresh token expiry is env-driven.** `JWT_REFRESH_EXPIRES_IN` (default `7d`)
+  is read by `AuthService.generateTokens()`. Do NOT hardcode `'7d'`.
+- **Every access token carries a `jti` claim.** Generated via `randomUUID()` in
+  `generateTokens()`. JwtStrategy enforces it; SessionTrackingMiddleware keys
+  off it; logout blacklists by it.
+- **Refresh tokens carry a `family_id` claim.** A new family UUID is minted on
+  fresh login (login / register / verifyMfa / verifyRecoveryCode /
+  acceptInvitation). On rotation (refreshToken), the new refresh inherits the
+  old family_id and sets `parent_token_hash` to the previous session's hash.
+- **Reuse attack detection — entire family invalidated.** If a refresh token
+  is presented but its `user_sessions` row is missing OR `revoked_at IS NOT NULL`,
+  `SessionService.revokeFamily()` is called on the family_id and a
+  `security.refresh_token_reuse_detected` event is recorded. Return 401.
+- **Redis blacklist for access tokens.** Key format: `blacklist:jti:{jti}`,
+  TTL equal to the access token's remaining lifetime (`exp - now`). On every
+  request, `JwtStrategy.validate()` calls `TokenBlacklistService.isBlacklisted(jti)` —
+  ~1ms overhead is acceptable. The service fails-OPEN on Redis errors so a
+  Redis outage doesn't lock everyone out.
+- **JwtStrategy validation order.** 1) user exists + active, 2) blacklist check
+  (only when `payload.jti` is present — pre-Phase-4.2 tokens get a warning but
+  pass under a 7-day grace window since all such tokens expire within 15 min).
+- **SessionTrackingMiddleware keys on jti.** It decodes (no verify) the bearer
+  access token, extracts `jti`, and calls `SessionService.findActiveByJti(jti)`
+  to bump `last_active_at`. The old token-hash fallback was broken (user_sessions
+  stores refresh hashes, not access hashes) and has been removed.
+- **`JWT_REFRESH_SECRET` is a required env var, min 32 chars.** Joi enforces this
+  at startup; must be DIFFERENT from `JWT_SECRET`. There is a dev-only fallback
+  in `docker-compose.yml` so contributors don't break on pull; the real value
+  goes in `./backend/.env`.
+- **`users.refresh_token_hash` was retired in Phase 4.2.** All refresh-token
+  validation now goes through `user_sessions` only. Any code that still reads
+  or writes that column is a regression — remove it.
+
+### How to change a token policy safely
+1. Edit `backend/.env.example` AND `backend/src/app.module.ts` Joi schema in
+   the same commit (Phase 1.5 rule still applies).
+2. If lowering the access-token expiry, verify the Redis blacklist still
+   has time to be useful (TTL must be > 0 for the call to do anything).
+3. Never re-introduce a hardcoded `'15m'` or `'7d'` literal — always go
+   through `ConfigService`.
+4. Never reuse `JWT_SECRET` for refresh tokens — Phase 4.2 explicitly
+   requires them to be different signing keys.
 
 ---
 
@@ -1159,6 +1212,76 @@ Fourteen targeted text and visual changes were applied after the initial landing
 12. Mission body: "Through six AI-powered products, we give construction organisations the clarity to plan precisely… For every project."
 13. CTA heading: "Start building with intelligence on your side." (`intelligence on your side` uses the dark-cyan→#0066AA gradient via `.mx-grad-cyan-d`).
 14. CTA body: "One platform. Six products. Every phase covered. Join the teams already building smarter with MANAGEX."
+
+---
+
+## Phase 4.2 — JWT & Refresh Token Hardening (shipped — 2026-05-18)
+
+Hardened the JWT and refresh token lifecycle. Closed the 15-min logout
+abuse window. Added rotation-chain reuse-attack detection. Retired the
+dual-storage `users.refresh_token_hash` column.
+
+### What shipped
+- **Token family tracking.** `user_sessions` gained 3 columns: `family_id`
+  (UUID), `parent_token_hash` (SHA-256 hex), and `jti` (UUID). New migration
+  `1747000000001-AddTokenFamilyTracking.ts` adds them idempotently
+  (`ADD COLUMN IF NOT EXISTS`, `CREATE INDEX IF NOT EXISTS`).
+- **Reuse-attack detection.** `AuthService.refreshToken()` now looks up the
+  session by SHA-256 of the raw refresh JWT. If row not found OR `revoked_at`
+  is set, every session in the family is revoked atomically and a
+  `security.refresh_token_reuse_detected` event is recorded. Return 401.
+- **Redis access-token blacklist.** New `TokenBlacklistService` + `TokenBlacklistModule`
+  (`@Global()`). On logout, the access token's jti is added to Redis with TTL
+  = remaining token lifetime. `JwtStrategy.validate()` checks the blacklist
+  on every request. Key format: `blacklist:jti:{jti}`. Fails-open on Redis
+  errors so a Redis outage doesn't lock everyone out.
+- **jti on every access token.** `generateTokens()` now stamps a `randomUUID()`
+  jti claim on each access token. `family_id` is stamped on each refresh token.
+- **Env-driven expiries.** `JWT_ACCESS_EXPIRES_IN` and `JWT_REFRESH_EXPIRES_IN`
+  added to Joi (`.default('15m')`/`.default('7d')`). The hardcoded `'15m'`/`'7d'`
+  literals in `auth.service.ts` are gone.
+- **`JWT_REFRESH_SECRET` Joi-validated.** Required at startup with `min(32)`.
+  Dev-only fallback in `docker-compose.yml` so contributors aren't broken on
+  pull; `.env.example` documents it as required.
+- **acceptInvitation now uses `_finalizeLogin`.** Previously this method skipped
+  session tracking entirely, leaving no user_sessions row for the invited user
+  until their first refresh.
+- **`users.refresh_token_hash` retired.** New migration
+  `1747000000002-RemoveLegacyRefreshTokenHash.ts` drops the column. All
+  read/write sites in code are gone. Property removed from the User entity.
+- **SessionTrackingMiddleware fixed.** Now keys on the access token's `jti`
+  (via `SessionService.findActiveByJti()`), not on a hash of the bearer token.
+  The old approach silently never matched because `user_sessions.token_hash`
+  stores refresh hashes, not access hashes.
+- **Filter ordering regression test.** TEST 6 in `rate-limit.spec.ts` mounts
+  both `HttpExceptionFilter` and `ThrottlerExceptionFilter` in production order
+  and asserts the 6th login attempt still gets a proper 429 envelope.
+- **5 new token security tests** in `backend/src/modules/auth/tests/token-security.spec.ts`:
+  reuse attack triggers family invalidation, logout blacklists jti, blacklisted
+  refresh cannot be reused, acceptInvitation creates a session, every access
+  token carries a distinct UUID jti.
+
+### Hard rules added — never violate
+- NEVER store refresh tokens in `users.refresh_token_hash` — that column is
+  gone. All refresh-token state lives in `user_sessions`.
+- NEVER use a JWT signing function with a hardcoded `'15m'` or `'7d'` —
+  always read from `ConfigService.get('JWT_ACCESS_EXPIRES_IN')` /
+  `JWT_REFRESH_EXPIRES_IN`.
+- NEVER instantiate `new Redis()` per-request — the `TokenBlacklistModule`
+  owns the shared client. Inject `TokenBlacklistService` instead.
+- The `TokenBlacklistService` MUST fail-open on Redis errors. A Redis outage
+  must not lock every user out; the session row revocation still catches
+  refresh-token reuse.
+- Every new login path MUST call `_finalizeLogin()` with `family_id`,
+  `parent_token_hash` (null for fresh logins), and `accessJti`. Skipping it
+  leaves the user with no session row and breaks security telemetry.
+- The `&` replacement order matters in encoders. (Phase 3.5 escapeHtml has
+  the same rule for HTML escaping; here it's a reminder that
+  `parent_token_hash` MUST be set BEFORE the new session is created in a
+  rotation, never after.)
+- Token-family invalidation MUST be atomic — `SessionService.revokeFamily()`
+  uses a single UPDATE … WHERE family_id = $1 statement. Do not split it
+  into a loop of per-row revokes.
 
 ---
 

@@ -48,7 +48,7 @@ export class ProfileController {
   async getProfile(@CurrentUser() user: User) {
     const fresh = await this.userRepo.findOne({ where: { id: user.id } });
     if (!fresh) throw new BadRequestException('User not found');
-    const { password_hash, refresh_token_hash, mfa_secret, mfa_recovery_codes, mfa_totp_secret, ...safe } = fresh as any;
+    const { password_hash, mfa_secret, mfa_recovery_codes, mfa_totp_secret, ...safe } = fresh as any;
     return safe;
   }
 

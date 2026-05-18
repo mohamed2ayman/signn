@@ -8,6 +8,7 @@ import { AuthController } from '../auth.controller';
 import { AuthService } from '../auth.service';
 import { getClientIp } from '../../../common/utils/get-client-ip.util';
 import { ThrottlerExceptionFilter } from '../../../common/filters/throttler-exception.filter';
+import { HttpExceptionFilter } from '../../../common/filters/http-exception.filter';
 
 /**
  * End-to-end-ish tests for Phase 4.1 rate limiting + auth enumeration fixes.
@@ -66,6 +67,46 @@ describe('Auth rate limiting (Phase 4.1)', () => {
     const app = moduleRef.createNestApplication();
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
     app.useGlobalFilters(new ThrottlerExceptionFilter());
+    await app.init();
+    return app;
+  }
+
+  /**
+   * Builds an app with BOTH filters mounted in main.ts order:
+   *   useGlobalFilters(new HttpExceptionFilter(), new ThrottlerExceptionFilter())
+   *
+   * Nest scans global filters in reverse-registration order, so this matches
+   * the production setup. Used by TEST 6 to guard against regressions of the
+   * filter-ordering hotfix (commit 267cf25).
+   */
+  async function buildAppWithBothFilters(): Promise<INestApplication> {
+    const moduleRef = await Test.createTestingModule({
+      imports: [
+        ThrottlerModule.forRoot({
+          getTracker: (req) => getClientIp(req as never),
+          throttlers: [
+            { name: 'login',      ttl: 600_000,    limit: 5  },
+            { name: 'register',   ttl: 3_600_000,  limit: 3  },
+            { name: 'forgot',     ttl: 3_600_000,  limit: 3  },
+            { name: 'reset',      ttl: 900_000,    limit: 5  },
+            { name: 'mfa',        ttl: 600_000,    limit: 5  },
+            { name: 'recovery',   ttl: 3_600_000,  limit: 3  },
+            { name: 'refresh',    ttl: 900_000,    limit: 20 },
+            { name: 'invitation', ttl: 3_600_000,  limit: 5  },
+          ],
+        }),
+      ],
+      controllers: [AuthController],
+      providers: [
+        { provide: AuthService, useValue: authServiceMock },
+        ThrottlerStorageService,
+      ],
+    }).compile();
+
+    const app = moduleRef.createNestApplication();
+    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+    // Order MUST match main.ts: HttpExceptionFilter first, ThrottlerExceptionFilter second.
+    app.useGlobalFilters(new HttpExceptionFilter(), new ThrottlerExceptionFilter());
     await app.init();
     return app;
   }
@@ -242,6 +283,54 @@ describe('Auth rate limiting (Phase 4.1)', () => {
     expect(blocked.status).toBe(429);
     expect(blocked.headers['retry-after']).toBeDefined();
     expect(parseInt(String(blocked.headers['retry-after']), 10)).toBeGreaterThan(0);
+
+    await app.close();
+  });
+
+  // ───────────────────────────────────────────────────────────────────────
+  // TEST 6 — filter ordering regression guard (commit 267cf25)
+  //
+  // Before the hotfix, useGlobalFilters() was called with the throttler
+  // filter FIRST and the catch-all HttpExceptionFilter SECOND. Nest scans
+  // global filters in reverse-registration order, so the catch-all won
+  // and 429s fell through to the generic INTERNAL_ERROR envelope, losing
+  // both the Retry-After header contract and the typed body shape.
+  //
+  // This test mounts BOTH filters in production order (main.ts) and
+  // verifies the 6th login attempt still gets the proper 429 envelope.
+  // ───────────────────────────────────────────────────────────────────────
+  it('returns proper 429 envelope when BOTH HttpExceptionFilter and ThrottlerExceptionFilter are mounted', async () => {
+    authServiceMock.login.mockRejectedValue(
+      new UnauthorizedException('Invalid email or password'),
+    );
+
+    const app = await buildAppWithBothFilters();
+    const server = app.getHttpServer();
+    const payload = { email: 'attacker@example.com', password: 'wrongpassword' };
+
+    // First 5 should pass through to the service and fail auth, not throttle.
+    for (let i = 0; i < 5; i++) {
+      const res = await request(server)
+        .post('/auth/login')
+        .set('X-Forwarded-For', '203.0.113.123')
+        .send(payload);
+      expect(res.status).toBe(401);
+    }
+
+    const blocked = await request(server)
+      .post('/auth/login')
+      .set('X-Forwarded-For', '203.0.113.123')
+      .send(payload);
+
+    // The ThrottlerExceptionFilter must win — proper 429, not 500.
+    expect(blocked.status).toBe(429);
+    expect(blocked.body.statusCode).toBe(429);
+    expect(blocked.headers['retry-after']).toBeDefined();
+    expect(typeof blocked.body.message).toBe('string');
+    expect(blocked.body.message).toMatch(/too many/i);
+    expect(blocked.body).toHaveProperty('retryAfter');
+    // The catch-all envelope's INTERNAL_ERROR string must NOT appear.
+    expect(JSON.stringify(blocked.body)).not.toMatch(/INTERNAL_ERROR/);
 
     await app.close();
   });

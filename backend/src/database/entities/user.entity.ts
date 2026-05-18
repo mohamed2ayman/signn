@@ -204,9 +204,6 @@ export class User {
   @Column({ type: 'timestamptz', nullable: true })
   locked_until: Date;
 
-  @Column({ type: 'varchar', length: 255, nullable: true })
-  refresh_token_hash: string;
-
   /**
    * Timestamp of the most recent password change. Used by the password-expiry
    * policy (SecurityPolicy.password_expiry_days). Backfilled on migration to

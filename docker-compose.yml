@@ -44,6 +44,12 @@ services:
       - '3000:3000'
     env_file:
       - ./backend/.env
+    environment:
+      # Phase 4.2 — dev-only fallback so docker users don't break on pull.
+      # .env.example documents JWT_REFRESH_SECRET as required (Joi.required()).
+      # The real value should be set in ./backend/.env for production-like runs.
+      # This default is ONLY for local development.
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-dev-only-refresh-secret-minimum-32-chars-please-change}
     depends_on:
       postgres:
         condition: service_healthy
