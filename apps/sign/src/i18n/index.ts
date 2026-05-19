@@ -4,6 +4,10 @@ import LanguageDetector from 'i18next-browser-languagedetector';
 
 import enCommon from '@/i18n/locales/en/common.json';
 import arCommon from '@/i18n/locales/ar/common.json';
+import frCommon from '@/i18n/locales/fr/common.json';
+
+export const SUPPORTED_LANGUAGES = ['en', 'ar', 'fr'] as const;
+export type SupportedLanguage = (typeof SUPPORTED_LANGUAGES)[number];
 
 const resources = {
   en: {
@@ -12,6 +16,9 @@ const resources = {
   ar: {
     common: arCommon,
   },
+  fr: {
+    common: frCommon,
+  },
 };
 
 i18n
@@ -19,6 +26,7 @@ i18n
   .use(initReactI18next)
   .init({
     resources,
+    supportedLngs: SUPPORTED_LANGUAGES as unknown as string[],
     fallbackLng: 'en',
     defaultNS: 'common',
     ns: ['common'],
@@ -35,7 +43,7 @@ i18n
     },
   });
 
-// Set document direction based on language
+// Set document direction based on language. Only Arabic is RTL.
 i18n.on('languageChanged', (lng) => {
   const dir = lng === 'ar' ? 'rtl' : 'ltr';
   document.documentElement.setAttribute('dir', dir);

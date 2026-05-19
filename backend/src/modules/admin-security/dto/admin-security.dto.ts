@@ -32,6 +32,12 @@ export class UpdateCommunicationPreferencesDto {
   @IsOptional() @IsBoolean() ai_training_opt_in?: boolean;
 }
 
+export class UpdateCookieConsentDto {
+  @IsBoolean() functional: boolean;
+  @IsBoolean() analytics: boolean;
+  @IsBoolean() marketing: boolean;
+}
+
 // ─── Security Policy ──────────────────────────────────────
 
 export class UpdateSecurityPolicyDto {

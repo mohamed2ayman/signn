@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useSelector } from 'react-redux';
+import { useTranslation } from 'react-i18next';
 import api from '@/services/api/axios';
 import type { RootState } from '@/store';
 import { useCookieConsent } from '@/contexts/CookieConsentContext';
@@ -51,9 +52,10 @@ interface ToggleRowProps {
   enabled: boolean;
   disabled?: boolean;
   onChange?: (next: boolean) => void;
+  toggleLabel: string;
 }
 
-function ToggleRow({ label, description, enabled, disabled, onChange }: ToggleRowProps) {
+function ToggleRow({ label, description, enabled, disabled, onChange, toggleLabel }: ToggleRowProps) {
   return (
     <div className="flex items-start justify-between gap-4 border-b border-gray-100 py-4 last:border-b-0">
       <div className="flex-1">
@@ -64,7 +66,7 @@ function ToggleRow({ label, description, enabled, disabled, onChange }: ToggleRo
         type="button"
         role="switch"
         aria-checked={enabled}
-        aria-label={`${label} toggle`}
+        aria-label={toggleLabel}
         disabled={disabled}
         onClick={() => onChange?.(!enabled)}
         className={[
@@ -85,6 +87,7 @@ function ToggleRow({ label, description, enabled, disabled, onChange }: ToggleRo
 }
 
 export default function CookiePreferenceModal() {
+  const { t } = useTranslation();
   const { isOpen, close } = useCookieConsent();
   const isAuthenticated = useSelector((state: RootState) => Boolean(state.auth?.token));
 
@@ -107,11 +110,20 @@ export default function CookiePreferenceModal() {
     writeConsent(status, categories);
     if (isAuthenticated) {
       try {
+        await api.patch('/me/cookie-consent', {
+          functional: categories.functional,
+          analytics: categories.analytics,
+          marketing: categories.marketing,
+        });
+      } catch {
+        toast.error(t('cookies.settings.syncFailedToast'));
+      }
+      try {
         await api.patch('/me/communication-preferences', {
           marketing_email_opt_in: categories.marketing,
         });
       } catch {
-        toast.error('Could not sync marketing preference to your profile');
+        // Already toasted above if the cookie-consent call failed; this is best-effort.
       }
     }
   };
@@ -120,7 +132,7 @@ export default function CookiePreferenceModal() {
     setSaving(true);
     try {
       await persist('custom', { functional, analytics, marketing });
-      toast.success('Preferences saved');
+      toast.success(t('cookies.settings.savedToast'));
       close();
     } finally {
       setSaving(false);
@@ -134,7 +146,7 @@ export default function CookiePreferenceModal() {
       setAnalytics(true);
       setMarketing(true);
       await persist('accepted', { functional: true, analytics: true, marketing: true });
-      toast.success('All cookies accepted');
+      toast.success(t('cookies.settings.acceptedAllToast'));
       close();
     } finally {
       setSaving(false);
@@ -154,16 +166,14 @@ export default function CookiePreferenceModal() {
         <div className="flex items-start justify-between border-b border-gray-100 px-6 py-4">
           <div>
             <h2 id="cookie-pref-title" className="text-lg font-bold text-[#0F1729]">
-              Cookie Preferences
+              {t('cookies.settings.title')}
             </h2>
-            <p className="mt-1 text-xs text-gray-500">
-              Choose which categories of cookies SIGN may use. You can change this any time.
-            </p>
+            <p className="mt-1 text-xs text-gray-500">{t('cookies.settings.description')}</p>
           </div>
           <button
             type="button"
             onClick={close}
-            aria-label="Close cookie preferences"
+            aria-label={t('cookies.settings.closeLabel')}
             className="rounded p-1 text-gray-400 transition hover:bg-gray-100 hover:text-gray-700"
           >
             <X size={18} />
@@ -172,28 +182,32 @@ export default function CookiePreferenceModal() {
 
         <div className="px-6 py-2">
           <ToggleRow
-            label="Strictly Necessary"
-            description="Required for the platform to function"
+            label={t('cookies.categories.necessary')}
+            description={t('cookies.categories.necessaryDescription')}
             enabled
             disabled
+            toggleLabel={t('cookies.settings.toggleLabel', { label: t('cookies.categories.necessary') })}
           />
           <ToggleRow
-            label="Functional"
-            description="Remember your preferences and settings"
+            label={t('cookies.categories.functional')}
+            description={t('cookies.categories.functionalDescription')}
             enabled={functional}
             onChange={setFunctional}
+            toggleLabel={t('cookies.settings.toggleLabel', { label: t('cookies.categories.functional') })}
           />
           <ToggleRow
-            label="Analytics"
-            description="Help us understand how the platform is used"
+            label={t('cookies.categories.analytics')}
+            description={t('cookies.categories.analyticsDescription')}
             enabled={analytics}
             onChange={setAnalytics}
+            toggleLabel={t('cookies.settings.toggleLabel', { label: t('cookies.categories.analytics') })}
           />
           <ToggleRow
-            label="Marketing"
-            description="Relevant product updates and offers"
+            label={t('cookies.categories.marketing')}
+            description={t('cookies.categories.marketingDescription')}
             enabled={marketing}
             onChange={setMarketing}
+            toggleLabel={t('cookies.settings.toggleLabel', { label: t('cookies.categories.marketing') })}
           />
         </div>
 
@@ -204,7 +218,7 @@ export default function CookiePreferenceModal() {
             disabled={saving}
             className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-60"
           >
-            Save Preferences
+            {t('cookies.settings.save')}
           </button>
           <button
             type="button"
@@ -212,7 +226,7 @@ export default function CookiePreferenceModal() {
             disabled={saving}
             className="rounded-lg bg-[#4F6EF7] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#3F58D3] disabled:opacity-60"
           >
-            Accept All
+            {t('cookies.settings.acceptAll')}
           </button>
         </div>
       </div>

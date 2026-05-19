@@ -1,7 +1,7 @@
 # CLAUDE.md — Project Intelligence File
 > Read this entire file at the start of every Claude Code session before touching any code.
 > This file is the single source of truth for all architectural decisions, rules, and context.
-> Last updated: 2026-05-18 (Added: Phase 4.2 — JWT & Refresh Token Hardening. Token family tracking + reuse-attack detection, Redis jti blacklist on logout, env-driven token expiries, JWT_REFRESH_SECRET required at startup, legacy users.refresh_token_hash retired, SessionTrackingMiddleware fixed to use jti.)
+> Last updated: 2026-05-19 (Added: Phase 4.4 — Legal Pages & Privacy Compliance. FR locale infrastructure, functional language switcher on legal pages, cookie banner/modal moved into i18n, PATCH /me/cookie-consent endpoint, ManageX legal footer linking to SIGN. Legal content remains intentionally English-only.)
 
 ---
 
@@ -1211,14 +1211,14 @@ prompt covering: cookie consent banner, T&C acceptance in registration, 11 new
 /legal/* routes, app footer, AI disclaimers, claims/e-signature notices, Word Add-In
 disclosures, communication preferences page, and backend consent column migration.
 
-### Critical Legal Gaps (implement before launch)
-1. No T&C checkbox in RegisterPage.tsx — users complete registration without consent
-2. No accepted_terms_at column in users entity — no consent record exists
-3. No cookie consent banner — no consent mechanism for future analytics
-4. All /legal/* routes return 404 — all footer policy links are broken
-5. No AI disclaimer on any AI output — transparency obligation unmet
-6. No communication preferences UI — email_digest_opt_out has no API surface
-7. Word Add-In LoginTab.tsx has no legal disclosures
+### Critical Legal Gaps — Status
+1. ~~No T&C checkbox in RegisterPage.tsx~~ — closed (Phase 4.4 era; `agreed_to_terms` required, `@Equals(true)` enforced)
+2. ~~No accepted_terms_at column~~ — closed (`accepted_terms_at`, `accepted_privacy_policy_at`, `accepted_aup_at`, `cookie_consent_given_at` all live on `users`)
+3. ~~No cookie consent banner~~ — closed (`CookieConsentBanner` + `CookiePreferenceModal` shipped)
+4. ~~All /legal/* routes return 404~~ — closed (11 routes wired in `apps/sign/src/App.tsx`)
+5. No AI disclaimer on any AI output — STILL OPEN; transparency obligation unmet
+6. ~~No communication preferences UI~~ — closed (`PATCH /me/communication-preferences` + `PATCH /me/cookie-consent`)
+7. Word Add-In LoginTab.tsx has no legal disclosures — STILL OPEN
 
 ---
 
@@ -1434,3 +1434,123 @@ Must show: `workflow`
 
 ### Feature Branch Lifetime Rule
 Open a DRAFT PR the same day you start a branch. Mark it "Ready for review" when complete. Merge within 24–48 hours of creation. The rebase cost grows non-linearly — a branch 10 days old can take 10× longer to rebase than a branch 1 day old.
+
+---
+
+## Legal & Privacy Compliance
+
+This section is the canonical record of how SIGN and MANAGEX handle
+legal pages, consent, cookies, and i18n. Update it whenever any of
+those surfaces changes.
+
+### Entity
+- **SIGN Technologies LLC** (ساين تكنولوجيز ش.ذ.م.م)
+- Dubai Internet City Free Zone, UAE — DDA-regulated
+- Governing data law: UAE Federal Decree-Law No. 45/2021 (UAE PDPL)
+- Contact: legal@sign.io · privacy@sign.io · ai@sign.io
+
+### Legal pages
+- Live at `apps/sign/src/pages/legal/` — 10 policy pages + 1 hub
+- Routed in `apps/sign/src/App.tsx`:
+  `/legal`, `/legal/terms`, `/legal/privacy`, `/legal/cookies`,
+  `/legal/ai-policy`, `/legal/ip`, `/legal/law-enforcement`,
+  `/legal/acceptable-use`, `/legal/cancellation`,
+  `/legal/communications`, `/legal/bcr`
+- Authoring source: `/legal-docs/policies/*.docx` (10 DOCX files)
+  is the canonical legal text. The TS files under
+  `apps/sign/src/pages/legal/content/*.content.ts` are derived
+  from those DOCX files. When a policy changes, regenerate the
+  `.content.ts` file from the updated DOCX — never edit the TS
+  by hand for substantive changes.
+
+### Legal content is intentionally English-only
+This is a deliberate decision, not a missing translation. Legal
+documents are binding; mistranslations create real liability. The
+language switcher on legal pages (EN | عربي | FR) controls the
+chrome (nav, breadcrumb, print button, footer) but the body of
+each policy remains in English. A notice below the switcher reads
+"Legal documents are available in English only." translated into
+all three languages.
+
+If a translated legal document is ever needed, treat it as a
+separate legal artifact with its own lawyer review trail — never
+auto-translate. (See lesson #79.)
+
+### i18n architecture
+- Library: i18next + react-i18next + i18next-browser-languagedetector
+- Config: `apps/sign/src/i18n/index.ts` (exports `SUPPORTED_LANGUAGES`)
+- Supported languages: `en`, `ar`, `fr` (FR added in Phase 4.4)
+- Locale files: `apps/sign/src/i18n/locales/{en,ar,fr}/common.json`
+- RTL: only `ar` is RTL — the language-change handler sets
+  `document.dir = 'rtl'` for AR and `'ltr'` for everything else
+- Fallback: `en`
+- Detection order: `localStorage` → `navigator` → `htmlTag`,
+  cached in `localStorage` under key `i18nextLng`
+
+### Hard rules — never violate
+1. **Key parity is mandatory.** Every key in `en/common.json` must
+   exist in `ar/common.json` and `fr/common.json`. The test
+   `apps/sign/src/i18n/tests/locale-completeness.spec.ts`
+   enforces this in CI. Adding a key to EN without adding the AR
+   and FR equivalents will fail CI.
+2. **Translate UI only — never legal content.** When you add new
+   i18n keys for chrome (nav, auth, banners, errors), translate
+   them. Do NOT migrate legal page content into i18n. The
+   "English only" notice is the contract with our users.
+3. **Cookie banner strings live in i18n.** All copy in
+   `CookieConsentBanner.tsx` and `CookiePreferenceModal.tsx`
+   comes from `cookies.banner.*` / `cookies.settings.*` /
+   `cookies.categories.*` keys. Never hardcode a string in
+   those components.
+
+### Cookie consent
+- localStorage key: `sign_cookie_consent`
+- Shape: `{ status: 'accepted'|'rejected'|'custom', timestamp,
+  version: '1.0', categories: { functional, analytics, marketing } }`
+- Event: `sign:cookie-consent-changed` fires on every write
+- Categories: `functional` (always on, can't disable),
+  `analytics`, `marketing`
+- DB columns on `users`: `cookie_consent_given_at`,
+  `cookie_consent_version`
+- Backend endpoints (require JWT):
+  - `GET  /api/v1/me/cookie-consent` — returns current consent
+  - `PATCH /api/v1/me/cookie-consent` — updates timestamp +
+    version, mirrors `marketing` into `marketing_email_opt_in`
+- Cookie Settings is reachable from `AppFooter.tsx` at all
+  times — not just at signup. Required by GDPR Art. 7(3) and
+  UAE PDPL: consent must be as easy to withdraw as to give.
+
+### Signup legal acceptance
+- T&C checkbox in `apps/sign/src/pages/auth/RegisterPage.tsx`
+  (required, blocks submit until checked)
+- Marketing opt-in checkbox (optional)
+- Backend DTO: `register.dto.ts` enforces `@Equals(true)` on
+  `agreed_to_terms`
+- Stamped at register time: `accepted_terms_at`,
+  `accepted_privacy_policy_at`, `accepted_aup_at`, `terms_version`
+
+### MANAGEX legal footer
+- Component: `apps/managex/src/components/ManageXFooter.tsx`
+- One-line footer at the very bottom of the landing page
+- Links open SIGN's legal pages via `VITE_SIGN_APP_URL`:
+  - Privacy Policy → `${VITE_SIGN_APP_URL}/legal/privacy`
+  - Terms → `${VITE_SIGN_APP_URL}/legal/terms`
+  - Cookie Settings → `${VITE_SIGN_APP_URL}/legal/cookies`
+- MANAGEX never duplicates the policies — SIGN owns the canonical
+  copies, MANAGEX links to them.
+
+### How to add a new legal page
+1. Drop the DOCX into `/legal-docs/policies/` and update
+   `/legal-docs/README.md` index
+2. Generate `apps/sign/src/pages/legal/content/<name>.content.ts`
+3. Create `apps/sign/src/pages/legal/<Name>Page.tsx` mirroring
+   the existing pages
+4. Register the route in `apps/sign/src/App.tsx`
+5. Add a link in `apps/sign/src/pages/legal/LegalHubPage.tsx`
+   AND in `apps/sign/src/components/layout/AppFooter.tsx` if it
+   belongs in the global footer
+6. Add the cross-link to `apps/managex/src/components/ManageXFooter.tsx`
+   if MANAGEX needs to surface it
+7. If the page introduces new consent semantics, add the matching
+   DB column + `GET/PATCH /me/<flag>` endpoints in the same PR
+   (see lesson #81)

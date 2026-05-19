@@ -25,6 +25,7 @@ import {
   ChangePasswordDto,
   UpdateProfileDto,
   UpdateCommunicationPreferencesDto,
+  UpdateCookieConsentDto,
 } from '../dto/admin-security.dto';
 import { GdprExportService } from '../services/gdpr-export.service';
 
@@ -182,6 +183,41 @@ export class ProfileController {
     }
     await this.userRepo.update(user.id, patch);
     return this.getCommunicationPreferences(user);
+  }
+
+  // ─── Cookie consent ───────────────────────────────────────────
+  // Allows an authenticated user to update their cookie preferences
+  // after signup. GDPR / UAE PDPL require withdrawal/modification of
+  // consent to be available at all times — not just at registration.
+  @Get('cookie-consent')
+  async getCookieConsent(@CurrentUser() user: User) {
+    const fresh = await this.userRepo.findOne({ where: { id: user.id } });
+    if (!fresh) throw new BadRequestException('User not found');
+    return {
+      cookie_consent_given_at: fresh.cookie_consent_given_at,
+      cookie_consent_version: fresh.cookie_consent_version,
+      marketing_email_opt_in: fresh.marketing_email_opt_in,
+    };
+  }
+
+  @Patch('cookie-consent')
+  async updateCookieConsent(
+    @CurrentUser() user: User,
+    @Body() dto: UpdateCookieConsentDto,
+  ) {
+    const now = new Date();
+    await this.userRepo.update(user.id, {
+      cookie_consent_given_at: now,
+      cookie_consent_version: '1.0',
+      marketing_email_opt_in: dto.marketing,
+    });
+    return {
+      cookie_consent_given_at: now,
+      cookie_consent_version: '1.0',
+      functional: dto.functional,
+      analytics: dto.analytics,
+      marketing: dto.marketing,
+    };
   }
 
   private ipOf(req: Request): string | null {

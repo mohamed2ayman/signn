@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import ManagexLogo from './components/ManagexLogo';
 import HeroDashboard from './components/HeroDashboard';
+import ManageXFooter from './components/ManageXFooter';
 
 /* ═══════════════════════════════════════════════════════════════════
    MANAGEX is the parent brand. SIGN is the first product, running on
@@ -552,15 +553,12 @@ export default function App() {
           </div>
 
           <div className="mx-footer__bottom">
-            <span>© 2025 MANAGEX Technologies. All rights reserved.</span>
-            <div className="mx-footer__legal">
-              <a href="#">Privacy Policy</a>
-              <a href="#">Terms of Service</a>
-              <a href="#">Cookie Policy</a>
-            </div>
+            <span>© 2026 MANAGEX Technologies. All rights reserved.</span>
           </div>
         </div>
       </footer>
+
+      <ManageXFooter />
     </>
   );
 }

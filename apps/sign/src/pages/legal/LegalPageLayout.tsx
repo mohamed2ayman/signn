@@ -1,6 +1,8 @@
 import { ReactNode, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Printer, ChevronLeft } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import i18n, { SUPPORTED_LANGUAGES, type SupportedLanguage } from '@/i18n';
 
 export interface LegalTocItem {
   id: string;
@@ -17,6 +19,12 @@ interface LegalPageLayoutProps {
   showToc?: boolean;
 }
 
+const LANGUAGE_LABELS: Record<SupportedLanguage, string> = {
+  en: 'EN',
+  ar: 'عربي',
+  fr: 'FR',
+};
+
 export default function LegalPageLayout({
   title,
   lastUpdated,
@@ -25,7 +33,9 @@ export default function LegalPageLayout({
   children,
   showToc = true,
 }: LegalPageLayoutProps) {
+  const { t, i18n: i18nInstance } = useTranslation();
   const [activeId, setActiveId] = useState<string>('');
+  const currentLang = (i18nInstance.resolvedLanguage ?? i18nInstance.language ?? 'en').split('-')[0];
 
   useEffect(() => {
     if (!showToc) return;
@@ -45,6 +55,11 @@ export default function LegalPageLayout({
     return () => observer.disconnect();
   }, [sections, showToc]);
 
+  const handleLanguageChange = (lng: SupportedLanguage) => {
+    if (lng === currentLang) return;
+    i18n.changeLanguage(lng);
+  };
+
   return (
     <div className="min-h-screen bg-white text-gray-800">
       <style>{`@media print { .legal-no-print { display: none !important; } }`}</style>
@@ -60,25 +75,48 @@ export default function LegalPageLayout({
               to="/legal"
               className="flex items-center gap-1 text-sm font-medium text-[#4F6EF7] hover:underline"
             >
-              <ChevronLeft size={14} /> Legal Hub
+              <ChevronLeft size={14} /> {t('legal.hub')}
             </Link>
           </div>
           <div className="flex items-center gap-3">
-            <span
-              aria-label="Language"
-              className="rounded border border-gray-200 px-2 py-1 text-xs font-medium text-gray-500"
-              title="Language switcher coming soon"
+            <div
+              role="group"
+              aria-label={t('language.switcherLabel')}
+              className="inline-flex overflow-hidden rounded border border-gray-200 text-xs font-medium"
             >
-              EN | عربي
-            </span>
+              {SUPPORTED_LANGUAGES.map((lng, idx) => {
+                const active = currentLang === lng;
+                return (
+                  <button
+                    key={lng}
+                    type="button"
+                    onClick={() => handleLanguageChange(lng)}
+                    aria-pressed={active}
+                    aria-label={t(`language.${lng}`)}
+                    className={[
+                      'px-2 py-1 transition',
+                      active
+                        ? 'bg-[#4F6EF7] text-white'
+                        : 'bg-white text-gray-600 hover:bg-gray-50 hover:text-[#0F1729]',
+                      idx > 0 ? 'border-l border-gray-200' : '',
+                    ].join(' ')}
+                  >
+                    {LANGUAGE_LABELS[lng]}
+                  </button>
+                );
+              })}
+            </div>
             <button
               type="button"
               onClick={() => window.print()}
               className="inline-flex items-center gap-1 rounded-md border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 transition hover:bg-gray-50"
             >
-              <Printer size={14} /> Print
+              <Printer size={14} /> {t('legal.print')}
             </button>
           </div>
+        </div>
+        <div className="mx-auto max-w-6xl px-4 pb-3 text-xs text-gray-500 sm:px-6">
+          {t('legal.englishOnlyNotice')}
         </div>
       </header>
 
@@ -145,7 +183,7 @@ export default function LegalPageLayout({
 
       <footer className="border-t border-gray-200 bg-gray-50">
         <div className="mx-auto max-w-6xl px-4 py-6 text-center text-xs text-gray-500 sm:px-6">
-          © 2025 SIGN Technologies LLC &nbsp;|&nbsp; Dubai Internet City Free Zone, UAE &nbsp;|&nbsp;{' '}
+          © 2026 SIGN Technologies LLC &nbsp;|&nbsp; Dubai Internet City Free Zone, UAE &nbsp;|&nbsp;{' '}
           <a href="mailto:legal@sign.io" className="text-[#4F6EF7] hover:underline">
             legal@sign.io
           </a>

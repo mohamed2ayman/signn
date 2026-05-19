@@ -375,6 +375,44 @@
   "language": {
     "en": "English",
     "ar": "Arabic",
-    "toggle": "EN"
+    "fr": "French",
+    "toggle": "EN",
+    "switcherLabel": "Language"
+  },
+  "legal": {
+    "hub": "Legal Hub",
+    "print": "Print",
+    "englishOnlyNotice": "Legal documents are available in English only."
+  },
+  "cookies": {
+    "banner": {
+      "regionLabel": "Cookie consent",
+      "description": "We use cookies to operate the SIGN platform, remember preferences, and improve our service. See our <0>Cookie Policy</0> and <1>Privacy Policy</1>.",
+      "managePreferences": "Manage Preferences",
+      "rejectAll": "Reject All",
+      "acceptAll": "Accept All",
+      "openButtonLabel": "Open cookie preferences"
+    },
+    "settings": {
+      "title": "Cookie Preferences",
+      "description": "Choose which categories of cookies SIGN may use. You can change this any time.",
+      "closeLabel": "Close cookie preferences",
+      "save": "Save Preferences",
+      "acceptAll": "Accept All",
+      "savedToast": "Preferences saved",
+      "acceptedAllToast": "All cookies accepted",
+      "syncFailedToast": "Could not sync marketing preference to your profile",
+      "toggleLabel": "{{label}} toggle"
+    },
+    "categories": {
+      "necessary": "Strictly Necessary",
+      "necessaryDescription": "Required for the platform to function",
+      "functional": "Functional",
+      "functionalDescription": "Remember your preferences and settings",
+      "analytics": "Analytics",
+      "analyticsDescription": "Help us understand how the platform is used",
+      "marketing": "Marketing",
+      "marketingDescription": "Relevant product updates and offers"
+    }
   }
 }

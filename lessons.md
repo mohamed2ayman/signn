@@ -1,7 +1,7 @@
 # lessons.md — SIGN + MANAGEX Platform
 > This file documents every bug, issue, and fix that took significant time to resolve.
 > Feed this file to Claude at the start of every session to avoid repeating mistakes.
-> Last updated: 2026-05-18 (Lessons #71–78 — Phase 4.2 JWT hardening, post-ship bug fix, test mock patterns, and revokeFamily dual-operation requirement.)
+> Last updated: 2026-05-19 (Lessons #79–81 — Phase 4.4 Legal pages & privacy compliance: legal content in one language, i18n key parity, cookie consent must be retrievable post-signup.)
 
 ---
 
@@ -2779,3 +2779,96 @@ sources.
 appear in both `.env.example` (with a comment) and the Joi schema
 (with the right `.required()` / `.optional()` / `.default()` /
 URI/email shape).
+
+---
+
+## 79. Publish Legal Content in One Reviewed Language, Don't Risk Mistranslation
+
+Legal documents carry binding obligations on the company and the
+user. A mistranslation of a clause about liability, refunds, or
+data handling can create real legal liability — both for failing
+to honour what the translated version promised, and for breaching
+consumer-protection rules that require contract terms to be
+"clear and intelligible" in the language presented.
+
+Phase 4.4 added a French locale for SIGN's UI chrome (nav, auth,
+cookie banner, footer) but deliberately kept the legal pages
+(`/legal/*`) English-only. The language switcher in
+`LegalPageLayout` shows EN | عربي | FR, and a notice below it
+reads "Legal documents are available in English only." in all
+three languages.
+
+**Why not just translate them?** Because every translated version
+becomes a new legally binding document that a lawyer must review,
+sign off on, and re-review at every policy version bump. The
+cost of doing it properly is high; the cost of doing it sloppily
+is being held to a promise we didn't intend to make.
+
+**Rule:** Publish legal content in one well-reviewed language.
+Translate the UI around it. If a translated legal document is
+ever needed, treat it as a separate legal artifact with its own
+review trail — never auto-translate.
+
+---
+
+## 80. i18n Locale Files Must Maintain Key Parity Across All Languages
+
+When a new i18n key is added to `en/common.json`, it must be
+added to `ar/common.json` and `fr/common.json` in the same commit.
+Otherwise users on the missing locale see the raw key
+("cookies.banner.acceptAll") instead of a translated string —
+or worse, a fallback string that doesn't match the screen layout.
+
+Phase 4.4 found pre-existing parity drift: `ar/common.json` was
+missing 5 nav keys (operationsReview, auditLog, billing,
+accountSettings, system) and the entire `portal` and `userType`
+sections. The drift had been there since the Arabic locale was
+first added — no test enforced parity.
+
+The fix: `apps/sign/src/i18n/tests/locale-completeness.spec.ts`
+recursively collects every dot-path from each locale JSON and
+asserts EN ↔ AR and EN ↔ FR are identical sets. The test runs
+in CI on every push.
+
+**Rule:** Never add a new EN key without adding the corresponding
+AR and FR keys in the same commit. The `locale-completeness`
+test enforces this — if you add a key to one locale only, CI
+fails before review.
+
+**How to apply:** When touching any of the three locale files,
+look at the same path in the other two. Add structurally
+identical entries. The test will catch you if you forget.
+
+---
+
+## 81. Cookie Consent Must Be Retrievable and Updatable Post-Signup
+
+GDPR (Art. 7(3)) and UAE PDPL both require that consent be as
+easy to withdraw or modify as it was to give. Asking for cookie
+consent only once at signup — with no way to revisit the choice
+— does not satisfy either regulation.
+
+SIGN's cookie banner stores consent in `localStorage` under
+`sign_cookie_consent` and lets the user re-open the preference
+modal at any time via:
+1. The floating cookie icon in the bottom-right corner (after
+   initial choice)
+2. The "Cookie Settings" button in `AppFooter.tsx` (always
+   present for logged-in users)
+
+Phase 4.4 added the matching server-side endpoint:
+`PATCH /api/v1/me/cookie-consent` updates
+`users.cookie_consent_given_at` and `cookie_consent_version`,
+and mirrors the `marketing` toggle into `marketing_email_opt_in`.
+The frontend modal calls this endpoint after every preference
+save when the user is authenticated.
+
+**Rule:** Any consent the platform records must be retrievable
+(GET) and updatable (PATCH) by the user, not just inspectable by
+admins. "Once-and-done" consent collection is a compliance failure
+even if the localStorage flag is technically present.
+
+**How to apply:** When you add a new consent flag (AI training,
+analytics, marketing, etc.) to the users table, add a matching
+`GET /me/<flag>` and `PATCH /me/<flag>` endpoint in the same PR.
+Don't ship the column without the endpoints.

@@ -29,7 +29,22 @@
     "team": "الفريق",
     "store": "متجر العقود",
     "subscription": "الاشتراك",
-    "security": "الأمان"
+    "operationsReview": "مراجعة العمليات",
+    "auditLog": "سجل التدقيق",
+    "security": "الأمان",
+    "billing": "الفوترة",
+    "accountSettings": "إعدادات الحساب",
+    "system": "النظام"
+  },
+  "portal": {
+    "client": "بوابة العميل",
+    "guest": "بوابة الضيف",
+    "admin": "بوابة المسؤول"
+  },
+  "userType": {
+    "managingParty": "الطرف المُدير",
+    "respondingParty": "الطرف المستجيب",
+    "individual": "ممارس فردي"
   },
   "auth": {
     "login": "تسجيل الدخول",
@@ -360,6 +375,44 @@
   "language": {
     "en": "الإنجليزية",
     "ar": "العربية",
-    "toggle": "عربي"
+    "fr": "الفرنسية",
+    "toggle": "عربي",
+    "switcherLabel": "اللغة"
+  },
+  "legal": {
+    "hub": "المركز القانوني",
+    "print": "طباعة",
+    "englishOnlyNotice": "الوثائق القانونية متاحة باللغة الإنجليزية فقط."
+  },
+  "cookies": {
+    "banner": {
+      "regionLabel": "موافقة ملفات تعريف الارتباط",
+      "description": "نستخدم ملفات تعريف الارتباط لتشغيل منصة SIGN، وتذكر التفضيلات، وتحسين خدمتنا. اطلع على <0>سياسة ملفات تعريف الارتباط</0> و<1>سياسة الخصوصية</1>.",
+      "managePreferences": "إدارة التفضيلات",
+      "rejectAll": "رفض الكل",
+      "acceptAll": "قبول الكل",
+      "openButtonLabel": "فتح تفضيلات ملفات تعريف الارتباط"
+    },
+    "settings": {
+      "title": "تفضيلات ملفات تعريف الارتباط",
+      "description": "اختر فئات ملفات تعريف الارتباط التي يمكن لـ SIGN استخدامها. يمكنك تغيير ذلك في أي وقت.",
+      "closeLabel": "إغلاق تفضيلات ملفات تعريف الارتباط",
+      "save": "حفظ التفضيلات",
+      "acceptAll": "قبول الكل",
+      "savedToast": "تم حفظ التفضيلات",
+      "acceptedAllToast": "تم قبول جميع ملفات تعريف الارتباط",
+      "syncFailedToast": "تعذر مزامنة تفضيل التسويق مع ملفك الشخصي",
+      "toggleLabel": "تبديل {{label}}"
+    },
+    "categories": {
+      "necessary": "ضرورية تماماً",
+      "necessaryDescription": "مطلوبة لعمل المنصة",
+      "functional": "وظيفية",
+      "functionalDescription": "تذكُّر تفضيلاتك وإعداداتك",
+      "analytics": "تحليلية",
+      "analyticsDescription": "تساعدنا على فهم كيفية استخدام المنصة",
+      "marketing": "تسويقية",
+      "marketingDescription": "تحديثات وعروض المنتجات ذات الصلة"
+    }
   }
 }
