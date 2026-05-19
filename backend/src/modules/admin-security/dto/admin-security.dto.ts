@@ -6,6 +6,7 @@ import {
   IsOptional,
   IsString,
   Length,
+  Matches,
   Max,
   MaxLength,
   Min,
@@ -21,9 +22,14 @@ export class UpdateProfileDto {
   @IsOptional() @IsString() @Length(2, 5) preferred_language?: string;
 }
 
+const PW_REGEX =
+  /^(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]).{12,}$/;
+const PW_MESSAGE =
+  'Password must be at least 12 characters and contain at least 1 uppercase letter, 1 number, and 1 special character';
+
 export class ChangePasswordDto {
   @IsString() @MaxLength(128) current_password: string;
-  @IsString() @Length(8, 128) new_password: string;
+  @IsString() @Length(12, 128) @Matches(PW_REGEX, { message: PW_MESSAGE }) new_password: string;
 }
 
 export class UpdateCommunicationPreferencesDto {
