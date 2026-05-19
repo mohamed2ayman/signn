@@ -1,7 +1,7 @@
 # lessons.md — SIGN + MANAGEX Platform
 > This file documents every bug, issue, and fix that took significant time to resolve.
 > Feed this file to Claude at the start of every session to avoid repeating mistakes.
-> Last updated: 2026-05-18 (Lessons #71–78 — Phase 4.2 JWT hardening, post-ship bug fix, test mock patterns, and revokeFamily dual-operation requirement.)
+> Last updated: 2026-05-19 (Lessons #78–79 — Multiple DTOs with the same name, never test destructive endpoints with real credentials.)
 
 ---
 
@@ -90,6 +90,8 @@
 75. Dual Storage Is Technical Debt That Must Be Retired Promptly
 76. DB Family Revocation Does Not Invalidate Live Access Tokens
 77. Stale Service Mocks Break CI When New Methods Are Added
+78. Multiple DTOs With the Same Name — Always Trace the Actual Endpoint
+79. Never Test Destructive Endpoints With Real User Credentials on a Live Database
 
 ---
 
@@ -1811,6 +1813,47 @@ stub is enough if the specific test doesn't need real behavior.
 **Alternative:** Use `jest.createMockFromModule()` or `@golevelup/ts-jest`'s
 `createMock<ServiceType>()` which auto-mocks all methods. Eliminates the
 staleness problem entirely.
+
+---
+
+## 78. Multiple DTOs With the Same Name — Always Trace the Actual Endpoint
+
+**Problem:**
+Three separate `ChangePasswordDto` classes exist in different modules (`auth`, `admin-security`, `users`). We edited `auth/dto/change-password.dto.ts` but the frontend calls the `admin-security` DTO via `POST /me/change-password`. The fix had no effect — weak passwords still accepted.
+
+**Root Cause:**
+Assumed the filename `change-password.dto.ts` in the auth module was the one the frontend used. Never traced the actual frontend service call (`meService.changePassword()`) → API route → controller → DTO import path. The three DTOs are:
+- `auth/dto/change-password.dto.ts` → `PATCH /auth/change-password`
+- `admin-security/dto/admin-security.dto.ts::ChangePasswordDto` → `POST /me/change-password` ← **frontend uses this one**
+- `users/dto/change-password.dto.ts` → `PUT /users/me/password`
+
+**Fix:**
+Traced `meService.ts` → `POST /me/change-password` → `profile.controller.ts` → `admin-security.dto.ts::ChangePasswordDto`. Fixed all three DTOs + the `security_policies` DB row.
+
+**How to Avoid:**
+- Always trace from frontend service call → API route → controller → DTO import before editing any DTO
+- Never assume by filename alone — grep the import chain
+- When a fix "doesn't work", first check if you edited a dead code path by tracing the actual call stack
+- If the same logical concept (change-password) has multiple DTO files, grep the entire codebase for all of them before editing any one
+
+---
+
+## 79. Never Test Destructive Endpoints With Real User Credentials on a Live Database
+
+**Problem:**
+During curl validation testing of the `POST /me/change-password` endpoint, TEST 4 (the "valid password accepted" test) used the actual authenticated user's token against the real running database. It silently changed the user's password. The user then could not log in because their password was now `M/ohamed12345` (the test value), not what they expected.
+
+**Root Cause:**
+The test was designed to confirm that a valid password IS accepted (to prove the happy path works). That confirmation required a real write to the database. No safeguard existed between "this call returns 200" and "this call changes production data."
+
+**Fix:**
+Had to identify the new password from the curl response, then verify it via login. The `security_policies` Redis cache also needed flushing when login rate limiting kicked in from the test attempts.
+
+**How to Avoid:**
+- Before running any curl/API test against a destructive endpoint (change-password, delete, update-email, deactivate-account), document EXACTLY what side effect it will have on the live DB
+- Use a dedicated throwaway test user (`test-api@sign.com`) for any manual API testing — never the real admin account
+- For "confirm it accepts valid input" tests: instead of actually changing the password, verify by checking the response structure or by using a test account whose password you don't care about
+- If you must test live: reset the changed value immediately as the next step in the same test script — never leave a test-mutated state in the DB
 
 ---
 

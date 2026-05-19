@@ -1,7 +1,7 @@
 # CLAUDE.md — Project Intelligence File
 > Read this entire file at the start of every Claude Code session before touching any code.
 > This file is the single source of truth for all architectural decisions, rules, and context.
-> Last updated: 2026-05-18 (Added: Phase 4.2 — JWT & Refresh Token Hardening. Token family tracking + reuse-attack detection, Redis jti blacklist on logout, env-driven token expiries, JWT_REFRESH_SECRET required at startup, legacy users.refresh_token_hash retired, SessionTrackingMiddleware fixed to use jti.)
+> Last updated: 2026-05-19 (Added: Password Validation Policy — min 12 chars enforced on all 3 ChangePasswordDto classes + DB security_policies row. Three ChangePasswordDto files exist; always trace frontend call to correct one. See lessons #78–79.)
 
 ---
 
@@ -514,6 +514,52 @@ All work is local development only.
 | 10 | currentUser always null after page refresh | Add `refreshUserProfile()` in `useEffect` on mount in AppLayout and AdminLayout | Always test permission features after page refresh not just fresh login |
 | 11 | Portal chooser bypassed for existing sessions | Use `sessionStorage` flag `portal-chosen` in AdminLayout redirect check | Never put role-based redirect logic only in LoginPage |
 | 12 | مادة (N) prefix appearing in extracted clause content | `_strip_article_prefix()` called in `_parse_json()` on every clause | clause_number field stores the number — never repeat it in content |
+
+### Outstanding Issues (not yet fixed — do not build on top of these)
+| # | Issue | Impact | Notes |
+|---|-------|--------|-------|
+| A | Change-password allows reuse of current password | Low — cosmetic UX gap | `PasswordPolicyService.assertNotReused()` checks history table but not the current `password_hash` directly when history_count=0. Add a `bcrypt.compare(new, current)` guard in `profile.controller.ts` |
+| B | `failed_login_attempts` may not reset on successful login | Low — counter drifts | Login success path in `auth.service.ts` should call `userRepository.update(id, { failed_login_attempts: 0 })` — verify this exists |
+
+---
+
+## Password Validation Policy
+
+Finalised 2026-05-19. All password-setting flows enforce identical rules.
+
+### Rules (apply everywhere, no exceptions)
+- Minimum **12 characters**
+- At least **1 uppercase** letter
+- At least **1 number**
+- At least **1 special character** from `!@#$%^&*()_+-=[]{};\\':"\\|,.<>/?`
+
+### Three Active ChangePasswordDto Files — ALL Must Stay in Sync
+
+There are three separate `ChangePasswordDto` classes, each serving a different endpoint. **Editing only one has no effect on the other two.**
+
+| File | Endpoint | Used by |
+|------|----------|---------|
+| `backend/src/modules/admin-security/dto/admin-security.dto.ts` | `POST /me/change-password` | **Frontend** (`meService.changePassword`) — this is the live path |
+| `backend/src/modules/auth/dto/change-password.dto.ts` | `PATCH /auth/change-password` | Auth controller (not called by current frontend) |
+| `backend/src/modules/users/dto/change-password.dto.ts` | `PUT /users/me/password` | Users controller |
+
+### DB Policy — Must Stay in Sync With DTOs
+`security_policies` table row `id='global'`:
+- `password_min_length = 12` — enforced by `PasswordPolicyService.assertComplexity()` (called from `profile.controller.ts`)
+- All require flags: `password_require_upper = true`, `password_require_lower = true`, `password_require_number = true`, `password_require_symbol = true`
+
+### Frontend Pages With Password Validation
+All four pages enforce the same `.{12,}` regex:
+- `RegisterPage.tsx` — registration
+- `ResetPasswordPage.tsx` — password reset
+- `AcceptInvitationPage.tsx` — invitation acceptance
+- `MySecurityPage.tsx` — change password (validated in `handleChangePw()` before `changePw.mutate()`)
+
+### Hard Rules — Never Violate
+1. When updating password validation rules, update **ALL THREE DTOs + the DB policy + ALL FOUR frontend pages** in the same commit.
+2. Always trace `meService.ts → API route → controller → DTO import` before editing any DTO — never assume by filename.
+3. Never test change-password or other destructive endpoints with your real admin account on the live DB — use a dedicated test user.
+4. The `@Matches` regex and `@Length(12, 128)` on each DTO are the DTO-level floor. The `PasswordPolicyService` DB-driven check runs on top — if an admin lowers `password_min_length` below 12, the DTO still enforces 12.
 
 ---
 
