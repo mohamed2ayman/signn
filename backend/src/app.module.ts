@@ -91,6 +91,13 @@ import { dataSourceOptions } from './config/data-source';
         DOCUSIGN_SECRET_KEY:          Joi.string().optional().allow(''),
         DOCUSIGN_ACCOUNT_ID:          Joi.string().optional().allow(''),
         DOCUSIGN_WEBHOOK_HMAC_SECRET: Joi.string().optional().allow(''),
+        // DocuSign JWT Grant (optional — only needed when DocuSign is configured)
+        DOCUSIGN_RSA_PRIVATE_KEY:     Joi.string().optional().allow(''),
+        DOCUSIGN_AUTH_SERVER:         Joi.string().uri().optional()
+          .default('https://account-d.docusign.com'),
+        DOCUSIGN_BASE_PATH:           Joi.string().uri().optional()
+          .default('https://demo.docusign.net/restapi'),
+        DOCUSIGN_USER_ID:             Joi.string().optional().allow(''),
 
         // ── Paymob (optional — blocked feature, no test keys yet)
         PAYMOB_API_KEY:        Joi.string().optional().allow(''),
@@ -110,6 +117,15 @@ import { dataSourceOptions } from './config/data-source';
         SMTP_USER:        Joi.string().optional().allow(''),
         SMTP_PASS:        Joi.string().optional().allow(''),
         SENDGRID_API_KEY: Joi.string().optional().allow(''),
+        FROM_EMAIL:       Joi.string().email().optional().default('noreply@sign.ai'),
+
+        // ── File storage
+        UPLOAD_DIR: Joi.string().optional().default('./uploads'),
+
+        // ── Seed passwords (only required when running seed scripts, not on app start)
+        SEED_ADMIN_PASSWORD_1: Joi.string().min(12).optional(),
+        SEED_ADMIN_PASSWORD_2: Joi.string().min(12).optional(),
+        SEED_ADMIN_PASSWORD_3: Joi.string().min(12).optional(),
 
       }),
       validationOptions: {

@@ -18,6 +18,15 @@ async function bootstrap() {
   app.set('trust proxy', 1);
 
   const baseUrl = configService.get<string>('BASE_URL', 'http://localhost:3000');
+  // Dev-only: allow Vite/WebSocket dev origins inside CSP connect-src.
+  // Production CSP MUST NOT contain any localhost entries.
+  const connectSrc = [
+    "'self'",
+    baseUrl,
+    ...(process.env.NODE_ENV !== 'production'
+      ? ['ws://localhost:*', 'wss://localhost:*']
+      : []),
+  ];
   app.use(
     helmet({
       contentSecurityPolicy: {
@@ -27,12 +36,7 @@ async function bootstrap() {
           styleSrc: ["'self'", 'https:', "'unsafe-inline'"],
           fontSrc: ["'self'", 'https://fonts.gstatic.com', 'data:'],
           imgSrc: ["'self'", 'data:', 'blob:'],
-          connectSrc: [
-            "'self'",
-            baseUrl,
-            'ws://localhost:*',
-            'wss://localhost:*',
-          ],
+          connectSrc,
           frameSrc: ["'none'"],
           frameAncestors: ["'none'"],
           objectSrc: ["'none'"],

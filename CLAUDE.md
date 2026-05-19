@@ -628,8 +628,60 @@ adhere to these rules.
 - .env.staging and .env.production are gitignored
 - Per-service .gitignore files exist in all 4 service folders
 - Seed passwords read from SEED_ADMIN_PASSWORD_1/2/3 env vars
-- DB fallback credentials in data-source.ts and settings.py → cleanup before AWS deployment
+- ~~DB fallback credentials in data-source.ts~~ — fixed in Phase 4.3 (throws if missing)
+- DB fallback credentials in settings.py → cleanup before AWS deployment
 - docker-compose.prod.yml needed before AWS deployment → reads DB password from env vars
+
+---
+
+## Secrets & Environment Variable Policy
+
+This policy was finalised in Phase 4.3. Every change that touches an env
+var MUST adhere to these rules.
+
+### Hard rules — never violate
+1. **Every env var used in code MUST be in BOTH `.env.example` AND the Joi
+   schema in `app.module.ts`, in the SAME commit.** (Phase 1.5 rule.) If
+   you add a `configService.get('NEW_VAR')` call, the same PR must add
+   `NEW_VAR` to both places with a descriptive comment.
+2. **NO hardcoded fallback secrets or passwords anywhere in source code.**
+   No `process.env.X || 'literal-secret'`, no `?? 'dev-fallback'`. Phase 4.3
+   removed every such fallback. Adding one back is a regression.
+3. **Seed scripts MUST validate their own env vars and throw with a clear,
+   developer-friendly error if missing.** Joi does NOT run when seeds
+   execute. Use the `requireSeedPassword()` helper pattern in
+   `admin-users.seed.ts` — boxed error, names the missing var, names the
+   file to edit, gives a concrete example value.
+4. **`data-source.ts` runs OUTSIDE NestJS — it must validate `DATABASE_URL`
+   itself.** TypeORM CLI and migration commands import it directly,
+   bypassing the Nest bootstrap and Joi entirely. Any new env var
+   referenced inside `data-source.ts` must be validated manually at the
+   top of that file with a clear `throw` on missing.
+5. **Dev-only CSP/CORS entries MUST be gated behind
+   `NODE_ENV !== 'production'`.** Production CSP `connectSrc` must NOT
+   contain any `localhost` or `ws://localhost:*` entries. Same pattern
+   already used for CORS origin pushes in `main.ts`.
+6. **`SEED_ADMIN_PASSWORD_*` are optional in Joi (app boots without them)
+   but required at RUNTIME when seed scripts execute.** This is by
+   design — the API should not fail to start just because seeds haven't
+   been configured on a given environment.
+7. **`DOCUSIGN_RSA_PRIVATE_KEY` is PEM multiline** — when setting in
+   production, ensure newlines are preserved. Use `\n` escapes if your
+   secrets store flattens to one line, or use a multiline-aware secrets
+   manager.
+
+### How to add a new env var
+1. Add it to the Joi schema in `backend/src/app.module.ts` with the
+   right required/optional + default + URI/email shape.
+2. Add it to `backend/.env.example` with a descriptive comment block
+   explaining what it controls and what the safe default is.
+3. Reference it via `configService.get<T>('NEW_VAR')` — never raw
+   `process.env.NEW_VAR` inside Nest application code (seed scripts are
+   the only exception because they run outside Nest).
+4. If the var is also needed by `data-source.ts` or any other
+   pre-bootstrap script, add a manual validation throw there too.
+5. Update this section of CLAUDE.md if the new var introduces a new
+   class of secret (e.g. a new third-party integration).
 
 ---
 
