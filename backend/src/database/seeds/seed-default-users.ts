@@ -5,9 +5,8 @@
  *   npm run seed:users
  *
  * Idempotent — safe to run multiple times without creating duplicates.
- * Creates / updates:
- *   youssef141162@gmail.com / Youssef@1997  (OWNER_ADMIN)
- *   admin@sign.com          / Admin@Sign2026 (SYSTEM_ADMIN)
+ * Creates / updates SYSTEM_ADMIN accounts. Passwords are read from
+ * SEED_ADMIN_PASSWORD_1/2/3 env vars (see admin-users.seed.ts).
  */
 
 import { DataSource } from 'typeorm';

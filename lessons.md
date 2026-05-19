@@ -2698,3 +2698,84 @@ request, so the Redis blacklist provides the real-time revocation gate.
   access token's `exp` claim minus the current epoch.
 - Regression test in `backend/src/modules/auth/tests/token-security.spec.ts`
   (TEST 6) verifies this behavior end-to-end in the unit test layer.
+
+---
+
+## Phase 4.3 — Secrets Hygiene (shipped 2026-05-19)
+
+### LESSON: Seed scripts must validate their own env vars
+
+NestJS Joi validation runs only inside the application bootstrap.
+Seed scripts (`npm run seed`, `npm run seed:users`) instantiate
+TypeORM directly and never touch the Nest container — so any env
+vars they rely on receive ZERO validation from Joi.
+
+Seed scripts must therefore validate required env vars themselves
+and throw clear, developer-friendly errors. Never fall back to
+hardcoded passwords or credentials in seed files.
+
+**Pattern:** `requireSeedPassword(varName)` helper in
+`backend/src/database/seeds/admin-users.seed.ts`. It reads
+`process.env[varName]`, enforces a min length, and throws a boxed
+error that names the missing var, the file to edit, and the
+restart command to run.
+
+**Rule:** Any new seed-time env var gets the same treatment — a
+manual guard at the top of the seed module with a boxed error.
+Never `process.env.X || 'literal-fallback'` in seed code.
+
+### LESSON: data-source.ts runs outside NestJS — validate manually
+
+TypeORM CLI commands (`typeorm migration:run`, `typeorm migration:generate`),
+the `npm run migration:*` scripts, and standalone seed entry-points
+all import `backend/src/config/data-source.ts` directly. They never
+touch `app.module.ts`, so Joi validation runs zero times.
+
+If a required env var is referenced in `data-source.ts` (today only
+`DATABASE_URL`), it must be validated manually at the top of that
+file with a clear `throw` if missing.
+
+**Rule:** Any new env var added to `data-source.ts` needs a manual
+validation throw — Joi is NOT protecting this path.
+
+### LESSON: Dev-only config must be explicitly gated behind NODE_ENV
+
+CSP entries, CORS origins, and any other dev-only configuration
+must live inside an explicit `if (process.env.NODE_ENV !== 'production')`
+check (or the equivalent ternary spread).
+
+Unconditional inclusion of `localhost`, `ws://localhost:*`, or
+`wss://localhost:*` in production CSP headers weakens security
+posture and fails security audits. Phase 4.3 audit found two
+`ws://localhost:*` / `wss://localhost:*` entries in `main.ts`
+`connectSrc` that shipped in production CSP unconditionally —
+fix used the same dev-only spread pattern already established for
+CORS origin pushes immediately below the helmet config.
+
+**Rule:** Every literal `localhost` in `main.ts` belongs inside
+the dev-only branch. Production CSP/CORS should reference only
+`baseUrl` / `frontendUrl` from ConfigService.
+
+### LESSON: Every env var must be in .env.example AND Joi in the same commit
+
+The Phase 1.5 rule, re-affirmed by the Phase 4.3 audit: if you
+add a `configService.get('NEW_VAR')` call, the same commit must
+add `NEW_VAR` to the Joi schema in `app.module.ts` AND to
+`backend/.env.example` with a descriptive comment.
+
+Missing from either side = silent failure on new developer
+setups (Joi misses it → fallback to literal silently used) or
+production deployments (`.env.example` misses it → ops doesn't
+know to set it → empty string at runtime).
+
+The Phase 4.3 audit found 9 env vars used in code but missing
+from both: `SEED_ADMIN_PASSWORD_1/2/3`, `DOCUSIGN_RSA_PRIVATE_KEY`,
+`DOCUSIGN_AUTH_SERVER`, `DOCUSIGN_BASE_PATH`, `DOCUSIGN_USER_ID`,
+`UPLOAD_DIR`, `FROM_EMAIL`. The DocuSign RSA private key was the
+highest-priority gap — a PEM private key undocumented in both
+sources.
+
+**Rule:** If you can `configService.get('X')` it, then `X` must
+appear in both `.env.example` (with a comment) and the Joi schema
+(with the right `.required()` / `.optional()` / `.default()` /
+URI/email shape).

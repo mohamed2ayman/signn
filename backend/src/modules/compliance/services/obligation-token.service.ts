@@ -63,7 +63,13 @@ export class ObligationTokenService {
   }
 
   private sign(payloadJson: string): string {
-    const secret = this.config.get<string>('JWT_SECRET') ?? 'dev-jwt-secret';
+    // JWT_SECRET is Joi-required at startup, so this branch is unreachable
+    // in normal Nest bootstrap. Throw rather than fall back to a weak literal
+    // so any path that instantiates this service outside Nest fails loudly.
+    const secret = this.config.get<string>('JWT_SECRET');
+    if (!secret) {
+      throw new Error('JWT_SECRET is not configured — cannot sign obligation tokens');
+    }
     return crypto
       .createHmac('sha256', secret)
       .update(payloadJson)

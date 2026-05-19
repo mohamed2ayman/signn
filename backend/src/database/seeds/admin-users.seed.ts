@@ -5,18 +5,39 @@ import { User, UserRole, Organization } from '../entities';
 /**
  * Admin Users Seed
  *
- * Idempotent seed for the two well-known accounts the platform requires
- * to exist in any environment (dev, staging, fresh DB resets).
+ * Idempotent seed for the well-known SYSTEM_ADMIN accounts the platform
+ * requires to exist in any environment (dev, staging, fresh DB resets).
  *
- * - youssef141162@gmail.com    / Youssef@1997     (SYSTEM_ADMIN)
- * - admin@sign.com             / Admin@Sign2026   (SYSTEM_ADMIN)
- * - mohameddaaymande@gmail.com / Mohamed@Sign2026 (SYSTEM_ADMIN)
+ * Passwords are NEVER hardcoded — they MUST come from environment variables
+ * SEED_ADMIN_PASSWORD_1, SEED_ADMIN_PASSWORD_2, SEED_ADMIN_PASSWORD_3.
+ * If any of those are missing or shorter than 12 chars, the seed throws.
  *
  * On every run:
  *   - Creates the user if missing (with hashed password).
  *   - If user EXISTS: only updates role + clears lock state. NEVER overwrites password.
  *   - Ensures an organization exists for the OWNER_ADMIN user.
  */
+
+export function requireSeedPassword(varName: string): string {
+  const value = process.env[varName];
+  if (!value || value.trim().length < 12) {
+    throw new Error(
+      `\n` +
+        `╔════════════════════════════════════════════════════╗\n` +
+        `║          SEED CONFIGURATION ERROR                  ║\n` +
+        `╠════════════════════════════════════════════════════╣\n` +
+        `║  ${varName} is required to run seeds.` +
+        `\n║  Minimum 12 characters required.` +
+        `\n║` +
+        `\n║  Add to your .env file:` +
+        `\n║  ${varName}=YourSecurePassword@2026` +
+        `\n║` +
+        `\n║  Then restart: docker-compose up --build backend` +
+        `\n╚════════════════════════════════════════════════════╝`,
+    );
+  }
+  return value.trim();
+}
 
 interface AdminSeed {
   email: string;
@@ -27,31 +48,34 @@ interface AdminSeed {
   organization_name?: string; // only for non-system-admin
 }
 
-const ADMIN_USERS: AdminSeed[] = [
-  {
-    email: 'youssef141162@gmail.com',
-    password: process.env.SEED_ADMIN_PASSWORD_1 || 'Youssef@1997',
-    first_name: 'Youssef',
-    last_name: 'Mabrouk',
-    role: UserRole.SYSTEM_ADMIN,
-  },
-  {
-    email: 'admin@sign.com',
-    password: process.env.SEED_ADMIN_PASSWORD_2 || 'Admin@Sign2026',
-    first_name: 'System',
-    last_name: 'Admin',
-    role: UserRole.SYSTEM_ADMIN,
-  },
-  {
-    email: 'mohameddaaymande@gmail.com',
-    password: process.env.SEED_ADMIN_PASSWORD_3 || 'Mohamed@Sign2026',
-    first_name: 'Mohamed',
-    last_name: 'Ayman',
-    role: UserRole.SYSTEM_ADMIN,
-  },
-];
+function buildAdminUsers(): AdminSeed[] {
+  return [
+    {
+      email: 'youssef141162@gmail.com',
+      password: requireSeedPassword('SEED_ADMIN_PASSWORD_1'),
+      first_name: 'Youssef',
+      last_name: 'Mabrouk',
+      role: UserRole.SYSTEM_ADMIN,
+    },
+    {
+      email: 'admin@sign.com',
+      password: requireSeedPassword('SEED_ADMIN_PASSWORD_2'),
+      first_name: 'System',
+      last_name: 'Admin',
+      role: UserRole.SYSTEM_ADMIN,
+    },
+    {
+      email: 'mohameddaaymande@gmail.com',
+      password: requireSeedPassword('SEED_ADMIN_PASSWORD_3'),
+      first_name: 'Mohamed',
+      last_name: 'Ayman',
+      role: UserRole.SYSTEM_ADMIN,
+    },
+  ];
+}
 
 export async function seedAdminUsers(dataSource: DataSource): Promise<void> {
+  const ADMIN_USERS = buildAdminUsers();
   const userRepo = dataSource.getRepository(User);
   const orgRepo = dataSource.getRepository(Organization);
 
