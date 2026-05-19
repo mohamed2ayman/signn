@@ -28,7 +28,7 @@ const ResetPasswordPage: React.FC = () => {
       return;
     }
 
-    if (!/^(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]).{8,}$/.test(password)) {
+    if (!/^(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]).{12,}$/.test(password)) {
       setError('auth.passwordRequirements');
       return;
     }
@@ -143,7 +143,7 @@ const ResetPasswordPage: React.FC = () => {
         />
 
         <p className="mb-4 -mt-2 text-xs text-gray-400">
-          {t('auth.passwordHint', 'Min 8 characters, 1 uppercase, 1 number, 1 special character')}
+          {t('auth.passwordHint', 'Min 12 characters, 1 uppercase, 1 number, 1 special character')}
         </p>
 
         <Button

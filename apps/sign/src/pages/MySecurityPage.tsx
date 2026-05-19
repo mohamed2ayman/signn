@@ -42,6 +42,11 @@ export default function MySecurityPage() {
 
   const [pw, setPw] = useState({ current: '', next: '', confirm: '' });
   const [pwMsg, setPwMsg] = useState<string | null>(null);
+  const [pwError, setPwError] = useState<string | null>(null);
+
+  const PW_REGEX =
+    /^(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]).{12,}$/;
+
   const changePw = useMutation({
     mutationFn: ({ current, next }: { current: string; next: string }) =>
       meService.changePassword(current, next),
@@ -53,6 +58,19 @@ export default function MySecurityPage() {
       setPwMsg(err?.response?.data?.message ?? 'Could not change password.');
     },
   });
+
+  const handleChangePw = () => {
+    setPwError(null);
+    if (!PW_REGEX.test(pw.next)) {
+      setPwError('Min 12 characters, 1 uppercase, 1 number, 1 special character');
+      return;
+    }
+    if (pw.next !== pw.confirm) {
+      setPwError('Passwords do not match');
+      return;
+    }
+    changePw.mutate({ current: pw.current, next: pw.next });
+  };
 
   const revokeOne = useMutation({
     mutationFn: meService.revokeSession,
@@ -133,18 +151,24 @@ export default function MySecurityPage() {
           <input
             type="password"
             value={pw.next}
-            onChange={(e) => setPw({ ...pw, next: e.target.value })}
+            onChange={(e) => { setPw({ ...pw, next: e.target.value }); setPwError(null); }}
             className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
           />
+          <p className="mt-1 text-xs text-gray-400">
+            Min 12 characters, 1 uppercase, 1 number, 1 special character
+          </p>
         </Field>
         <Field label="Confirm new password">
           <input
             type="password"
             value={pw.confirm}
-            onChange={(e) => setPw({ ...pw, confirm: e.target.value })}
+            onChange={(e) => { setPw({ ...pw, confirm: e.target.value }); setPwError(null); }}
             className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
           />
         </Field>
+        {pwError && (
+          <p className="text-sm text-red-600">{pwError}</p>
+        )}
         {pwMsg && (
           <p
             className={`text-sm ${
@@ -156,15 +180,8 @@ export default function MySecurityPage() {
         )}
         <div className="flex justify-end">
           <button
-            disabled={
-              changePw.isPending ||
-              !pw.current ||
-              !pw.next ||
-              pw.next !== pw.confirm
-            }
-            onClick={() =>
-              changePw.mutate({ current: pw.current, next: pw.next })
-            }
+            disabled={changePw.isPending || !pw.current || !pw.next || !pw.confirm}
+            onClick={handleChangePw}
             className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
           >
             {changePw.isPending ? 'Updating…' : 'Update password'}

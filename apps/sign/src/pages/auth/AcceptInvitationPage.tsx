@@ -49,7 +49,7 @@ const AcceptInvitationPage: React.FC = () => {
     }
     if (!formData.password) {
       newErrors.password = 'common.required';
-    } else if (!/^(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]).{8,}$/.test(formData.password)) {
+    } else if (!/^(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]).{12,}$/.test(formData.password)) {
       newErrors.password = 'auth.passwordRequirements';
     }
     if (formData.password !== formData.confirmPassword) {
@@ -191,7 +191,7 @@ const AcceptInvitationPage: React.FC = () => {
         />
 
         <p className="mb-4 -mt-2 text-xs text-gray-400">
-          {t('auth.passwordHint', 'Min 8 characters, 1 uppercase, 1 number, 1 special character')}
+          {t('auth.passwordHint', 'Min 12 characters, 1 uppercase, 1 number, 1 special character')}
         </p>
 
         <Button
