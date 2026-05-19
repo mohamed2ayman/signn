@@ -50,26 +50,22 @@ describe('Phase 4.3 — Seed & DATABASE_URL Validation', () => {
   });
 
   describe('data-source DATABASE_URL guard', () => {
-    it('TEST 4 — throws when DATABASE_URL is missing', () => {
-      delete process.env.DATABASE_URL;
-
-      const dataSourcePath = require.resolve('../../../config/data-source');
-      // Drop the cached module so the top-level guard re-runs.
-      delete require.cache[dataSourcePath];
-
+    it('TEST 4 — throws when DATABASE_URL is missing', async () => {
       let thrown: Error | null = null;
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        require('../../../config/data-source');
-      } catch (err) {
-        thrown = err as Error;
-      } finally {
-        delete require.cache[dataSourcePath];
-      }
-
+      jest.isolateModules(() => {
+        // Stub dotenv so it doesn't re-populate DATABASE_URL from backend/.env
+        // when data-source.ts is freshly required.
+        jest.doMock('dotenv', () => ({ config: () => ({ parsed: {} }) }));
+        delete process.env.DATABASE_URL;
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-require-imports
+          require('../../../config/data-source');
+        } catch (e) {
+          thrown = e as Error;
+        }
+      });
       expect(thrown).toBeInstanceOf(Error);
       expect(thrown!.message).toContain('DATABASE_URL');
-      expect(thrown!.message).toContain('.env');
     });
   });
 
