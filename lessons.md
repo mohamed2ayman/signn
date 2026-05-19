@@ -2779,3 +2779,19 @@ sources.
 appear in both `.env.example` (with a comment) and the Joi schema
 (with the right `.required()` / `.optional()` / `.default()` /
 URI/email shape).
+
+### LESSON: Use jest.isolateModules() when testing module-load-time throws
+
+Modules that throw during initialization (at import/require time)
+cannot be re-tested by simply deleting an env var and re-importing —
+Jest returns the cached module. Use `jest.isolateModules()` with
+`require()` inside the callback to force a fresh module load and
+correctly test startup-time validation guards.
+
+When the module under test also calls `dotenv.config()` at the top,
+stub it with `jest.doMock('dotenv', () => ({ config: () => ({ parsed: {} }) }))`
+INSIDE the same `jest.isolateModules` callback — otherwise dotenv
+will repopulate the env var from `.env` on disk and the guard will
+not throw, even with the env var deleted.
+
+Bug found post-merge in Phase 4.3 `seed-validation.spec.ts` TEST 4.
