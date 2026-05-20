@@ -1,8 +1,7 @@
 const SIGN_URL = import.meta.env.VITE_SIGN_APP_URL || 'http://localhost:5173';
 
 /**
- * MANAGEX minimal legal footer. One-line layout that mirrors the
- * marketing-page footer style of Stripe / DocuSign. All links point
+ * MANAGEX minimal legal footer. One-line layout. All links point
  * to SIGN's legal pages — SIGN owns the policies; MANAGEX is the
  * brand surface that links to them.
  */
