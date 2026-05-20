@@ -5,12 +5,12 @@ export class AcceptInvitationDto {
   token: string;
 
   @IsString()
-  @MinLength(8)
+  @MinLength(12)
   @Matches(
-    /^(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]).{8,}$/,
+    /^(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]).{12,}$/,
     {
       message:
-        'Password must contain at least 1 uppercase letter, 1 number, and 1 special character',
+        'Password must be at least 12 characters and contain at least 1 uppercase letter, 1 number, and 1 special character',
     },
   )
   password: string;

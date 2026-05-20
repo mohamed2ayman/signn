@@ -1,7 +1,7 @@
 # lessons.md — SIGN + MANAGEX Platform
 > This file documents every bug, issue, and fix that took significant time to resolve.
 > Feed this file to Claude at the start of every session to avoid repeating mistakes.
-> Last updated: 2026-05-19 (Lessons #78–79 — Multiple DTOs with the same name, never test destructive endpoints with real credentials.)
+> Last updated: 2026-05-20 (Lesson #80 — Password validation audit must cover ALL DTOs with a password field, not just ChangePasswordDtos.)
 
 ---
 
@@ -92,6 +92,7 @@
 77. Stale Service Mocks Break CI When New Methods Are Added
 78. Multiple DTOs With the Same Name — Always Trace the Actual Endpoint
 79. Never Test Destructive Endpoints With Real User Credentials on a Live Database
+80. Password Validation Audit Must Cover ALL DTOs With a Password Field
 
 ---
 
@@ -1854,6 +1855,32 @@ Had to identify the new password from the curl response, then verify it via logi
 - Use a dedicated throwaway test user (`test-api@sign.com`) for any manual API testing — never the real admin account
 - For "confirm it accepts valid input" tests: instead of actually changing the password, verify by checking the response structure or by using a test account whose password you don't care about
 - If you must test live: reset the changed value immediately as the next step in the same test script — never leave a test-mutated state in the DB
+
+---
+
+## 80. Password Validation Audit Must Cover ALL DTOs With a Password Field
+
+**Problem:**
+When hardening password validation to min-12 + complexity regex, we audited only the three `ChangePasswordDto` files. We missed `accept-invitation.dto.ts` which also accepts a password field. The backend allowed 8-char passwords on invitation acceptance while every other flow enforced 12.
+
+**Root Cause:**
+Searched for "ChangePasswordDto" and "change-password" but never searched for ALL DTOs containing a password field. The invitation flow sets a password for a brand-new user — it is effectively a registration, not a password change. The audit scope was too narrow.
+
+**Fix:**
+Updated `accept-invitation.dto.ts` to match `RegisterDto` exactly: `@MinLength(12)` + same `.{12,}` complexity regex + updated error message to include "at least 12 characters".
+
+**How to Avoid:**
+- When changing password rules, grep for ALL password fields across every DTO:
+  `grep -rn "password" backend/src --include="*.dto.ts"`
+- Any DTO with a `password` / `new_password` field must enforce the same rules as `RegisterDto`
+- The complete list as of 2026-05-20 — all must stay in sync:
+  - `auth/dto/register.dto.ts`
+  - `auth/dto/reset-password.dto.ts`
+  - `auth/dto/accept-invitation.dto.ts`
+  - `auth/dto/change-password.dto.ts`
+  - `admin-security/dto/admin-security.dto.ts` (`ChangePasswordDto`)
+  - `users/dto/change-password.dto.ts`
+- Frontend pages must also be checked: `RegisterPage`, `ResetPasswordPage`, `AcceptInvitationPage`, `MySecurityPage`
 
 ---
 

@@ -1,7 +1,7 @@
 # CLAUDE.md — Project Intelligence File
 > Read this entire file at the start of every Claude Code session before touching any code.
 > This file is the single source of truth for all architectural decisions, rules, and context.
-> Last updated: 2026-05-19 (Added: Password Validation Policy — min 12 chars enforced on all 3 ChangePasswordDto classes + DB security_policies row. Three ChangePasswordDto files exist; always trace frontend call to correct one. See lessons #78–79.)
+> Last updated: 2026-05-20 (Added lesson #80 — password validation audit must cover ALL DTOs with a password field. Fixed AcceptInvitationDto gap: was min-8, now min-12 matching RegisterDto. See lessons #78–80.)
 
 ---
 
@@ -525,7 +525,7 @@ All work is local development only.
 
 ## Password Validation Policy
 
-Finalised 2026-05-19. All password-setting flows enforce identical rules.
+Finalised 2026-05-20. All password-setting flows enforce identical rules.
 
 ### Rules (apply everywhere, no exceptions)
 - Minimum **12 characters**
@@ -533,15 +533,18 @@ Finalised 2026-05-19. All password-setting flows enforce identical rules.
 - At least **1 number**
 - At least **1 special character** from `!@#$%^&*()_+-=[]{};\\':"\\|,.<>/?`
 
-### Three Active ChangePasswordDto Files — ALL Must Stay in Sync
+### All Six Password DTOs — ALL Must Stay in Sync
 
-There are three separate `ChangePasswordDto` classes, each serving a different endpoint. **Editing only one has no effect on the other two.**
+There are six DTOs that accept a password field. **Editing only one has no effect on the others.** When changing password rules, update all six in the same commit.
 
-| File | Endpoint | Used by |
-|------|----------|---------|
-| `backend/src/modules/admin-security/dto/admin-security.dto.ts` | `POST /me/change-password` | **Frontend** (`meService.changePassword`) — this is the live path |
+| File | Endpoint | Notes |
+|------|----------|-------|
+| `backend/src/modules/admin-security/dto/admin-security.dto.ts` | `POST /me/change-password` | **Frontend** (`meService.changePassword`) — live change-password path |
 | `backend/src/modules/auth/dto/change-password.dto.ts` | `PATCH /auth/change-password` | Auth controller (not called by current frontend) |
 | `backend/src/modules/users/dto/change-password.dto.ts` | `PUT /users/me/password` | Users controller |
+| `backend/src/modules/auth/dto/register.dto.ts` | `POST /auth/register` | New account registration |
+| `backend/src/modules/auth/dto/reset-password.dto.ts` | `POST /auth/reset-password` | Password reset via email token |
+| `backend/src/modules/auth/dto/accept-invitation.dto.ts` | `POST /auth/accept-invitation` | Invited-user first-time password — equivalent to registration |
 
 ### DB Policy — Must Stay in Sync With DTOs
 `security_policies` table row `id='global'`:
@@ -556,7 +559,7 @@ All four pages enforce the same `.{12,}` regex:
 - `MySecurityPage.tsx` — change password (validated in `handleChangePw()` before `changePw.mutate()`)
 
 ### Hard Rules — Never Violate
-1. When updating password validation rules, update **ALL THREE DTOs + the DB policy + ALL FOUR frontend pages** in the same commit.
+1. When updating password validation rules, update **ALL SIX DTOs + the DB policy + ALL FOUR frontend pages** in the same commit. Search first: `grep -rn "password" backend/src --include="*.dto.ts"` to find every DTO with a password field.
 2. Always trace `meService.ts → API route → controller → DTO import` before editing any DTO — never assume by filename.
 3. Never test change-password or other destructive endpoints with your real admin account on the live DB — use a dedicated test user.
 4. The `@Matches` regex and `@Length(12, 128)` on each DTO are the DTO-level floor. The `PasswordPolicyService` DB-driven check runs on top — if an admin lowers `password_min_length` below 12, the DTO still enforces 12.
