@@ -6,7 +6,8 @@ Part of the **MANAGEX** product suite — AI project management platform for the
 
 ## Documentation
 
-- See [README-DEV.md](./README-DEV.md) for development setup
+- See [docs/SETUP.md](./docs/SETUP.md) for full environment setup (first-time and from-scratch)
+- See [README-DEV.md](./README-DEV.md) for running the frontends locally
 - See [CLAUDE.md](./CLAUDE.md) for architecture and project rules
 - See [lessons.md](./lessons.md) for known issues and fixes
 
