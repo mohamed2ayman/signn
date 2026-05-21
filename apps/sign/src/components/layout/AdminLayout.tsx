@@ -8,6 +8,7 @@ import { UserRole } from '@/types';
 import { notificationService } from '@/services/api/notificationService';
 import LanguageToggle from '@/components/common/LanguageToggle';
 import SignLogo from '@/components/common/SignLogo';
+import { ManagexMark } from '@/components/common/ManagexLogo';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════
@@ -150,6 +151,7 @@ export default function AdminLayout() {
   const { logout, refreshUserProfile } = useAuth();
   const { user, isAuthenticated } = useSelector((state: RootState) => state.auth);
 
+  const manageXUrl = import.meta.env.VITE_MANAGEX_URL || 'http://localhost:5175';
   const [unreadCount, setUnreadCount] = useState(0);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
@@ -334,12 +336,14 @@ export default function AdminLayout() {
 
           {/* MANAGEX backlink (small muted, furthest right) */}
           <a
-            href="http://localhost:5175"
+            href={manageXUrl}
             className="managex-backlink ml-2 text-[12px] transition-colors"
-            style={{ color: 'rgba(255,255,255,0.3)' }}
+            style={{ color: 'rgba(255,255,255,0.3)', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
             onMouseEnter={(e) => (e.currentTarget.style.color = 'rgba(255,255,255,0.7)')}
             onMouseLeave={(e) => (e.currentTarget.style.color = 'rgba(255,255,255,0.3)')}
+            aria-label="Back to ManageX"
           >
+            <ManagexMark size={14} onLight={false} />
             &larr; MANAGEX
           </a>
         </div>

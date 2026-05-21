@@ -2,6 +2,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import LanguageToggle from '@/components/common/LanguageToggle';
 import SignLogo from '@/components/common/SignLogo';
+import { ManagexMark } from '@/components/common/ManagexLogo';
 
 interface AuthLayoutProps {
   children: React.ReactNode;
@@ -11,6 +12,7 @@ interface AuthLayoutProps {
 const AuthLayout: React.FC<AuthLayoutProps> = ({ children }) => {
   const { t } = useTranslation();
   const currentYear = new Date().getFullYear();
+  const manageXUrl = import.meta.env.VITE_MANAGEX_URL || 'http://localhost:5175';
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
@@ -32,7 +34,7 @@ const AuthLayout: React.FC<AuthLayoutProps> = ({ children }) => {
           <div className="mb-8 flex flex-col items-center text-center">
             <SignLogo size="lg" variant="light" />
             <div className="sign-parent-tag">
-              A <a href="http://localhost:5175" className="sign-parent-link">MANAGEX</a> product
+              A <a href={manageXUrl} className="sign-parent-link" style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', verticalAlign: 'middle' }}><ManagexMark size={13} onLight={true} />MANAGEX</a> product
             </div>
             <p className="mt-3 text-sm text-gray-400">
               {t('app.tagline')}
@@ -52,17 +54,11 @@ const AuthLayout: React.FC<AuthLayoutProps> = ({ children }) => {
           <span>&copy; {currentYear} {t('app.copyright')}</span>
           <span className="text-gray-300">|</span>
           <div className="managex-attribution">
-            <svg width="14" height="14" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ opacity: 0.7 }} aria-hidden="true">
-              <rect x="0" y="0" width="22" height="22" rx="5" fill="#0D1829" stroke="#1E3A5F" strokeWidth="0.6"/>
-              <rect x="4.5" y="5" width="2.2" height="12" rx="1" fill="white"/>
-              <rect x="9.9" y="5" width="2.2" height="12" rx="1" fill="white"/>
-              <rect x="15.3" y="5" width="2.2" height="12" rx="1" fill="white"/>
-              <path d="M4.5 5 L11 9.5" stroke="#00D4FF" strokeWidth="1.3" strokeLinecap="round"/>
-              <path d="M17.5 5 L11 9.5" stroke="#00D4FF" strokeWidth="1.3" strokeLinecap="round"/>
-              <circle cx="11" cy="9.5" r="1.4" fill="#00D4FF"/>
-            </svg>
+            <span style={{ opacity: 0.7, display: 'inline-flex' }}>
+              <ManagexMark size={14} onLight={false} />
+            </span>
             <span>Powered by</span>
-            <a href="http://localhost:5175" className="managex-attribution-link">MANAGEX</a>
+            <a href={manageXUrl} className="managex-attribution-link">MANAGEX</a>
           </div>
         </div>
       </footer>

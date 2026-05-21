@@ -6,6 +6,7 @@ import { RootState } from '@/store';
 import useAuth from '@/hooks/useAuth';
 import { notificationService } from '@/services/api/notificationService';
 import LanguageToggle from '@/components/common/LanguageToggle';
+import { ManagexMark } from '@/components/common/ManagexLogo';
 
 interface TopBarProps {
   sidebarCollapsed?: boolean;
@@ -19,6 +20,7 @@ export default function TopBar({ sidebarCollapsed = false }: TopBarProps) {
   const [unreadCount, setUnreadCount] = useState(0);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const manageXUrl = import.meta.env.VITE_MANAGEX_URL || 'http://localhost:5175';
 
   useEffect(() => {
     notificationService.getUnreadCount()
@@ -54,8 +56,9 @@ export default function TopBar({ sidebarCollapsed = false }: TopBarProps) {
       {/* Left section */}
       <div className="flex items-center gap-4">
         {/* MANAGEX back-link */}
-        <a href="http://localhost:5175/" className="managex-backlink">
-          &larr; MANAGEX
+        <a href={manageXUrl} className="managex-backlink" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }} aria-label="Back to ManageX">
+          <ManagexMark size={16} onLight={true} />
+          <span>&larr; MANAGEX</span>
         </a>
 
         {/* Search */}
