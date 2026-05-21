@@ -1,7 +1,7 @@
 # CLAUDE.md — Project Intelligence File
 > Read this entire file at the start of every Claude Code session before touching any code.
 > This file is the single source of truth for all architectural decisions, rules, and context.
-> Last updated: 2026-05-20 (Added lesson #80 — password validation audit must cover ALL DTOs with a password field. Fixed AcceptInvitationDto gap: was min-8, now min-12 matching RegisterDto. See lessons #78–80.)
+> Last updated: 2026-05-21 (Phase 5.2 shipped — docs/SETUP.md 13-section setup guide, README links. DocuSign webhook resolved. Test count updated to 49. Lessons #81–82 added.)
 
 ---
 
@@ -441,7 +441,6 @@ docker exec sign-postgres psql -U sign_user -d sign_db -c \
 
 | Feature | Why Planning Is Critical |
 |---------|-------------------------|
-| DocuSign webhook completion | Webhook → contract state → notification — complex failure handling |
 | Real-time live chat | WebSocket architecture, scaling, ops dashboard design |
 | AI Research Agent | Crawl → embed → approve pipeline architecture |
 | Paymob webhook | Payment state machine, idempotency, failure recovery |
@@ -481,10 +480,10 @@ All work is local development only.
 - MANAGEX landing page
 
 ### Critical Known Bugs — Do Not Build On Top Of These
-1. **DocuSign webhook is a no-op** — returns 200 but never updates contract state. Do not build features depending on EXECUTED status until fixed.
+1. **~~DocuSign webhook was a no-op~~** — resolved in Phase 1.3: webhook now updates contract state correctly. EXECUTED status is safe to build on.
 2. **axios.ts default URL is wrong** — points to port 3001 instead of 3000. Always use `VITE_API_URL`.
 3. **Guest Portal is a stub** — treat `/contractor/*` as not built. Needs full planning session before building.
-4. **~~No automated tests~~** — resolved in Phase 2: 32 tests across all 3 services (16 backend, 8 frontend, 8 AI pipeline).
+4. **~~No automated tests~~** — resolved in Phase 2: 49 tests across all 3 services (33 backend, 8 frontend, 8 AI pipeline).
 5. **~~No CI pipeline~~** — resolved in Phase 2: GitHub Actions CI runs on every push and PR to main (3 parallel jobs).
 
 ### Local Development Workarounds (before deployment)
@@ -503,7 +502,7 @@ All work is local development only.
 | # | Issue | Fix | Prevention |
 |---|-------|-----|------------|
 | 1 | axios.ts default URL points to port 3001 | Use `VITE_API_URL` env var always | Never hardcode localhost URLs |
-| 2 | DocuSign webhook is a no-op | Fix webhook handler before deployment | Do not build on EXECUTED status |
+| 2 | DocuSign webhook was a no-op | Fixed in Phase 1.3 — webhook updates contract state | ~~Do not build on EXECUTED status~~ — resolved |
 | 3 | Guest Portal is a stub | Plan full build before starting | Use Plan Mode for this layer |
 | 4 | Login breaks after laptop restart | Seed chained to migration:run in docker entrypoint | `command: sh -c "npm run migration:run && npm start"` |
 | 5 | Stale node_modules after git pull | `docker-compose up --force-recreate --renew-anon-volumes -d backend` | Use named volumes |
@@ -1396,6 +1395,35 @@ dual-storage `users.refresh_token_hash` column.
   Skipping step 2 leaves all rotated access tokens live through their full TTL
   even after a reuse attack is detected. This was a post-ship bug found during
   manual testing — fix commits `501d48f` + `ef13a1e`.
+
+---
+
+## Phase 5.2 — Developer Setup Guide (shipped — 2026-05-21)
+
+Created `docs/SETUP.md`: a complete from-scratch setup guide for new and returning contributors.
+Merged as PR #15 with green CI.
+
+### What shipped
+- **`docs/SETUP.md`** — 524 lines, 13 sections, every command cross-verified against the actual codebase:
+  1. Prerequisites (Node 20, npm 10, Python 3.11, Docker Desktop, gh CLI)
+  2. Clone & First-Time Setup (workspace install rules, backend independence note)
+  3. Environment Files (4 `cp` commands, per-service minimum-values tables with per-var notes)
+  4. Start the Stack (first-time vs subsequent, startup flow diagram, verify commands)
+  5. Seed Users (3 SYSTEM_ADMIN accounts, 9 KB assets, `ON CONFLICT DO NOTHING` note)
+  6. Port Map (all 7 services + container names)
+  7. Running Tests (backend `--runInBand`, frontend repo-root rule, AI Docker vs local)
+  8. What Works Without External APIs (feature list + external-key table with free alternatives)
+  9. Hot Reload Behaviour (per-service table covering Linux/Mac and Windows + override.yml note)
+  10. Common Failures & Fixes (7 issues: bcrypt, CRLF, stale node_modules, Joi var, port 5175, gh scope, `--runInBand`)
+  11. Database Reset & Recovery (9 one-liners)
+  12. gh CLI Setup (install, required scopes, verify)
+  13. Pre-PR Checklist (8-step checklist sourced from CLAUDE.md)
+- **`README.md`** — added `docs/SETUP.md` as the first Documentation link
+- **`README-DEV.md`** — added first-time-setup callout at the top pointing to `docs/SETUP.md`
+
+### Hard rules — never violate
+- `docs/SETUP.md` is the single source of truth for contributor onboarding. If a setup step changes (new required env var, new Docker command, port change), update `docs/SETUP.md` in the same commit.
+- Never duplicate setup instructions between `README-DEV.md` and `docs/SETUP.md` — `README-DEV.md` is a quick-start summary; `docs/SETUP.md` is the authoritative reference.
 
 ---
 

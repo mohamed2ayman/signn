@@ -1,7 +1,7 @@
 # lessons.md — SIGN + MANAGEX Platform
 > This file documents every bug, issue, and fix that took significant time to resolve.
 > Feed this file to Claude at the start of every session to avoid repeating mistakes.
-> Last updated: 2026-05-20 (Lesson #80 — Password validation audit must cover ALL DTOs with a password field, not just ChangePasswordDtos.)
+> Last updated: 2026-05-21 (Lessons #81–82 — Frontend npm ci must run from repo root; docker restart does not reload .env.)
 
 ---
 
@@ -93,6 +93,8 @@
 78. Multiple DTOs With the Same Name — Always Trace the Actual Endpoint
 79. Never Test Destructive Endpoints With Real User Credentials on a Live Database
 80. Password Validation Audit Must Cover ALL DTOs With a Password Field
+81. Testing — Frontend npm ci Must Run From Repo Root, Not apps/sign/
+82. Docker — docker restart Does Not Reload .env — Use docker-compose up -d
 
 ---
 
@@ -2865,3 +2867,65 @@ will repopulate the env var from `.env` on disk and the guard will
 not throw, even with the env var deleted.
 
 Bug found post-merge in Phase 4.3 `seed-validation.spec.ts` TEST 4.
+
+---
+
+## 81. Testing — Frontend npm ci Must Run From Repo Root, Not apps/sign/
+
+**Problem:**
+Running `cd apps/sign && npm ci` (or `npm install`) before executing frontend tests fails with:
+```
+Cannot find module '@managex/tokens' from 'src/...'
+```
+The tests themselves may also silently import broken CSS tokens and render broken component trees.
+
+**Root Cause:**
+`apps/sign` depends on `@managex/tokens` which lives at `packages/tokens/`. This dependency is resolved via npm workspaces, defined in the **root** `package.json`:
+```json
+"workspaces": ["apps/*", "packages/*"]
+```
+Running `npm ci` inside `apps/sign/` directly ignores the workspace configuration entirely. npm treats it as a standalone package and cannot resolve `@managex/tokens` because `packages/tokens/` is outside `apps/sign/`'s own `node_modules`.
+
+**Fix:**
+Always install from the repo root:
+```bash
+# Correct — resolves workspace dependencies
+cd <repo-root>
+npm ci
+
+# Then run tests with the workspace flag
+npm -w @managex/sign run test
+```
+
+**How to Avoid:**
+- The CI workflow (`.github/workflows/ci.yml`) correctly runs `npm ci` at the repo root. Match this locally.
+- `backend/` is the one exception — it is NOT a workspace member and has its own `package-lock.json`. For backend tests: `cd backend && npm ci && npm test`.
+- Rule of thumb: if the package.json has `"name": "@managex/..."`, it's a workspace member. Install from root.
+
+---
+
+## 82. Docker — docker restart Does Not Reload .env — Use docker-compose up -d
+
+**Problem:**
+Developer changes a value in `backend/.env` (e.g. sets a new `JWT_SECRET`, adds a missing `SEED_ADMIN_PASSWORD_*`, or changes `REDIS_URL`). Runs `docker restart sign-backend`. The container restarts but the old env value is still in effect — the change is invisible.
+
+**Root Cause:**
+`docker restart` stops and starts the existing container. It does **not** recreate it. Docker injects environment variables at container **creation** time (from `docker-compose up`). A restarted container carries the exact same environment it was created with, regardless of what is in `.env` now.
+
+`docker-compose up -d` is different: it detects that the container configuration (including env) has changed and **recreates** the container from scratch, picking up the new `.env` values.
+
+This is distinct from lesson #34 (a new Joi-required var crashes the app). Here the app may not crash — it just silently runs with the stale value.
+
+**Fix:**
+```bash
+# After any .env change, recreate the affected container:
+docker-compose up -d backend
+
+# If you also changed packages (node_modules):
+docker-compose up --force-recreate --renew-anon-volumes -d backend
+```
+
+**How to Avoid:**
+- Mental model: `docker restart` = "bounce the process". `docker-compose up -d` = "apply config changes and recreate if needed".
+- If a value you just set in `.env` is not taking effect → always reach for `docker-compose up -d`, not `docker restart`.
+- Quick diagnostic: `docker inspect sign-backend | grep -A5 '"Env"'` shows the env the running container was actually created with.
