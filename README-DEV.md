@@ -1,5 +1,7 @@
 # SIGN Platform — Local Development Guide
 
+> **First time setting up?** See [docs/SETUP.md](./docs/SETUP.md) for the complete from-scratch setup guide covering prerequisites, all four `.env` files, Docker startup, seed users, test commands, and common failures.
+
 ## Prerequisites
 
 - Node.js 20+
