@@ -1,21 +1,20 @@
+import { useTranslation } from 'react-i18next';
 import LegalPageLayout from './LegalPageLayout';
 import LegalContent from './LegalContent';
 import { useCookieConsent } from '@/contexts/CookieConsentContext';
 import { Cookie } from 'lucide-react';
-import {
-  cookiePolicyContentMeta,
-  cookiePolicyContentToc,
-  cookiePolicyContentSections,
-} from './content/cookies.content';
+import { getLegalContent, normalizeLegalLocale } from './content';
 
 export default function CookiePolicyPage() {
   const { openPreferences } = useCookieConsent();
+  const { i18n } = useTranslation();
+  const { meta, toc, sections } = getLegalContent('cookies', normalizeLegalLocale(i18n.language));
   return (
     <LegalPageLayout
-      title={cookiePolicyContentMeta.title}
-      effectiveDate={cookiePolicyContentMeta.effectiveDate}
-      lastUpdated={cookiePolicyContentMeta.lastUpdated}
-      sections={cookiePolicyContentToc}
+      title={meta.title}
+      effectiveDate={meta.effectiveDate}
+      lastUpdated={meta.lastUpdated}
+      sections={toc}
     >
       <div className="mb-6 flex items-center justify-between rounded-lg border border-indigo-100 bg-indigo-50 p-4">
         <div>
@@ -32,7 +31,7 @@ export default function CookiePolicyPage() {
           <Cookie size={14} /> Manage Cookie Preferences
         </button>
       </div>
-      <LegalContent sections={cookiePolicyContentSections} />
+      <LegalContent sections={sections} />
     </LegalPageLayout>
   );
 }

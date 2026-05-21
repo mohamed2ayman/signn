@@ -1,20 +1,19 @@
+import { useTranslation } from 'react-i18next';
 import LegalPageLayout from './LegalPageLayout';
 import LegalContent from './LegalContent';
-import {
-  aiInnovationUsagePolicyContentMeta,
-  aiInnovationUsagePolicyContentToc,
-  aiInnovationUsagePolicyContentSections,
-} from './content/ai-policy.content';
+import { getLegalContent, normalizeLegalLocale } from './content';
 
 export default function AIPolicyPage() {
+  const { i18n } = useTranslation();
+  const { meta, toc, sections } = getLegalContent('ai-policy', normalizeLegalLocale(i18n.language));
   return (
     <LegalPageLayout
-      title={aiInnovationUsagePolicyContentMeta.title}
-      effectiveDate={aiInnovationUsagePolicyContentMeta.effectiveDate}
-      lastUpdated={aiInnovationUsagePolicyContentMeta.lastUpdated}
-      sections={aiInnovationUsagePolicyContentToc}
+      title={meta.title}
+      effectiveDate={meta.effectiveDate}
+      lastUpdated={meta.lastUpdated}
+      sections={toc}
     >
-      <LegalContent sections={aiInnovationUsagePolicyContentSections} />
+      <LegalContent sections={sections} />
     </LegalPageLayout>
   );
 }

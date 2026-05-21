@@ -1,20 +1,19 @@
+import { useTranslation } from 'react-i18next';
 import LegalPageLayout from './LegalPageLayout';
 import LegalContent from './LegalContent';
-import {
-  privacyPolicyContentMeta,
-  privacyPolicyContentToc,
-  privacyPolicyContentSections,
-} from './content/privacy.content';
+import { getLegalContent, normalizeLegalLocale } from './content';
 
 export default function PrivacyPage() {
+  const { i18n } = useTranslation();
+  const { meta, toc, sections } = getLegalContent('privacy', normalizeLegalLocale(i18n.language));
   return (
     <LegalPageLayout
-      title={privacyPolicyContentMeta.title}
-      effectiveDate={privacyPolicyContentMeta.effectiveDate}
-      lastUpdated={privacyPolicyContentMeta.lastUpdated}
-      sections={privacyPolicyContentToc}
+      title={meta.title}
+      effectiveDate={meta.effectiveDate}
+      lastUpdated={meta.lastUpdated}
+      sections={toc}
     >
-      <LegalContent sections={privacyPolicyContentSections} />
+      <LegalContent sections={sections} />
     </LegalPageLayout>
   );
 }

@@ -2,13 +2,14 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Cookie } from 'lucide-react';
 import CookiePreferenceModal, {
+  CONSENT_VERSION,
   readConsent,
   writeConsent,
 } from './CookiePreferenceModal';
 import { useCookieConsent } from '@/contexts/CookieConsentContext';
 
 export default function CookieConsentBanner() {
-  const { openPreferences } = useCookieConsent();
+  const { openPreferences, syncConsentToServer } = useCookieConsent();
   const [needsChoice, setNeedsChoice] = useState(false);
 
   useEffect(() => {
@@ -20,11 +21,13 @@ export default function CookieConsentBanner() {
 
   const handleAcceptAll = () => {
     writeConsent('accepted', { functional: true, analytics: true, marketing: true });
+    syncConsentToServer(CONSENT_VERSION);
     setNeedsChoice(false);
   };
 
   const handleRejectAll = () => {
     writeConsent('rejected', { functional: false, analytics: false, marketing: false });
+    syncConsentToServer(CONSENT_VERSION);
     setNeedsChoice(false);
   };
 

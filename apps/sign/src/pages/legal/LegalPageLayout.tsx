@@ -1,6 +1,8 @@
 import { ReactNode, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Printer, ChevronLeft } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { normalizeLegalLocale } from './content';
 
 export interface LegalTocItem {
   id: string;
@@ -26,6 +28,10 @@ export default function LegalPageLayout({
   showToc = true,
 }: LegalPageLayoutProps) {
   const [activeId, setActiveId] = useState<string>('');
+  const { i18n } = useTranslation();
+  const locale = normalizeLegalLocale(i18n.language);
+  const localeLabel =
+    locale === 'ar' ? 'عربي' : locale === 'fr' ? 'Français' : 'English';
 
   useEffect(() => {
     if (!showToc) return;
@@ -65,11 +71,11 @@ export default function LegalPageLayout({
           </div>
           <div className="flex items-center gap-3">
             <span
-              aria-label="Language"
+              aria-label="Current language"
               className="rounded border border-gray-200 px-2 py-1 text-xs font-medium text-gray-500"
-              title="Language switcher coming soon"
+              title="Use the in-app language switcher to change locale"
             >
-              EN | عربي
+              {localeLabel}
             </span>
             <button
               type="button"

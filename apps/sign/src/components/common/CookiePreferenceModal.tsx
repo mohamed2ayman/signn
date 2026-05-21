@@ -7,7 +7,7 @@ import type { RootState } from '@/store';
 import { useCookieConsent } from '@/contexts/CookieConsentContext';
 
 const STORAGE_KEY = 'sign_cookie_consent';
-const CONSENT_VERSION = '1.0';
+export const CONSENT_VERSION = '1.0';
 
 export type ConsentStatus = 'accepted' | 'rejected' | 'custom';
 
@@ -85,7 +85,7 @@ function ToggleRow({ label, description, enabled, disabled, onChange }: ToggleRo
 }
 
 export default function CookiePreferenceModal() {
-  const { isOpen, close } = useCookieConsent();
+  const { isOpen, close, syncConsentToServer } = useCookieConsent();
   const isAuthenticated = useSelector((state: RootState) => Boolean(state.auth?.token));
 
   const [functional, setFunctional] = useState(true);
@@ -105,6 +105,8 @@ export default function CookiePreferenceModal() {
 
   const persist = async (status: ConsentStatus, categories: ConsentCategories) => {
     writeConsent(status, categories);
+    // Persist the consent timestamp + version (fire-and-forget for auth'd users).
+    syncConsentToServer(CONSENT_VERSION);
     if (isAuthenticated) {
       try {
         await api.patch('/me/communication-preferences', {
