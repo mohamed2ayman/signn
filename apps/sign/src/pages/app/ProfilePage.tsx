@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { ShieldCheck, ShieldOff, Smartphone, Mail, Eye, EyeOff, Copy, Check, KeyRound } from 'lucide-react';
 import api from '@/services/api/axios';
+import { meService } from '@/services/api/meService';
 import { authService } from '@/services/auth/authService';
 import type { MfaStatusResponse, MfaTotpSetupResponse } from '@/services/auth/authService';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
@@ -208,18 +209,14 @@ export default function ProfilePage() {
       setPwError('New password and confirm password do not match.');
       return;
     }
-    if (pwForm.newPassword.length < 8) {
-      setPwError('New password must be at least 8 characters.');
+    if (pwForm.newPassword.length < 12) {
+      setPwError('New password must be at least 12 characters.');
       return;
     }
 
     setPwSaving(true);
     try {
-      await api.patch('/auth/change-password', {
-        currentPassword: pwForm.currentPassword,
-        newPassword: pwForm.newPassword,
-        confirmPassword: pwForm.confirmPassword,
-      });
+      await meService.changePassword(pwForm.currentPassword, pwForm.newPassword);
       setPwSuccess('Password updated successfully ✅');
       setPwForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
     } catch (err: unknown) {

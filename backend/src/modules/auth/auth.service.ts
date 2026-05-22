@@ -1049,6 +1049,9 @@ export class AuthService {
     } as any);
   }
 
+  // TODO(Phase 5.8): This endpoint is legacy — frontend migrated to POST /me/change-password.
+  // Do NOT add new callers. Missing: assertNotReused, appendToHistory, security event,
+  // assertComplexity against live SecurityPolicy. Keep until confirmed no external API consumers.
   async changePassword(userId: string, currentPassword: string, newPassword: string) {
     const user = await this.userRepository.findOne({ where: { id: userId } });
     if (!user) throw new UnauthorizedException('User not found');
