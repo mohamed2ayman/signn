@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AuditLog, User } from '../../../database/entities';
+import { escapeLikeParam } from '../../../common/utils/escape-like';
 
 export interface SecurityAuditFilter {
   /** Filter by the user the event was about (audit_logs.entity_id where entity_type='user'). */
@@ -73,7 +74,7 @@ export class SecurityAuditLogService {
     if (filter.search) {
       qb.andWhere(
         '(a.action ILIKE :search OR a.ip_address ILIKE :search)',
-        { search: `%${filter.search}%` },
+        { search: `%${escapeLikeParam(filter.search)}%` },
       );
     }
     if (filter.from && filter.to) {

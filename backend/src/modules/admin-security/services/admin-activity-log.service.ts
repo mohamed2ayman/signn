@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Between, FindOptionsWhere, ILike, Repository } from 'typeorm';
+import { Between, FindOptionsWhere, Repository } from 'typeorm';
 import { AuditLog, User } from '../../../database/entities';
+import { escapeLikeParam } from '../../../common/utils/escape-like';
 
 export interface AdminActivityFilter {
   /** Filter by the actor (admin) who performed the action. */
@@ -97,7 +98,7 @@ export class AdminActivityLogService {
     if (filter.search) {
       qb.andWhere(
         '(a.action ILIKE :search OR a.entity_type ILIKE :search)',
-        { search: `%${filter.search}%` },
+        { search: `%${escapeLikeParam(filter.search)}%` },
       );
     }
     if (filter.from && filter.to) {
