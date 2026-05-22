@@ -1007,19 +1007,20 @@ Full audit of all database query patterns across the backend.
   (no injection possible) but did not escape %, _, \ characters
 - User searching for "100%" would match "1000", "100abc" etc.
   because % is a PostgreSQL wildcard — not injection, but wrong
-- 6 sites patched (2 sites in admin-security module are on an
-  unmerged branch — patch when that branch merges)
+- 8 sites patched (all ILIKE sites across the entire backend are now protected)
 
 **What was added:**
 - New helper: backend/src/common/utils/escape-like.ts
   exports escapeLikeParam(value: string): string
   escapes \, %, _ in correct order with null guard
-- Applied at 6 ILIKE sites across 4 files:
+- Applied at 8 ILIKE sites across 6 files:
   admin-audit-log/admin-audit-log.service.ts (1 site)
   admin-organizations/admin-organizations.service.ts (2 sites)
   clauses/clauses.service.ts (1 site)
   contracts/contracts.service.ts (1 site)
   knowledge-assets/knowledge-assets.service.ts (1 site)
+  admin-security/services/admin-activity-log.service.ts (1 site)
+  admin-security/services/security-audit-log.service.ts (1 site)
 
 **Hard rules — never violate:**
 - LIKE/ILIKE queries must ALWAYS use escapeLikeParam() on the
@@ -1027,8 +1028,6 @@ Full audit of all database query patterns across the backend.
 - Backslash must be escaped FIRST in the helper — reordering
   the replace() calls causes double-escaping bugs
 - The % wrapping stays at the call site, NOT inside the helper
-- When admin-security module merges, apply escapeLikeParam()
-  to admin-activity-log.service.ts and security-audit-log.service.ts
 
 ### Phase 3.3 — Input Validation (shipped — 2026-05-16)
 
@@ -1059,7 +1058,6 @@ Fixed raw @Body() mass assignment vulnerabilities and missing DTO validation acr
 - NEVER use `Partial<Entity>` as a @Body() type — entities expose all database fields including id, created_at, relations. Always create a dedicated DTO that exposes only what the endpoint should accept.
 - NEVER use a plain TypeScript interface for @Query() or @Body() — class-validator decorators only work on classes, not interfaces. A plain interface gets zero validation silently.
 - Every raw `@Body()` inline object (`{ field: type }`) must become a proper DTO class before merging. Inline objects bypass the global ValidationPipe entirely.
-- When admin-security module merges, apply escapeLikeParam() to admin-activity-log.service.ts and security-audit-log.service.ts (deferred from Phase 3.1)
 
 ### Phase 3.4 — File Upload Security (shipped — 2026-05-16)
 
@@ -1092,7 +1090,6 @@ Fixed path traversal, missing size limits, missing type validation, and a broken
 - `path.resolve()` MUST be used on BOTH sides of the `startsWith()` check AND the base path must have `path.sep` appended to prevent prefix-bypass attacks (e.g. `/app/uploads-evil` bypasses `startsWith('/app/uploads')` without the separator)
 - NEVER use `file.originalname` in a file path — UUID filename generation in StorageService is the correct pattern
 - NEVER use optional chaining result directly as a string — `uploadFile?.(file)` returns StorageResult not string; always access the specific field (`uploaded.file_url`)
-- When admin-security module merges, apply escapeLikeParam() to its ILIKE search patterns (deferred from Phase 3.1)
 
 ### Phase 3.5 — XSS Prevention (shipped — 2026-05-17)
 
