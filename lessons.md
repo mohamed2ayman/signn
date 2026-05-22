@@ -1,7 +1,7 @@
 # lessons.md — SIGN + MANAGEX Platform
 > This file documents every bug, issue, and fix that took significant time to resolve.
 > Feed this file to Claude at the start of every session to avoid repeating mistakes.
-> Last updated: 2026-05-21 (Lessons #81–82 — Frontend npm ci must run from repo root; docker restart does not reload .env.)
+> Last updated: 2026-05-22 (Lesson #83 — Frontend Vite vars silently render undefined, no crash. Phases 5.3–5.5 legal/i18n notes updated.)
 
 ---
 
@@ -95,6 +95,7 @@
 80. Password Validation Audit Must Cover ALL DTOs With a Password Field
 81. Testing — Frontend npm ci Must Run From Repo Root, Not apps/sign/
 82. Docker — docker restart Does Not Reload .env — Use docker-compose up -d
+83. Frontend — Vite Env Vars Silently Render Undefined, No Crash (Unlike Backend Joi)
 
 ---
 
@@ -2135,12 +2136,12 @@ And visually confirm each expected column appears in the output.
 - **New files:** ~25
 - **Modified files:** ~15
 
-**Remaining for Phase 2:**
-- Merge `feat/legal-layer` to `main`
-- Run migration on production/shared DB after merge
-- Settlement agreement acknowledgment checkbox (when modal is built)
-- Arabic translations for all policy content (i18n keys stubbed)
-- BCR/DPA request button gated by Enterprise plan (account settings)
+**Remaining / Status update (2026-05-22):**
+- ~~Merge `feat/legal-layer` to `main`~~ — merged as PR #8 (2026-05-15)
+- ~~Run migration on production/shared DB after merge~~ — runs automatically via `migration:run` on `docker-compose up`
+- Settlement agreement acknowledgment checkbox — still outstanding (when modal is built)
+- ~~Arabic translations for all policy content (i18n keys stubbed)~~ — AR translations remain stubbed; **French** (`fr/common.json`, 381 lines) was added in Phase 5.5 (PR #17). AR is still outstanding.
+- BCR/DPA request button gated by Enterprise plan — still outstanding (account settings)
 
 ---
 
@@ -2867,6 +2868,34 @@ will repopulate the env var from `.env` on disk and the guard will
 not throw, even with the env var deleted.
 
 Bug found post-merge in Phase 4.3 `seed-validation.spec.ts` TEST 4.
+
+---
+
+## 83. Frontend — Vite Env Vars Silently Render Undefined, No Crash (Unlike Backend Joi)
+
+**Problem:**
+After pulling Phase 5.4 (commit `0a93c3e`), `VITE_MANAGEX_URL` was added to `apps/sign/.env.example` but not to the local `apps/sign/.env`. The backend started fine. The frontend started fine. No console error. No build error. No test failure. The MANAGEX backlinks in AuthLayout, AdminLayout, and TopBar simply rendered as the literal string `"undefined"` — e.g. href=`"undefined"`.
+
+**Root Cause:**
+Vite inlines `import.meta.env.VITE_*` values at **build time** (or serve time in dev). If a var is absent from `.env`, Vite substitutes `undefined`. JavaScript then coerces `undefined` to the string `"undefined"` in template literals and href attributes. There is no warning, no crash, and no way for the running app to detect the gap at runtime.
+
+This is the opposite of backend behavior: NestJS with Joi `.required()` crashes immediately on startup if a var is missing (`Config validation error: "VAR" is required`). Backend problems are loud. Frontend Vite problems are silent.
+
+**Fix:**
+```bash
+# After any git pull, check all 4 .env.example files for new vars:
+diff <(grep -v '^#' apps/sign/.env.example | sort) <(grep -v '^#' apps/sign/.env | sort)
+diff <(grep -v '^#' apps/managex/.env.example | sort) <(grep -v '^#' apps/managex/.env | sort)
+diff <(grep -v '^#' backend/.env.example | sort) <(grep -v '^#' backend/.env | sort)
+diff <(grep -v '^#' ai-backend/.env.example | sort) <(grep -v '^#' ai-backend/.env | sort)
+```
+Any line in `.env.example` not present in `.env` is a missing var. Add it before starting the app.
+
+**How to Avoid:**
+- Make checking all 4 `.env.example` files part of the pull routine — same discipline as lesson #34, but for all services.
+- If a new Vite env var is added, the PR description MUST mention it explicitly so teammates know to add it locally.
+- Quick sanity check after adding a new `VITE_*` var: search the rendered page for the word `"undefined"` — it will appear as visible text or in href attributes if any var is missing.
+- See also lesson #34 (backend Joi crashes loudly on missing vars — the loud counterpart to this silent failure).
 
 ---
 

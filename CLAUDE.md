@@ -1,7 +1,7 @@
 # CLAUDE.md — Project Intelligence File
 > Read this entire file at the start of every Claude Code session before touching any code.
 > This file is the single source of truth for all architectural decisions, rules, and context.
-> Last updated: 2026-05-21 (Phase 5.2 shipped — docs/SETUP.md 13-section setup guide, README links. DocuSign webhook resolved. Test count updated to 49. Lessons #81–82 added.)
+> Last updated: 2026-05-22 (Phases 5.3–5.5 shipped — branch cleanup, VITE_MANAGEX_URL + ManagexLogo.tsx, French locale + cookie persistence + AI disclaimer + legal page updates. All 7 legal gaps resolved. Lesson #83 added.)
 
 ---
 
@@ -150,6 +150,23 @@ Return 403 from all endpoints and hide tabs in UI for any other status.
 Backend API base: `http://localhost:3000/api/v1`
 Always use VITE_API_URL env var — never hardcode localhost URLs in service files.
 AI backend base: `http://localhost:8000`
+
+### 6a. Frontend Env Vars — Never Hardcode URLs
+All cross-app URLs in the SIGN frontend must come from Vite env vars:
+
+| Var | Default | Used for |
+|-----|---------|----------|
+| `VITE_API_URL` | `http://localhost:3000/api/v1` | All API calls via `axios.ts` |
+| `VITE_SOCKET_URL` | `http://localhost:3000` | WebSocket connection |
+| `VITE_MANAGEX_URL` | `http://localhost:5175` | MANAGEX backlinks in AuthLayout, AdminLayout, TopBar |
+
+**Critical:** Vite env vars that are missing from `.env` do NOT crash the app — they silently evaluate to `undefined` and render as the string `"undefined"` in the UI. This is the opposite of backend Joi validation (which crashes loudly). Always check `apps/sign/.env.example` after every pull. See lesson #83.
+
+### 6b. i18n — Supported Locales
+The SIGN frontend supports three locales: **EN** (English), **AR** (Arabic), **FR** (French).
+- Locale files: `apps/sign/src/i18n/locales/{en,ar,fr}/common.json`
+- Language switcher: `apps/sign/src/components/common/LanguageToggle.tsx`
+- **Hard rule:** Adding a new locale requires TWO changes in the same commit: (1) the new `locales/<code>/common.json` file AND (2) registering the option in `LanguageToggle.tsx`. A locale file without a toggle entry is unreachable from the UI.
 
 ### 7. Arabic Text Display — Always RTL
 Any UI element that may display Arabic text MUST have `dir="auto"` attribute.
@@ -741,7 +758,7 @@ var MUST adhere to these rules.
 - Fixed apps/cenvox/src/App.tsx: SIGN_URL was a bare hardcoded string. Now uses `VITE_SIGN_APP_URL` env var with fallback
 - Created apps/cenvox/.env.example with VITE_SIGN_APP_URL documented
 - Fixed orphaned clauses bug in document-processing `reprocess()` — now cleans up old clauses before reprocessing a document
-- Flagged: 4 localhost:5175 CENVOX backlinks remain in SIGN layouts (AuthLayout.tsx ×2, AdminLayout.tsx, TopBar.tsx) — scheduled for Phase 1.2 fix
+- ~~Flagged: 4 localhost:5175 CENVOX backlinks remain in SIGN layouts (AuthLayout.tsx ×2, AdminLayout.tsx, TopBar.tsx)~~ — **fixed in Phase 5.4**: all 4 replaced with `import.meta.env.VITE_MANAGEX_URL`
 - Lesson #30 added to lessons.md
 
 ### Phase 1.2 — Fix Seed Role Mismatch (shipped)
@@ -1259,14 +1276,19 @@ prompt covering: cookie consent banner, T&C acceptance in registration, 11 new
 /legal/* routes, app footer, AI disclaimers, claims/e-signature notices, Word Add-In
 disclosures, communication preferences page, and backend consent column migration.
 
-### Critical Legal Gaps (implement before launch)
-1. No T&C checkbox in RegisterPage.tsx — users complete registration without consent
-2. No accepted_terms_at column in users entity — no consent record exists
-3. No cookie consent banner — no consent mechanism for future analytics
-4. All /legal/* routes return 404 — all footer policy links are broken
-5. No AI disclaimer on any AI output — transparency obligation unmet
-6. No communication preferences UI — email_digest_opt_out has no API surface
-7. Word Add-In LoginTab.tsx has no legal disclosures
+### Critical Legal Gaps — All Resolved
+
+All 7 pre-launch legal gaps have been closed. Do not reopen without team agreement.
+
+| # | Gap | Status | Fixed by |
+|---|-----|--------|----------|
+| 1 | No T&C checkbox in RegisterPage.tsx | ✅ Resolved | Phase 4.4 — `agreedToTerms` state + disabled submit; `agreed_to_terms` sent to API |
+| 2 | No `accepted_terms_at` column in users entity | ✅ Resolved | Phase 4.4 — migration `1746950000001-AddConsentColumns.ts`; `auth.service.ts` sets timestamp on register |
+| 3 | No cookie consent banner | ✅ Resolved | Phase 4.4 — `CookieConsentBanner` in `App.tsx`; Phase 5.5 added server-side persistence via `UpdateCommunicationPreferencesDto` |
+| 4 | All `/legal/*` routes return 404 | ✅ Resolved | Phase 4.4 — 11 policy pages live at `apps/sign/src/pages/legal/` |
+| 5 | No AI disclaimer on any AI output | ✅ Resolved | Phase 5.5 — `<AIDisclaimer compact />` added to `ClauseReviewPage.tsx` and `ClausesPage.tsx` |
+| 6 | No communication preferences UI | ✅ Resolved | Phase 4.4 — comms preferences page + `PATCH /me/communication-preferences` API surface |
+| 7 | Word Add-In LoginTab.tsx has no legal disclosures | ✅ Resolved | Phase 4.4 — `LoginTab.tsx` has Terms of Service + Privacy Policy links via `Office.context.ui.openBrowserWindow` |
 
 ---
 
@@ -1424,6 +1446,59 @@ Merged as PR #15 with green CI.
 ### Hard rules — never violate
 - `docs/SETUP.md` is the single source of truth for contributor onboarding. If a setup step changes (new required env var, new Docker command, port change), update `docs/SETUP.md` in the same commit.
 - Never duplicate setup instructions between `README-DEV.md` and `docs/SETUP.md` — `README-DEV.md` is a quick-start summary; `docs/SETUP.md` is the authoritative reference.
+
+---
+
+## Phase 5.3 — Branch Cleanup (shipped — 2026-05-21)
+
+Deleted all 13 stale remote branches accumulated across Phases 1–5.2. All content was confirmed on `main` before deletion (DocuSign impl, rate limiting, JWT hardening, legal pages — all verified via `grep` against the live codebase).
+
+**After cleanup:** `origin/main` only. Local worktree branches (`claude/eager-allen`, `claude/relaxed-lamarr-9a7616`) are Claude Code infrastructure — not feature branches, never delete.
+
+**Hard rule:** Run `git branch -r --merged main` after every merge sprint. Any branch older than 48 hours that is merged into main is a delete candidate. Worktree branches (`claude/*`) are managed by tooling — skip them.
+
+---
+
+## Phase 5.4 — ManageX Backlink URL Hardcode Fix (shipped — 2026-05-22)
+
+Shipped by Youssef, commit `0a93c3e`. No PR — direct commit to main.
+
+### What shipped
+- **`VITE_MANAGEX_URL`** env var introduced — the canonical way to reference the MANAGEX landing URL from within the SIGN app
+- **`apps/sign/src/components/common/ManagexLogo.tsx`** — new MANAGEX logo mark component for use in SIGN layouts (backlinks, attribution)
+- **4 hardcoded `localhost:5175` URLs replaced** with `import.meta.env.VITE_MANAGEX_URL` in:
+  - `apps/sign/src/components/common/AuthLayout.tsx` (×2)
+  - `apps/sign/src/components/layout/AdminLayout.tsx`
+  - `apps/sign/src/components/layout/TopBar.tsx`
+- **`apps/sign/.env.example`** updated with `VITE_MANAGEX_URL=http://localhost:5175`
+- **`apps/sign/src/vite-env.d.ts`** updated with type declaration
+- **`NEXT_PHASES.md`** created as a local planning doc and immediately gitignored
+
+### Action required on pull
+After pulling this commit, add to `apps/sign/.env`:
+```
+VITE_MANAGEX_URL=http://localhost:5175
+```
+Missing this var causes backlinks to render as `"undefined"` with no error (see lesson #83 and section 6a).
+
+---
+
+## Phase 5.5 — Legal Compliance Gaps Closed (shipped — 2026-05-22)
+
+Shipped by Youssef, PR #17. 22 files, 791 insertions, 127 deletions.
+
+### What shipped
+- **French locale** — `apps/sign/src/i18n/locales/fr/common.json` (new, 381 lines). Full French translation of all UI strings.
+- **`i18n/index.ts`** — French locale registered alongside EN and AR
+- **`LanguageToggle.tsx`** — reworked from 2-way (EN/AR) to 3-way dropdown (EN/AR/FR)
+- **Cookie consent server-side persistence** — `CookieConsentContext.tsx` updated to call `PATCH /me/communication-preferences` when consent is saved; banner and modal updated accordingly
+- **AI disclaimer** — `<AIDisclaimer compact />` added to `ClauseReviewPage.tsx` and `ClausesPage.tsx` (closes legal gap #5)
+- **All 10 legal pages updated** — content centralised into `apps/sign/src/pages/legal/content/index.ts` (new, 162 lines); each page now pulls from this index
+- **Backend DTO** — `UpdateCommunicationPreferencesDto` in `admin-security.dto.ts` gained two optional fields: `cookie_consent_given_at` (ISO-8601 string, `@MaxLength(40)`) and `cookie_consent_version` (`@MaxLength(20)`)
+- **Backend controller** — `profile.controller.ts` validates `cookie_consent_given_at` as a valid ISO-8601 timestamp; throws `BadRequestException` on malformed input
+
+### No migration, no new packages, no new Joi vars
+These backend changes are additive and `@IsOptional()` — no breaking change.
 
 ---
 

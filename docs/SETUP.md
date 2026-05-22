@@ -114,6 +114,7 @@ All DocuSign vars, all Paymob vars, all AWS S3 vars, `ANTHROPIC_API_KEY`, `SMTP_
 | `VITE_API_URL` | **Required** | `http://localhost:3000/api/v1` |
 | `VITE_SOCKET_URL` | Optional | `http://localhost:3000` |
 | `VITE_DEFAULT_LANGUAGE` | Optional | `en` |
+| `VITE_MANAGEX_URL` | Optional | `http://localhost:5175` — URL of ManageX landing, used for backlinks in SIGN layouts. Missing = backlinks render as `"undefined"` (no crash, no warning). |
 
 ---
 
