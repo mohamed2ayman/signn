@@ -95,6 +95,9 @@ export class UsersService {
     return this.getProfile(userId);
   }
 
+  // TODO(Phase 5.8): This endpoint is legacy — frontend migrated to POST /me/change-password.
+  // Do NOT add new callers. Missing: assertNotReused, appendToHistory, security event,
+  // password_changed_at update. Keep until confirmed no external API consumers.
   async changePassword(
     userId: string,
     dto: ChangePasswordDto,

@@ -73,6 +73,13 @@ export class ProfileController {
     const ok = await bcrypt.compare(dto.current_password, fresh.password_hash);
     if (!ok) throw new BadRequestException('Current password is incorrect');
 
+    // Always block reuse of the current password — regardless of password_history_count
+    // policy setting. assertNotReused() below is a no-op when history_count=0, so we
+    // guard the current hash explicitly here.
+    if (await bcrypt.compare(dto.new_password, fresh.password_hash)) {
+      throw new BadRequestException('New password must be different from current password');
+    }
+
     await this.passwords.assertComplexity(dto.new_password);
     await this.passwords.assertNotReused(user.id, dto.new_password);
 
