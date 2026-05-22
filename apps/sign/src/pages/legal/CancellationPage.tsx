@@ -1,20 +1,22 @@
+import { useTranslation } from 'react-i18next';
 import LegalPageLayout from './LegalPageLayout';
 import LegalContent from './LegalContent';
-import {
-  cancellationDowngradePolicyContentMeta,
-  cancellationDowngradePolicyContentToc,
-  cancellationDowngradePolicyContentSections,
-} from './content/cancellation.content';
+import { getLegalContent, normalizeLegalLocale } from './content';
 
 export default function CancellationPage() {
+  const { i18n } = useTranslation();
+  const { meta, toc, sections } = getLegalContent(
+    'cancellation',
+    normalizeLegalLocale(i18n.language),
+  );
   return (
     <LegalPageLayout
-      title={cancellationDowngradePolicyContentMeta.title}
-      effectiveDate={cancellationDowngradePolicyContentMeta.effectiveDate}
-      lastUpdated={cancellationDowngradePolicyContentMeta.lastUpdated}
-      sections={cancellationDowngradePolicyContentToc}
+      title={meta.title}
+      effectiveDate={meta.effectiveDate}
+      lastUpdated={meta.lastUpdated}
+      sections={toc}
     >
-      <LegalContent sections={cancellationDowngradePolicyContentSections} />
+      <LegalContent sections={sections} />
     </LegalPageLayout>
   );
 }

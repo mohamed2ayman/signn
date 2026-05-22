@@ -1,20 +1,19 @@
+import { useTranslation } from 'react-i18next';
 import LegalPageLayout from './LegalPageLayout';
 import LegalContent from './LegalContent';
-import {
-  ipCopyrightPolicyContentMeta,
-  ipCopyrightPolicyContentToc,
-  ipCopyrightPolicyContentSections,
-} from './content/ip.content';
+import { getLegalContent, normalizeLegalLocale } from './content';
 
 export default function IPCopyrightPage() {
+  const { i18n } = useTranslation();
+  const { meta, toc, sections } = getLegalContent('ip', normalizeLegalLocale(i18n.language));
   return (
     <LegalPageLayout
-      title={ipCopyrightPolicyContentMeta.title}
-      effectiveDate={ipCopyrightPolicyContentMeta.effectiveDate}
-      lastUpdated={ipCopyrightPolicyContentMeta.lastUpdated}
-      sections={ipCopyrightPolicyContentToc}
+      title={meta.title}
+      effectiveDate={meta.effectiveDate}
+      lastUpdated={meta.lastUpdated}
+      sections={toc}
     >
-      <LegalContent sections={ipCopyrightPolicyContentSections} />
+      <LegalContent sections={sections} />
     </LegalPageLayout>
   );
 }

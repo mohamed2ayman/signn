@@ -1,20 +1,19 @@
+import { useTranslation } from 'react-i18next';
 import LegalPageLayout from './LegalPageLayout';
 import LegalContent from './LegalContent';
-import {
-  bindingCorporateRulesPrivacyCodeContentMeta,
-  bindingCorporateRulesPrivacyCodeContentToc,
-  bindingCorporateRulesPrivacyCodeContentSections,
-} from './content/bcr.content';
+import { getLegalContent, normalizeLegalLocale } from './content';
 
 export default function BCRPage() {
+  const { i18n } = useTranslation();
+  const { meta, toc, sections } = getLegalContent('bcr', normalizeLegalLocale(i18n.language));
   return (
     <LegalPageLayout
-      title={bindingCorporateRulesPrivacyCodeContentMeta.title}
-      effectiveDate={bindingCorporateRulesPrivacyCodeContentMeta.effectiveDate}
-      lastUpdated={bindingCorporateRulesPrivacyCodeContentMeta.lastUpdated}
-      sections={bindingCorporateRulesPrivacyCodeContentToc}
+      title={meta.title}
+      effectiveDate={meta.effectiveDate}
+      lastUpdated={meta.lastUpdated}
+      sections={toc}
     >
-      <LegalContent sections={bindingCorporateRulesPrivacyCodeContentSections} />
+      <LegalContent sections={sections} />
     </LegalPageLayout>
   );
 }

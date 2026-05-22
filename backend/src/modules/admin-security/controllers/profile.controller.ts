@@ -167,6 +167,8 @@ export class ProfileController {
       marketing_email_opt_in?: boolean;
       email_digest_opt_out?: boolean;
       ai_training_opt_in?: boolean;
+      cookie_consent_given_at?: Date;
+      cookie_consent_version?: string;
     } = {};
     if (dto.marketing_email_opt_in !== undefined) {
       patch.marketing_email_opt_in = dto.marketing_email_opt_in;
@@ -176,6 +178,16 @@ export class ProfileController {
     }
     if (dto.ai_training_opt_in !== undefined) {
       patch.ai_training_opt_in = dto.ai_training_opt_in;
+    }
+    if (dto.cookie_consent_given_at !== undefined) {
+      const parsed = new Date(dto.cookie_consent_given_at);
+      if (Number.isNaN(parsed.getTime())) {
+        throw new BadRequestException('cookie_consent_given_at must be a valid ISO-8601 timestamp');
+      }
+      patch.cookie_consent_given_at = parsed;
+    }
+    if (dto.cookie_consent_version !== undefined) {
+      patch.cookie_consent_version = dto.cookie_consent_version;
     }
     if (Object.keys(patch).length === 0) {
       return this.getCommunicationPreferences(user);

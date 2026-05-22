@@ -4,6 +4,7 @@ import LanguageDetector from 'i18next-browser-languagedetector';
 
 import enCommon from '@/i18n/locales/en/common.json';
 import arCommon from '@/i18n/locales/ar/common.json';
+import frCommon from '@/i18n/locales/fr/common.json';
 
 const resources = {
   en: {
@@ -11,6 +12,9 @@ const resources = {
   },
   ar: {
     common: arCommon,
+  },
+  fr: {
+    common: frCommon,
   },
 };
 

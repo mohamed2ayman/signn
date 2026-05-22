@@ -1,20 +1,22 @@
+import { useTranslation } from 'react-i18next';
 import LegalPageLayout from './LegalPageLayout';
 import LegalContent from './LegalContent';
-import {
-  lawEnforcementGuidelinesContentMeta,
-  lawEnforcementGuidelinesContentToc,
-  lawEnforcementGuidelinesContentSections,
-} from './content/law-enforcement.content';
+import { getLegalContent, normalizeLegalLocale } from './content';
 
 export default function LawEnforcementPage() {
+  const { i18n } = useTranslation();
+  const { meta, toc, sections } = getLegalContent(
+    'law-enforcement',
+    normalizeLegalLocale(i18n.language),
+  );
   return (
     <LegalPageLayout
-      title={lawEnforcementGuidelinesContentMeta.title}
-      effectiveDate={lawEnforcementGuidelinesContentMeta.effectiveDate}
-      lastUpdated={lawEnforcementGuidelinesContentMeta.lastUpdated}
-      sections={lawEnforcementGuidelinesContentToc}
+      title={meta.title}
+      effectiveDate={meta.effectiveDate}
+      lastUpdated={meta.lastUpdated}
+      sections={toc}
     >
-      <LegalContent sections={lawEnforcementGuidelinesContentSections} />
+      <LegalContent sections={sections} />
     </LegalPageLayout>
   );
 }

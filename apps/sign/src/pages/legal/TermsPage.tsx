@@ -1,20 +1,19 @@
+import { useTranslation } from 'react-i18next';
 import LegalPageLayout from './LegalPageLayout';
 import LegalContent from './LegalContent';
-import {
-  termsAndConditionsContentMeta,
-  termsAndConditionsContentToc,
-  termsAndConditionsContentSections,
-} from './content/terms.content';
+import { getLegalContent, normalizeLegalLocale } from './content';
 
 export default function TermsPage() {
+  const { i18n } = useTranslation();
+  const { meta, toc, sections } = getLegalContent('terms', normalizeLegalLocale(i18n.language));
   return (
     <LegalPageLayout
-      title={termsAndConditionsContentMeta.title}
-      effectiveDate={termsAndConditionsContentMeta.effectiveDate}
-      lastUpdated={termsAndConditionsContentMeta.lastUpdated}
-      sections={termsAndConditionsContentToc}
+      title={meta.title}
+      effectiveDate={meta.effectiveDate}
+      lastUpdated={meta.lastUpdated}
+      sections={toc}
     >
-      <LegalContent sections={termsAndConditionsContentSections} />
+      <LegalContent sections={sections} />
     </LegalPageLayout>
   );
 }

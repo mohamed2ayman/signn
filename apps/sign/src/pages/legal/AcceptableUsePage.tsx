@@ -1,20 +1,22 @@
+import { useTranslation } from 'react-i18next';
 import LegalPageLayout from './LegalPageLayout';
 import LegalContent from './LegalContent';
-import {
-  acceptableUsePolicyContentMeta,
-  acceptableUsePolicyContentToc,
-  acceptableUsePolicyContentSections,
-} from './content/acceptable-use.content';
+import { getLegalContent, normalizeLegalLocale } from './content';
 
 export default function AcceptableUsePage() {
+  const { i18n } = useTranslation();
+  const { meta, toc, sections } = getLegalContent(
+    'acceptable-use',
+    normalizeLegalLocale(i18n.language),
+  );
   return (
     <LegalPageLayout
-      title={acceptableUsePolicyContentMeta.title}
-      effectiveDate={acceptableUsePolicyContentMeta.effectiveDate}
-      lastUpdated={acceptableUsePolicyContentMeta.lastUpdated}
-      sections={acceptableUsePolicyContentToc}
+      title={meta.title}
+      effectiveDate={meta.effectiveDate}
+      lastUpdated={meta.lastUpdated}
+      sections={toc}
     >
-      <LegalContent sections={acceptableUsePolicyContentSections} />
+      <LegalContent sections={sections} />
     </LegalPageLayout>
   );
 }

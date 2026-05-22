@@ -36,6 +36,10 @@ export class UpdateCommunicationPreferencesDto {
   @IsOptional() @IsBoolean() marketing_email_opt_in?: boolean;
   @IsOptional() @IsBoolean() email_digest_opt_out?: boolean;
   @IsOptional() @IsBoolean() ai_training_opt_in?: boolean;
+  // Cookie consent (set when the in-app cookie banner / preference modal is saved).
+  // ISO-8601 timestamp string; controller converts to Date.
+  @IsOptional() @IsString() @MaxLength(40) cookie_consent_given_at?: string;
+  @IsOptional() @IsString() @MaxLength(20) cookie_consent_version?: string;
 }
 
 // ─── Security Policy ──────────────────────────────────────

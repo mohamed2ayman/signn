@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { clauseService } from '@/services/api/clauseService';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
 import ConfidenceBadge from '@/components/common/ConfidenceBadge';
+import AIDisclaimer from '@/components/common/AIDisclaimer';
 import type { Clause } from '@/types';
 
 type SourceFilter = 'all' | 'AI_EXTRACTED' | 'MANUAL';
@@ -147,6 +148,8 @@ export default function ClausesPage() {
           </div>
         )}
       </div>
+
+      {stats.aiExtracted > 0 && <AIDisclaimer compact />}
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-3">

@@ -8,6 +8,7 @@ import type { ContractClause, Contract, DocumentUpload } from '@/types';
 import ClauseReviewCard from '@/components/review/ClauseReviewCard';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
 import Button from '@/components/common/Button';
+import AIDisclaimer from '@/components/common/AIDisclaimer';
 
 type FilterMode = 'all' | 'pending' | 'approved' | 'rejected';
 
@@ -485,6 +486,7 @@ export default function ClauseReviewPage() {
 
           {/* Clause Cards */}
           <div className="flex-1 overflow-y-auto px-4 py-4">
+            <AIDisclaimer compact />
             <div className="space-y-3">
               {filteredClauses.map((clause) => (
                 <ClauseReviewCard

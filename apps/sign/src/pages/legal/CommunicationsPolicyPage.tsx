@@ -1,20 +1,22 @@
+import { useTranslation } from 'react-i18next';
 import LegalPageLayout from './LegalPageLayout';
 import LegalContent from './LegalContent';
-import {
-  communicationPreferencesPolicyContentMeta,
-  communicationPreferencesPolicyContentToc,
-  communicationPreferencesPolicyContentSections,
-} from './content/communications.content';
+import { getLegalContent, normalizeLegalLocale } from './content';
 
 export default function CommunicationsPolicyPage() {
+  const { i18n } = useTranslation();
+  const { meta, toc, sections } = getLegalContent(
+    'communications',
+    normalizeLegalLocale(i18n.language),
+  );
   return (
     <LegalPageLayout
-      title={communicationPreferencesPolicyContentMeta.title}
-      effectiveDate={communicationPreferencesPolicyContentMeta.effectiveDate}
-      lastUpdated={communicationPreferencesPolicyContentMeta.lastUpdated}
-      sections={communicationPreferencesPolicyContentToc}
+      title={meta.title}
+      effectiveDate={meta.effectiveDate}
+      lastUpdated={meta.lastUpdated}
+      sections={toc}
     >
-      <LegalContent sections={communicationPreferencesPolicyContentSections} />
+      <LegalContent sections={sections} />
     </LegalPageLayout>
   );
 }
