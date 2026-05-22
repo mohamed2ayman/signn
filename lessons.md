@@ -1,7 +1,7 @@
 # lessons.md — SIGN + MANAGEX Platform
 > This file documents every bug, issue, and fix that took significant time to resolve.
 > Feed this file to Claude at the start of every session to avoid repeating mistakes.
-> Last updated: 2026-05-22 (Lesson #83 — Frontend Vite vars silently render undefined, no crash. Phases 5.3–5.5 legal/i18n notes updated.)
+> Last updated: 2026-05-22 (Lesson #84 — Multiple frontend pages can route to different backend endpoints for the same feature. Phases 5.6–5.8 notes added.)
 
 ---
 
@@ -96,6 +96,7 @@
 81. Testing — Frontend npm ci Must Run From Repo Root, Not apps/sign/
 82. Docker — docker restart Does Not Reload .env — Use docker-compose up -d
 83. Frontend — Vite Env Vars Silently Render Undefined, No Crash (Unlike Backend Joi)
+84. Security — Multiple Frontend Pages Can Route to Different Backend Endpoints for the Same Feature
 
 ---
 
@@ -2958,3 +2959,23 @@ docker-compose up --force-recreate --renew-anon-volumes -d backend
 - Mental model: `docker restart` = "bounce the process". `docker-compose up -d` = "apply config changes and recreate if needed".
 - If a value you just set in `.env` is not taking effect → always reach for `docker-compose up -d`, not `docker restart`.
 - Quick diagnostic: `docker inspect sign-backend | grep -A5 '"Env"'` shows the env the running container was actually created with.
+
+---
+
+## 84. Security — Multiple Frontend Pages Can Route to Different Backend Endpoints for the Same Feature
+
+**Problem:**
+`ProfilePage.tsx` and `MySecurityPage.tsx` both have password-change forms. `ProfilePage.tsx` was calling the legacy unprotected `PATCH /auth/change-password` endpoint. `MySecurityPage.tsx` was correctly calling the hardened `POST /me/change-password` endpoint. Same UX feature, completely different security guarantees (no reuse check, no history, no security event on the legacy path), no error anywhere — it just silently worked with weaker protection.
+
+**Root Cause:**
+When auditing or hardening a backend endpoint, the investigation focused on the endpoint and its DTO. The frontend was never grepped for all call sites. The assumption was "one feature = one endpoint". In reality two separate pages had been built at different times, each wiring up their own API call independently.
+
+**Fix:**
+Migrated `ProfilePage.tsx` to use `meService.changePassword()` (the hardened path via `POST /me/change-password`). Added deprecation comments on the two legacy endpoints (`PATCH /auth/change-password` in `auth.service.ts`, `PUT /users/me/password` in `users.service.ts`). Updated client-side min-length check in `ProfilePage.tsx` from 8 → 12 to match the backend DTO.
+
+**How to Avoid:**
+When hardening any backend endpoint, always grep the **entire frontend** for all call sites before concluding the work is done:
+```bash
+grep -rn "change-password\|changePassword\|change_password" apps/sign/src/
+```
+Do not assume one page = one endpoint. The same UX feature may have been independently implemented in multiple pages at different times.

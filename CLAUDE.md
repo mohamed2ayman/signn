@@ -1,7 +1,7 @@
 # CLAUDE.md — Project Intelligence File
 > Read this entire file at the start of every Claude Code session before touching any code.
 > This file is the single source of truth for all architectural decisions, rules, and context.
-> Last updated: 2026-05-22 (Phases 5.3–5.5 shipped — branch cleanup, VITE_MANAGEX_URL + ManagexLogo.tsx, French locale + cookie persistence + AI disclaimer + legal page updates. All 7 legal gaps resolved. Lesson #83 added.)
+> Last updated: 2026-05-22 (Phases 5.6–5.8 shipped — admin-security ILIKE escape, password reuse block, frontend migrated to hardened change-password endpoint. Outstanding issues A+B resolved. Lesson #84 added.)
 
 ---
 
@@ -532,10 +532,7 @@ All work is local development only.
 | 12 | مادة (N) prefix appearing in extracted clause content | `_strip_article_prefix()` called in `_parse_json()` on every clause | clause_number field stores the number — never repeat it in content |
 
 ### Outstanding Issues (not yet fixed — do not build on top of these)
-| # | Issue | Impact | Notes |
-|---|-------|--------|-------|
-| A | Change-password allows reuse of current password | Low — cosmetic UX gap | `PasswordPolicyService.assertNotReused()` checks history table but not the current `password_hash` directly when history_count=0. Add a `bcrypt.compare(new, current)` guard in `profile.controller.ts` |
-| B | `failed_login_attempts` may not reset on successful login | Low — counter drifts | Login success path in `auth.service.ts` should call `userRepository.update(id, { failed_login_attempts: 0 })` — verify this exists |
+No outstanding issues as of 2026-05-22.
 
 ---
 
@@ -556,8 +553,8 @@ There are six DTOs that accept a password field. **Editing only one has no effec
 | File | Endpoint | Notes |
 |------|----------|-------|
 | `backend/src/modules/admin-security/dto/admin-security.dto.ts` | `POST /me/change-password` | **Frontend** (`meService.changePassword`) — live change-password path |
-| `backend/src/modules/auth/dto/change-password.dto.ts` | `PATCH /auth/change-password` | Auth controller (not called by current frontend) |
-| `backend/src/modules/users/dto/change-password.dto.ts` | `PUT /users/me/password` | Users controller |
+| `backend/src/modules/auth/dto/change-password.dto.ts` | `PATCH /auth/change-password` | Auth controller — legacy, deprecated in Phase 5.8, not called by any frontend page |
+| `backend/src/modules/users/dto/change-password.dto.ts` | `PUT /users/me/password` | Users controller — legacy, deprecated in Phase 5.8, not called by any frontend page |
 | `backend/src/modules/auth/dto/register.dto.ts` | `POST /auth/register` | New account registration |
 | `backend/src/modules/auth/dto/reset-password.dto.ts` | `POST /auth/reset-password` | Password reset via email token |
 | `backend/src/modules/auth/dto/accept-invitation.dto.ts` | `POST /auth/accept-invitation` | Invited-user first-time password — equivalent to registration |
@@ -568,14 +565,17 @@ There are six DTOs that accept a password field. **Editing only one has no effec
 - All require flags: `password_require_upper = true`, `password_require_lower = true`, `password_require_number = true`, `password_require_symbol = true`
 
 ### Frontend Pages With Password Validation
-All four pages enforce the same `.{12,}` regex:
+Four pages enforce the full `.{12,}` regex (uppercase + number + symbol + length):
 - `RegisterPage.tsx` — registration
 - `ResetPasswordPage.tsx` — password reset
 - `AcceptInvitationPage.tsx` — invitation acceptance
 - `MySecurityPage.tsx` — change password (validated in `handleChangePw()` before `changePw.mutate()`)
 
+One page enforces a length-only check (no full regex — backend enforces the rest):
+- `ProfilePage.tsx` — change password (length check `< 12` only, routes to `POST /me/change-password` via `meService.changePassword()`, added Phase 5.8)
+
 ### Hard Rules — Never Violate
-1. When updating password validation rules, update **ALL SIX DTOs + the DB policy + ALL FOUR frontend pages** in the same commit. Search first: `grep -rn "password" backend/src --include="*.dto.ts"` to find every DTO with a password field.
+1. When updating password validation rules, update **ALL SIX DTOs + the DB policy + ALL FIVE frontend pages** in the same commit. Search first: `grep -rn "password" backend/src --include="*.dto.ts"` to find every DTO with a password field.
 2. Always trace `meService.ts → API route → controller → DTO import` before editing any DTO — never assume by filename.
 3. Never test change-password or other destructive endpoints with your real admin account on the live DB — use a dedicated test user.
 4. The `@Matches` regex and `@Length(12, 128)` on each DTO are the DTO-level floor. The `PasswordPolicyService` DB-driven check runs on top — if an admin lowers `password_min_length` below 12, the DTO still enforces 12.
