@@ -155,6 +155,11 @@ export default function AdminLayout() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
+  // ── Phase 6.4 Step 2 — mobile drawer state (< md only) ───────────────
+  // Desktop (≥768px) ignores this entirely; CSS overrides the transform
+  // via `md:translate-x-0`. Admin portal is LTR-only by design, so no
+  // `ltr:`/`rtl:` compound-variant workaround is needed.
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   const userMenuRef = useRef<HTMLDivElement>(null);
 
@@ -195,10 +200,13 @@ export default function AdminLayout() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // ── Close user dropdown + tooltip on route change ────────────────────
+  // ── Close user dropdown + tooltip + mobile drawer on route change ────
+  // Mobile drawer auto-close mirrors the AppLayout behaviour from Step 1
+  // so navigating from inside the drawer dismisses it on the new page.
   useEffect(() => {
     setShowUserMenu(false);
     setTooltip(null);
+    setMobileOpen(false);
   }, [location.pathname]);
 
   // ── Role-based filter ─────────────────────────────────────────────────
@@ -233,8 +241,34 @@ export default function AdminLayout() {
         className="fixed top-0 left-0 right-0 z-50 flex h-12 items-center justify-between bg-[#0f172a] px-4"
         style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}
       >
-        {/* ── Left: logo + label ── */}
+        {/* ── Left: hamburger (mobile) + logo + label ── */}
         <div className="flex items-center gap-3 flex-shrink-0">
+          {/*
+            Mobile hamburger (Phase 6.4 Step 2) — hidden at md+.
+            44×44 touch target per WCAG / iOS HIG minimum.
+            The negative `-ml-1` absorbs the header's `px-4` slightly to keep
+            the icon visually flush against the start edge on narrow screens.
+          */}
+          <button
+            type="button"
+            onClick={() => setMobileOpen(true)}
+            aria-label={t('nav.openMenu', 'Open menu')}
+            className="-ml-1 inline-flex h-11 w-11 items-center justify-center rounded-lg text-white/60 transition-colors hover:bg-white/10 hover:text-white md:hidden"
+          >
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+            </svg>
+          </button>
           <Link to="/admin/dashboard" className="flex items-center gap-2">
             <SignLogo size="sm" variant="dark" iconOnly />
             <span className="text-[14px] font-medium text-white tracking-wide">
@@ -351,11 +385,57 @@ export default function AdminLayout() {
 
       {/* ═══ BODY (sidebar + main) ═══ */}
       <div className="flex flex-1 pt-12">
+        {/*
+          Mobile overlay backdrop (Phase 6.4 Step 2) — only renders when the
+          mobile drawer is open. z-30 sits below the rail (z-40) but above main
+          content. The top utility bar (z-50) stays on top so the hamburger
+          remains tappable while the drawer is open. `md:hidden` ensures the
+          backdrop never appears on desktop even if the state somehow leaks.
+        */}
+        {mobileOpen && (
+          <div
+            className="fixed inset-0 z-30 bg-black/50 md:hidden"
+            onClick={() => setMobileOpen(false)}
+            aria-hidden="true"
+          />
+        )}
         {/* ── Icon sidebar (64px, fixed below top bar) ── */}
         <aside
-          className="fixed left-0 top-12 bottom-0 z-40 flex w-16 flex-col bg-[#0f172a] py-2"
+          className={`fixed left-0 top-12 bottom-0 z-40 flex w-16 flex-col bg-[#0f172a] py-2 transition-transform duration-300 ease-in-out ${
+            // Mobile (< md): off-canvas by default, slides in when `mobileOpen`.
+            // Desktop (≥ md): `md:translate-x-0` always wins — Tailwind sorts
+            // responsive variants AFTER unprefixed utilities in the stylesheet.
+            mobileOpen ? 'translate-x-0' : '-translate-x-full'
+          } md:translate-x-0`}
           style={{ borderRight: '1px solid rgba(255,255,255,0.06)', overflow: 'visible' }}
+          aria-label="Admin navigation"
         >
+          {/*
+            Mobile close button (Phase 6.4 Step 2) — centered at the top of the
+            rail, hidden on desktop. 44×44 touch target. `mb-2` separates it
+            from the first nav group; `md:hidden` collapses it to zero height
+            on desktop so the nav-group layout is unaffected.
+          */}
+          <button
+            type="button"
+            onClick={() => setMobileOpen(false)}
+            aria-label={t('common.close', 'Close')}
+            className="mx-auto mb-2 inline-flex h-11 w-11 items-center justify-center rounded-lg text-white/60 transition-colors hover:bg-white/10 hover:text-white md:hidden"
+          >
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
           {visibleGroups.map((group, groupIdx) => {
             const isLast = groupIdx === visibleGroups.length - 1;
             return (
@@ -417,8 +497,13 @@ export default function AdminLayout() {
           </div>
         )}
 
-        {/* ── Main content (offset by 64px sidebar) ── */}
-        <main className="flex-1" style={{ marginLeft: 64, minHeight: 'calc(100vh - 48px)' }}>
+        {/*
+          Main content — full-width on mobile, offset by the 64px rail on md+.
+          Phase 6.4 Step 2 replaced the hardcoded `marginLeft: 64` inline style
+          with the responsive `ml-0 md:ml-16` so the rail's space is only
+          reserved when the rail is actually visible (i.e. at md and up).
+        */}
+        <main className="flex-1 ml-0 md:ml-16" style={{ minHeight: 'calc(100vh - 48px)' }}>
           <div className="px-8 py-6">
             <Outlet />
           </div>
