@@ -2373,7 +2373,6 @@ Never use optional chaining on a method call whose return value you immediately 
 
 ---
 
-<<<<<<< HEAD
 ## 63. IP Extraction Must Use a Single Shared Utility
 
 **Context:**
@@ -2979,3 +2978,106 @@ When hardening any backend endpoint, always grep the **entire frontend** for all
 grep -rn "change-password\|changePassword\|change_password" apps/sign/src/
 ```
 Do not assume one page = one endpoint. The same UX feature may have been independently implemented in multiple pages at different times.
+
+---
+
+## 85. Frontend — Browser Default Fonts Do Not Inherit Into Button and Input Elements
+
+**Problem:**
+During Phase 6.2 (Coming Soon cards on the MANAGEX landing), the "Notify Me" button rendered in the platform default UI font even though the parent card and the page-level `body` rule both set `font-family: var(--f-body)` (DM Sans). The input and the button looked visually inconsistent with the surrounding card copy — robotic and slightly off-brand. No console warning, no build error, no failed test — just wrong-looking output.
+
+**Root Cause:**
+`font-family` is an inherited CSS property in general — but `<button>`, `<input>`, `<select>`, and `<textarea>` are user-agent form controls that explicitly opt OUT of `font-family` inheritance in every major browser. They fall back to the platform default UI font (San Francisco on macOS, Segoe UI on Windows, etc.) unless `font-family` is set explicitly on the element itself (or on a selector that targets it specifically). This is by design — historically form controls were styled by the OS, not the page.
+
+This trips up developers because most other inherited properties (`color`, `line-height`, `letter-spacing`) DO flow through to form controls — only the font family is special-cased.
+
+**Fix:**
+```css
+/* WRONG — relies on inheritance that does not happen for form controls */
+.mx-product--soon { font-family: var(--f-body); }
+
+/* RIGHT — set the font explicitly on the control itself */
+.mx-product__notify-input,
+.mx-product__notify-btn {
+  font-family: var(--f-body);
+}
+```
+
+A blunter alternative is a global reset:
+```css
+button, input, select, textarea { font-family: inherit; }
+```
+But that hides the issue from future developers who think inheritance "just works".
+
+**How to Avoid:**
+- Every `<button>` and `<input>` rule in the codebase MUST declare `font-family` explicitly. Treat it the same as `font-size` and `padding` — a required property, not an optional one.
+- When auditing a design that looks "slightly off" but you can't articulate why, check the form controls first. The default UI font is close enough to common web fonts that it can read as just "robotic" rather than obviously wrong.
+- Same rule applies to MANAGEX landing CSS and all SIGN app forms.
+
+---
+
+## 86. UI — Audit the Live Section Background Before Specifying Card Surface Colour
+
+**Problem:**
+Phase 6.2's original implementation prompt specified the Coming Soon cards should have a "dark card background slightly lighter than the page background." But the MANAGEX Products section uses `var(--light-2)` (#F7F8FA) and the existing SIGN.ai card on the same row uses `var(--light)` (#FFFFFF). Following the prompt literally would have produced 5 dark cards sitting next to 1 white card in a 3×2 grid — visually broken, and it would have violated the "SIGN card unchanged" hard rule by association.
+
+**Root Cause:**
+Implementation prompts are sometimes written from memory or from a screenshot of a different part of the design. The MANAGEX landing alternates dark and light zones (Phase 4 rebrand established this pattern). Without re-checking the running page, it's easy to specify a card colour appropriate for the dark zone when the section in question is actually in a light zone.
+
+**Fix:**
+Before writing or following any implementation prompt that names a specific card-surface colour:
+1. Open the running app at the exact section in question.
+2. DevTools → inspect the section element. Note the `background-color` from computed styles.
+3. Compare to the prompt's specified card colour. If they conflict, **stop and ask** before implementing.
+4. Match adjacent existing cards in the same grid row by default — visual consistency at the row level is more important than literal prompt wording.
+
+**How to Avoid:**
+- For every card / panel / surface implementation, the FIRST step is to identify the actual section background colour in the live app. Not from memory. Not from CSS variable names — from `getComputedStyle()` on the running element.
+- Hard rule from Phase 6.2: do not change the SIGN.ai card to match new sibling cards. The card surface decision must adapt to the existing live design, not the other way around.
+
+---
+
+## 87. Architecture — Replace Brittle String-Split Render Logic With Index-Based Logic
+
+**Problem:**
+The MANAGEX landing Why-section originally rendered the `visual` array with branching logic that parsed string content to decide colour:
+```jsx
+row.visual.map((line, idx) => (
+  <div className="mx-why__visual-line">
+    {line.includes('/') ? (
+      <>
+        <span>{line.split('/')[0]}</span>
+        <span style={{ color: 'var(--mx-cyan)' }}>/{line.split('/')[1]}</span>
+      </>
+    ) : (
+      <>
+        <span>{line.replace('.', '')}</span>
+        <span style={{ color: 'var(--mx-cyan)' }}>.</span>
+      </>
+    )}
+  </div>
+))
+```
+This tied the cyan colouring to two completely orthogonal copy decisions: whether the string contained `'/'` and whether it contained `'.'`. Editing the copy could silently break the styling. In Phase 6.3 the `'/'` separator was removed from the strings (`'/ one brain'` → `'one brain'`) — which would have killed the cyan rendering entirely under the old logic.
+
+**Root Cause:**
+Mixing visual decisions with content parsing creates an implicit, undocumented coupling between the data and the renderer. A future copy edit by a non-engineer (or by anyone who hasn't read the renderer) can break the visual without producing any error.
+
+**Fix:**
+Replaced with an index-based renderer where the **last item** in each visual array gets the accent colour. The contract is now explicit in the data shape, not hidden in the rendering logic:
+```jsx
+row.visual.map((line, idx, arr) => (
+  <div className="mx-why__visual-line">
+    <span style={idx === arr.length - 1 ? { color: 'var(--mx-cyan)' } : undefined}>
+      {line}
+    </span>
+  </div>
+))
+```
+Now editing the copy (e.g. `'one brain'` → `'one platform'`) preserves the cyan styling automatically. Removing or adding a glyph in the copy has zero effect on rendering.
+
+**How to Avoid:**
+- If a renderer parses the content of a string to decide visual styling, that's a smell. Look for an index- or shape-based alternative.
+- Prefer "data has a known shape, styling follows the shape" over "styling inspects content character-by-character".
+- When a copy edit can break a render, the render is wrong, not the copy.
+- Same principle applies anywhere in the codebase that uses `string.includes()` or `string.split()` to drive JSX branches — Phase 6.3 fixed the MANAGEX Why-renderer; audit similar patterns when found.
