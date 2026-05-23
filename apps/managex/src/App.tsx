@@ -207,6 +207,12 @@ export default function App() {
     }));
   };
 
+  // ── Phase 6.4 Step 3D — mobile nav drawer (< 768px only) ─────────────
+  // Desktop ignores this: the drawer's `data-open` attribute only animates
+  // when the drawer is visible via the existing @media (max-width: 768px)
+  // rule. On desktop the drawer + overlay are `display: none`.
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 40);
     window.addEventListener('scroll', onScroll, { passive: true });
@@ -256,9 +262,105 @@ export default function App() {
             <a href={SIGN_SIGNUP} className="mx-btn mx-btn--cyan">
               Get started
             </a>
+            {/*
+              Mobile hamburger (Phase 6.4 Step 3D) — `display: none` on desktop
+              via the unprefixed default rule; the @media (max-width: 768px)
+              block flips it to `display: inline-flex`. 44×44 touch target.
+            */}
+            <button
+              type="button"
+              className="mx-nav__hamburger"
+              onClick={() => setMobileNavOpen(true)}
+              aria-label="Open menu"
+              aria-expanded={mobileNavOpen}
+              aria-controls="mx-mobile-drawer"
+            >
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+              </svg>
+            </button>
           </div>
         </div>
       </nav>
+
+      {/*
+        ═══════ MOBILE NAV DRAWER (Phase 6.4 Step 3D) ═══════
+        Always rendered so the slide-in/out transition works in both directions.
+        Hidden entirely on desktop via the existing `@media (max-width: 768px)`
+        block: outside that breakpoint the drawer + overlay are `display: none`.
+      */}
+      <div
+        className="mx-nav__drawer-overlay"
+        data-open={mobileNavOpen ? 'true' : 'false'}
+        onClick={() => setMobileNavOpen(false)}
+        aria-hidden="true"
+      />
+      <aside
+        id="mx-mobile-drawer"
+        className="mx-nav__drawer"
+        data-open={mobileNavOpen ? 'true' : 'false'}
+        aria-label="Mobile navigation"
+        aria-hidden={!mobileNavOpen}
+      >
+        <button
+          type="button"
+          className="mx-nav__drawer-close"
+          onClick={() => setMobileNavOpen(false)}
+          aria-label="Close menu"
+        >
+          <svg
+            width="22"
+            height="22"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+        <nav className="mx-nav__drawer-nav" aria-label="Primary mobile">
+          {NAV_LINKS.map((l) => (
+            <a
+              key={l.href}
+              href={l.href}
+              className="mx-nav__drawer-link"
+              onClick={() => setMobileNavOpen(false)}
+            >
+              {l.label}
+            </a>
+          ))}
+        </nav>
+        <div className="mx-nav__drawer-actions">
+          <a
+            href={SIGN_LOGIN}
+            className="mx-btn mx-btn--ghost-d mx-nav__drawer-btn"
+            onClick={() => setMobileNavOpen(false)}
+          >
+            Sign in
+          </a>
+          <a
+            href={SIGN_SIGNUP}
+            className="mx-btn mx-btn--cyan mx-nav__drawer-btn"
+            onClick={() => setMobileNavOpen(false)}
+          >
+            Get started
+          </a>
+        </div>
+      </aside>
 
       <main id="top">
         {/* ═══════ HERO ═══════ */}
