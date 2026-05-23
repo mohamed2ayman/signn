@@ -136,14 +136,14 @@ const WHY_ROWS = [
     heading: 'Every product. One truth.',
     body:
       'A contract clause in SIGN automatically generates a compliance check in GUARDIA, a schedule risk alert in SPANTEC, and a claims marker in CLAIMX — simultaneously. One platform. One source of truth. Zero information lost between disciplines.',
-    visual: ['6 products', '/ one brain'],
+    visual: ['6 products', 'one brain'],
   },
   {
     label: 'Proactive Intelligence',
     heading: 'See risk before it becomes loss.',
     body:
       'Traditional tools report what happened. MANAGEX predicts what will happen — surfacing delay indicators, contract risks, safety signals, and cost anomalies before they compound into crises. Not reactive. Not retrospective. Predictive.',
-    visual: ['40%', '/ fewer disputes'],
+    visual: ['40%', 'fewer disputes'],
   },
 ];
 
@@ -182,8 +182,30 @@ const FOOTER_PLATFORM = ['How it works', 'Integrations', 'Security', 'API', 'Pri
 const FOOTER_COMPANY = ['About MANAGEX', 'Research', 'Careers', 'Press', 'Contact'];
 const FOOTER_RESOURCES = ['Documentation', 'Blog', 'Case studies', 'Webinars', 'Help centre'];
 
+type NotifyEntry = { email: string; submitted: boolean };
+
 export default function App() {
   const [scrolled, setScrolled] = useState(false);
+  const [notifyState, setNotifyState] = useState<Record<string, NotifyEntry>>({});
+
+  const getNotifyState = (name: string): NotifyEntry =>
+    notifyState[name] ?? { email: '', submitted: false };
+
+  const setNotifyEmail = (name: string, email: string) => {
+    setNotifyState((prev) => ({
+      ...prev,
+      [name]: { email, submitted: prev[name]?.submitted ?? false },
+    }));
+  };
+
+  const submitNotify = (name: string) => {
+    const current = getNotifyState(name);
+    if (!current.email.trim()) return;
+    setNotifyState((prev) => ({
+      ...prev,
+      [name]: { email: current.email, submitted: true },
+    }));
+  };
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 40);
@@ -317,9 +339,9 @@ export default function App() {
               </h2>
               <p className="mx-section__body mx-section__body--light">
                 Construction doesn&rsquo;t happen in phases — it happens in one connected,
-                high-stakes continuum. MANAGEX is the first platform intelligent enough to treat it
-                that way — connecting every phase, every team, and every decision from the first
-                idea to the final handover.
+                high-stakes continuum. MANAGEX is the first platform built to treat it that way —
+                connecting every phase, every team, and every decision from the first idea to the
+                final handover.
               </p>
             </div>
 
@@ -391,14 +413,80 @@ export default function App() {
                     <div className="mx-product__tag">{p.tag}</div>
                   </a>
                 ) : (
-                  <div key={p.name} className="mx-product mx-product--soon">
-                    <span className="mx-product__dot" style={{ background: p.color }} />
+                  <div
+                    key={p.name}
+                    className="mx-product mx-product--soon"
+                    style={{ ['--soon-color' as string]: p.color }}
+                  >
+                    <span
+                      className="mx-product__top-strip"
+                      style={{ background: p.color }}
+                      aria-hidden="true"
+                    />
+                    <div className="mx-product__soon-badge">
+                      <span
+                        className="mx-product__soon-badge-dot"
+                        style={{ background: p.color }}
+                      />
+                      Coming Soon
+                    </div>
                     <div className="mx-product__name" style={{ color: p.color }}>
                       {p.name}
                     </div>
                     <div className="mx-product__domain">{p.domain}</div>
                     <p className="mx-product__desc">{p.description}</p>
-                    <div className="mx-product__soon">Coming soon</div>
+
+                    {getNotifyState(p.name).submitted ? (
+                      <div
+                        className="mx-product__notify-confirm"
+                        style={{ color: p.color }}
+                        role="status"
+                        aria-live="polite"
+                      >
+                        You&rsquo;re on the list! We&rsquo;ll notify you at launch.
+                      </div>
+                    ) : (
+                      <>
+                        <p className="mx-product__microcopy">
+                          Be the first to know when we launch.
+                        </p>
+                        <form
+                          className="mx-product__notify-form"
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            submitNotify(p.name);
+                          }}
+                          noValidate
+                        >
+                          <label
+                            htmlFor={`notify-${p.name}`}
+                            className="mx-visually-hidden"
+                          >
+                            Email address for {p.name} launch updates
+                          </label>
+                          <input
+                            id={`notify-${p.name}`}
+                            type="email"
+                            className="mx-product__notify-input"
+                            placeholder="your@email.com"
+                            value={getNotifyState(p.name).email}
+                            onChange={(e) => setNotifyEmail(p.name, e.target.value)}
+                            autoComplete="email"
+                          />
+                          <button
+                            type="submit"
+                            className="mx-btn mx-product__notify-btn"
+                            style={{
+                              background: p.color,
+                              borderColor: p.color,
+                              color: '#0C0E14',
+                            }}
+                          >
+                            Notify Me
+                          </button>
+                        </form>
+                      </>
+                    )}
                   </div>
                 )
               )}
@@ -439,19 +527,17 @@ export default function App() {
                     {row.visual === null ? (
                       <WhyRow1Visual />
                     ) : (
-                      row.visual.map((line, idx) => (
+                      row.visual.map((line, idx, arr) => (
                         <div key={idx} className="mx-why__visual-line">
-                          {line.includes('/') ? (
-                            <>
-                              <span>{line.split('/')[0]}</span>
-                              <span style={{ color: 'var(--mx-cyan)' }}>/{line.split('/')[1]}</span>
-                            </>
-                          ) : (
-                            <>
-                              <span>{line.replace('.', '')}</span>
-                              <span style={{ color: 'var(--mx-cyan)' }}>.</span>
-                            </>
-                          )}
+                          <span
+                            style={
+                              idx === arr.length - 1
+                                ? { color: 'var(--mx-cyan)' }
+                                : undefined
+                            }
+                          >
+                            {line}
+                          </span>
                         </div>
                       ))
                     )}

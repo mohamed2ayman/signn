@@ -1499,6 +1499,46 @@ These backend changes are additive and `@IsOptional()` — no breaking change.
 
 ---
 
+## Phase 6.2 — Coming Soon Cards (ManageX Landing) (shipped — 2026-05-23)
+
+Upgraded the 5 sibling product placeholders on the MANAGEX landing page into fully styled cards with brand colour accents and a local-only "Notify Me" opt-in. No backend wiring — purely a visual + UI state change.
+
+### What shipped
+- Enhanced the existing 5 sibling product cards in `apps/managex/src/App.tsx`. Before: faded placeholders at `opacity: 0.5` showing only name/domain/desc + a tiny "Coming soon" label. After: full-opacity cards with brand-coloured top strip, "Coming Soon" pill badge, microcopy, email input, and a "Notify Me" button.
+- Each card carries its own local state. State shape: `Record<string, { email: string; submitted: boolean }>` keyed by product `name`. On submit, the form row is replaced with an inline confirmation message ("You're on the list! We'll notify you at launch.") coloured in the product's brand colour. State isolation: submitting one card never affects the other four.
+- Email opt-in is local state only — no backend call, no persistence, no data stored anywhere. The submit handler bails out silently on empty input (no validation toast).
+- Component pattern: inline JSX + CSS classes — no new component files. Matches the existing MANAGEX landing convention (the entire landing page is one `App.tsx` with `ManagexLogo.tsx` and `HeroDashboard.tsx` as the only sub-components).
+- New CSS classes added in `apps/managex/src/index.css`: `.mx-product__top-strip`, `.mx-product__soon-badge`, `.mx-product__soon-badge-dot`, `.mx-product__microcopy`, `.mx-product__notify-form`, `.mx-product__notify-input`, `.mx-product__notify-btn`, `.mx-product__notify-confirm`, `.mx-visually-hidden`. Per-card brand colour is driven by a CSS custom property `--soon-color` set inline on the card, then consumed by `color-mix()` in the supporting classes.
+- Card surface: light (`background: var(--light)`) to match the adjacent SIGN.ai card in the same 3×2 grid row. The Products section background is `var(--light-2)` — using dark cards would have clashed with the unchanged SIGN card.
+- Font fix: `.mx-product__notify-btn` explicitly sets `font-family: var(--f-body)`. Browsers do NOT inherit `font-family` into `<button>` or `<input>` elements — without an explicit declaration they fall back to the platform default UI font.
+
+### Hard rules — never violate
+1. The "Notify Me" form is local state only. Do NOT wire it to a backend, an email queue, or any persistence layer without a dedicated task in the next sprint. The product team needs to design the waitlist data model, consent surface, and unsubscribe flow first.
+2. The SIGN.ai card branch of the products-grid ternary at `App.tsx` is untouched. Never edit the SIGN card to "match" the soon cards — they intentionally use different layouts (SIGN uses `.mx-product--available` with its own `.mx-product__top-border` hover behaviour).
+3. Every `<input>` and `<button>` on this page (and elsewhere in MANAGEX) MUST set `font-family` explicitly. See lesson #85.
+4. The card surface colour matches the live SIGN.ai card on the same row. Before changing it, audit the section background in the running app — see lesson #86.
+
+---
+
+## Phase 6.3 — Fine Touches (ManageX Landing) (shipped — 2026-05-23)
+
+A small, contained copy and render cleanup on the MANAGEX landing page. Single file touched: `apps/managex/src/App.tsx`.
+
+### What shipped
+- Removed `"/"` visual separators from `WHY_ROWS` (App.tsx lines 139 and 146). Strings `'/ one brain'` and `'/ fewer disputes'` became `'one brain'` and `'fewer disputes'`. The two-line typography already separates the stat from its caption — no replacement glyph needed.
+- Replaced the brittle `line.includes('/')` split-and-color branch in the Why visual renderer with an index-based renderer: the **last item** in each `WHY_ROWS[i].visual` array renders in `var(--mx-cyan)`, every other item uses the default text colour. The dead `line.includes('.')` else branch was removed at the same time — `visual` strings never contained `.`. See lesson #87.
+- One tone fix: lifecycle section body changed from "MANAGEX is the first platform **intelligent enough to treat it that way**" to "MANAGEX is the first platform **built to treat it that way**". Removes hedgy phrasing where the rest of the page is direct. No meaning change.
+- Mission statement section (lines 582–597) deliberately **untouched** — deferred to the next sprint.
+
+### Files changed
+- `apps/managex/src/App.tsx` only. `index.css` was NOT touched in this phase.
+
+### Hard rules — never violate
+1. The Why-section visual renderer is now keyed off array index, not string content. If a row's `visual` array is ever changed, the last item is always the cyan-coloured line — that contract drives both the data and the renderer. Do not reintroduce content-based parsing.
+2. Do not edit the mission section (`<section id="mission">`) without an explicit task in the active sprint — the copy is being rewritten as its own work item.
+
+---
+
 ## Team Coordination Rules (Learned May 2026)
 
 These rules were extracted from a painful multi-day coordination exercise involving the Phase 3.2 security work, the MANAGEX rebrand, and the legal layer — three branches that had to be cleanly rebased onto each other before merging.
