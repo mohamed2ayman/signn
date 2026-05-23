@@ -10,9 +10,13 @@ import { ManagexMark } from '@/components/common/ManagexLogo';
 
 interface TopBarProps {
   sidebarCollapsed?: boolean;
+  // ── Phase 6.4 Step 1 — opens the mobile sidebar drawer (< md only) ────
+  // Optional so existing call sites that don't pass it (none in-tree, but
+  // future ones) keep compiling; the hamburger no-ops if undefined.
+  onMobileMenuOpen?: () => void;
 }
 
-export default function TopBar({ sidebarCollapsed = false }: TopBarProps) {
+export default function TopBar({ sidebarCollapsed = false, onMobileMenuOpen }: TopBarProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { logout } = useAuth();
@@ -47,22 +51,48 @@ export default function TopBar({ sidebarCollapsed = false }: TopBarProps) {
 
   return (
     <header
-      className={`fixed top-0 z-30 flex h-14 items-center justify-between border-b border-gray-200/80 bg-white/80 backdrop-blur-md px-6 transition-all duration-300 ${
+      className={`fixed top-0 z-30 flex h-14 items-center justify-between border-b border-gray-200/80 bg-white/80 backdrop-blur-md px-6 transition-all duration-300 left-0 right-0 ${
+        // Default (mobile, any direction): full-width via `left-0 right-0`.
+        // Desktop: pin the sidebar-side edge to the sidebar's inner offset.
+        // The far edge stays at 0 (inherited from the base classes).
         sidebarCollapsed
-          ? 'ltr:left-[68px] rtl:right-[68px]'
-          : 'ltr:left-[240px] rtl:right-[240px]'
-      } ltr:right-0 rtl:left-0`}
+          ? 'md:ltr:left-[68px] md:rtl:right-[68px]'
+          : 'md:ltr:left-[240px] md:rtl:right-[240px]'
+      }`}
     >
       {/* Left section */}
       <div className="flex items-center gap-4">
-        {/* MANAGEX back-link */}
+        {/*
+          Mobile hamburger — opens the sidebar drawer below md.
+          Hidden on desktop (md+) where the sidebar is permanently visible.
+          44×44 touch target per WCAG / iOS HIG minimum.
+        */}
+        <button
+          type="button"
+          onClick={onMobileMenuOpen}
+          aria-label={t('nav.openMenu', 'Open menu')}
+          className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-gray-700 transition-colors hover:bg-gray-100 md:hidden ltr:-ml-2 rtl:-mr-2"
+        >
+          <svg
+            className="h-5 w-5"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+          </svg>
+        </button>
+
+        {/* MANAGEX back-link — also hidden < 768 via .managex-backlink CSS (styles/index.css:112) */}
         <a href={manageXUrl} className="managex-backlink" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }} aria-label="Back to ManageX">
           <ManagexMark size={16} onLight={true} />
           <span>&larr; MANAGEX</span>
         </a>
 
-        {/* Search */}
-        <div className="relative">
+        {/* Search — hidden on mobile; the 288px input would overflow a 375px viewport */}
+        <div className="relative hidden md:block">
           <input
             type="text"
             placeholder={t('common.search')}
