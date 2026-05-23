@@ -383,7 +383,8 @@ function FindingsTable({
   // Pin CRITICAL findings at the top
   const sorted = [...findings].sort((a, b) => severityRank(b.severity) - severityRank(a.severity));
   return (
-    <table className="min-w-full divide-y divide-gray-200 text-sm">
+    <div className="overflow-x-auto w-full">
+      <table className="min-w-full divide-y divide-gray-200 text-sm">
       <thead className="bg-gray-50">
         <tr className="text-left text-[11px] uppercase text-gray-500">
           <th className="px-4 py-2">Clause</th>
@@ -430,6 +431,7 @@ function FindingsTable({
         ))}
       </tbody>
     </table>
+    </div>
   );
 }
 

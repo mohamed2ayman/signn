@@ -849,7 +849,8 @@ export default function AdminKnowledgeAssetsPage() {
         </div>
       ) : (
         <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-          <table className="w-full">
+          <div className="overflow-x-auto w-full">
+            <table className="w-full min-w-full">
             <thead>
               <tr className="border-b border-gray-200 bg-gray-50 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
                 <th className="px-6 py-3">Asset</th>
@@ -973,6 +974,7 @@ export default function AdminKnowledgeAssetsPage() {
               ))}
             </tbody>
           </table>
+          </div>
 
           {assets.length === 0 && (
             <div className="py-12 text-center">

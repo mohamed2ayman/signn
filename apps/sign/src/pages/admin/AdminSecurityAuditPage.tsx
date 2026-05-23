@@ -78,7 +78,8 @@ export default function AdminSecurityAuditPage() {
         ) : !data || data.rows.length === 0 ? (
           <p className="p-8 text-center text-sm text-gray-500">No matching events.</p>
         ) : (
-          <table className="min-w-full divide-y divide-gray-200 text-sm">
+          <div className="overflow-x-auto w-full">
+            <table className="min-w-full divide-y divide-gray-200 text-sm">
             <thead className="bg-gray-50">
               <tr className="text-left text-xs uppercase text-gray-500">
                 <th className="px-4 py-2">When</th>
@@ -94,6 +95,7 @@ export default function AdminSecurityAuditPage() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 

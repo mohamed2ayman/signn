@@ -533,7 +533,8 @@ export default function AdminAuditLogPage() {
             <p className="text-sm">No audit log entries found.</p>
           </div>
         ) : (
-          <table className="w-full">
+          <div className="overflow-x-auto w-full">
+            <table className="w-full min-w-full">
             <thead>
               <tr className="border-b border-gray-200 bg-gray-50 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
                 <th className="px-4 py-3">Timestamp</th>
@@ -614,6 +615,7 @@ export default function AdminAuditLogPage() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 

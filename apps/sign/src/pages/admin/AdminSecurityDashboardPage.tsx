@@ -147,7 +147,8 @@ export default function AdminSecurityDashboardPage() {
         ) : !blocked.data || blocked.data.length === 0 ? (
           <p className="text-sm text-gray-500">No blocked traffic in the last 24h.</p>
         ) : (
-          <table className="min-w-full divide-y divide-gray-200 text-sm">
+          <div className="overflow-x-auto w-full">
+            <table className="min-w-full divide-y divide-gray-200 text-sm">
             <thead>
               <tr className="text-left text-xs uppercase text-gray-500">
                 <th className="py-2 pr-4">When</th>
@@ -173,6 +174,7 @@ export default function AdminSecurityDashboardPage() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </section>
     </div>

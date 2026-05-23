@@ -73,7 +73,8 @@ export default function AdminChatQueueTab({ onOpenChat }: Props) {
           No chats waiting. New chats will appear here in real time.
         </div>
       ) : (
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto w-full">
+          <table className="w-full min-w-full text-sm">
           <thead className="bg-gray-50 text-xs uppercase tracking-wider text-gray-500">
             <tr>
               <th className="px-4 py-2 text-left font-medium">User</th>
@@ -119,6 +120,7 @@ export default function AdminChatQueueTab({ onOpenChat }: Props) {
             ))}
           </tbody>
         </table>
+        </div>
       )}
     </div>
   );
