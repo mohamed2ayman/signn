@@ -4,6 +4,7 @@ import { BullModule } from '@nestjs/bull';
 import {
   Contract,
   Obligation,
+  ObligationAssignee,
   ObligationReminderLog,
   Project,
   User,
@@ -19,6 +20,7 @@ import { ComplianceModule } from '../compliance/compliance.module';
   imports: [
     TypeOrmModule.forFeature([
       Obligation,
+      ObligationAssignee,
       ObligationReminderLog,
       Contract,
       Project,

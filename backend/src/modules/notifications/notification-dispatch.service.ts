@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bull';
 import { NotificationsService } from './notifications.service';
-import { NotificationType } from '../../database/entities';
+import { NotificationType, ObligationReminderType } from '../../database/entities';
 import { EmailJobData } from './email-queue.processor';
 import * as templates from './templates';
 
@@ -378,6 +378,49 @@ export class NotificationDispatchService {
         templateName: 'support-ticket-created',
       },
     });
+  }
+
+  /**
+   * 10. Obligation reminder — IN_APP notification only (email is handled
+   *     directly by ObligationReminderProcessor for full template control).
+   */
+  async dispatchObligationReminder(params: {
+    obligationId: string;
+    obligationDescription: string;
+    userId: string;
+    tier: ObligationReminderType;
+    contractName: string;
+  }): Promise<void> {
+    const tierTitles: Partial<Record<ObligationReminderType, string>> = {
+      [ObligationReminderType.OVERDUE]: 'Obligation Overdue',
+      [ObligationReminderType.DUE_TODAY]: 'Obligation Due Today',
+      [ObligationReminderType.DAYS_1]: 'Obligation Due Tomorrow',
+      [ObligationReminderType.DAYS_7]: 'Obligation Due in 7 Days',
+      [ObligationReminderType.DAYS_14]: 'Obligation Due in 14 Days',
+      [ObligationReminderType.DAYS_30]: 'Obligation Due in 30 Days',
+    };
+
+    const title = tierTitles[params.tier] ?? 'Obligation Reminder';
+    const desc =
+      params.obligationDescription.length > 80
+        ? `${params.obligationDescription.slice(0, 80)}…`
+        : params.obligationDescription;
+
+    try {
+      await this.notificationsService.create({
+        user_id: params.userId,
+        title,
+        message: `${desc} — ${params.contractName}`,
+        type: NotificationType.IN_APP,
+        related_entity_type: 'obligation',
+        related_entity_id: params.obligationId,
+      });
+    } catch (err) {
+      // Best-effort — never throw from a background job dispatcher
+      this.logger.error(
+        `Failed to create in-app notification for obligation ${params.obligationId}: ${(err as Error).message}`,
+      );
+    }
   }
 
   /**

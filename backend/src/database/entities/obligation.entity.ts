@@ -5,6 +5,7 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   ManyToOne,
+  OneToMany,
   JoinColumn,
 } from 'typeorm';
 import { Contract } from './contract.entity';
@@ -12,6 +13,7 @@ import { ContractClause } from './contract-clause.entity';
 import { Project } from './project.entity';
 import { ComplianceCheck } from './compliance-check.entity';
 import { User } from './user.entity';
+import { ObligationAssignee } from './obligation-assignee.entity';
 
 /**
  * Obligation status. `MET` and `WAIVED` were added in Phase 3.4 alongside
@@ -160,6 +162,20 @@ export class Obligation {
 
   @Column({ type: 'varchar', length: 1000, nullable: true })
   evidence_url: string;
+
+  // ─── Phase 7.1 — Per-obligation reminder schedule ─────────────────────
+  /**
+   * Days-before-due-date at which reminders are sent for THIS obligation.
+   * Defaults to [30, 14, 7, 1]. Override per obligation for different cadences
+   * (e.g. [90, 60, 30, 7] for long-horizon performance bonds).
+   */
+  @Column({ type: 'int', array: true, default: () => 'ARRAY[30, 14, 7, 1]' })
+  reminder_schedule: number[];
+
+  // ─── Phase 7.1 — Assignees ─────────────────────────────────────────────
+  /** Users explicitly assigned to complete this obligation. */
+  @OneToMany(() => ObligationAssignee, (oa) => oa.obligation)
+  assignees: ObligationAssignee[];
 
   @CreateDateColumn({ type: 'timestamptz' })
   created_at: Date;

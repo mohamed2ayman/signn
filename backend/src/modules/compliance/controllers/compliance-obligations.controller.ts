@@ -1,10 +1,15 @@
 import {
+  BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Header,
+  HttpCode,
   Param,
   Patch,
+  Post,
+  Put,
   Query,
   Res,
   UseGuards,
@@ -16,8 +21,16 @@ import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { Obligation, ObligationStatus, User } from '../../../database/entities';
 import { IcalExportService } from '../services/ical-export.service';
+import { ComplianceObligationService } from '../services/compliance-obligation.service';
 import { ObligationFiltersDto } from '../dto/obligation-filters.dto';
 import { UpdateObligationInlineDto } from '../dto/update-obligation-inline.dto';
+import { AssignObligationDto } from '../dto/assign-obligation.dto';
+import { UpdateEvidenceDto } from '../dto/update-evidence.dto';
+import { ObligationPortfolioFiltersDto } from '../dto/obligation-portfolio-filters.dto';
+import { ObligationCalendarQueryDto } from '../dto/obligation-calendar-query.dto';
+
+/** One year in milliseconds — max calendar range. */
+const ONE_YEAR_MS = 365 * 24 * 60 * 60 * 1000;
 
 @Controller()
 @UseGuards(JwtAuthGuard)
@@ -26,7 +39,10 @@ export class ComplianceObligationsController {
     @InjectRepository(Obligation)
     private readonly obligationRepo: Repository<Obligation>,
     private readonly ical: IcalExportService,
+    private readonly obligationSvc: ComplianceObligationService,
   ) {}
+
+  // ─── Existing Phase 3.4 endpoints ────────────────────────────────────────
 
   @Get('contracts/:contractId/obligations')
   async listForContract(
@@ -36,6 +52,8 @@ export class ComplianceObligationsController {
     return this.applyFilters(
       this.obligationRepo
         .createQueryBuilder('o')
+        .leftJoinAndSelect('o.assignees', 'oa')
+        .leftJoinAndSelect('oa.user', 'au')
         .where('o.contract_id = :contractId', { contractId }),
       filters,
     )
@@ -93,6 +111,8 @@ export class ComplianceObligationsController {
       this.obligationRepo
         .createQueryBuilder('o')
         .leftJoinAndSelect('o.contract', 'c')
+        .leftJoinAndSelect('o.assignees', 'oa')
+        .leftJoinAndSelect('oa.user', 'au')
         .where('o.project_id = :projectId', { projectId }),
       filters,
     )
@@ -100,7 +120,83 @@ export class ComplianceObligationsController {
       .getMany();
   }
 
-  // ─── Helpers ────────────────────────────────────────────
+  // ─── Phase 7.1 — Assignee management ─────────────────────────────────────
+
+  /**
+   * POST /contracts/:contractId/obligations/:obligationId/assign
+   * Assign a user to an obligation. Returns 409 if already assigned.
+   */
+  @Post('contracts/:contractId/obligations/:obligationId/assign')
+  async assignUser(
+    @Param('obligationId') obligationId: string,
+    @Body() body: AssignObligationDto,
+    @CurrentUser() user: User,
+  ) {
+    return this.obligationSvc.assignUser(obligationId, body.user_id, user.id);
+  }
+
+  /**
+   * DELETE /contracts/:contractId/obligations/:obligationId/assign/:userId
+   * Remove a user's assignment from an obligation.
+   */
+  @Delete('contracts/:contractId/obligations/:obligationId/assign/:userId')
+  @HttpCode(204)
+  async unassignUser(
+    @Param('obligationId') obligationId: string,
+    @Param('userId') userId: string,
+  ): Promise<void> {
+    await this.obligationSvc.unassignUser(obligationId, userId);
+  }
+
+  /**
+   * PUT /contracts/:contractId/obligations/:obligationId/evidence
+   * Attach an evidence URL to an obligation.
+   */
+  @Put('contracts/:contractId/obligations/:obligationId/evidence')
+  async updateEvidence(
+    @Param('obligationId') obligationId: string,
+    @Body() body: UpdateEvidenceDto,
+  ): Promise<Obligation> {
+    return this.obligationSvc.updateEvidence(obligationId, body.evidence_url);
+  }
+
+  // ─── Phase 7.1 — Portfolio & Calendar ────────────────────────────────────
+
+  /**
+   * GET /obligations/portfolio
+   * Org-scoped cross-contract obligation portfolio.
+   * Optional filters: from, to, project_id, status, type, assignee.
+   */
+  @Get('obligations/portfolio')
+  async getPortfolio(
+    @Query() filters: ObligationPortfolioFiltersDto,
+    @CurrentUser() user: User,
+  ) {
+    return this.obligationSvc.getPortfolio(user.organization_id, filters);
+  }
+
+  /**
+   * GET /obligations/calendar?from=YYYY-MM-DD&to=YYYY-MM-DD
+   * Org-scoped calendar events for obligations in the given date range.
+   * Max range: 1 year.
+   */
+  @Get('obligations/calendar')
+  async getCalendar(
+    @Query() query: ObligationCalendarQueryDto,
+    @CurrentUser() user: User,
+  ) {
+    const fromMs = new Date(query.from).getTime();
+    const toMs = new Date(query.to).getTime();
+    if (isNaN(fromMs) || isNaN(toMs) || toMs < fromMs) {
+      throw new BadRequestException('`to` must be on or after `from`');
+    }
+    if (toMs - fromMs > ONE_YEAR_MS) {
+      throw new BadRequestException('Calendar range cannot exceed 1 year');
+    }
+    return this.obligationSvc.getCalendar(user.organization_id, query.from, query.to);
+  }
+
+  // ─── Helpers ──────────────────────────────────────────────────────────────
 
   private applyFilters<T>(qb: any, f: ObligationFiltersDto): any {
     if (f.party) qb.andWhere('o.responsible_party = :party', { party: f.party });

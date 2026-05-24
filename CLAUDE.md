@@ -1,7 +1,7 @@
 # CLAUDE.md — Project Intelligence File
 > Read this entire file at the start of every Claude Code session before touching any code.
 > This file is the single source of truth for all architectural decisions, rules, and context.
-> Last updated: 2026-05-24 (Phase 6.8 shipped — /review custom slash command. Custom Commands section added. Lesson #88 added — Claude Code has no /plugin command. Phase 6.4 — full mobile responsive design — shipped 2026-05-23; lessons 89–93 added.)
+> Last updated: 2026-05-24 (Phase 7.1 Step 1 shipped — Obligation Tracking Foundation. 3 migrations, ObligationAssignee entity, 5 new endpoints, reminder processor upgrade, in-app notifications. Lessons 94–96 added.)
 
 ---
 
@@ -1737,3 +1737,96 @@ Phase 6.7 was originally noted as "Frontend Design plugin install". This was bas
 ### Hard rules added
 - See Custom Slash Commands section above
 - Never attempt `/plugin install` — the command does not exist
+
+---
+
+## Phase 7.1 Step 1 — Obligation Tracking Foundation (shipped — 2026-05-24)
+
+Backend-only foundation for the Phase 7.1 Obligation Tracking & Deadline Alerts feature.
+No frontend code was touched. No ai-backend code was touched. All existing 33 tests pass.
+
+### What was built
+
+**3 new migrations (all idempotent):**
+- `1748000000001-AddContractDateFields.ts` — adds 6 nullable columns to `contracts`:
+  `start_date`, `end_date`, `effective_date`, `expiry_date`, `notice_period_days`,
+  `defects_liability_period_days`. Uses `ADD COLUMN IF NOT EXISTS`.
+- `1748000000002-AddObligationAssigneesAndEscalation.ts` — creates `obligation_assignees`
+  join table (UUID PK, obligation_id FK CASCADE, user_id FK CASCADE, assigned_at, assigned_by
+  FK SET NULL). UNIQUE index on (obligation_id, user_id). Adds `escalation_contact_user_id`
+  UUID FK + `escalation_contact_email` VARCHAR(255) to `contracts`. Uses `DO $$ BEGIN
+  IF NOT EXISTS ... END$$` block for the FK constraint (PostgreSQL has no
+  `ADD CONSTRAINT IF NOT EXISTS` syntax).
+- `1748000000003-AddObligationReminderSchedule.ts` — adds `reminder_schedule INTEGER[]
+  NOT NULL DEFAULT ARRAY[30, 14, 7, 1]` to `obligations`.
+
+**New entity:**
+- `obligation-assignee.entity.ts` — `@Entity('obligation_assignees')` with ManyToOne→Obligation
+  (CASCADE), ManyToOne→User (CASCADE), and ManyToOne→User assigner (SET NULL).
+
+**Entity updates:**
+- `obligation.entity.ts` — added `reminder_schedule: number[]` column and `assignees:
+  ObligationAssignee[]` OneToMany relation.
+- `contract.entity.ts` — added 6 date columns + `escalation_contact_user_id`,
+  `escalation_contact_user` ManyToOne, and `escalation_contact_email`.
+
+**DTOs (create + update both updated):**
+- `CreateContractDto` / `UpdateContractDto` — 8 new optional fields. Escalation contact
+  uses `@ValidateIf((o) => !o.escalation_contact_email)` / `@ValidateIf((o) =>
+  !o.escalation_contact_user_id)` for mutual exclusion (provide one or neither, never both).
+
+**5 new endpoints (ComplianceObligationsController):**
+- `POST /contracts/:contractId/obligations/:obligationId/assign` — `{ user_id: UUID }`,
+  returns 409 if already assigned.
+- `DELETE /contracts/:contractId/obligations/:obligationId/assign/:userId` — 204 on success,
+  404 if not assigned.
+- `PUT /contracts/:contractId/obligations/:obligationId/evidence` — `{ evidence_url: IsUrl }`,
+  attaches completion evidence to an obligation.
+- `GET /obligations/portfolio` — org-scoped cross-contract portfolio. Optional query filters:
+  `from`, `to`, `project_id`, `status`, `type`, `assignee`.
+- `GET /obligations/calendar?from=YYYY-MM-DD&to=YYYY-MM-DD` — calendar events for date
+  range (max 1 year). Returns `{ id, title, start, end, status, contract_id, project_id, color }`.
+  Color: PENDING=#4F6EF7, IN_PROGRESS=#F59E0B, OVERDUE=#DC2626, MET/COMPLETED=#059669, WAIVED=#9CA3AF.
+
+**Reminder processor upgrade (obligation-reminder.processor.ts):**
+- Relations now load `assignees.user` + `contract.escalation_contact_user`.
+- Multi-recipient: sends to all assignees first; falls back to `contract.creator`
+  only when no assignees are set.
+- Custom `reminder_schedule` per obligation: `scheduledTierFor()` replaces the old
+  hardcoded `tierFor()`. Maps day thresholds to nearest standard tier (DAYS_30/14/7/1)
+  via `thresholdToTier()`. Falls back to `[30, 14, 7, 1]` if schedule is empty.
+- OVERDUE escalation: fires `sendEscalation()` after primary recipients.
+  Priority: `escalation_contact_user` (email + in-app) → `escalation_contact_email`
+  (email only, no in-app notification possible for external addresses).
+- In-app notifications: `dispatch.dispatchObligationReminder()` is called for every
+  platform-user recipient immediately after the email is enqueued.
+- `weekly-digest` now includes assignee users, not just contract creators.
+- Existing email HTML rendering (renderReminder / renderDigest) preserved unchanged.
+
+**NotificationDispatchService — new method:**
+- `dispatchObligationReminder({ obligationId, description, userId, tier, contractName })`
+  — creates IN_APP notification only (email is handled directly by the processor for
+  full template control). Best-effort: never throws, logs errors instead.
+  Title examples: "Obligation Overdue", "Obligation Due in 7 Days".
+
+### Hard rules — never violate
+
+1. **Use `obligation_assignees` for recipient lookup** — NEVER read `contract.created_by`
+   directly as the obligation owner. Always call `primaryRecipientsFor()` (or equivalent):
+   assignees first, fallback to creator. Future obligation endpoints must follow this pattern.
+
+2. **Every reminder tier must create BOTH email AND in-app notification** — do not add
+   new reminder paths that send email only. The processor sends email via `enqueueEmail()`,
+   then immediately calls `dispatchObligationReminder()`. These two calls must always be
+   paired for platform users.
+
+3. **External escalation contacts (email-only) cannot receive in-app notifications** —
+   `escalation_contact_email` rows have no `user_id`. Only enqueue email for them. Never
+   try to call `notificationsService.create()` with an email address instead of a user UUID.
+
+4. **`reminder_schedule` is the canonical source for tier timing** — never add hardcoded
+   day thresholds in processor code. Always pass `o.reminder_schedule` to `scheduledTierFor()`.
+
+5. **The UNIQUE constraint on `(obligation_id, user_id)` in `obligation_assignees` is
+   enforced at DB level** — the service also throws `ConflictException` (409) before hitting
+   the DB constraint. Both layers must remain in place.
