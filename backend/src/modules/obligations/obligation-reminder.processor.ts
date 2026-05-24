@@ -20,13 +20,18 @@ import { baseEmailLayout } from '../notifications/templates/base-layout';
 import { ObligationTokenService } from '../compliance/services/obligation-token.service';
 
 /**
- * Phase 3.4 enhanced obligation-reminder engine.
+ * Phase 3.4 / Phase 7.1 enhanced obligation-reminder engine.
  *
  * `check-reminders` (daily at 8 AM):
- *   - Walks all PENDING/IN_PROGRESS obligations with a due_date
- *   - Computes days-until-due → maps to reminder type
+ *   - Walks all PENDING/IN_PROGRESS/OVERDUE obligations with a due_date
+ *   - Computes days-until-due → maps to reminder type using the obligation's
+ *     custom reminder_schedule (Phase 7.1) instead of hardcoded tiers
  *   - Skips if (obligation, type) already exists in obligation_reminder_logs
- *   - Sends a tier-appropriate email with a one-click "Mark as Met" link
+ *   - Sends email reminders to each assignee (Phase 7.1), falling back to
+ *     the contract creator when no assignees are set
+ *   - For OVERDUE obligations: additionally notifies the escalation contact
+ *     (escalation_contact_user_id or escalation_contact_email on the contract)
+ *   - Creates an in-app notification for every platform-user recipient (Phase 7.1)
  *
  * `weekly-digest` (every Monday 8 AM):
  *   - Groups all upcoming + overdue obligations by user across ALL contracts
@@ -71,6 +76,7 @@ export class ObligationReminderProcessor {
   async handleCheckReminders(_job: Job): Promise<void> {
     this.logger.log('Running daily obligation reminder check...');
 
+    // Phase 7.1: load assignees + their user, escalation_contact_user on contract
     const obligations = await this.obligationRepository.find({
       where: {
         status: In([
@@ -79,7 +85,13 @@ export class ObligationReminderProcessor {
           ObligationStatus.OVERDUE,
         ]),
       },
-      relations: ['contract', 'contract.creator'],
+      relations: [
+        'contract',
+        'contract.creator',
+        'contract.escalation_contact_user',
+        'assignees',
+        'assignees.user',
+      ],
     });
 
     let sent = 0;
@@ -100,46 +112,73 @@ export class ObligationReminderProcessor {
         flippedOverdue++;
       }
 
-      const reminderType = this.tierFor(days, o.is_critical);
+      // Phase 7.1: use per-obligation reminder_schedule instead of hardcoded tiers
+      const reminderType = this.scheduledTierFor(days, o.reminder_schedule);
       if (!reminderType) continue;
-
-      const recipient = o.contract?.creator;
-      if (!recipient?.email) continue;
 
       const already = await this.logRepo.findOne({
         where: { obligation_id: o.id, reminder_type: reminderType },
       });
       if (already) continue;
 
-      try {
-        const { token } = this.tokens.issue(o.id, recipient.id);
-        await this.dispatch.enqueueEmail({
-          to: recipient.email,
-          subject: this.subjectFor(reminderType, o, days),
-          html: this.renderReminder({
-            recipientName: recipient.first_name || recipient.email,
-            obligation: o,
-            daysUntilDue: days,
+      // Phase 7.1: recipients = assignees first, fallback to contract creator
+      const primaryRecipients = this.primaryRecipientsFor(o);
+      if (primaryRecipients.length === 0) continue;
+
+      let anySent = false;
+
+      for (const recipient of primaryRecipients) {
+        if (!recipient.email) continue;
+        try {
+          const { token } = this.tokens.issue(o.id, recipient.id);
+          await this.dispatch.enqueueEmail({
+            to: recipient.email,
+            subject: this.subjectFor(reminderType, o, days),
+            html: this.renderReminder({
+              recipientName: recipient.first_name || recipient.email,
+              obligation: o,
+              daysUntilDue: days,
+              tier: reminderType,
+              markMetUrl: `${this.backendUrl}/api/v1/public/obligations/mark-met?token=${token}`,
+              viewUrl: `${this.frontendUrl}/app/contracts/${o.contract_id}?tab=obligations&oid=${o.id}`,
+            }),
+            templateName: 'obligation_reminder_v2',
+          });
+
+          // Phase 7.1: in-app notification for platform users
+          await this.dispatch.dispatchObligationReminder({
+            obligationId: o.id,
+            obligationDescription: o.description,
+            userId: recipient.id,
             tier: reminderType,
-            markMetUrl: `${this.backendUrl}/api/v1/public/obligations/mark-met?token=${token}`,
-            viewUrl: `${this.frontendUrl}/app/contracts/${o.contract_id}?tab=obligations&oid=${o.id}`,
-          }),
-          templateName: 'obligation_reminder_v2',
-        });
+            contractName: o.contract?.name ?? '',
+          });
+
+          anySent = true;
+        } catch (err) {
+          this.logger.error(
+            `Failed to send reminder for obligation ${o.id} to ${recipient.email}: ${(err as Error).message}`,
+          );
+        }
+      }
+
+      // Phase 7.1: escalation for OVERDUE obligations
+      if (reminderType === ObligationReminderType.OVERDUE && o.contract) {
+        await this.sendEscalation(o, days);
+      }
+
+      // Write dedup log only after at least one send succeeded
+      if (anySent) {
         await this.logRepo.insert({
           obligation_id: o.id,
           reminder_type: reminderType,
-          sent_to: recipient.email,
+          sent_to: primaryRecipients.map((u) => u.email).join(', '),
           email_status: ObligationReminderEmailStatus.SENT,
         });
         await this.obligationRepository.update(o.id, {
           last_reminder_sent_at: new Date(),
         });
         sent++;
-      } catch (err) {
-        this.logger.error(
-          `Failed to send reminder for ${o.id}: ${(err as Error).message}`,
-        );
       }
     }
 
@@ -151,6 +190,7 @@ export class ObligationReminderProcessor {
   /**
    * Weekly digest — groups every user's pending obligations into one
    * email. Critical/overdue items get their own bullet at the top.
+   * Phase 7.1: includes both assignees AND contract creators.
    */
   @Process('weekly-digest')
   async handleWeeklyDigest(_job: Job): Promise<void> {
@@ -164,17 +204,25 @@ export class ObligationReminderProcessor {
           ObligationStatus.OVERDUE,
         ]),
       },
-      relations: ['contract', 'contract.creator', 'contract.project'],
+      relations: [
+        'contract',
+        'contract.creator',
+        'contract.project',
+        'assignees',
+        'assignees.user',
+      ],
     });
 
-    // Group by recipient (contract creator)
+    // Collect recipients: assignees if set, otherwise contract creator
     const byUser = new Map<string, Obligation[]>();
     for (const o of obligations) {
-      const u = o.contract?.creator;
-      if (!u) continue;
-      const list = byUser.get(u.id) ?? [];
-      list.push(o);
-      byUser.set(u.id, list);
+      const recipients = this.primaryRecipientsFor(o);
+      for (const u of recipients) {
+        if (!u?.id) continue;
+        const list = byUser.get(u.id) ?? [];
+        list.push(o);
+        byUser.set(u.id, list);
+      }
     }
 
     let sent = 0;
@@ -223,20 +271,132 @@ export class ObligationReminderProcessor {
     this.logger.log(`Weekly digest complete: ${sent} users notified`);
   }
 
-  // ─── Helpers ──────────────────────────────────────────────
+  // ─── Phase 7.1 helpers ────────────────────────────────────────────────────
 
-  private tierFor(
+  /**
+   * Returns the primary recipient list for an obligation.
+   * Prefers explicit assignees; falls back to contract creator.
+   */
+  private primaryRecipientsFor(o: Obligation): User[] {
+    if (o.assignees && o.assignees.length > 0) {
+      return o.assignees
+        .map((a) => a.user)
+        .filter((u): u is User => !!u?.email);
+    }
+    const creator = o.contract?.creator;
+    if (creator?.email) return [creator];
+    return [];
+  }
+
+  /**
+   * Send escalation notification for an OVERDUE obligation.
+   * Priority: escalation_contact_user (platform user, in-app + email)
+   *         → escalation_contact_email (external, email only)
+   * The primary recipients already received the normal OVERDUE reminder above.
+   */
+  private async sendEscalation(o: Obligation, days: number): Promise<void> {
+    const contract = o.contract;
+    if (!contract) return;
+
+    const escalationUser = contract.escalation_contact_user;
+    const escalationEmail = contract.escalation_contact_email;
+
+    if (escalationUser?.email) {
+      // Platform user — email + in-app
+      try {
+        await this.dispatch.enqueueEmail({
+          to: escalationUser.email,
+          subject: this.subjectFor(ObligationReminderType.OVERDUE, o, days),
+          html: this.renderReminder({
+            recipientName: escalationUser.first_name || escalationUser.email,
+            obligation: o,
+            daysUntilDue: days,
+            tier: ObligationReminderType.OVERDUE,
+            markMetUrl: `${this.backendUrl}/api/v1/public/obligations/mark-met?token=${this.tokens.issue(o.id, escalationUser.id).token}`,
+            viewUrl: `${this.frontendUrl}/app/contracts/${o.contract_id}?tab=obligations&oid=${o.id}`,
+          }),
+          templateName: 'obligation_reminder_v2',
+        });
+        await this.dispatch.dispatchObligationReminder({
+          obligationId: o.id,
+          obligationDescription: o.description,
+          userId: escalationUser.id,
+          tier: ObligationReminderType.OVERDUE,
+          contractName: contract.name ?? '',
+        });
+      } catch (err) {
+        this.logger.error(
+          `Failed to send escalation for obligation ${o.id} to escalation user ${escalationUser.email}: ${(err as Error).message}`,
+        );
+      }
+    } else if (escalationEmail) {
+      // External email-only escalation contact — no in-app notification
+      try {
+        await this.dispatch.enqueueEmail({
+          to: escalationEmail,
+          subject: this.subjectFor(ObligationReminderType.OVERDUE, o, days),
+          html: this.renderReminder({
+            recipientName: escalationEmail,
+            obligation: o,
+            daysUntilDue: days,
+            tier: ObligationReminderType.OVERDUE,
+            // External contact cannot mark as met — omit token link
+            markMetUrl: `${this.frontendUrl}/app/contracts/${o.contract_id}?tab=obligations&oid=${o.id}`,
+            viewUrl: `${this.frontendUrl}/app/contracts/${o.contract_id}?tab=obligations&oid=${o.id}`,
+          }),
+          templateName: 'obligation_reminder_v2',
+        });
+      } catch (err) {
+        this.logger.error(
+          `Failed to send escalation for obligation ${o.id} to external email ${escalationEmail}: ${(err as Error).message}`,
+        );
+      }
+    }
+  }
+
+  // ─── Tier mapping ─────────────────────────────────────────────────────────
+
+  /**
+   * Maps days-until-due to a reminder tier, respecting the obligation's
+   * custom `reminder_schedule` array (Phase 7.1).
+   *
+   * Logic:
+   *   - days < 0  → OVERDUE  (always, regardless of schedule)
+   *   - days = 0  → DUE_TODAY (always)
+   *   - Find all schedule thresholds where days <= threshold; pick the
+   *     smallest one (tightest matching window) and map it to a tier.
+   *
+   * Fallback: if schedule is empty/null, defaults to [30, 14, 7, 1].
+   */
+  private scheduledTierFor(
     daysUntilDue: number,
-    _critical: boolean,
+    schedule: number[] | null | undefined,
   ): ObligationReminderType | null {
     if (daysUntilDue < 0) return ObligationReminderType.OVERDUE;
     if (daysUntilDue === 0) return ObligationReminderType.DUE_TODAY;
-    if (daysUntilDue === 1) return ObligationReminderType.DAYS_1;
-    if (daysUntilDue <= 7) return ObligationReminderType.DAYS_7;
-    if (daysUntilDue <= 14) return ObligationReminderType.DAYS_14;
-    if (daysUntilDue <= 30) return ObligationReminderType.DAYS_30;
-    return null;
+
+    const effective = schedule?.length ? schedule : [30, 14, 7, 1];
+    // Find thresholds whose window we're currently inside (days <= threshold)
+    const matching = effective
+      .filter((t) => t > 0 && daysUntilDue <= t)
+      .sort((a, b) => a - b); // ascending → smallest first (tightest window)
+
+    if (matching.length === 0) return null;
+    return this.thresholdToTier(matching[0]);
   }
+
+  /**
+   * Maps a numeric day threshold to the nearest standard
+   * ObligationReminderType enum value.
+   */
+  private thresholdToTier(threshold: number): ObligationReminderType {
+    if (threshold >= 28) return ObligationReminderType.DAYS_30;
+    if (threshold >= 12) return ObligationReminderType.DAYS_14;
+    if (threshold >= 5) return ObligationReminderType.DAYS_7;
+    return ObligationReminderType.DAYS_1;
+  }
+
+  // ─── Email rendering ──────────────────────────────────────────────────────
 
   private subjectFor(
     tier: ObligationReminderType,
@@ -256,7 +416,10 @@ export class ObligationReminderProcessor {
         ? '[14 days]'
         : '[30 days]';
     void days;
-    const desc = o.description.length > 60 ? `${o.description.slice(0, 60)}…` : o.description;
+    const desc =
+      o.description.length > 60
+        ? `${o.description.slice(0, 60)}…`
+        : o.description;
     return `${prefix} ${desc}`;
   }
 

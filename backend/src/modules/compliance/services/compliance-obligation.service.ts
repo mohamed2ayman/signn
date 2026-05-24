@@ -1,13 +1,32 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import {
   ComplianceCheck,
   Contract,
   Obligation,
+  ObligationAssignee,
   ObligationStatus,
   ObligationType,
 } from '../../../database/entities';
+import { ObligationPortfolioFiltersDto } from '../dto/obligation-portfolio-filters.dto';
+
+/** Shape returned by getCalendar(). */
+export interface CalendarEvent {
+  id: string;
+  title: string;
+  start: string | null;
+  end: string | null;
+  status: ObligationStatus;
+  contract_id: string;
+  project_id: string | null;
+  color: string;
+}
 
 /**
  * Layer-4 (obligation extraction) post-processor.
@@ -17,6 +36,9 @@ import {
  * compliance-aware fields populated (obligation_type, clause_ref,
  * duration, timeframe_description, amount, currency, is_critical,
  * project_id).
+ *
+ * Phase 7.1 adds: assignUser / unassignUser / updateEvidence /
+ * getPortfolio / getCalendar — org-scoped obligation management APIs.
  */
 @Injectable()
 export class ComplianceObligationService {
@@ -31,12 +53,26 @@ export class ComplianceObligationService {
     ObligationType.INSURANCE,
   ]);
 
+  /** Calendar color map keyed by status. */
+  private static readonly STATUS_COLOR: Record<ObligationStatus, string> = {
+    [ObligationStatus.PENDING]: '#4F6EF7',
+    [ObligationStatus.IN_PROGRESS]: '#F59E0B',
+    [ObligationStatus.OVERDUE]: '#DC2626',
+    [ObligationStatus.COMPLETED]: '#059669',
+    [ObligationStatus.MET]: '#059669',
+    [ObligationStatus.WAIVED]: '#9CA3AF',
+  };
+
   constructor(
     @InjectRepository(Obligation)
     private readonly obligationRepo: Repository<Obligation>,
     @InjectRepository(Contract)
     private readonly contractRepo: Repository<Contract>,
+    @InjectRepository(ObligationAssignee)
+    private readonly assigneeRepo: Repository<ObligationAssignee>,
   ) {}
+
+  // ─── Phase 3.4 — Layer-4 obligation extraction ───────────────────────────
 
   async persistFromExtraction(
     check: ComplianceCheck,
@@ -87,7 +123,141 @@ export class ComplianceObligationService {
     return rows.length;
   }
 
-  // ─── Coercion helpers ─────────────────────────────────────
+  // ─── Phase 7.1 — Assignee management ─────────────────────────────────────
+
+  /**
+   * Assign a user to an obligation.
+   * Throws ConflictException (409) if the user is already assigned.
+   */
+  async assignUser(
+    obligationId: string,
+    userId: string,
+    assignedBy: string,
+  ): Promise<ObligationAssignee> {
+    const existing = await this.assigneeRepo.findOne({
+      where: { obligation_id: obligationId, user_id: userId },
+    });
+    if (existing) {
+      throw new ConflictException(
+        'User is already assigned to this obligation',
+      );
+    }
+    const assignee = this.assigneeRepo.create({
+      obligation_id: obligationId,
+      user_id: userId,
+      assigned_by: assignedBy,
+    });
+    return this.assigneeRepo.save(assignee);
+  }
+
+  /**
+   * Remove a user's assignment from an obligation.
+   * Throws NotFoundException (404) if the assignee row does not exist.
+   */
+  async unassignUser(obligationId: string, userId: string): Promise<void> {
+    const result = await this.assigneeRepo.delete({
+      obligation_id: obligationId,
+      user_id: userId,
+    });
+    if (!result.affected || result.affected === 0) {
+      throw new NotFoundException('Assignee not found');
+    }
+  }
+
+  /**
+   * Attach a evidence URL to an obligation (e.g. a completion document).
+   */
+  async updateEvidence(
+    obligationId: string,
+    evidenceUrl: string,
+  ): Promise<Obligation> {
+    const o = await this.obligationRepo.findOne({
+      where: { id: obligationId },
+    });
+    if (!o) throw new NotFoundException('Obligation not found');
+    o.evidence_url = evidenceUrl;
+    return this.obligationRepo.save(o);
+  }
+
+  // ─── Phase 7.1 — Portfolio & Calendar queries ─────────────────────────────
+
+  /**
+   * Cross-contract obligation portfolio scoped to the caller's organisation.
+   * Optional filters: from/to (ISO date), project_id, status, type, assignee UUID.
+   */
+  async getPortfolio(
+    orgId: string,
+    filters: ObligationPortfolioFiltersDto,
+  ): Promise<Obligation[]> {
+    const qb = this.obligationRepo
+      .createQueryBuilder('o')
+      .leftJoinAndSelect('o.contract', 'c')
+      .leftJoinAndSelect('c.project', 'p')
+      .leftJoinAndSelect('o.assignees', 'oa')
+      .leftJoinAndSelect('oa.user', 'au')
+      .where('p.organization_id = :orgId', { orgId });
+
+    if (filters.project_id) {
+      qb.andWhere('p.id = :projectId', { projectId: filters.project_id });
+    }
+    if (filters.status) {
+      qb.andWhere('o.status = :status', { status: filters.status });
+    }
+    if (filters.type) {
+      qb.andWhere('o.obligation_type = :type', { type: filters.type });
+    }
+    if (filters.assignee) {
+      qb.andWhere('oa.user_id = :assignee', { assignee: filters.assignee });
+    }
+    if (filters.from) {
+      qb.andWhere('o.due_date >= :from', { from: filters.from });
+    }
+    if (filters.to) {
+      qb.andWhere('o.due_date <= :to', { to: filters.to });
+    }
+
+    return qb.orderBy('o.due_date', 'ASC').getMany();
+  }
+
+  /**
+   * Date-range obligation calendar scoped to the caller's organisation.
+   * Returns lightweight calendar-event objects (max 1 year range enforced by caller).
+   */
+  async getCalendar(
+    orgId: string,
+    from: string,
+    to: string,
+  ): Promise<CalendarEvent[]> {
+    const obligations = await this.obligationRepo
+      .createQueryBuilder('o')
+      .leftJoinAndSelect('o.contract', 'c')
+      .leftJoinAndSelect('c.project', 'p')
+      .where('p.organization_id = :orgId', { orgId })
+      .andWhere('o.due_date BETWEEN :from AND :to', { from, to })
+      .orderBy('o.due_date', 'ASC')
+      .getMany();
+
+    return obligations.map((o) => ({
+      id: o.id,
+      title:
+        o.description.length > 80
+          ? `${o.description.slice(0, 80)}…`
+          : o.description,
+      start: o.due_date
+        ? new Date(o.due_date).toISOString().split('T')[0]
+        : null,
+      end: o.due_date
+        ? new Date(o.due_date).toISOString().split('T')[0]
+        : null,
+      status: o.status,
+      contract_id: o.contract_id,
+      project_id: o.project_id,
+      color:
+        ComplianceObligationService.STATUS_COLOR[o.status] ?? '#4F6EF7',
+    }));
+  }
+
+  // ─── Coercion helpers ─────────────────────────────────────────────────────
 
   private coerceType(raw: unknown): ObligationType {
     if (typeof raw !== 'string') return ObligationType.OTHER;
