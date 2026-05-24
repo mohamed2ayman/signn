@@ -1,7 +1,7 @@
 # lessons.md — SIGN + MANAGEX Platform
 > This file documents every bug, issue, and fix that took significant time to resolve.
 > Feed this file to Claude at the start of every session to avoid repeating mistakes.
-> Last updated: 2026-05-24 (Lesson #85 — Claude Code has no /plugin command. Phase 6.8 noted.)
+> Last updated: 2026-05-24 (Lesson #93 — Phase 6.4 mobile responsive design: layout shell is the mobile blocker, off-canvas sidebar pattern, Tailwind md: vs ltr: cascade order, AdminLayout LTR-only, verify prompt assumptions against code.)
 
 ---
 
@@ -97,7 +97,15 @@
 82. Docker — docker restart Does Not Reload .env — Use docker-compose up -d
 83. Frontend — Vite Env Vars Silently Render Undefined, No Crash (Unlike Backend Joi)
 84. Security — Multiple Frontend Pages Can Route to Different Backend Endpoints for the Same Feature
-85. Tooling — Claude Code Has No /plugin Command — Extensibility Is via Custom Commands, MCP, Hooks, and Skills
+85. Frontend — Browser Default Fonts Do Not Inherit Into Button and Input Elements
+86. UI — Audit the Live Section Background Before Specifying Card Surface Colour
+87. Architecture — Replace Brittle String-Split Render Logic With Index-Based Logic
+88. Tooling — Claude Code Has No /plugin Command — Extensibility Is via Custom Commands, MCP, Hooks, and Skills
+89. Frontend — The Layout Shell Is the Mobile Blocker; Fix It First
+90. Off-canvas Sidebar Pattern for React + Tailwind
+91. Tailwind — `md:` Sorts BEFORE `ltr:` / `rtl:` in the Stylesheet
+92. AdminLayout Is LTR-Only — No `ltr:` / `rtl:` Variants Exist or Are Needed
+93. Process — Verify Prompt Assumptions Against Actual Code Before Implementing
 
 ---
 
