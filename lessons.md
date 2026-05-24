@@ -1,7 +1,7 @@
 # lessons.md — SIGN + MANAGEX Platform
 > This file documents every bug, issue, and fix that took significant time to resolve.
 > Feed this file to Claude at the start of every session to avoid repeating mistakes.
-> Last updated: 2026-05-24 (Lesson #93 — Phase 6.4 mobile responsive design: layout shell is the mobile blocker, off-canvas sidebar pattern, Tailwind md: vs ltr: cascade order, AdminLayout LTR-only, verify prompt assumptions against code.)
+> Last updated: 2026-05-24 (Lesson #96 — Phase 7.1: PostgreSQL ADD CONSTRAINT IF NOT EXISTS invalid syntax, @ValidateIf for XOR DTO fields, mock guards must throw not return false for 401.)
 
 ---
 
@@ -3219,3 +3219,116 @@ Flagged the discrepancy in the response *before* coding, kept Get Started visibl
 
 **How to Avoid:**
 Before implementing from a written spec, treat any factual claim about existing code as a hypothesis. Verify with `grep`, `sed -n`, or a quick file read. Audit output is the source of truth, not prompt memory. Any time a prompt says "the existing X does Y", spend the 30 seconds to confirm. When discrepancies appear, surface them in your first reply, document them in the deliverable, and proceed with the correct behaviour.
+
+---
+
+## 94. PostgreSQL — ADD CONSTRAINT IF NOT EXISTS is invalid syntax
+
+**Problem:**
+Migration `1748000000002` initially used:
+```sql
+ALTER TABLE contracts
+  ADD CONSTRAINT IF NOT EXISTS fk_contracts_escalation_user ...
+```
+PostgreSQL rejected this with `error: syntax error at or near "NOT"` because
+`ADD CONSTRAINT IF NOT EXISTS` is not valid PostgreSQL syntax (even though
+`DROP CONSTRAINT IF EXISTS` IS valid).
+
+**Fix:**
+Wrap the ADD CONSTRAINT in a `DO $$ BEGIN ... END$$` block that queries `pg_constraint`
+first:
+```sql
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'fk_contracts_escalation_user'
+  ) THEN
+    ALTER TABLE contracts
+      ADD CONSTRAINT fk_contracts_escalation_user
+        FOREIGN KEY (escalation_contact_user_id)
+        REFERENCES users (id)
+        ON DELETE SET NULL;
+  END IF;
+END$$;
+```
+
+**How to Avoid:**
+- `DROP CONSTRAINT IF EXISTS` — ✅ valid PostgreSQL
+- `ADD CONSTRAINT IF NOT EXISTS` — ❌ invalid PostgreSQL, use a `DO $$` block
+- `ADD COLUMN IF NOT EXISTS` — ✅ valid PostgreSQL
+- `CREATE INDEX IF NOT EXISTS` — ✅ valid PostgreSQL
+- `CREATE TABLE IF NOT EXISTS` — ✅ valid PostgreSQL
+
+Memorise: only the DROP variant supports IF NOT EXISTS inline.
+
+---
+
+## 95. DTO Design — @ValidateIf for mutually exclusive fields (XOR validation)
+
+**Problem:**
+The escalation contact on a contract can be either a platform user (`escalation_contact_user_id: UUID`) OR an external email (`escalation_contact_email: string`), but never both. Standard class-validator decorators have no built-in "exactly one of these" constraint.
+
+**Fix:**
+Use `@ValidateIf` to conditionally apply validators:
+```typescript
+// Only validate as UUID when escalation_contact_email is NOT present
+@IsOptional()
+@ValidateIf((o) => !o.escalation_contact_email)
+@IsUUID()
+escalation_contact_user_id?: string;
+
+// Only validate as email when escalation_contact_user_id is NOT present
+@IsOptional()
+@ValidateIf((o) => !o.escalation_contact_user_id)
+@IsEmail()
+escalation_contact_email?: string;
+```
+This allows:
+- Only `user_id` → passes
+- Only `email` → passes
+- Neither → passes (both optional)
+- Both → both validators fire simultaneously — the UUID check on the email field
+  fails, and the email check on the UUID field fails → 400
+
+**How to Avoid:**
+Whenever two DTO fields are mutually exclusive, reach for `@ValidateIf` before
+trying to write a custom class-validator decorator. This is the class-validator
+idiomatic solution.
+
+---
+
+## 96. Testing — Mock guards must THROW to produce 401, not return false
+
+**Problem:**
+In NestJS HTTP tests using supertest, a guard mock that returns `false` from
+`canActivate()` triggers `ForbiddenException` (HTTP 403), not `UnauthorizedException`
+(HTTP 401). Tests asserting `expect(res.status).toBe(401)` then fail with
+`Expected: 401 / Received: 403`.
+
+**Root Cause:**
+When `canActivate()` returns `false`, NestJS core throws `ForbiddenException`
+(generic "access denied"). The real `JwtAuthGuard` (extends `AuthGuard('jwt')`)
+throws `UnauthorizedException` internally when passport fails — that's why the
+real app returns 401 for missing tokens.
+
+**Fix:**
+Make the mock guard throw `UnauthorizedException` when no valid token is present:
+```typescript
+const mockJwtGuard = {
+  canActivate: (ctx: ExecutionContext) => {
+    const req = ctx.switchToHttp().getRequest();
+    if (!req.headers.authorization?.includes('valid-token')) {
+      throw new UnauthorizedException();  // ← throw, don't return false
+    }
+    req.user = MOCK_USER;
+    return true;
+  },
+};
+```
+
+**How to Avoid:**
+When writing mock guards for HTTP tests:
+- Return `true` to simulate authenticated access
+- `throw new UnauthorizedException()` to simulate 401 Unauthorized
+- `throw new ForbiddenException()` to simulate 403 Forbidden
+- Never return `false` if you need a specific HTTP status code
