@@ -204,13 +204,24 @@ function ObligationRow({ obligation }: { obligation: ContractObligation }) {
       }`}
     >
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-gray-900">
+        {/* CLAUDE.md hard rule: obligation.description may contain Arabic.
+            Phase 7.1 Step 2 — add dir="auto" + unicodeBidi: plaintext
+            so RTL text renders correctly. Pre-existing violation fixed. */}
+        <p
+          className="truncate text-sm font-medium text-gray-900"
+          dir="auto"
+          style={{ unicodeBidi: 'plaintext' }}
+        >
           {obligation.is_critical && (
             <span className="mr-1 text-red-600">⚠</span>
           )}
           {obligation.description}
         </p>
-        <p className="text-[11px] text-gray-500">
+        <p
+          className="text-[11px] text-gray-500"
+          dir="auto"
+          style={{ unicodeBidi: 'plaintext' }}
+        >
           {obligation.contract?.name ? `${obligation.contract.name} · ` : ''}
           {obligation.responsible_party ?? '—'} ·{' '}
           {obligation.due_date
