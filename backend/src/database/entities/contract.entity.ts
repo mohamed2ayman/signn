@@ -180,6 +180,49 @@ export class Contract {
   @Column({ type: 'timestamptz', nullable: true })
   executed_at: Date | null;
 
+  // ─── Phase 7.1 — Obligation tracking date fields ────────────────────────
+
+  /** Contract commencement date. */
+  @Column({ type: 'date', nullable: true })
+  start_date: Date | null;
+
+  /** Planned completion date. */
+  @Column({ type: 'date', nullable: true })
+  end_date: Date | null;
+
+  /** Date the contract takes legal effect (may differ from start_date). */
+  @Column({ type: 'date', nullable: true })
+  effective_date: Date | null;
+
+  /** Contract expiry / sunset date. */
+  @Column({ type: 'date', nullable: true })
+  expiry_date: Date | null;
+
+  /** Contractual notice period in calendar days (e.g. 28 for FIDIC Cl.20). */
+  @Column({ type: 'int', nullable: true })
+  notice_period_days: number | null;
+
+  /** Defects Liability Period duration in calendar days. */
+  @Column({ type: 'int', nullable: true })
+  defects_liability_period_days: number | null;
+
+  // ─── Phase 7.1 — Escalation contact ─────────────────────────────────────
+
+  /**
+   * Escalation contact — either a platform user or an external email.
+   * Mutually exclusive: only one of these two should be set at a time.
+   * Enforced at the DTO validation level.
+   */
+  @Column({ type: 'uuid', nullable: true })
+  escalation_contact_user_id: string | null;
+
+  @ManyToOne(() => User, { nullable: true })
+  @JoinColumn({ name: 'escalation_contact_user_id' })
+  escalation_contact_user: User;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  escalation_contact_email: string | null;
+
   @CreateDateColumn({ type: 'timestamptz' })
   created_at: Date;
 
