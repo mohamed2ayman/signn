@@ -93,9 +93,9 @@ import { dataSourceOptions } from './config/data-source';
         DOCUSIGN_WEBHOOK_HMAC_SECRET: Joi.string().optional().allow(''),
         // DocuSign JWT Grant (optional — only needed when DocuSign is configured)
         DOCUSIGN_RSA_PRIVATE_KEY:     Joi.string().optional().allow(''),
-        DOCUSIGN_AUTH_SERVER:         Joi.string().uri().optional()
+        DOCUSIGN_AUTH_SERVER:         Joi.string().uri().optional().allow('')
           .default('https://account-d.docusign.com'),
-        DOCUSIGN_BASE_PATH:           Joi.string().uri().optional()
+        DOCUSIGN_BASE_PATH:           Joi.string().uri().optional().allow('')
           .default('https://demo.docusign.net/restapi'),
         DOCUSIGN_USER_ID:             Joi.string().optional().allow(''),
 
