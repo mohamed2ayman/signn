@@ -1,7 +1,7 @@
 # lessons.md — SIGN + MANAGEX Platform
 > This file documents every bug, issue, and fix that took significant time to resolve.
 > Feed this file to Claude at the start of every session to avoid repeating mistakes.
-> Last updated: 2026-05-22 (Lesson #84 — Multiple frontend pages can route to different backend endpoints for the same feature. Phases 5.6–5.8 notes added.)
+> Last updated: 2026-05-24 (Lesson #85 — Claude Code has no /plugin command. Phase 6.8 noted.)
 
 ---
 
@@ -97,6 +97,7 @@
 82. Docker — docker restart Does Not Reload .env — Use docker-compose up -d
 83. Frontend — Vite Env Vars Silently Render Undefined, No Crash (Unlike Backend Joi)
 84. Security — Multiple Frontend Pages Can Route to Different Backend Endpoints for the Same Feature
+85. Tooling — Claude Code Has No /plugin Command — Extensibility Is via Custom Commands, MCP, Hooks, and Skills
 
 ---
 
@@ -3081,3 +3082,29 @@ Now editing the copy (e.g. `'one brain'` → `'one platform'`) preserves the cya
 - Prefer "data has a known shape, styling follows the shape" over "styling inspects content character-by-character".
 - When a copy edit can break a render, the render is wrong, not the copy.
 - Same principle applies anywhere in the codebase that uses `string.includes()` or `string.split()` to drive JSX branches — Phase 6.3 fixed the MANAGEX Why-renderer; audit similar patterns when found.
+
+---
+
+## 85. Tooling — Claude Code Has No /plugin Command — Extensibility Is via Custom Commands, MCP, Hooks, and Skills
+
+**Problem:**
+Attempted to run `/plugin install frontend-design@claude-plugins-official` and `/plugin install code-review@claude-plugins-official`. Neither command exists. Claude Code returned no output and nothing was installed.
+
+**Root Cause:**
+A false assumption that Claude Code has a plugin registry similar to VS Code extensions or npm packages. It does not. There is no `/plugin` command, no `claude-plugins-official` registry, and no plugin install mechanism of any kind.
+
+**The four real extensibility mechanisms:**
+1. **Custom commands** — add `.md` files to `.claude/commands/`. Each file becomes a `/filename` slash command available in any session. Example: `.claude/commands/review.md` → `/review`.
+2. **MCP servers** — `claude mcp add <name> <command>` or edit `"mcpServers"` in `.claude/settings.json`. Connects Claude Code to external tools (databases, APIs, design tools, etc.).
+3. **Hooks** — edit `"hooks"` in `.claude/settings.json`. Fire shell commands on tool events (e.g. run a linter after every file edit).
+4. **Skills** — add to `.claude/skills/`. More structured than custom commands; can accept parameters and have richer logic.
+
+**Fix:**
+Created `.claude/commands/review.md` as a custom command (the real equivalent of what "Code Review plugin" was meant to do). For "Frontend Design" — native Claude Code multimodal capabilities already handle design review; no install needed.
+
+**How to Avoid:**
+Before attempting any Claude Code command, verify it exists:
+```bash
+claude --help
+```
+Or check the Anthropic Claude Code documentation. If a command is suggested (by a human or AI) and it's not in `claude --help`, it does not exist. Do not attempt it.

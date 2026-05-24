@@ -1,7 +1,7 @@
 # CLAUDE.md — Project Intelligence File
 > Read this entire file at the start of every Claude Code session before touching any code.
 > This file is the single source of truth for all architectural decisions, rules, and context.
-> Last updated: 2026-05-22 (Phases 5.6–5.8 shipped — admin-security ILIKE escape, password reuse block, frontend migrated to hardened change-password endpoint. Outstanding issues A+B resolved. Lesson #84 added.)
+> Last updated: 2026-05-24 (Phase 6.8 shipped — /review custom slash command. Custom Commands section added. Lesson #85 added — Claude Code has no /plugin command.)
 
 ---
 
@@ -1539,6 +1539,33 @@ A small, contained copy and render cleanup on the MANAGEX landing page. Single f
 
 ---
 
+## Custom Slash Commands
+
+Custom slash commands live in `.claude/commands/*.md`. Each file becomes a `/filename` command available in any Claude Code session opened in this repo.
+
+### Available Commands
+
+| Command | File | What it does |
+|---------|------|--------------|
+| `/review` | `.claude/commands/review.md` | Structured pre-PR checklist: git diff, 5 security vectors, Phase 3.2 artifacts, console.log sweep, TODO sweep, backend tests, PASS/FAIL report |
+
+### Claude Code Extensibility Model
+There are exactly four ways to extend Claude Code. There is **no `/plugin` command and no plugin registry**.
+
+| Mechanism | How to use |
+|-----------|-----------|
+| Custom commands | Add `.md` files to `.claude/commands/` — invoked as `/filename` |
+| MCP servers | `claude mcp add <name> <command>` or edit `.claude/settings.json` under `"mcpServers"` |
+| Hooks | Edit `.claude/settings.json` under `"hooks"` — fire on tool events |
+| Skills | Add to `.claude/skills/` — more structured than commands, can have parameters |
+
+### Hard Rules — Never Violate
+- **Never assume a Claude Code command exists** without running `claude --help` or checking the [Anthropic Claude Code docs](https://docs.anthropic.com/en/docs/claude-code) first
+- If a command is suggested (by a human or AI) and it's not in `claude --help`, it doesn't exist — do not attempt it
+- Custom commands are committed to the repo so all team members get them automatically on pull
+
+---
+
 ## Team Coordination Rules (Learned May 2026)
 
 These rules were extracted from a painful multi-day coordination exercise involving the Phase 3.2 security work, the MANAGEX rebrand, and the legal layer — three branches that had to be cleanly rebased onto each other before merging.
@@ -1577,6 +1604,7 @@ Run these commands before creating any PR:
    ```
 
 6. Run all tests locally before pushing
+   Optional: run `/review` for a structured security + artifact checklist before opening the PR
 
 7. Force-push with lease:
    `git push --force-with-lease origin <branch>`
@@ -1623,3 +1651,29 @@ Must show: `workflow`
 
 ### Feature Branch Lifetime Rule
 Open a DRAFT PR the same day you start a branch. Mark it "Ready for review" when complete. Merge within 24–48 hours of creation. The rebase cost grows non-linearly — a branch 10 days old can take 10× longer to rebase than a branch 1 day old.
+
+---
+
+## Phase 6.8 — /review Custom Slash Command (shipped — 2026-05-24)
+
+Created the first custom slash command for the SIGN repo. Closes out the Claude Code extensibility exploration (Phase 6.7 attempted `/plugin install` which does not exist — see lesson #85).
+
+### What shipped
+- New file: `.claude/commands/review.md` (commit `01fd9f4`)
+- Invoked as `/review` in any Claude Code session in this repo
+- 8-step checklist:
+  1. `git diff main --stat` — files changed summary
+  2. `git diff main` — full diff
+  3. Security scan: passwords/secrets, ILIKE without `escapeLikeParam`, raw `@Body()`, file uploads without limits, `dangerouslySetInnerHTML`
+  4. Phase 3.2 artifact verification (all 5 mandatory checks)
+  5. `console.log` / `debugger` sweep
+  6. TODO / FIXME / HACK sweep
+  7. `npm test --prefix backend` — full test suite
+  8. Structured PASS / FAIL report per check
+
+### Phase 6.7 — No Work Needed
+Phase 6.7 was originally noted as "Frontend Design plugin install". This was based on a false assumption that Claude Code has a plugin registry. It does not. Frontend design awareness is already available natively through Claude Code's built-in multimodal capabilities and MCP servers — no install required.
+
+### Hard rules added
+- See Custom Slash Commands section above
+- Never attempt `/plugin install` — the command does not exist
