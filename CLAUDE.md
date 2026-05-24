@@ -1,7 +1,7 @@
 # CLAUDE.md — Project Intelligence File
 > Read this entire file at the start of every Claude Code session before touching any code.
 > This file is the single source of truth for all architectural decisions, rules, and context.
-> Last updated: 2026-05-24 (Phase 7.1 Step 1 shipped — Obligation Tracking Foundation. 3 migrations, ObligationAssignee entity, 5 new endpoints, reminder processor upgrade, in-app notifications. Lessons 94–96 added.)
+> Last updated: 2026-05-25 (Phase 7.1 Step 2 shipped — Frontend foundation. New Obligations tab on Contract Detail, upgraded ObligationsPage to portfolio view, 9 reusable obligation primitives under components/obligations/, dir="auto" fix on ProjectObligationsPage, 53 i18n keys × EN/AR/FR. Lessons 97–99 added.)
 
 ---
 
@@ -1830,3 +1830,117 @@ No frontend code was touched. No ai-backend code was touched. All existing 33 te
 5. **The UNIQUE constraint on `(obligation_id, user_id)` in `obligation_assignees` is
    enforced at DB level** — the service also throws `ConflictException` (409) before hitting
    the DB constraint. Both layers must remain in place.
+
+---
+
+## Phase 7.1 Step 2 — Frontend Foundation (shipped — 2026-05-25)
+
+Frontend-only build on top of the Step 1 backend. Adds the new Obligations tab on
+the Contract Detail page, upgrades `/app/obligations` from a 278-line placeholder
+to a real cross-contract portfolio view, wires the previously-unreachable
+`/app/projects/:id/obligations` route into ProjectDetailPage, and closes a pre-existing
+CLAUDE.md `dir="auto"` hard-rule violation. Zero backend changes, zero new npm
+packages, zero layout-shell modifications.
+
+### What shipped
+- **`components/obligations/` — 9 new reusable primitives.** Single source for status
+  palette, days-remaining traffic light, KPI bucketing, badges, filter bar, card,
+  empty/loading/error states. `statusUtils.ts` exports `effectiveStatus()`
+  (PENDING + past-due → OVERDUE in the UI before the reminder job flips it),
+  `daysTone()` (green ≥14d, amber 1-13d, red ≤0d), `tierKey()`, `computeKpis()`,
+  `OBLIGATION_TYPES`, `OBLIGATION_STATUSES`. Every obligation surface in SIGN
+  composes from these — no more per-page `statusConfig` objects.
+- **`components/contracts/ObligationsTab.tsx`.** Composes the primitives for the
+  Contract Detail page. React Query `['contract-obligations', contractId]`.
+  "Mark as Actioned" → `PATCH /contracts/:id/obligations/:obligationId { status: 'COMPLETED' }`.
+  Notifies the parent of count via `onCountChange` so the tab label can show a badge.
+- **`ContractDetailPage.tsx` — new "Obligations" tab inserted between Risk Analysis
+  and Claims.** Not status-gated (available on DRAFT too). Tab label shows a gray
+  count pill when obligations > 0.
+- **`ObligationsPage.tsx` upgraded** to the cross-contract portfolio view backed
+  by `GET /obligations/portfolio`. Header with View Calendar + Export buttons
+  (placeholders; Step 3/4 work). KPI row in portfolio variant
+  (Total / Due This Week / Overdue / Actioned). Filter bar with Project, Type,
+  Status, Assignee, date range, search. Assignees derived from loaded obligations
+  or from project members when a project is selected.
+- **`ProjectDetailPage.tsx`.** Added "View Obligations" button next to
+  Permissions + Add Contract, navigating to `/app/projects/:id/obligations`.
+  Route already existed; UI link was missing.
+- **`ProjectObligationsPage.tsx` dir="auto" fix.** Added `dir="auto"` +
+  `style={{ unicodeBidi: 'plaintext' }}` to both `<p>` renders of
+  `obligation.description`. Pre-existing CLAUDE.md hard-rule violation from
+  Phase 3.4 — now closed.
+- **Service extensions** — 5 new methods on the existing services (no new files):
+  - `obligationService.getPortfolioObligations(filters)` → `GET /obligations/portfolio`
+  - `obligationService.getCalendarObligations(from, to)` → `GET /obligations/calendar`
+  - `complianceService.assignObligation(contractId, oblId, userId)`
+  - `complianceService.unassignObligation(contractId, oblId, userId)`
+  - `complianceService.updateEvidence(contractId, oblId, evidenceUrl)`
+  - New types: `ObligationPortfolioItem` (extends `ContractObligation` with project + assignees),
+    `ObligationAssignee`, `ObligationCalendarEvent`, `PortfolioObligationFilters`.
+- **53 new i18n keys × 3 locales (EN/AR/FR) with exact parity.** `obligation.status.*`
+  (6 statuses including MET + WAIVED), `obligation.type.*` (12 types),
+  `obligation.tier.*` (6 tiers including `overdue` with `{{days}}` interpolation),
+  `obligation.actions.*` (5 actions), `obligation.ui.*` (KPI labels, page chrome,
+  filter labels, empty/no-matches/error/retry copy). Plus
+  `contract.tabs.obligations` and `project.viewObligations`. Construction-law
+  translations chosen to match FIDIC conventions in Arabic and French.
+- **11 new tests across 2 spec files** (`ObligationsTab.test.tsx` 6 tests,
+  `ObligationsPage.test.tsx` 5 tests). Full suite: 4 files / 19 tests, 1.3 s.
+
+### What's deferred (do NOT rebuild before reading this)
+- **Plan gating (Starter vs Professional/Enterprise) was deferred entirely.**
+  There is no plan-tier enum in the codebase — `OrganizationSubscription.plan.name`
+  is an admin-editable string, not a canonical tier identifier. Hard-coding a
+  `plan.name === 'Starter'` match would silently break the moment an admin
+  renames a plan. The portfolio view is shown to everyone for now; gating
+  belongs in its own task once the plan-tier model is designed (likely a
+  `plan.features.portfolio_view` jsonb flag plus a small backend seed update).
+  See lesson #97.
+- **Pagination not implemented.** Matches the existing `ProjectObligationsPage`
+  pattern — return all, render all. Backend `GET /obligations/portfolio` returns
+  a plain array. If a single org accumulates 1000+ obligations we add
+  server-side pagination then; until that's real data pressure the simplicity
+  is the right trade.
+- **Add / Assign / Edit / View Details action menus are no-op placeholders**
+  that log to console — modals come in Phase 7.1 Step 3, single-obligation
+  detail page in Step 4.
+
+### Hard rules — never violate
+
+1. **Every obligation surface must compose from `components/obligations/` primitives.**
+   No more per-page `statusConfig` objects, no more per-page `daysUntil()` helpers,
+   no more per-page badge JSX. If you need a new colour bucket or a new tier, add
+   it to `statusUtils.ts` and consume from there. Drift = the four obligation
+   surfaces (ObligationsTab, ObligationsPage, ProjectObligationsPage, future
+   calendar view) drifting out of sync — which is exactly what we just collapsed.
+2. **`dir="auto"` + `style={{ unicodeBidi: 'plaintext' }}` on every render of
+   `obligation.description` and `obligation.timeframe_description`.** Both can
+   contain Arabic. `ObligationCard.tsx` is the canonical example — when adding
+   a new surface that renders these fields, copy the attribute pair verbatim.
+   `ObligationsTab.test.tsx` asserts on this; failing the test = the build
+   should fail in CI.
+3. **Any new obligation i18n key MUST land in all three locales (EN/AR/FR) in
+   the same commit.** Step 2 added 53 new keys with exact parity. Construction-
+   specific terms (PERFORMANCE_BOND, DEFECTS_LIABILITY, etc.) use established
+   FIDIC translations — do not paraphrase. Pre-existing parity gaps elsewhere
+   (`nav.system`, `portal.*`, `userType.*` missing from AR; `language.fr` extra
+   in FR) are out of scope for obligation work.
+4. **Use the canonical PATCH endpoint, NOT the legacy PUT, for marking actioned.**
+   `complianceService.updateObligation(contractId, oblId, { status: 'COMPLETED' })`
+   is the way. The legacy `obligationService.complete(id)` path is left in place
+   for backward compatibility but the contract-scoped PATCH is what new code
+   should call. (See the audit note about endpoint duplication — a future cleanup.)
+5. **The Obligations tab on Contract Detail is NOT status-gated.** Unlike Claims /
+   Notices / Sub-Contracts, obligations exist from DRAFT onward. Do not add an
+   `activeOnly: true` flag to its tab config.
+6. **Service split rule.** Contract-scoped endpoints
+   (`/contracts/:id/obligations/:obligationId/...`) live on `complianceService`
+   next to the existing obligation reads. Org-scoped portfolio + calendar
+   endpoints (`/obligations/portfolio`, `/obligations/calendar`) live on
+   `obligationService` next to the existing org-scoped reads. Don't move them.
+7. **No backend code in any frontend-only Phase 7.1 step.** Step 2 added no
+   backend code; Step 3 (modals + calendar UI) and Step 4 (real-time + remaining
+   fixes) should also stay frontend-only. Backend work happens in Step 1
+   (already shipped) and any follow-up backend phases.
+
