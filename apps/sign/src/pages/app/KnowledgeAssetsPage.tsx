@@ -165,7 +165,8 @@ export default function KnowledgeAssetsPage() {
 
       {/* Assets Table */}
       <div className="rounded-xl border border-gray-200/80 bg-white shadow-card overflow-hidden">
-        <table className="w-full">
+        <div className="overflow-x-auto w-full">
+          <table className="w-full min-w-full">
           <thead>
             <tr className="border-b border-gray-100 bg-gray-50/80 text-left">
               <th className="px-6 py-3 text-xs font-semibold uppercase tracking-wider text-gray-400">Asset</th>
@@ -230,6 +231,7 @@ export default function KnowledgeAssetsPage() {
             })}
           </tbody>
         </table>
+        </div>
         {assets.length === 0 && (
           <div className="px-6 py-14 text-center">
             <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-gray-50">

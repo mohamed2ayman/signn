@@ -12,6 +12,12 @@ interface SidebarProps {
   items: NavItem[];
   collapsed?: boolean;
   onToggle?: () => void;
+  // ── Phase 6.4 Step 1 — mobile drawer (< md only) ──────────────────────
+  // `mobileOpen` controls the off-canvas transform on mobile.
+  // `onClose` fires from the in-drawer × button.
+  // Both are no-ops on desktop (≥md) since CSS forces `translate-x-0`.
+  mobileOpen?: boolean;
+  onClose?: () => void;
 }
 
 // ─── SVG Icon Map ────────────────────────────────────────────
@@ -153,16 +159,52 @@ function getIconKey(label: string): string {
   return mapping[label] || 'dashboard';
 }
 
-export default function Sidebar({ items, collapsed = false, onToggle }: SidebarProps) {
+export default function Sidebar({
+  items,
+  collapsed = false,
+  onToggle,
+  mobileOpen = false,
+  onClose,
+}: SidebarProps) {
   const location = useLocation();
   const { t } = useTranslation();
 
   return (
     <aside
-      className={`fixed top-0 z-40 flex h-screen flex-col bg-navy-900 transition-all duration-300 ltr:left-0 rtl:right-0 ${
+      className={`fixed top-0 z-40 flex h-screen flex-col bg-navy-900 transition-all duration-300 ease-in-out ltr:left-0 rtl:right-0 ${
         collapsed ? 'w-[68px]' : 'w-[240px]'
-      }`}
+      } ${
+        // Mobile (< md): off-canvas — slides in from the start edge (left in
+        // LTR, right in RTL). When `mobileOpen` is true the drawer is on-screen.
+        mobileOpen
+          ? 'translate-x-0'
+          : 'ltr:-translate-x-full rtl:translate-x-full'
+      } md:ltr:translate-x-0 md:rtl:translate-x-0`}
+      aria-label="Primary navigation"
     >
+      {/*
+        Mobile close button — top end (right in LTR, left in RTL).
+        Hidden at md+ since the drawer never closes on desktop.
+        44×44 touch target.
+      */}
+      <button
+        type="button"
+        onClick={onClose}
+        aria-label={t('common.close', 'Close')}
+        className="absolute top-2 z-10 inline-flex h-11 w-11 items-center justify-center rounded-lg text-navy-300 transition-colors hover:bg-white/[0.06] hover:text-white md:hidden ltr:right-2 rtl:left-2"
+      >
+        <svg
+          className="h-5 w-5"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={2}
+          viewBox="0 0 24 24"
+          aria-hidden="true"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
+
       {/* Logo */}
       <div className="flex h-16 flex-shrink-0 items-center px-4">
         <Link to="/" className="flex items-center">

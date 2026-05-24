@@ -329,7 +329,10 @@ a {
   margin-top: 28px;
   font-family: var(--f-display);
   font-weight: 800;
-  font-size: clamp(52px, 8vw, 88px);
+  /* Phase 6.4 Step 3D — lowered minimum from 52px to 36px so the headline
+     breathes on screens narrower than ~650px (where 8vw < 36px). Desktop
+     unaffected: 8vw becomes the dominant value at ≥450px and caps at 88px. */
+  font-size: clamp(36px, 8vw, 88px);
   letter-spacing: -0.04em;
   line-height: 0.97;
   color: var(--d-bright);
@@ -1110,12 +1113,135 @@ a {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
+   MOBILE NAV DRAWER — Phase 6.4 Step 3D
+   Defaults are `display: none` so desktop never sees the hamburger or the
+   off-canvas drawer. The @media (max-width: 768px) block below flips them on.
+   ═══════════════════════════════════════════════════════════════════ */
+.mx-nav__hamburger {
+  display: none;
+  min-width: 44px;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--d-bright);
+  padding: 0;
+  border-radius: 8px;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+.mx-nav__hamburger:hover {
+  background: rgba(0, 212, 255, 0.08);
+  color: var(--mx-cyan);
+}
+
+.mx-nav__drawer-overlay,
+.mx-nav__drawer {
+  display: none;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
    RESPONSIVE (≤768px)
    ═══════════════════════════════════════════════════════════════════ */
 @media (max-width: 768px) {
   .mx-nav__center { display: none; }
   .mx-nav__cta .mx-btn--ghost-d { display: none; }
   .mx-nav__inner { padding: 0 20px; }
+
+  /* ── Mobile nav drawer activation (Phase 6.4 Step 3D) ───────────── */
+  .mx-nav__hamburger { display: inline-flex; }
+
+  .mx-nav__drawer-overlay {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 998;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+  }
+  .mx-nav__drawer-overlay[data-open='true'] {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .mx-nav__drawer {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: min(280px, 75vw);
+    background: var(--dark);
+    z-index: 999;
+    padding: 16px 20px 24px;
+    transform: translateX(100%);
+    transition: transform 0.3s ease;
+    box-shadow: -4px 0 24px rgba(0, 0, 0, 0.4);
+    border-left: 1px solid var(--d-border);
+  }
+  .mx-nav__drawer[data-open='true'] {
+    transform: translateX(0);
+  }
+
+  .mx-nav__drawer-close {
+    align-self: flex-end;
+    min-width: 44px;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    color: var(--d-muted);
+    border-radius: 8px;
+    transition: background 0.2s ease, color 0.2s ease;
+    padding: 0;
+  }
+  .mx-nav__drawer-close:hover {
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--d-bright);
+  }
+
+  .mx-nav__drawer-nav {
+    display: flex;
+    flex-direction: column;
+    margin-top: 8px;
+  }
+
+  .mx-nav__drawer-link {
+    display: flex;
+    align-items: center;
+    min-height: 48px;
+    color: var(--d-bright);
+    font-family: var(--f-body);
+    font-size: 16px;
+    font-weight: 400;
+    text-decoration: none;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    padding: 0 4px;
+    transition: color 0.2s ease;
+  }
+  .mx-nav__drawer-link:hover {
+    color: var(--mx-cyan);
+  }
+
+  .mx-nav__drawer-actions {
+    margin-top: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .mx-nav__drawer-btn {
+    width: 100%;
+    justify-content: center;
+  }
 
   .mx-hero {
     padding: 120px 24px 80px;

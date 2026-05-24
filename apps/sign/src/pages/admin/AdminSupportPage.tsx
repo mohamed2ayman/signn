@@ -236,7 +236,8 @@ export default function AdminSupportPage() {
         </div>
       ) : (
         <div className="bg-white rounded-2xl border border-gray-200/60 shadow-card overflow-hidden">
-          <table className="w-full">
+          <div className="overflow-x-auto w-full">
+            <table className="w-full min-w-full">
             <thead>
               <tr className="border-b border-gray-100">
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Subject</th>
@@ -284,6 +285,7 @@ export default function AdminSupportPage() {
               })}
             </tbody>
           </table>
+          </div>
         </div>
       )}
     </div>

@@ -68,7 +68,7 @@ export default function AdminPlansComparePage() {
         </div>
       ) : (
         <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
-          <table className="w-full">
+          <table className="w-full min-w-full">
             <thead>
               <tr className="border-b border-gray-100">
                 <th className="w-52 bg-gray-50 px-6 py-5 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">

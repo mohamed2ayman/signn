@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { ShieldCheck, ShieldOff, Smartphone, Mail, Eye, EyeOff, Copy, Check, KeyRound } from 'lucide-react';
 import api from '@/services/api/axios';
-import { meService } from '@/services/api/meService';
+import meService from '@/services/api/meService';
 import { authService } from '@/services/auth/authService';
 import type { MfaStatusResponse, MfaTotpSetupResponse } from '@/services/auth/authService';
 import LoadingSpinner from '@/components/common/LoadingSpinner';

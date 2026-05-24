@@ -224,7 +224,8 @@ export default function AdminSubscriptionsPage() {
 
       {/* Plans Table */}
       <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
-        <table className="w-full">
+        <div className="overflow-x-auto w-full">
+          <table className="w-full min-w-full">
           <thead>
             <tr className="border-b border-gray-100 bg-gray-50 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
               <th className="px-6 py-3">Plan</th>
@@ -314,6 +315,7 @@ export default function AdminSubscriptionsPage() {
             )}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );

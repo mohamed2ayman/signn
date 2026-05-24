@@ -508,7 +508,8 @@ export default function AdminUsersPage() {
 
       {/* Table */}
       <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
-        <table className="w-full">
+        <div className="overflow-x-auto w-full">
+          <table className="w-full min-w-full">
           <thead>
             <tr className="border-b border-gray-100 bg-gray-50 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
               <th className="px-5 py-3">User</th>
@@ -625,6 +626,7 @@ export default function AdminUsersPage() {
             )}
           </tbody>
         </table>
+        </div>
       </div>
 
       {/* Add Operations Modal */}

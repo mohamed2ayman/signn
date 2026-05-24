@@ -294,7 +294,8 @@ export default function AdminDashboardPage() {
         <div className="border-b border-gray-200 px-6 py-4">
           <h2 className="text-lg font-semibold text-gray-900">{t('admin.recentUsers')}</h2>
         </div>
-        <table className="w-full">
+        <div className="overflow-x-auto w-full">
+          <table className="w-full min-w-full">
           <thead>
             <tr className="border-b border-gray-200 bg-gray-50 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
               <th className="px-6 py-3">{t('common.name')}</th>
@@ -324,6 +325,7 @@ export default function AdminDashboardPage() {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );
