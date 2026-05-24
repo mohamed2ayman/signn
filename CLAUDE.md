@@ -1,7 +1,7 @@
 # CLAUDE.md — Project Intelligence File
 > Read this entire file at the start of every Claude Code session before touching any code.
 > This file is the single source of truth for all architectural decisions, rules, and context.
-> Last updated: 2026-05-24 (Phase 6.8 shipped — /review custom slash command. Custom Commands section added. Lesson #85 added — Claude Code has no /plugin command.)
+> Last updated: 2026-05-24 (Phase 6.8 shipped — /review custom slash command. Custom Commands section added. Lesson #88 added — Claude Code has no /plugin command. Phase 6.4 — full mobile responsive design — shipped 2026-05-23; lessons 89–93 added.)
 
 ---
 
@@ -1565,6 +1565,66 @@ There are exactly four ways to extend Claude Code. There is **no `/plugin` comma
 - Custom commands are committed to the repo so all team members get them automatically on pull
 
 ---
+## Phase 6.4 — Mobile Responsive Design (shipped — 2026-05-23)
+
+End-to-end mobile responsiveness for the SIGN app shell, every data table across the platform, and the MANAGEX landing nav. Desktop (≥ 768 px) is visually unchanged across every page. The breakpoint boundary is the Tailwind default `md:` (768 px).
+
+### Step 1 — AppLayout Mobile Shell
+Covers all `/app/*` (Client Portal) and `/contractor/*` (Guest Portal) pages — both routes use `AppLayout` with different `navItems` arrays.
+
+- **`AppLayout.tsx`** — added `mobileOpen` state, an overlay backdrop (`fixed inset-0 z-30 bg-black/50 md:hidden`), a `useLocation`-based effect that auto-closes the drawer on route change, and a responsive `<main>` margin: `ml-0 md:ltr:ml-[240px] md:rtl:mr-[240px]` when expanded, `ml-0 md:ltr:ml-[68px] md:rtl:mr-[68px]` when collapsed.
+- **`Sidebar.tsx`** — transform-based off-canvas drawer. Closed: `ltr:-translate-x-full rtl:translate-x-full`. Open: `translate-x-0`. Desktop override: `md:ltr:translate-x-0 md:rtl:translate-x-0`. Added `transition-all duration-300 ease-in-out` for the slide. New 44 × 44 px close button (`md:hidden`) at the start edge inside the drawer.
+- **`TopBar.tsx`** — header position changed from `ltr:left-[240px] rtl:right-[240px]` to base `left-0 right-0` (full-width mobile) plus `md:ltr:left-[240px] md:rtl:right-[240px]` (desktop offset). 44 × 44 px hamburger button (`md:hidden`) as the first child of the left group; search input wrapped in `hidden md:block`.
+
+**Bug found and fixed (Tailwind variant ordering).** `md:translate-x-0` sorted *before* `ltr:-translate-x-full` in the generated stylesheet, so the single-`ltr:` variant won at desktop and the sidebar stayed off-canvas. Fix: use compound variants `md:ltr:translate-x-0 md:rtl:translate-x-0` — Tailwind orders compound variants after single-variant `ltr:`/`rtl:`. See Lesson 91.
+
+**Bug found and fixed (RTL header right edge).** The original `ltr:right-0 rtl:left-0` pattern only set the far edge per direction; switching the base to `left-0` alone left RTL mobile with an unbound right edge, pushing the hamburger off-screen. Fix: base is now `left-0 right-0` (header full-width by default) and the `md:` overrides narrow it on desktop.
+
+**Side-fix.** `ProfilePage.tsx` had a pre-existing import bug (`import { meService }` from a default-export module) that broke the Vite dev server. Fixed inline (`import meService`) so visual verification of Phase 6.4 could proceed.
+
+### Step 2 — AdminLayout Mobile Shell
+Covers all `/admin/*` pages. `AdminLayout` is independent from `AppLayout` — it ships its own inline 64 px icon rail, not the shared `Sidebar.tsx` component.
+
+- **AdminLayout is LTR-only by design.** Searching the file returns zero `ltr:`/`rtl:` variants — every position is direction-agnostic. The compound-variant workaround from Step 1 is **not** needed; plain `md:translate-x-0` correctly overrides `-translate-x-full` at desktop (responsive variants sort after unprefixed utilities). See Lesson 92.
+- Added `mobileOpen` state + extended the existing route-change `useEffect` to also call `setMobileOpen(false)`.
+- Added a hamburger button as the first child of the top utility bar's left group (`md:hidden`, 44 × 44 px, inline SVG matching the file's existing icon pattern).
+- Added the overlay backdrop immediately before the inline `<aside>`.
+- Updated the inline `<aside>` className: `${mobileOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0` plus `transition-transform duration-300 ease-in-out`.
+- Added a × close button as the first child of the `<aside>` (centered, `md:hidden`, 44 × 44 px).
+- Replaced the hard-coded `style={{ marginLeft: 64 }}` on `<main>` with `className="flex-1 ml-0 md:ml-16"` (kept `minHeight: 'calc(100vh - 48px)'` in the inline style).
+
+### Step 3A — Table Overflow Wrappers
+Every HTML `<table>` across the platform now sits inside `<div className="overflow-x-auto w-full">` with `min-w-full` on the table className. Without this, every admin and several app tables forced the entire page to scroll horizontally on mobile.
+
+- **21 tables across 20 files** in scope.
+- **16 files modified** (9 needed both wrapper + `min-w-full`; 4 already had a wrapper and only needed `min-w-full`; 3 already had `min-w-full` and only needed a wrapper).
+- **4 files skipped** as already complete (5 tables): `AdminOrganizationsPage`, `AdminOperationsReviewPage`, `AdminBillingPage` (×2 tables), `LegalContent`.
+- Tables already inside `overflow-hidden` rounded-card parents had the new `overflow-x-auto w-full` div inserted **between** them so the rounded corners and borders are preserved while the table scrolls inside.
+
+### Step 3D — ManageX Landing Mobile Fixes
+- Added `mobileNavOpen` state to the `App` component.
+- Added a hamburger button (44 × 44 px, inline SVG) as the last child of `.mx-nav__cta` (`display: none` on desktop, `display: inline-flex` inside the existing `@media (max-width: 768px)` block).
+- Added a right-anchored mobile drawer (`width: min(280px, 75vw)`) rendered after `</nav>`. Drawer contains all 4 nav links (Platform / Products / Company / Research) + Sign in + Get started. Closes on overlay tap, × button tap, and any nav link tap. Uses `data-open` toggling so the CSS transition can animate in both directions (drawer is always in the DOM, hidden via `display: none` outside the media query).
+- Overlay: `position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 998`, transitions opacity 0 → 1.
+- Drawer: `z-index: 999`, `transform: translateX(100%) → translateX(0)`, `transition: transform 0.3s ease`.
+- Hero `h1` clamp minimum lowered from 52 px to 36 px (`clamp(36px, 8vw, 88px)`). Desktop unchanged — 8vw becomes the dominant value at ≥ 450 px and caps at 88 px.
+- New CSS classes follow the `.mx-` BEM convention: `.mx-nav__hamburger`, `.mx-nav__drawer-overlay`, `.mx-nav__drawer`, `.mx-nav__drawer-close`, `.mx-nav__drawer-nav`, `.mx-nav__drawer-link`, `.mx-nav__drawer-actions`, `.mx-nav__drawer-btn`.
+- **Note (prompt-vs-code drift):** the implementation prompt stated Get Started was hidden on mobile; the actual CSS only hides Sign in (`.mx-btn--ghost-d`). Get Started stays visible on mobile alongside the hamburger — the stronger primary-CTA pattern. See Lesson 93.
+
+### Hard rules from Phase 6.4 — never violate
+1. The layout shell is the mobile blocker. Fix `AppLayout` / `AdminLayout` before any page-level mobile work. A page with perfect responsive grid classes is still broken if the sidebar lock leaves only ~135 px of usable width on a 375 px screen. See Lesson 89.
+2. Always use compound variants `md:ltr:` / `md:rtl:` when combining responsive and directional overrides. Plain `ltr:-translate-x-full` will be overridden by `md:translate-x-0` because of Tailwind's stylesheet sort order. See Lesson 91.
+3. `AdminLayout.tsx` is LTR-only and intentionally has no `ltr:`/`rtl:` variants. Do not add them without a deliberate RTL plan that covers the inline rail's position math.
+4. Every HTML `<table>` must sit inside an `overflow-x-auto w-full` wrapper and carry `min-w-full`. A standalone `<table>` anywhere in the codebase is a regression.
+5. The 768 px boundary is the canonical mobile/desktop breakpoint across every layer. Do not introduce intermediate breakpoints without a team agreement — the global CSS in `apps/sign/src/styles/index.css` and the `@media` block in `apps/managex/src/index.css` both use 768 px as the sole flip.
+6. 44 × 44 px is the minimum tap target for hamburger / close buttons (WCAG / iOS HIG). Smaller hit areas fail usability and accessibility audits.
+
+### Outstanding mobile work deferred to next sprint
+- **`ContractDetailPage.tsx`** — 2,308-line desktop-only layout with zero responsive classes. Requires design work, not a class sweep.
+- **`ClauseReviewPage.tsx`** — hard 55/45 horizontal split (`w-[55%]` / `w-[45%]`). Needs a mobile redesign as a tab switcher or vertical stack.
+- **Modal max-width standardization** — most modals use fixed `max-w-2xl` / `max-w-3xl` without a `w-full max-w-[calc(100vw-2rem)]` guard. Spec needed before a sweep.
+
+---
 
 ## Team Coordination Rules (Learned May 2026)
 
@@ -1656,7 +1716,7 @@ Open a DRAFT PR the same day you start a branch. Mark it "Ready for review" when
 
 ## Phase 6.8 — /review Custom Slash Command (shipped — 2026-05-24)
 
-Created the first custom slash command for the SIGN repo. Closes out the Claude Code extensibility exploration (Phase 6.7 attempted `/plugin install` which does not exist — see lesson #85).
+Created the first custom slash command for the SIGN repo. Closes out the Claude Code extensibility exploration (Phase 6.7 attempted `/plugin install` which does not exist — see lesson #88).
 
 ### What shipped
 - New file: `.claude/commands/review.md` (commit `01fd9f4`)

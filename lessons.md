@@ -3085,7 +3085,7 @@ Now editing the copy (e.g. `'one brain'` → `'one platform'`) preserves the cya
 
 ---
 
-## 85. Tooling — Claude Code Has No /plugin Command — Extensibility Is via Custom Commands, MCP, Hooks, and Skills
+## 88. Tooling — Claude Code Has No /plugin Command — Extensibility Is via Custom Commands, MCP, Hooks, and Skills
 
 **Problem:**
 Attempted to run `/plugin install frontend-design@claude-plugins-official` and `/plugin install code-review@claude-plugins-official`. Neither command exists. Claude Code returned no output and nothing was installed.
@@ -3108,3 +3108,106 @@ Before attempting any Claude Code command, verify it exists:
 claude --help
 ```
 Or check the Anthropic Claude Code documentation. If a command is suggested (by a human or AI) and it's not in `claude --help`, it does not exist. Do not attempt it.
+
+---
+
+## 89. Frontend — The layout shell is the mobile blocker; fix it first
+
+**Problem:**
+Page-level responsive classes (`grid-cols-1 md:grid-cols-2`, `flex-col md:flex-row`, etc.) had no visible effect on mobile. Dashboard tiles still clipped, contract pages still required horizontal scroll. Adding more responsive classes to individual pages didn't help.
+
+**Root Cause:**
+The shell (`AppLayout.tsx` + `Sidebar.tsx` + `TopBar.tsx`) hard-locked `<main>` to `ml-[240px]` and the sidebar to `fixed w-[240px]` at every viewport. On a 375 px screen that leaves 135 px of usable content width regardless of how many responsive classes a page declares. Same problem in `AdminLayout.tsx` with `marginLeft: 64`. Until the shell collapses the sidebar off-canvas and frees the margin on mobile, no page-level mobile fix has any effect.
+
+**Fix:**
+Phase 6.4 Step 1 + Step 2 — see CLAUDE.md "Phase 6.4 — Mobile Responsive Design". The shell now uses `ml-0 md:ml-[240px]` (or `md:ml-16` for AdminLayout), the sidebar transforms off-canvas below `md`, and a hamburger in the top bar opens the drawer with a backdrop overlay.
+
+**How to Avoid:**
+When you start any mobile work in a sidebar-based app, before touching page components, audit:
+1. Does `<main>` have a fixed margin equal to the sidebar width at every viewport?
+2. Is the sidebar `fixed` with `w-[N]` and no responsive transform?
+3. Is there a hamburger in the top bar?
+If any answer is "no, problem present", the shell is the blocker. Don't touch pages until the shell is mobile-aware.
+
+---
+
+## 90. Off-canvas sidebar pattern for React + Tailwind
+
+**Problem:**
+The first time you wire up a mobile sidebar drawer in a Tailwind app, the small details add up — which classes go on the sidebar vs. the main vs. the overlay, how to handle RTL, how to ensure the drawer closes on navigation, what tap-target size to use.
+
+**Root Cause:**
+There is no single canonical example for the off-canvas pattern that combines transform-based slide-in, RTL handling, route-change auto-close, and accessibility minima. Builds tend to miss one of those four legs.
+
+**Fix:**
+The four-leg off-canvas pattern (verified in Phase 6.4 Step 1):
+1. **Sidebar transforms.** Closed: `ltr:-translate-x-full rtl:translate-x-full`. Open: `translate-x-0`. Desktop override: `md:ltr:translate-x-0 md:rtl:translate-x-0` (see Lesson 91 for why compound variants).
+2. **Main content margin.** `ml-0 md:ltr:ml-[N] md:rtl:mr-[N]` where N is the sidebar width — no margin on mobile, sidebar-sized margin on desktop.
+3. **Overlay backdrop.** Conditionally rendered when the drawer is open: `fixed inset-0 z-30 bg-black/50 md:hidden`. Sidebar is z-40 so it sits above. `onClick` closes the drawer.
+4. **Auto-close on route change.** `useEffect(() => setMobileOpen(false), [location.pathname])` using `useLocation()` from react-router-dom.
+
+Always 44 × 44 px minimum tap target for the hamburger and the in-drawer × button (WCAG / iOS HIG). Use `h-11 w-11 inline-flex items-center justify-center` to get exactly 44 px without manual sizing.
+
+**How to Avoid:**
+Use the pattern above end-to-end every time. Skipping route-change auto-close is the most common omission — without it, the drawer stays open on top of the new page after a tap.
+
+---
+
+## 91. Tailwind — `md:` sorts BEFORE `ltr:` / `rtl:` in the stylesheet
+
+**Problem:**
+After implementing off-canvas sidebar with `ltr:-translate-x-full md:translate-x-0`, the sidebar stayed off-canvas at desktop (1280 px). The class list contained `md:translate-x-0` but the computed transform read `--tw-translate-x: -100%`. The `ltr:-translate-x-full` rule was winning at desktop despite the `md:` override.
+
+**Root Cause:**
+Tailwind v3 generates CSS in a specific source order: unprefixed utilities → state variants (`ltr`, `rtl`, `hover`, etc.) → responsive variants (`sm`, `md`, etc.) → compound variants (`md:ltr`, `md:hover`, etc.). At desktop, `.md\:translate-x-0` was rule #1052 while `.ltr\:-translate-x-full:where(...)` was rule #1067 — so the `ltr:` rule came later and won the cascade. Both rules set the same `transform` declaration via `--tw-translate-x`, so source order decided the winner.
+
+**Fix:**
+Use compound variants `md:ltr:translate-x-0 md:rtl:translate-x-0` for the desktop override. Compound variants sort *after* single-variant `ltr:`/`rtl:` in the stylesheet, so they win at desktop while the single variants apply at mobile.
+
+```tsx
+// Wrong — `ltr:` wins at desktop because it sorts later
+${mobileOpen ? 'translate-x-0' : 'ltr:-translate-x-full rtl:translate-x-full'} md:translate-x-0
+
+// Right — `md:ltr:` and `md:rtl:` sort later than `ltr:` / `rtl:`
+${mobileOpen ? 'translate-x-0' : 'ltr:-translate-x-full rtl:translate-x-full'} md:ltr:translate-x-0 md:rtl:translate-x-0
+```
+
+**How to Avoid:**
+Any time you mix responsive (`md:`) and directional (`ltr:` / `rtl:`) variants on the same property, you need the compound form for the override. Verify with the DevTools "Rules" panel showing source order, or grep the generated stylesheet for both selectors and compare their position.
+
+---
+
+## 92. AdminLayout is LTR-only — no `ltr:` / `rtl:` variants exist or are needed
+
+**Problem (avoided):**
+Phase 6.4 Step 2 (AdminLayout mobile shell) initially looked like a copy of Step 1, including the compound `md:ltr:` / `md:rtl:` variants for the off-canvas transform.
+
+**Root Cause:**
+`AdminLayout.tsx` has no `ltr:`/`rtl:` variants anywhere — every position class is direction-agnostic (`left-0`, `right-0`, `marginLeft: 64`). The admin portal targets operations staff and is intentionally LTR-only. Without any `ltr:-translate-x-full` competing for the cascade, plain `md:translate-x-0` correctly overrides `-translate-x-full` (responsive variants sort after unprefixed utilities, so `md:` wins at desktop).
+
+**Fix:**
+Used the simpler `${mobileOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0` in AdminLayout. No compound variants. Documented the LTR-only status in CLAUDE.md "Hard rules from Phase 6.4" so future contributors know not to add `ltr:` / `rtl:` variants without a deliberate RTL plan that also handles the inline 64 px rail's position math.
+
+**How to Avoid:**
+Before copying a pattern from one layout to another, grep the target file for the variants the pattern uses. The workaround is only needed where the conflicting variant actually exists.
+
+```bash
+grep -nE '\b(ltr|rtl):' apps/sign/src/components/layout/AdminLayout.tsx
+# empty → LTR-only, no compound variant needed
+```
+
+---
+
+## 93. Process — Verify prompt assumptions against actual code before implementing
+
+**Problem:**
+Phase 6.4 Step 3D (ManageX mobile drawer) implementation prompt stated: "the existing @media (max-width: 768px) already hides .mx-nav__links and the ghost sign-in button" AND positioned the hamburger "same side as the hidden 'Get started' CTA". A naïve implementation might have re-hidden Get Started on mobile.
+
+**Root Cause:**
+The implementation prompt was written from memory or an earlier version of the codebase. The actual CSS at `apps/managex/src/index.css:1004-1005` hides only `.mx-nav__center` (the nav links) and `.mx-nav__cta .mx-btn--ghost-d` (the Sign in ghost button). Get Started (`.mx-btn--cyan`) was *never* hidden on mobile — it stayed visible as the primary CTA.
+
+**Fix:**
+Flagged the discrepancy in the response *before* coding, kept Get Started visible on mobile (the stronger primary-CTA pattern), and noted the prompt-vs-code drift in CLAUDE.md. Drawer mirrors the prompt's spec (Sign in + Get started both inside) for completeness even though Get Started is duplicated between the visible header and the drawer.
+
+**How to Avoid:**
+Before implementing from a written spec, treat any factual claim about existing code as a hypothesis. Verify with `grep`, `sed -n`, or a quick file read. Audit output is the source of truth, not prompt memory. Any time a prompt says "the existing X does Y", spend the 30 seconds to confirm. When discrepancies appear, surface them in your first reply, document them in the deliverable, and proceed with the correct behaviour.
