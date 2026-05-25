@@ -163,7 +163,8 @@
     "createContract": "إنشاء عقد",
     "contractName": "اسم العقد",
     "contractType": "نوع العقد",
-    "noContractsYet": "لا توجد عقود بعد. أنشئ أول عقد."
+    "noContractsYet": "لا توجد عقود بعد. أنشئ أول عقد.",
+    "viewObligations": "عرض الالتزامات"
   },
   "contract": {
     "title": "عقد",
@@ -194,6 +195,7 @@
       "clauses": "البنود",
       "comments": "التعليقات",
       "risks": "تحليل المخاطر",
+      "obligations": "الالتزامات",
       "versions": "النسخ"
     },
     "noClauses": "لا توجد بنود بعد. أضف بنوداً من المكتبة.",
@@ -267,7 +269,72 @@
     "dueDate": "الاستحقاق: {{date}}",
     "frequency": "التكرار: {{frequency}}",
     "complete": "إكمال",
-    "noObligations": "لا توجد التزامات"
+    "noObligations": "لا توجد التزامات",
+    "status": {
+      "PENDING": "قيد الانتظار",
+      "IN_PROGRESS": "قيد التنفيذ",
+      "COMPLETED": "مكتمل",
+      "OVERDUE": "متأخر",
+      "MET": "تم الوفاء",
+      "WAIVED": "تم التنازل عنه"
+    },
+    "type": {
+      "NOTICE_PERIOD": "فترة الإشعار",
+      "PAYMENT": "الدفع",
+      "PERFORMANCE_BOND": "ضمان حسن التنفيذ",
+      "INSURANCE": "التأمين",
+      "MILESTONE": "معلم رئيسي",
+      "DEFECTS_LIABILITY": "مسؤولية العيوب",
+      "DISPUTE_RESOLUTION": "تسوية المنازعات",
+      "REPORTING": "التقارير",
+      "EMPLOYER_OBLIGATION": "التزام صاحب العمل",
+      "CONTRACTOR_OBLIGATION": "التزام المقاول",
+      "ENGINEER_OBLIGATION": "التزام المهندس",
+      "OTHER": "أخرى"
+    },
+    "tier": {
+      "days30": "بقي 30 يومًا",
+      "days14": "بقي 14 يومًا",
+      "days7": "بقي 7 أيام",
+      "days1": "بقي يوم واحد",
+      "dueToday": "مستحق اليوم",
+      "overdue": "متأخر بـ {{days}} يومًا"
+    },
+    "actions": {
+      "add": "إضافة التزام",
+      "markActioned": "وضع علامة كمُنفّذ",
+      "assign": "تعيين",
+      "viewDetails": "عرض التفاصيل",
+      "edit": "تعديل"
+    },
+    "ui": {
+      "kpi": {
+        "total": "الإجمالي",
+        "pending": "قيد الانتظار",
+        "overdue": "متأخر",
+        "actioned": "مُنفّذ",
+        "dueThisWeek": "مستحق هذا الأسبوع",
+        "actionedRate": "معدل التنفيذ"
+      },
+      "assignee": "المُعيَّن",
+      "dueFrom": "من تاريخ",
+      "dueTo": "إلى تاريخ",
+      "searchPlaceholder": "ابحث في الالتزامات...",
+      "noDueDate": "لا يوجد تاريخ استحقاق",
+      "critical": "حرج",
+      "unassigned": "غير مُعيَّن",
+      "empty": "لا توجد التزامات بعد",
+      "emptySubtext": "ستظهر الالتزامات هنا بعد الاستخراج بالذكاء الاصطناعي أو الإدخال اليدوي.",
+      "noMatches": "لا توجد التزامات تطابق المرشّحات",
+      "noMatchesSubtext": "جرّب تعديل المرشّحات أعلاه.",
+      "errorTitle": "تعذّر تحميل الالتزامات",
+      "retry": "إعادة المحاولة",
+      "allTitle": "جميع الالتزامات",
+      "allSubtitle": "تتبّع الالتزامات عبر جميع عقودك ومشاريعك",
+      "viewCalendar": "عرض التقويم",
+      "exportExcel": "تصدير إلى Excel",
+      "clearFilters": "مسح المرشّحات"
+    }
   },
   "notification": {
     "title": "إشعار",

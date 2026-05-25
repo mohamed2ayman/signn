@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { projectService } from '@/services/api/projectService';
 import { contractService } from '@/services/api/contractService';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
@@ -31,6 +32,7 @@ function ContractStatusDot({ status }: { status: string }) {
 export default function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const [project, setProject] = useState<Project | null>(null);
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [loading, setLoading] = useState(true);
@@ -186,7 +188,20 @@ export default function ProjectDetailPage() {
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Phase 7.1 Step 2 — direct link to the project's obligations page.
+                Route /app/projects/:id/obligations already exists in App.tsx
+                (renders ProjectObligationsPage) but was previously unreachable
+                from the UI. */}
+            <button
+              onClick={() => navigate(`/app/projects/${id}/obligations`)}
+              className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-4 py-2.5 text-sm font-medium text-gray-700 transition hover:border-gray-300 hover:bg-gray-50"
+            >
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              {t('project.viewObligations')}
+            </button>
             <button
               onClick={() => navigate(`/app/projects/${id}/permissions`)}
               className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-4 py-2.5 text-sm font-medium text-gray-700 transition hover:border-gray-300 hover:bg-gray-50"

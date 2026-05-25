@@ -204,6 +204,57 @@ const complianceService = {
       .patch(`/contracts/${contractId}/obligations/${obligationId}`, patch)
       .then((r) => r.data),
 
+  // ── Phase 7.1 Step 2 — assignment + evidence ─────────────────────
+  //
+  // Three contract-scoped endpoints introduced by Step 1 (Ayman PR).
+  // They live here next to listContractObligations / updateObligation
+  // because they share the `/contracts/:id/obligations/:obligationId/...`
+  // prefix.
+
+  /**
+   * Assign a user to an obligation. Backend returns 409 if the user is
+   * already assigned (DB UNIQUE constraint on obligation_id + user_id).
+   */
+  assignObligation: (
+    contractId: string,
+    obligationId: string,
+    userId: string,
+  ) =>
+    api
+      .post(
+        `/contracts/${contractId}/obligations/${obligationId}/assign`,
+        { user_id: userId },
+      )
+      .then((r) => r.data),
+
+  /** Remove a user's assignment. 204 on success, 404 if not assigned. */
+  unassignObligation: (
+    contractId: string,
+    obligationId: string,
+    userId: string,
+  ) =>
+    api
+      .delete(
+        `/contracts/${contractId}/obligations/${obligationId}/assign/${userId}`,
+      )
+      .then((r) => r.data),
+
+  /**
+   * Attach a completion-evidence URL to an obligation. Backend
+   * validates the URL with @IsUrl.
+   */
+  updateEvidence: (
+    contractId: string,
+    obligationId: string,
+    evidenceUrl: string,
+  ) =>
+    api
+      .put(
+        `/contracts/${contractId}/obligations/${obligationId}/evidence`,
+        { evidence_url: evidenceUrl },
+      )
+      .then((r) => r.data),
+
   icalExportUrl: (contractId: string) =>
     `${api.defaults.baseURL}/contracts/${contractId}/obligations/ical`,
 };

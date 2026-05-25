@@ -178,7 +178,8 @@
     "createContract": "Create Contract",
     "contractName": "Contract Name",
     "contractType": "Contract Type",
-    "noContractsYet": "No contracts yet. Create your first contract."
+    "noContractsYet": "No contracts yet. Create your first contract.",
+    "viewObligations": "View Obligations"
   },
   "contract": {
     "title": "Contract",
@@ -209,6 +210,7 @@
       "clauses": "Clauses",
       "comments": "Comments",
       "risks": "Risk Analysis",
+      "obligations": "Obligations",
       "versions": "Versions"
     },
     "noClauses": "No clauses yet. Add clauses from the library.",
@@ -282,7 +284,72 @@
     "dueDate": "Due: {{date}}",
     "frequency": "Frequency: {{frequency}}",
     "complete": "Complete",
-    "noObligations": "No obligations found"
+    "noObligations": "No obligations found",
+    "status": {
+      "PENDING": "Pending",
+      "IN_PROGRESS": "In Progress",
+      "COMPLETED": "Completed",
+      "OVERDUE": "Overdue",
+      "MET": "Met",
+      "WAIVED": "Waived"
+    },
+    "type": {
+      "NOTICE_PERIOD": "Notice Period",
+      "PAYMENT": "Payment",
+      "PERFORMANCE_BOND": "Performance Bond",
+      "INSURANCE": "Insurance",
+      "MILESTONE": "Milestone",
+      "DEFECTS_LIABILITY": "Defects Liability",
+      "DISPUTE_RESOLUTION": "Dispute Resolution",
+      "REPORTING": "Reporting",
+      "EMPLOYER_OBLIGATION": "Employer Obligation",
+      "CONTRACTOR_OBLIGATION": "Contractor Obligation",
+      "ENGINEER_OBLIGATION": "Engineer Obligation",
+      "OTHER": "Other"
+    },
+    "tier": {
+      "days30": "30 days remaining",
+      "days14": "14 days remaining",
+      "days7": "7 days remaining",
+      "days1": "1 day remaining",
+      "dueToday": "Due today",
+      "overdue": "Overdue by {{days}} days"
+    },
+    "actions": {
+      "add": "Add Obligation",
+      "markActioned": "Mark as Actioned",
+      "assign": "Assign",
+      "viewDetails": "View Details",
+      "edit": "Edit"
+    },
+    "ui": {
+      "kpi": {
+        "total": "Total",
+        "pending": "Pending",
+        "overdue": "Overdue",
+        "actioned": "Actioned",
+        "dueThisWeek": "Due This Week",
+        "actionedRate": "Actioned Rate"
+      },
+      "assignee": "Assignee",
+      "dueFrom": "Due from",
+      "dueTo": "Due to",
+      "searchPlaceholder": "Search obligations...",
+      "noDueDate": "No due date",
+      "critical": "Critical",
+      "unassigned": "Unassigned",
+      "empty": "No obligations yet",
+      "emptySubtext": "Obligations will appear here after AI extraction or manual entry.",
+      "noMatches": "No obligations match the filters",
+      "noMatchesSubtext": "Try adjusting the filters above.",
+      "errorTitle": "Couldn't load obligations",
+      "retry": "Retry",
+      "allTitle": "All Obligations",
+      "allSubtitle": "Track obligations across all your contracts and projects",
+      "viewCalendar": "View Calendar",
+      "exportExcel": "Export to Excel",
+      "clearFilters": "Clear filters"
+    }
   },
   "notification": {
     "title": "Notification",

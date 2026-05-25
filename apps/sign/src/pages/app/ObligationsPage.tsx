@@ -1,278 +1,299 @@
-import { useState, useEffect } from 'react';
+import { useMemo, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { obligationService } from '@/services/api/obligationService';
-import LoadingSpinner from '@/components/common/LoadingSpinner';
-import type { Obligation } from '@/types';
+import type {
+  ObligationPortfolioItem,
+  PortfolioObligationFilters,
+} from '@/services/api/obligationService';
+import complianceService from '@/services/api/complianceService';
+import { projectService } from '@/services/api/projectService';
+import type { ProjectMember } from '@/types';
+import ObligationKpiRow from '@/components/obligations/ObligationKpiRow';
+import ObligationFilterBar, {
+  type ObligationFilters,
+} from '@/components/obligations/ObligationFilterBar';
+import ObligationCard from '@/components/obligations/ObligationCard';
+import ObligationEmptyState from '@/components/obligations/ObligationEmptyState';
+import ObligationLoadingSkeleton from '@/components/obligations/ObligationLoadingSkeleton';
+import ObligationErrorState from '@/components/obligations/ObligationErrorState';
+import { computeKpis, effectiveStatus } from '@/components/obligations/statusUtils';
 
-const statusConfig: Record<string, { bg: string; text: string; dot: string; label: string }> = {
-  PENDING: { bg: 'bg-amber-50', text: 'text-amber-700', dot: 'bg-amber-400', label: 'Pending' },
-  IN_PROGRESS: { bg: 'bg-blue-50', text: 'text-blue-700', dot: 'bg-blue-400', label: 'In Progress' },
-  COMPLETED: { bg: 'bg-emerald-50', text: 'text-emerald-700', dot: 'bg-emerald-400', label: 'Completed' },
-  OVERDUE: { bg: 'bg-red-50', text: 'text-red-700', dot: 'bg-red-500', label: 'Overdue' },
-};
-
+/**
+ * /app/obligations — cross-contract portfolio view.
+ *
+ * Phase 7.1 Step 2: replaces the legacy contract-creator-only dashboard
+ * with a real portfolio surface backed by `GET /obligations/portfolio`.
+ *
+ * NOT yet implemented (deferred to Step 3+):
+ *  - Calendar view (button is a placeholder navigate to /app/obligations/calendar)
+ *  - Excel export (button logs to console — proper export comes later)
+ *  - Add Obligation modal (creation must be scoped to a contract — for
+ *    now we show the empty state without an "Add" CTA on the portfolio
+ *    page since creation is always done from a contract's Obligations tab)
+ *  - Plan gating (Starter vs Professional/Enterprise) — see lessons.md
+ *    note for Phase 7.1 Step 2: no plan tier enum exists yet
+ */
 export default function ObligationsPage() {
-  const [view, setView] = useState<'upcoming' | 'overdue' | 'all'>('upcoming');
-  const [obligations, setObligations] = useState<Obligation[]>([]);
-  const [dashboard, setDashboard] = useState<{
-    total: number;
-    by_status: Record<string, number>;
-    overdue_count: number;
-    upcoming_7_days: number;
-  } | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { t } = useTranslation();
+  const navigate = useNavigate();
+  const qc = useQueryClient();
+  const [filters, setFilters] = useState<ObligationFilters>({});
 
-  useEffect(() => {
-    loadData();
-  }, [view]);
+  // Map UI filters → API params. Search is applied client-side because
+  // the backend portfolio endpoint doesn't expose a search parameter.
+  const apiFilters: PortfolioObligationFilters = useMemo(() => {
+    const f: PortfolioObligationFilters = {};
+    if (filters.project_id) f.project_id = filters.project_id;
+    if (filters.type) f.type = filters.type;
+    if (filters.status) f.status = filters.status;
+    if (filters.assignee) f.assignee = filters.assignee;
+    if (filters.from) f.from = filters.from;
+    if (filters.to) f.to = filters.to;
+    return f;
+  }, [filters]);
 
-  const loadData = async () => {
-    setLoading(true);
-    try {
-      const [dashboardData, obligationData] = await Promise.all([
-        obligationService.getDashboard(),
-        view === 'overdue'
-          ? obligationService.getOverdue()
-          : view === 'upcoming'
-          ? obligationService.getUpcoming(30)
-          : obligationService.getUpcoming(365),
-      ]);
-      setDashboard(dashboardData);
-      setObligations(obligationData);
-    } catch (err) {
-      console.error('Failed to load obligations:', err);
-    } finally {
-      setLoading(false);
+  // ── Portfolio obligations ───────────────────────────────────────
+  const portfolioQuery = useQuery({
+    queryKey: ['portfolio-obligations', apiFilters],
+    queryFn: () => obligationService.getPortfolioObligations(apiFilters),
+  });
+
+  // ── Projects (for the project filter) ───────────────────────────
+  const projectsQuery = useQuery({
+    queryKey: ['projects'],
+    queryFn: () => projectService.getAll(),
+  });
+
+  // ── Project members for the assignee select ─────────────────────
+  // Two strategies:
+  //  1. If a project is selected, fetch its members (richer data)
+  //  2. Otherwise, derive unique assignee users from the obligations
+  //     already loaded — they carry user info on the assignee row.
+  const projectMembersQuery = useQuery({
+    queryKey: ['project-members', filters.project_id],
+    queryFn: () => projectService.getMembers(filters.project_id!),
+    enabled: !!filters.project_id,
+  });
+
+  const derivedAssignees: ProjectMember[] = useMemo(() => {
+    if (filters.project_id && projectMembersQuery.data) {
+      return projectMembersQuery.data;
     }
-  };
-
-  const handleComplete = async (id: string) => {
-    try {
-      await obligationService.complete(id);
-      loadData();
-    } catch (err) {
-      console.error('Failed to complete obligation:', err);
+    const seen = new Map<string, ProjectMember>();
+    for (const o of portfolioQuery.data ?? []) {
+      for (const a of o.assignees ?? []) {
+        if (!seen.has(a.user_id) && a.user) {
+          // Fabricate a ProjectMember-shaped object so the FilterBar
+          // can reuse one type. user_id + user is the only thing the
+          // bar reads.
+          seen.set(a.user_id, {
+            id: `assignee-${a.user_id}`,
+            project_id: '',
+            user_id: a.user_id,
+            role: null,
+            permission_level: null,
+            added_at: a.assigned_at,
+            user: {
+              id: a.user.id,
+              email: a.user.email,
+              first_name: a.user.first_name,
+              last_name: a.user.last_name,
+            } as ProjectMember['user'],
+          });
+        }
+      }
     }
-  };
+    return [...seen.values()];
+  }, [filters.project_id, projectMembersQuery.data, portfolioQuery.data]);
 
-  const isOverdue = (dueDate: string | null, status: string) => {
-    if (status === 'COMPLETED') return false;
-    if (!dueDate) return false;
-    return new Date(dueDate) < new Date();
-  };
+  // ── Client-side post-filtering (search) ─────────────────────────
+  const visible: ObligationPortfolioItem[] = useMemo(() => {
+    const all = portfolioQuery.data ?? [];
+    const search = filters.search?.trim().toLowerCase();
+    return all.filter((o) => {
+      if (filters.contract_id && o.contract_id !== filters.contract_id) {
+        return false;
+      }
+      if (search) {
+        const hay = `${o.description} ${o.clause_ref ?? ''}`.toLowerCase();
+        if (!hay.includes(search)) return false;
+      }
+      return true;
+    });
+  }, [portfolioQuery.data, filters.search, filters.contract_id]);
 
-  const daysUntilDue = (dueDate: string | null) => {
-    if (!dueDate) return null;
-    return Math.ceil(
-      (new Date(dueDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24),
+  // KPIs computed against the SERVER-FILTERED list — so the user
+  // sees counts matching the rendered cards. Search-only filtering
+  // doesn't change KPIs because search is a string match, not a
+  // semantic filter.
+  const kpis = useMemo(() => {
+    const items = (portfolioQuery.data ?? []).filter((o) =>
+      filters.contract_id ? o.contract_id === filters.contract_id : true,
     );
-  };
+    return {
+      ...computeKpis(items),
+      // override pending to mean "due this week" for the portfolio
+      // KPIs per Step 2 spec: Total / Overdue / Due This Week / Actioned
+    };
+  }, [portfolioQuery.data, filters.contract_id]);
 
-  if (loading) {
-    return (
-      <div className="flex h-64 items-center justify-center">
-        <LoadingSpinner size="lg" />
-      </div>
-    );
-  }
+  const dueThisWeek = useMemo(() => {
+    const week = Date.now() + 7 * 86_400_000;
+    return (portfolioQuery.data ?? []).filter((o) => {
+      if (filters.contract_id && o.contract_id !== filters.contract_id) return false;
+      const eff = effectiveStatus(o.status, o.due_date);
+      if (eff === 'OVERDUE') return false;
+      if (eff === 'COMPLETED' || eff === 'MET' || eff === 'WAIVED') return false;
+      return !!o.due_date && +new Date(o.due_date) <= week;
+    }).length;
+  }, [portfolioQuery.data, filters.contract_id]);
+
+  // ── "Mark as Actioned" mutation ─────────────────────────────────
+  const markActioned = useMutation({
+    mutationFn: ({ contractId, obligationId }: { contractId: string; obligationId: string }) =>
+      complianceService.updateObligation(contractId, obligationId, {
+        status: 'COMPLETED',
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['portfolio-obligations'] }),
+  });
+
+  // ── Handlers ────────────────────────────────────────────────────
+  const handleViewCalendar = () => navigate('/app/obligations/calendar');
+  const handleExport = () => {
+    // eslint-disable-next-line no-console
+    console.info('[ObligationsPage] Export to Excel — deferred to Step 3');
+  };
+  const handleEdit = (id: string) => {
+    // eslint-disable-next-line no-console
+    console.info('[ObligationsPage] Edit obligation — modal in Step 3', id);
+  };
+  const handleAssign = (id: string) => {
+    // eslint-disable-next-line no-console
+    console.info('[ObligationsPage] Assign obligation — modal in Step 3', id);
+  };
+  const handleViewDetails = (id: string) => {
+    // eslint-disable-next-line no-console
+    console.info('[ObligationsPage] View details — page in Step 4', id);
+  };
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Obligations</h1>
-        <p className="mt-1 text-sm text-gray-500">
-          Track deadlines and compliance requirements across your contracts
-        </p>
+    <div className="space-y-5">
+      {/* ── Header ──────────────────────────────────────────────── */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold text-gray-900">
+            {t('obligation.ui.allTitle')}
+          </h1>
+          <p className="mt-1 text-sm text-gray-600">
+            {t('obligation.ui.allSubtitle')}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={handleViewCalendar}
+            className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+          >
+            <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
+            </svg>
+            {t('obligation.ui.viewCalendar')}
+          </button>
+          <button
+            onClick={handleExport}
+            className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+          >
+            <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9.75v6.75m0 0l-3-3m3 3l3-3M9 21h6a3 3 0 003-3V8a3 3 0 00-3-3H9a3 3 0 00-3 3v10a3 3 0 003 3z" />
+            </svg>
+            {t('obligation.ui.exportExcel')}
+          </button>
+        </div>
       </div>
 
-      {/* Stats */}
-      {dashboard && (
-        <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-          <StatCard
-            label="Total"
-            value={dashboard.total}
-            icon={
-              <svg className="h-5 w-5 text-gray-500" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25z" />
-              </svg>
-            }
-          />
-          <StatCard
-            label="Pending"
-            value={dashboard.by_status?.PENDING || 0}
-            color="text-amber-600"
-            icon={
-              <svg className="h-5 w-5 text-amber-500" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            }
-          />
-          <StatCard
-            label="Overdue"
-            value={dashboard.overdue_count}
-            color="text-red-600"
-            urgent={dashboard.overdue_count > 0}
-            icon={
-              <svg className="h-5 w-5 text-red-500" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
-              </svg>
-            }
-          />
-          <StatCard
-            label="Due This Week"
-            value={dashboard.upcoming_7_days}
-            color="text-blue-600"
-            icon={
-              <svg className="h-5 w-5 text-blue-500" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
-              </svg>
-            }
-          />
+      {/* ── KPI row — portfolio variant ──────────────────────────── */}
+      {/* Total / Overdue / Due this week / Actioned per Step 2 spec.
+          We reuse ObligationKpiRow but override the "Pending" slot
+          with "Due This Week" via the counts shape. */}
+      <ObligationKpiRow
+        counts={{
+          total: kpis.total,
+          pending: dueThisWeek,
+          overdue: kpis.overdue,
+          actioned: kpis.actioned,
+        }}
+      />
+
+      {/* ── Filter bar ──────────────────────────────────────────── */}
+      <ObligationFilterBar
+        variant="portfolio"
+        filters={filters}
+        onChange={setFilters}
+        projects={projectsQuery.data ?? []}
+        members={derivedAssignees}
+      />
+
+      {/* Project + contract context strip — visible only when filtered */}
+      {(filters.project_id || filters.contract_id) && (
+        <div className="flex flex-wrap items-center gap-2 text-xs text-gray-600">
+          <span className="font-medium uppercase tracking-wide text-gray-500">
+            {t('common.filter')}:
+          </span>
+          {filters.project_id && (
+            <Link
+              to={`/app/projects/${filters.project_id}`}
+              className="rounded-full bg-primary/10 px-2.5 py-0.5 text-primary hover:bg-primary/20"
+            >
+              {projectsQuery.data?.find((p) => p.id === filters.project_id)?.name ?? '—'}
+            </Link>
+          )}
+          {filters.contract_id && (
+            <Link
+              to={`/app/contracts/${filters.contract_id}`}
+              className="rounded-full bg-primary/10 px-2.5 py-0.5 text-primary hover:bg-primary/20"
+            >
+              #{filters.contract_id.slice(0, 8)}
+            </Link>
+          )}
+          <button
+            onClick={() => setFilters({})}
+            className="text-gray-500 hover:text-gray-700"
+          >
+            {t('obligation.ui.clearFilters')}
+          </button>
         </div>
       )}
 
-      {/* View Tabs */}
-      <div className="flex items-center gap-1 rounded-lg border border-gray-200 bg-white p-1 w-fit">
-        {([
-          { key: 'upcoming', label: 'Upcoming' },
-          { key: 'overdue', label: 'Overdue' },
-          { key: 'all', label: 'All' },
-        ] as const).map((tab) => (
-          <button
-            key={tab.key}
-            onClick={() => setView(tab.key)}
-            className={`rounded-md px-4 py-1.5 text-sm font-medium transition-all ${
-              view === tab.key
-                ? 'bg-navy-900 text-white shadow-sm'
-                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Obligations List */}
-      <div className="rounded-xl border border-gray-200/80 bg-white shadow-card overflow-hidden">
-        {obligations.length === 0 ? (
-          <div className="py-16 text-center">
-            <svg className="mx-auto h-10 w-10 text-gray-300" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <p className="mt-3 text-sm font-medium text-gray-500">No obligations found</p>
-            <p className="text-xs text-gray-400">Obligations are extracted automatically from your contracts</p>
-          </div>
-        ) : (
-          <div className="divide-y divide-gray-100">
-            {obligations.map((obligation) => {
-              const days = daysUntilDue(obligation.due_date);
-              const overdue = isOverdue(obligation.due_date, obligation.status);
-              const effectiveStatus = overdue ? 'OVERDUE' : obligation.status;
-              const config = statusConfig[effectiveStatus] || statusConfig.PENDING;
-
-              return (
-                <div
-                  key={obligation.id}
-                  className={`flex items-center justify-between px-5 py-4 transition-colors hover:bg-gray-50/50 ${
-                    overdue ? 'bg-red-50/30' : ''
-                  }`}
-                >
-                  <div className="flex items-center gap-4 min-w-0 flex-1">
-                    {/* Status indicator */}
-                    <div className={`h-2 w-2 flex-shrink-0 rounded-full ${config.dot}`} />
-
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-gray-900 truncate">
-                        {obligation.description}
-                      </p>
-                      <div className="mt-0.5 flex items-center gap-3">
-                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${config.bg} ${config.text}`}>
-                          {config.label}
-                        </span>
-                        {obligation.responsible_party && (
-                          <span className="text-xs text-gray-400">{obligation.responsible_party}</span>
-                        )}
-                        {obligation.frequency && (
-                          <span className="text-xs text-gray-400">{obligation.frequency}</span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-4 flex-shrink-0 ltr:ml-4 rtl:mr-4">
-                    {/* Due date */}
-                    {obligation.due_date && (
-                      <div className="text-right">
-                        <p className={`text-xs font-medium ${overdue ? 'text-red-600' : 'text-gray-700'}`}>
-                          {new Date(obligation.due_date).toLocaleDateString(undefined, {
-                            month: 'short',
-                            day: 'numeric',
-                            year: 'numeric',
-                          })}
-                        </p>
-                        {days !== null && (
-                          <p className={`text-[11px] ${overdue ? 'text-red-500 font-medium' : 'text-gray-400'}`}>
-                            {overdue ? `${Math.abs(days)}d overdue` : `${days}d remaining`}
-                          </p>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Complete action */}
-                    {obligation.status !== 'COMPLETED' && (
-                      <button
-                        onClick={() => handleComplete(obligation.id)}
-                        className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm transition-all hover:bg-gray-50 hover:border-gray-300"
-                      >
-                        Complete
-                      </button>
-                    )}
-                    {obligation.status === 'COMPLETED' && (
-                      <svg className="h-5 w-5 text-emerald-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/* ─── Sub-Component ──────────────────────────────────────────── */
-
-function StatCard({
-  label,
-  value,
-  color,
-  urgent,
-  icon,
-}: {
-  label: string;
-  value: number;
-  color?: string;
-  urgent?: boolean;
-  icon: React.ReactNode;
-}) {
-  return (
-    <div
-      className={`rounded-xl border bg-white p-4 shadow-card ${
-        urgent ? 'border-red-200' : 'border-gray-200/80'
-      }`}
-    >
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-xs font-medium uppercase tracking-wider text-gray-400">{label}</p>
-          <p className={`mt-1 text-2xl font-bold ${color || 'text-gray-900'}`}>{value}</p>
+      {/* ── List / states ───────────────────────────────────────── */}
+      {portfolioQuery.isError ? (
+        <ObligationErrorState
+          error={portfolioQuery.error}
+          onRetry={() => portfolioQuery.refetch()}
+        />
+      ) : portfolioQuery.isLoading ? (
+        <ObligationLoadingSkeleton />
+      ) : (portfolioQuery.data ?? []).length === 0 ? (
+        <ObligationEmptyState />
+      ) : visible.length === 0 ? (
+        <ObligationEmptyState variant="no-matches" />
+      ) : (
+        <div className="space-y-3">
+          {visible.map((o) => (
+            <ObligationCard
+              key={o.id}
+              obligation={o}
+              showContractLink
+              onMarkActioned={(obligationId) =>
+                markActioned.mutate({ contractId: o.contract_id, obligationId })
+              }
+              onEdit={handleEdit}
+              onAssign={handleAssign}
+              onViewDetails={handleViewDetails}
+            />
+          ))}
         </div>
-        <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${urgent ? 'bg-red-50' : 'bg-gray-50'}`}>
-          {icon}
-        </div>
-      </div>
+      )}
     </div>
   );
 }

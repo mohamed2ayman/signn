@@ -3332,3 +3332,110 @@ When writing mock guards for HTTP tests:
 - `throw new UnauthorizedException()` to simulate 401 Unauthorized
 - `throw new ForbiddenException()` to simulate 403 Forbidden
 - Never return `false` if you need a specific HTTP status code
+
+
+## 97. Plan-Gating UI — Defer When the Tier Model Doesn't Exist Yet
+
+**What happened:** Phase 7.1 Step 2 spec called for "Starter plan users see an
+upgrade prompt; Professional/Enterprise see the full portfolio." But the
+codebase has no plan-tier enum — `SubscriptionPlan` rows are admin-editable in
+the admin portal, and `OrganizationSubscription.plan.name` is a free-form
+string. There is no canonical "STARTER" identifier anywhere.
+
+**Why it matters:** The obvious shortcut is to write
+`if (plan?.name?.toLowerCase().includes('starter'))`. That code looks fine in
+review and ships. Six months later an admin renames the plan to "Starter Plus"
+or "Solo" — and every gated feature in the app silently flips, with no compile
+error, no test failure, and no admin warning. This is the worst class of bug:
+data-driven UI changes triggered by a UI action in an unrelated surface.
+
+**Three real options when this comes up:**
+1. **Defer entirely.** Show the feature to everyone and call it out in the PR
+   description + a lessons.md note + CLAUDE.md "what's deferred" block.
+   This is what Step 2 did. Cost: short-term revenue gap on the gating side.
+   Benefit: no rework when the real plan model lands.
+2. **Quota-based proxy** (`plan.max_projects <= 1`). More resilient than name
+   matching but couples gating logic to a quota field that admins may change
+   for unrelated reasons.
+3. **Feature flag in `plan.features` jsonb.** The cleanest long-term answer.
+   Requires a one-line backend seed update + a UI helper like
+   `usePlanFeature('portfolio_view')`. Worth doing the proper time, not as a
+   side-quest inside a frontend-only step.
+
+**Rule:** Never ship name-string gating against admin-editable strings. If the
+gating model doesn't exist yet, defer the gate and document the deferral.
+"Defer" is a legitimate engineering decision — write it down in CLAUDE.md
+under the phase's "what's deferred" section and link the lesson here so the
+next person doesn't quietly re-introduce the shortcut.
+
+---
+
+## 98. Reuse Existing Service Types — Don't Re-Declare Across Service Files
+
+**What happened:** Phase 7.1 Step 2 spec said the new portfolio endpoint
+returns "enriched ContractObligation with project + assignees." The temptation
+on the frontend was to re-declare `ObligationStatus`, `ObligationType`, and
+`ContractObligation` in `obligationService.ts` so portfolio code wouldn't
+have to cross-import from `complianceService.ts`.
+
+**Why it matters:** Each duplicate copy is one more place that drifts when
+the backend enum changes. Phase 3.4 had already added MET and WAIVED to
+`ObligationStatus`; if a Step-2 copy of the enum hadn't included them, the
+new components would have shown stale six-value dropdowns while the backend
+accepted the new statuses — visible only when a user picked one. There's
+no compile error, no test failure, just a silently wrong UI.
+
+**The fix that shipped:** `obligationService.ts` imports
+`ObligationStatus`, `ObligationType`, `ContractObligation` from
+`complianceService.ts` and re-exports them. Callers get one import path.
+`ObligationPortfolioItem` is declared in `obligationService.ts` (because
+it's portfolio-specific) and `extends ContractObligation` so it inherits
+every field automatically when the base type grows.
+
+**Rule:** If two services touch the same domain object, ONE is the type
+owner and the other imports + re-exports. Pick the older surface (here,
+`complianceService` because Phase 3.4 added the types first) as the owner.
+Re-exporting is free at runtime and lets callers stay agnostic about which
+service owns what. Duplicate `export type` declarations across services are
+a regression — search-grep the type name before adding it to a second file.
+
+---
+
+## 99. Inserting a Tab Into a 2,308-Line File — Three Edit Points, In Order
+
+**What happened:** Phase 7.1 Step 2 needed a new Obligations tab in
+`ContractDetailPage.tsx` between Risk Analysis and Claims. The file is 2,308
+lines and the tabs are wired through three separate locations: the
+`tabConfig` array, the `activeTab` state-type union, and the per-tab content
+block. Edit one without the others = a tab that either won't render, or
+renders but never becomes active, or crashes on selection.
+
+**The three edit points (in execution order):**
+1. **`tabConfig` array** (~line 236). Add the new entry — `{ key, label, icon,
+   activeOnly? }` — in the desired position. The order in this array is the
+   visual order in the nav bar. NOT `activeOnly: true` if the tab should work
+   on DRAFT contracts (different from Claims / Notices / Sub-Contracts which
+   gate on `contract.status === 'ACTIVE'`).
+2. **`activeTab` state-type union** (~line 259). Add the new key string to
+   the union: `useState<'clauses' | 'comments' | ... | 'new-tab' | ...>('clauses')`.
+   Skipping this gives a TypeScript error on the `setActiveTab(tab.key)` call
+   inside the render loop — that's actually a helpful safety net, but only
+   if you don't suppress it.
+3. **Per-tab content block** (~line 1671+). Add `{activeTab === 'new-tab' && (...)}`
+   between the existing blocks, matching the spot in the visual order. If
+   the tab needs status gating, add the condition here too:
+   `{activeTab === 'claims' && contract.status === 'ACTIVE' && (...)}`.
+
+**Optional fourth edit — count badge.** If the tab label should show a count
+pill (like Clauses / Comments / Risks / Approvals do), add a clause in the
+render loop (~line 1239+). The pattern is
+`{tab.key === 'new-tab' && count > 0 && <span className="rounded-full ...">{count}</span>}`.
+For ObligationsTab Step 2, the count comes from inside the child via an
+`onCountChange` callback so the parent doesn't re-fetch.
+
+**Rule:** Before editing a long page file with tab structure, grep for the
+existing tab key (e.g. `risks` for the tab right before yours) — three
+matches typically: tabConfig entry, state-type union, content block. Your
+new tab needs the same three. If the grep returns four (count badge), do
+four. Skipping any of the four is the silent-failure path.
+

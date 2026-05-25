@@ -178,7 +178,8 @@
     "createContract": "Créer un contrat",
     "contractName": "Nom du contrat",
     "contractType": "Type de contrat",
-    "noContractsYet": "Aucun contrat pour l'instant. Créez votre premier contrat."
+    "noContractsYet": "Aucun contrat pour l'instant. Créez votre premier contrat.",
+    "viewObligations": "Voir les obligations"
   },
   "contract": {
     "title": "Contrat",
@@ -209,6 +210,7 @@
       "clauses": "Clauses",
       "comments": "Commentaires",
       "risks": "Analyse des risques",
+      "obligations": "Obligations",
       "versions": "Versions"
     },
     "noClauses": "Aucune clause pour l'instant. Ajoutez des clauses depuis la bibliothèque.",
@@ -282,7 +284,72 @@
     "dueDate": "Échéance : {{date}}",
     "frequency": "Fréquence : {{frequency}}",
     "complete": "Terminer",
-    "noObligations": "Aucune obligation trouvée"
+    "noObligations": "Aucune obligation trouvée",
+    "status": {
+      "PENDING": "En attente",
+      "IN_PROGRESS": "En cours",
+      "COMPLETED": "Terminé",
+      "OVERDUE": "En retard",
+      "MET": "Rempli",
+      "WAIVED": "Renoncé"
+    },
+    "type": {
+      "NOTICE_PERIOD": "Délai de préavis",
+      "PAYMENT": "Paiement",
+      "PERFORMANCE_BOND": "Garantie de bonne exécution",
+      "INSURANCE": "Assurance",
+      "MILESTONE": "Jalon",
+      "DEFECTS_LIABILITY": "Responsabilité pour vices",
+      "DISPUTE_RESOLUTION": "Règlement des différends",
+      "REPORTING": "Rapports",
+      "EMPLOYER_OBLIGATION": "Obligation du Maître d'ouvrage",
+      "CONTRACTOR_OBLIGATION": "Obligation de l'Entrepreneur",
+      "ENGINEER_OBLIGATION": "Obligation de l'Ingénieur",
+      "OTHER": "Autre"
+    },
+    "tier": {
+      "days30": "30 jours restants",
+      "days14": "14 jours restants",
+      "days7": "7 jours restants",
+      "days1": "1 jour restant",
+      "dueToday": "Échéance aujourd'hui",
+      "overdue": "En retard de {{days}} jours"
+    },
+    "actions": {
+      "add": "Ajouter une obligation",
+      "markActioned": "Marquer comme exécuté",
+      "assign": "Assigner",
+      "viewDetails": "Voir les détails",
+      "edit": "Modifier"
+    },
+    "ui": {
+      "kpi": {
+        "total": "Total",
+        "pending": "En attente",
+        "overdue": "En retard",
+        "actioned": "Exécuté",
+        "dueThisWeek": "Échéance cette semaine",
+        "actionedRate": "Taux d'exécution"
+      },
+      "assignee": "Assigné",
+      "dueFrom": "À partir du",
+      "dueTo": "Jusqu'au",
+      "searchPlaceholder": "Rechercher des obligations...",
+      "noDueDate": "Pas de date d'échéance",
+      "critical": "Critique",
+      "unassigned": "Non assigné",
+      "empty": "Aucune obligation pour le moment",
+      "emptySubtext": "Les obligations apparaîtront ici après l'extraction par l'IA ou la saisie manuelle.",
+      "noMatches": "Aucune obligation ne correspond aux filtres",
+      "noMatchesSubtext": "Essayez d'ajuster les filtres ci-dessus.",
+      "errorTitle": "Impossible de charger les obligations",
+      "retry": "Réessayer",
+      "allTitle": "Toutes les obligations",
+      "allSubtitle": "Suivez les obligations dans tous vos contrats et projets",
+      "viewCalendar": "Voir le calendrier",
+      "exportExcel": "Exporter vers Excel",
+      "clearFilters": "Effacer les filtres"
+    }
   },
   "notification": {
     "title": "Notification",
