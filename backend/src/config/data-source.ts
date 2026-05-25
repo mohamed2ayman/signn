@@ -32,6 +32,12 @@ export const dataSourceOptions: DataSourceOptions = {
   migrations: [__dirname + '/../database/migrations/*{.ts,.js}'],
   synchronize: false,
   logging: process.env.NODE_ENV === 'development',
+  // "each" allows individual migrations to set `transaction = false`.
+  // Required for ALTER TYPE ADD VALUE migrations (e.g. 1748000000004)
+  // which cannot run inside a transaction on PostgreSQL < 14.
+  // Default ("all") wraps every migration run in one giant transaction and
+  // forbids per-migration transaction overrides.
+  migrationsTransactionMode: 'each',
 };
 
 const dataSource = new DataSource(dataSourceOptions);

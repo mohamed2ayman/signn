@@ -13,6 +13,7 @@ import { ObligationsController } from './obligations.controller';
 import { ObligationsService } from './obligations.service';
 import { ObligationReminderProcessor } from './obligation-reminder.processor';
 import { ObligationSchedulerService } from './obligation-scheduler.service';
+import { ObligationSchemaCheckService } from './obligation-schema-check.service';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { ComplianceModule } from '../compliance/compliance.module';
 
@@ -35,6 +36,7 @@ import { ComplianceModule } from '../compliance/compliance.module';
     ObligationsService,
     ObligationReminderProcessor,
     ObligationSchedulerService,
+    ObligationSchemaCheckService,
   ],
   exports: [ObligationsService],
 })
