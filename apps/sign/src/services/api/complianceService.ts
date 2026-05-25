@@ -111,6 +111,8 @@ export interface ContractObligation {
   contract_id: string;
   project_id: string | null;
   compliance_check_id: string | null;
+  /** Phase 7.1 Step 3 — added for the detail drawer's "View Clause" back-link. */
+  contract_clause_id: string | null;
   description: string;
   responsible_party: string | null;
   obligation_type: ObligationType;
@@ -123,6 +125,8 @@ export interface ContractObligation {
   is_critical: boolean;
   status: ObligationStatus;
   completed_at: string | null;
+  /** Phase 7.1 Step 3 — added for the detail drawer's Evidence section. */
+  evidence_url: string | null;
   created_at: string;
   contract?: { id: string; name: string };
 }
