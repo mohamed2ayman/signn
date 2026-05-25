@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
+import { useQuery } from '@tanstack/react-query';
 import { RootState } from '@/store';
 import useAuth from '@/hooks/useAuth';
 import { notificationService } from '@/services/api/notificationService';
@@ -21,16 +22,23 @@ export default function TopBar({ sidebarCollapsed = false, onMobileMenuOpen }: T
   const navigate = useNavigate();
   const { logout } = useAuth();
   const user = useSelector((state: RootState) => state.auth.user);
-  const [unreadCount, setUnreadCount] = useState(0);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const manageXUrl = import.meta.env.VITE_MANAGEX_URL || 'http://localhost:5175';
 
-  useEffect(() => {
-    notificationService.getUnreadCount()
-      .then((data) => setUnreadCount(data.count))
-      .catch(() => {});
-  }, []);
+  // ── Phase 7.1 Step 4 — Unread count via React Query ────────────────
+  // Shared queryKey ['notifications', 'unread-count'] with AdminLayout so
+  // both bell badges read from the same cache. NotificationsPage mutations
+  // invalidate the 'notifications' prefix; this badge updates instantly.
+  // refetchIntervalInBackground: false pauses polling when the tab is
+  // hidden so we don't hammer the API for inactive users.
+  const { data: unreadData } = useQuery({
+    queryKey: ['notifications', 'unread-count'],
+    queryFn: () => notificationService.getUnreadCount(),
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
+  });
+  const unreadCount = unreadData?.count ?? 0;
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
