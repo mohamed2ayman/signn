@@ -659,6 +659,32 @@ pass after the original Step 3 implementation shipped without them.
 Search: `grep "_TODO_" apps/sign/src/i18n/locales/ar/common.json` for
 the current worklist.
 
+### 7.2-I — Wire obligation reminder processor to in-app dispatch
+**Deferred from:** Phase 7.1 Step 4 scoping (discovered 2026-05-25)
+**Why:** CLAUDE.md "Phase 7.1 Step 1 — Hard rule 2" requires every
+reminder tier (30/14/7/1/DUE_TODAY/OVERDUE) to create BOTH an email AND
+an in-app notification row. The current
+`obligation-reminder.processor.ts` sends EMAIL only — it doesn't call
+`NotificationDispatchService.dispatchObligationReminder()` to write the
+IN_APP row. Result: obligation reminders will never appear on the
+notification bell badge, never appear on `NotificationsPage`, and the
+Step 4 polling that's about to ship will work correctly but have no
+obligation-specific rows to poll for.
+**Scope:** In `obligation-reminder.processor.ts`, after a reminder email
+is successfully sent for each tier, call
+`dispatchObligationReminder(obligation, recipient, tier)`. Include
+`obligation_id`, `contract_id`, `project_id` in the metadata field.
+Ensure the in-app dispatch failure does NOT roll back the email send —
+log the failure but treat the email as the primary durable delivery.
+Test: trigger a reminder, verify both an email goes out AND a
+notifications row appears with type `IN_APP`.
+**Dependencies:** None. Pure backend.
+**Note:** Step 4 frontend polling (PR following this filing) works
+correctly for all notifications that ARE dispatched — system, contract
+events, admin actions. Obligation reminders specifically will start
+appearing on the bell badge automatically once 7.2-I lands. No frontend
+changes required after 7.2-I.
+
 ---
 
 ## 🤖 PHASE 8 — AI Model Migration

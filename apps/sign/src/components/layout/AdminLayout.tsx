@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
+import { useQuery } from '@tanstack/react-query';
 import { RootState } from '@/store';
 import useAuth from '@/hooks/useAuth';
 import { UserRole } from '@/types';
@@ -152,7 +153,6 @@ export default function AdminLayout() {
   const { user, isAuthenticated } = useSelector((state: RootState) => state.auth);
 
   const manageXUrl = import.meta.env.VITE_MANAGEX_URL || 'http://localhost:5175';
-  const [unreadCount, setUnreadCount] = useState(0);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
   // ── Phase 6.4 Step 2 — mobile drawer state (< md only) ───────────────
@@ -181,12 +181,18 @@ export default function AdminLayout() {
     }
   }, [user, navigate]);
 
-  // ── Fetch unread notifications once on mount ─────────────────────────
-  useEffect(() => {
-    notificationService.getUnreadCount()
-      .then((data) => setUnreadCount(data.count))
-      .catch(() => {});
-  }, []);
+  // ── Phase 7.1 Step 4 — Unread count via React Query ──────────────────
+  // Shares the EXACT same queryKey as TopBar so both bell badges read
+  // from the same cache. NotificationsPage mutations invalidate the
+  // 'notifications' prefix → this badge updates instantly without
+  // waiting for the 30s poll. Background polling pauses on tab blur.
+  const { data: unreadData } = useQuery({
+    queryKey: ['notifications', 'unread-count'],
+    queryFn: () => notificationService.getUnreadCount(),
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
+  });
+  const unreadCount = unreadData?.count ?? 0;
 
   // ── Close user dropdown on outside click ─────────────────────────────
   useEffect(() => {

@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notificationService } from '@/services/api/notificationService';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
 import type { Notification } from '@/types';
@@ -42,60 +43,56 @@ function getTimeAgo(dateStr: string): string {
   return date.toLocaleDateString();
 }
 
+// Phase 7.1 Step 4 — Polling cadence shared with TopBar / AdminLayout
+// bell badges so the three surfaces stay in lock-step.
+const NOTIFICATIONS_POLL_INTERVAL_MS = 30_000;
+
 export default function NotificationsPage() {
-  const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
+  const queryClient = useQueryClient();
 
-  useEffect(() => {
-    loadNotifications();
-  }, [filter]);
-
-  const loadNotifications = async () => {
-    try {
-      const data = await notificationService.getAll(
+  // ── React Query: list of notifications ────────────────────────────
+  // Polls every 30s, pauses when the tab is hidden so we don't hammer
+  // the API for users who left the tab in the background. Mutations
+  // below invalidate the 'notifications' prefix so the badge in
+  // TopBar / AdminLayout (sharing the same prefix) refreshes instantly.
+  const {
+    data: notifications = [],
+    isLoading,
+  } = useQuery<Notification[]>({
+    queryKey: ['notifications', filter],
+    queryFn: () =>
+      notificationService.getAll(
         filter === 'unread' ? { is_read: false } : undefined,
-      );
-      setNotifications(data);
-    } catch (err) {
-      console.error('Failed to load notifications:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
+      ),
+    refetchInterval: NOTIFICATIONS_POLL_INTERVAL_MS,
+    refetchIntervalInBackground: false,
+  });
 
-  const handleMarkAsRead = async (id: string) => {
-    try {
-      await notificationService.markAsRead(id);
-      setNotifications(
-        notifications.map((n) => (n.id === id ? { ...n, is_read: true } : n)),
-      );
-    } catch (err) {
-      console.error('Failed to mark as read:', err);
-    }
-  };
+  const markAsReadMutation = useMutation({
+    mutationFn: (id: string) => notificationService.markAsRead(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
+    },
+  });
 
-  const handleMarkAllAsRead = async () => {
-    try {
-      await notificationService.markAllAsRead();
-      setNotifications(notifications.map((n) => ({ ...n, is_read: true })));
-    } catch (err) {
-      console.error('Failed to mark all as read:', err);
-    }
-  };
+  const markAllAsReadMutation = useMutation({
+    mutationFn: () => notificationService.markAllAsRead(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
+    },
+  });
 
-  const handleDelete = async (id: string) => {
-    try {
-      await notificationService.delete(id);
-      setNotifications(notifications.filter((n) => n.id !== id));
-    } catch (err) {
-      console.error('Failed to delete notification:', err);
-    }
-  };
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => notificationService.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
+    },
+  });
 
   const unreadCount = notifications.filter((n) => !n.is_read).length;
 
-  if (loading) {
+  if (isLoading) {
     return <div className="flex h-64 items-center justify-center"><LoadingSpinner size="lg" /></div>;
   }
 
@@ -118,8 +115,9 @@ export default function NotificationsPage() {
         </div>
         {unreadCount > 0 && (
           <button
-            onClick={handleMarkAllAsRead}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3.5 py-2 text-sm font-medium text-gray-700 transition hover:border-gray-300 hover:bg-gray-50"
+            onClick={() => markAllAsReadMutation.mutate()}
+            disabled={markAllAsReadMutation.isPending}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3.5 py-2 text-sm font-medium text-gray-700 transition hover:border-gray-300 hover:bg-gray-50 disabled:opacity-50"
           >
             <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
@@ -187,8 +185,9 @@ export default function NotificationsPage() {
                       )}
                       {!notification.is_read && (
                         <button
-                          onClick={() => handleMarkAsRead(notification.id)}
-                          className="rounded-lg p-1.5 text-gray-300 transition-colors hover:bg-gray-100 hover:text-primary"
+                          onClick={() => markAsReadMutation.mutate(notification.id)}
+                          disabled={markAsReadMutation.isPending}
+                          className="rounded-lg p-1.5 text-gray-300 transition-colors hover:bg-gray-100 hover:text-primary disabled:opacity-50"
                           title="Mark as read"
                         >
                           <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
@@ -197,8 +196,9 @@ export default function NotificationsPage() {
                         </button>
                       )}
                       <button
-                        onClick={() => handleDelete(notification.id)}
-                        className="rounded-lg p-1.5 text-gray-300 transition-colors hover:bg-red-50 hover:text-red-500"
+                        onClick={() => deleteMutation.mutate(notification.id)}
+                        disabled={deleteMutation.isPending}
+                        className="rounded-lg p-1.5 text-gray-300 transition-colors hover:bg-red-50 hover:text-red-500 disabled:opacity-50"
                         title="Delete"
                       >
                         <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">

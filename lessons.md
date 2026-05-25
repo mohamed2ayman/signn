@@ -3609,3 +3609,120 @@ the answer is to stop and ask, not to skip X and explain why later.
 **Tracked fix:** Phase 7.2-H in NEXT_PHASES.md, plus the
 `_TODO_*` parallel-key pattern in `ar/common.json` and `fr/common.json`
 restored in this housekeeping pass.
+
+## 105. `useState + useEffect` for periodically-changing server data is silently stale
+
+**Context:** Phase 7.1 Step 4 scoping (2026-05-25). TopBar's bell badge
+fetched the unread count exactly once via `useEffect(() => { … }, [])` on
+mount. It then sat there showing the stale value for the entire session
+unless the user hard-refreshed the page. Same pattern was duplicated in
+AdminLayout. NotificationsPage used the same `useState + useEffect` shape
+with `[filter]` as the only dep — visiting the page and waiting did not
+surface new rows.
+
+The bug went unnoticed for months because every "did it work?" check
+involved a page reload, which masked the staleness by re-mounting the
+component and re-firing the effect.
+
+**Lesson:** Data that changes server-side over the lifetime of a
+component MUST come through a query layer with a polling cadence (React
+Query `refetchInterval`, SWR `refreshInterval`) — not through a one-shot
+`useEffect` on mount. The `useState + useEffect` pattern for periodic
+data is a stale-by-design footgun: it works on first render, looks
+correct in screenshots, and silently grows wrong over time.
+
+**Rules going forward:**
+1. Any component that reads a count, list, or status that another part
+   of the system can mutate asynchronously must use React Query (the
+   project's standard) with `refetchInterval`. No exceptions for
+   "lightweight" components.
+2. When migrating one-shot effects to query layer, also add the
+   `refetchIntervalInBackground: false` option so polling pauses on
+   tab blur — backend load should be proportional to active users, not
+   open tabs.
+3. When reviewing PRs, treat any `useEffect(fn, [])` that triggers a
+   network fetch as a yellow flag. Either the data truly never
+   changes (rare) or it should be a query.
+
+**Tracked fix:** PR for Phase 7.1 Step 4 — three consumers
+(NotificationsPage, TopBar, AdminLayout) migrated to React Query with
+shared queryKey `['notifications', 'unread-count']`.
+
+## 106. Shared queryKey for cross-component cache coherence
+
+**Context:** TopBar's bell badge and AdminLayout's bell badge are two
+separate components rendered on disjoint route trees (`/app/*` vs
+`/admin/*`). They both want the same unread count, and when one screen
+mutates that count (mark-as-read on `/app/notifications`), the other
+screen should reflect the change without a page navigation.
+
+The reflex solution is per-component state with imperative cross-tree
+messaging (a bus, a Redux slice, a context). React Query offers a
+cleaner option: any two components reading the same `queryKey` share
+the same cache entry by construction, and any `invalidateQueries({
+queryKey })` invalidates both at once.
+
+We deliberately gave both bell badges the EXACT same queryKey
+`['notifications', 'unread-count']`. NotificationsPage's mutations
+invalidate the `['notifications']` prefix, which catches both the
+list query (`['notifications', filter]`) and the unread-count query
+in one call.
+
+**Lesson:** Two components reading the same data should use the same
+`queryKey`. Cache coherence is then free — no Redux slice, no event
+bus, no `useEffect` mirroring. Conversely, when components share a
+domain prefix but differ in specifics, structure the key as
+`['domain', specifier]` so a single `invalidateQueries({ queryKey:
+['domain'] })` refreshes the whole group.
+
+**Rules going forward:**
+1. Before adding cross-component state synchronization (Redux,
+   context, event bus), check whether the components could just share
+   a React Query key.
+2. Structure query keys hierarchically (`['notifications',
+   'unread-count']`, `['notifications', filter]`) so prefix-based
+   invalidation works.
+3. Don't duplicate a queryFn across components — if two places need
+   the same data, extract the key and the fn together (a tiny
+   `useUnreadCount()` hook would be the next refactor here).
+
+**Reference:** TopBar.tsx, AdminLayout.tsx, NotificationsPage.tsx —
+all three carry the `['notifications', …]` prefix. Mutations
+invalidate `['notifications']` and all three queries refresh.
+
+## 107. `refetchIntervalInBackground: false` keeps backend load proportional to active users
+
+**Context:** Naive polling fires the request on `setInterval` regardless
+of whether the user is looking at the page. A user with 5 SIGN tabs open
+overnight would generate 5 × (60 / 0.5) = 600 requests per hour to
+`/notifications/unread-count` while they sleep. Multiplied across an
+org with 100 users at 2 tabs average, that's 24,000 requests/hour of
+pure noise — load that scales with browser count, not active users.
+
+React Query's `refetchIntervalInBackground: false` option pauses the
+poll the moment `document.visibilityState === 'hidden'` (tab blur, tab
+switch, window minimize) and resumes immediately on visibility return.
+Backend load now scales with focused tabs, which is the right metric.
+
+We confirmed in the Phase 7.1 Step 4 verification pass that a headless
+preview browser reports `visibilityState: 'hidden'` and `hasFocus():
+false` — React Query correctly suppresses polling in that state. Forcing
+`visibilityState` back to `'visible'` and dispatching a synthetic
+`visibilitychange` event wakes the poll back up.
+
+**Lesson:** Polling without a visibility guard is a backend-load
+amplifier. The `refetchIntervalInBackground: false` flag is essentially
+free to set, costs nothing in UX (visible users still see fresh data),
+and substantially cuts the request rate from open-but-unused tabs.
+
+**Rules going forward:**
+1. Every `refetchInterval` MUST be paired with
+   `refetchIntervalInBackground: false` unless there's a specific
+   reason the data must stay fresh while the user isn't looking
+   (e.g. a kiosk dashboard).
+2. Don't try to be clever with `setInterval` + visibility listeners —
+   React Query already does this correctly. Use the library.
+3. Verification protocol: in any environment where the preview tab
+   may not be focused (CI, headless test runners), assume polling
+   pauses by design. Don't read "no second request after 30s" as a
+   bug; check `document.visibilityState` first.

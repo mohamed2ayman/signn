@@ -312,6 +312,20 @@ export default function ObligationsCalendarPage() {
                 e as { id: string; resource: ObligationCalendarEvent },
               )
             }
+            components={{
+              // Wrap event titles in dir="auto" so Arabic obligation
+              // descriptions render right-to-left inside the calendar
+              // cell. CLAUDE.md hard rule (Phase 7.1 Step 1 #2 follow-on).
+              event: ({ title }) => (
+                <span
+                  dir="auto"
+                  style={{ unicodeBidi: 'plaintext' }}
+                  className="block truncate"
+                >
+                  {title}
+                </span>
+              ),
+            }}
             style={{ height: '70vh', minHeight: 500 }}
             culture={
               i18n.language.startsWith('ar')
