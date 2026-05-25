@@ -2108,3 +2108,72 @@ the frontend type, blocking the drawer from compiling.
 6. **`react-big-calendar` Calendar component must be wrapped in a
    responsive container with explicit `height: '70vh', minHeight: 500`.**
    RBC measures its own DOM and needs a parent with deterministic height.
+
+---
+
+## Phase 7.1 Step 4 — Notification Freshness via React Query Polling (shipped — 2026-05-25)
+
+Frontend-only data-layer surgery on the notification surfaces. Replaces
+three `useState + useEffect` fetches that were silently stale for the
+lifetime of a session with React Query polling that keeps the bell badge
+and NotificationsPage automatically fresh.
+
+### What shipped
+
+**Three queries on a shared key prefix.** All three notification queries
+live under the `['notifications', …]` namespace:
+
+| Consumer | queryKey | refetchInterval |
+|---|---|---|
+| `TopBar.tsx` bell badge | `['notifications', 'unread-count']` | 30 s |
+| `AdminLayout.tsx` bell badge | `['notifications', 'unread-count']` | 30 s |
+| `NotificationsPage.tsx` list | `['notifications', filter]` | 30 s |
+
+Both bell badges read from the EXACT same cache entry, so when one
+mutates the count, the other refreshes instantly via the same
+invalidation. No Redux, no event bus, no cross-component messaging.
+
+**Tab-visibility-aware polling.** Every query carries
+`refetchIntervalInBackground: false`. When the browser tab is hidden,
+React Query pauses the poll. When focus returns, polling resumes
+immediately. Backend request rate scales with focused tabs, not open
+tabs.
+
+**Cache invalidation via the shared prefix.** NotificationsPage's
+mark-as-read, mark-all-as-read, and delete mutations all call
+`queryClient.invalidateQueries({ queryKey: ['notifications'] })`. This
+prefix matches BOTH the list query and the unread-count queries — the
+badge in TopBar/AdminLayout updates instantly without waiting for the
+30s poll cycle.
+
+### Hard rules — never violate
+
+1. **Any new notification surface MUST use the `['notifications', …]`
+   queryKey prefix.** The shared cache pattern only works as long as
+   every consumer joins the same namespace. Inventing a new top-level
+   key (e.g. `['unreadBell']`) breaks the cross-component coherence.
+2. **`refetchInterval` MUST be paired with `refetchIntervalInBackground:
+   false`** on any new polling query. Polling without the visibility
+   guard amplifies backend load with every open-but-unfocused tab. The
+   30s cadence is canonical across the codebase — match it unless you
+   have a documented reason.
+3. **Mutations that touch notifications MUST invalidate the
+   `['notifications']` prefix.** Don't invalidate only the specific
+   sub-key — the prefix invalidation is what keeps the bell badge in
+   sync with the list.
+4. **Never reintroduce `useState + useEffect` for periodically-changing
+   server data.** That pattern fetches once on mount and goes silently
+   stale. Use React Query with `refetchInterval` instead. See lesson
+   #105.
+
+### Known limitation — obligation reminders blocked on 7.2-I
+
+The Step 4 polling correctly refreshes notifications for ALL types that
+the backend actually writes to the `notifications` table — system
+events, contract events, admin actions, etc. It does NOT (yet) surface
+obligation reminders, because the obligation-reminder processor sends
+email only and never calls `NotificationDispatchService.
+dispatchObligationReminder()` to create the in-app row. This is
+a backend gap tracked as **7.2-I** in NEXT_PHASES.md. Once 7.2-I
+ships, obligation reminders will start appearing on the bell badge
+automatically — no further frontend changes required.
