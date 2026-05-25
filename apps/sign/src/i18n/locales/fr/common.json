@@ -295,16 +295,23 @@
       "WAIVED": "Renoncé"
     },
     "type": {
+      "_TODO_NOTICE_PERIOD": "Legal translator review — France vs Maghreb construction terminology",
       "NOTICE_PERIOD": "Délai de préavis",
       "PAYMENT": "Paiement",
+      "_TODO_PERFORMANCE_BOND": "Legal translator review — France vs Maghreb construction terminology",
       "PERFORMANCE_BOND": "Garantie de bonne exécution",
       "INSURANCE": "Assurance",
       "MILESTONE": "Jalon",
+      "_TODO_DEFECTS_LIABILITY": "Legal translator review — DLP terminology varies by jurisdiction",
       "DEFECTS_LIABILITY": "Responsabilité pour vices",
+      "_TODO_DISPUTE_RESOLUTION": "Legal translator review — arbitrage vs juridiction phrasing",
       "DISPUTE_RESOLUTION": "Règlement des différends",
       "REPORTING": "Rapports",
+      "_TODO_EMPLOYER_OBLIGATION": "Legal translator review — Maître d'ouvrage vs Maître de l'ouvrage regional variants",
       "EMPLOYER_OBLIGATION": "Obligation du Maître d'ouvrage",
+      "_TODO_CONTRACTOR_OBLIGATION": "Legal translator review — Entrepreneur vs Titulaire du marché variants",
       "CONTRACTOR_OBLIGATION": "Obligation de l'Entrepreneur",
+      "_TODO_ENGINEER_OBLIGATION": "Legal translator review — Ingénieur FIDIC vs Maître d'œuvre convention",
       "ENGINEER_OBLIGATION": "Obligation de l'Ingénieur",
       "OTHER": "Autre"
     },

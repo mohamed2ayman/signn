@@ -280,16 +280,23 @@
       "WAIVED": "تم التنازل عنه"
     },
     "type": {
+      "_TODO_NOTICE_PERIOD": "Legal translator review — UAE/Egypt/Saudi variants",
       "NOTICE_PERIOD": "فترة الإشعار",
       "PAYMENT": "الدفع",
+      "_TODO_PERFORMANCE_BOND": "Legal translator review — UAE/Egypt/Saudi variants",
       "PERFORMANCE_BOND": "ضمان حسن التنفيذ",
       "INSURANCE": "التأمين",
       "MILESTONE": "معلم رئيسي",
+      "_TODO_DEFECTS_LIABILITY": "Legal translator review — DLP terminology varies",
       "DEFECTS_LIABILITY": "مسؤولية العيوب",
+      "_TODO_DISPUTE_RESOLUTION": "Legal translator review — jurisdiction-specific framing (arbitration vs courts)",
       "DISPUTE_RESOLUTION": "تسوية المنازعات",
       "REPORTING": "التقارير",
+      "_TODO_EMPLOYER_OBLIGATION": "Legal translator review — صاحب العمل vs الكاتب-المُلتزم vs other regional usage",
       "EMPLOYER_OBLIGATION": "التزام صاحب العمل",
+      "_TODO_CONTRACTOR_OBLIGATION": "Legal translator review — المقاول vs المتعاقد variants",
       "CONTRACTOR_OBLIGATION": "التزام المقاول",
+      "_TODO_ENGINEER_OBLIGATION": "Legal translator review — المهندس vs المهندس الاستشاري FIDIC convention",
       "ENGINEER_OBLIGATION": "التزام المهندس",
       "OTHER": "أخرى"
     },
