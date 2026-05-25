@@ -21,6 +21,11 @@ import {
   ObligationType,
   User,
 } from '../../../database/entities';
+import {
+  ObligationReminderEmailStatus,
+  ObligationReminderLog,
+  ObligationReminderType,
+} from '../../../database/entities/obligation-reminder-log.entity';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
@@ -59,6 +64,28 @@ const MOCK_ASSIGNEE: Partial<ObligationAssignee> = {
   user_id: ASSIGNEE_USER_ID,
   assigned_by: USER_ID,
 };
+
+const REMINDER_LOG_ID_1 = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+const REMINDER_LOG_ID_2 = 'eeeeeeee-eeee-4eee-8eee-ffffffffffff';
+
+const MOCK_REMINDER_LOGS: Partial<ObligationReminderLog>[] = [
+  {
+    id: REMINDER_LOG_ID_1,
+    obligation_id: OBLIGATION_ID,
+    reminder_type: ObligationReminderType.DAYS_7,
+    sent_to: 'pm@sign.com',
+    sent_at: new Date('2026-11-24T06:00:00.000Z'),
+    email_status: ObligationReminderEmailStatus.SENT,
+  },
+  {
+    id: REMINDER_LOG_ID_2,
+    obligation_id: OBLIGATION_ID,
+    reminder_type: ObligationReminderType.DAYS_30,
+    sent_to: 'pm@sign.com',
+    sent_at: new Date('2026-11-01T06:00:00.000Z'),
+    email_status: ObligationReminderEmailStatus.SENT,
+  },
+];
 
 const MOCK_CALENDAR_EVENT = {
   id: OBLIGATION_ID,
@@ -100,6 +127,7 @@ const mockObligationSvc = {
   updateEvidence: jest.fn(),
   getPortfolio: jest.fn(),
   getCalendar: jest.fn(),
+  getReminderLogs: jest.fn(),
 };
 
 // Obligation repo mock (used by the EXISTING endpoints in the controller)
@@ -172,6 +200,10 @@ describe('ComplianceObligationService — Phase 7.1 unit', () => {
     findOne: jest.fn(),
   };
 
+  const mockReminderLogRepoUnit = {
+    find: jest.fn(),
+  };
+
   beforeEach(async () => {
     jest.clearAllMocks();
     const moduleRef = await Test.createTestingModule({
@@ -188,6 +220,10 @@ describe('ComplianceObligationService — Phase 7.1 unit', () => {
         {
           provide: getRepositoryToken(ObligationAssignee),
           useValue: mockAssigneeRepo,
+        },
+        {
+          provide: getRepositoryToken(ObligationReminderLog),
+          useValue: mockReminderLogRepoUnit,
         },
       ],
     }).compile();
@@ -424,6 +460,30 @@ describe('ComplianceObligationService — Phase 7.1 unit', () => {
 
       const events = await service.getCalendar(ORG_ID, '2026-01-01', '2026-12-31');
       expect(events[0].color).toBe('#059669');
+    });
+  });
+
+  // ── getReminderLogs ────────────────────────────────────────────────────
+
+  describe('getReminderLogs()', () => {
+    it('returns logs ordered by sent_at DESC', async () => {
+      mockReminderLogRepoUnit.find.mockResolvedValue(MOCK_REMINDER_LOGS);
+
+      const result = await service.getReminderLogs(OBLIGATION_ID);
+
+      expect(mockReminderLogRepoUnit.find).toHaveBeenCalledWith({
+        where: { obligation_id: OBLIGATION_ID },
+        order: { sent_at: 'DESC' },
+      });
+      expect(result).toHaveLength(2);
+      expect(result[0].reminder_type).toBe(ObligationReminderType.DAYS_7);
+    });
+
+    it('returns empty array when obligation has no reminder logs', async () => {
+      mockReminderLogRepoUnit.find.mockResolvedValue([]);
+
+      const result = await service.getReminderLogs(OBLIGATION_ID);
+      expect(result).toEqual([]);
     });
   });
 });
@@ -667,6 +727,80 @@ describe('ComplianceObligationsController — Phase 7.1 HTTP', () => {
         .set('Authorization', 'Bearer valid-token');
 
       expect(res.status).toBe(400);
+    });
+  });
+
+  // ── GET reminders ──────────────────────────────────────────────────────
+
+  describe('GET /contracts/:contractId/obligations/:obligationId/reminders', () => {
+    const path = `/contracts/${CONTRACT_ID}/obligations/${OBLIGATION_ID}/reminders`;
+
+    it('returns 200 with reminder logs ordered by sent_at DESC', async () => {
+      mockObligationRepo.findOne.mockResolvedValue(MOCK_OBLIGATION);
+      mockObligationSvc.getReminderLogs.mockResolvedValue(MOCK_REMINDER_LOGS);
+
+      const res = await request(app.getHttpServer())
+        .get(path)
+        .set('Authorization', 'Bearer valid-token');
+
+      expect(res.status).toBe(200);
+      expect(res.body).toBeInstanceOf(Array);
+      expect(res.body).toHaveLength(2);
+      // First entry is most-recent (DAYS_7 — sent later)
+      expect(res.body[0]).toMatchObject({
+        id: REMINDER_LOG_ID_1,
+        reminder_type: ObligationReminderType.DAYS_7,
+        sent_to: 'pm@sign.com',
+        email_status: ObligationReminderEmailStatus.SENT,
+      });
+      // obligation_id must NOT appear in the response (redundant from URL)
+      expect(res.body[0]).not.toHaveProperty('obligation_id');
+      expect(mockObligationSvc.getReminderLogs).toHaveBeenCalledWith(
+        OBLIGATION_ID,
+      );
+    });
+
+    it('returns 200 with empty array when no reminders have been sent', async () => {
+      mockObligationRepo.findOne.mockResolvedValue(MOCK_OBLIGATION);
+      mockObligationSvc.getReminderLogs.mockResolvedValue([]);
+
+      const res = await request(app.getHttpServer())
+        .get(path)
+        .set('Authorization', 'Bearer valid-token');
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual([]);
+    });
+
+    it('returns 401 when no token is provided', async () => {
+      const res = await request(app.getHttpServer()).get(path);
+      expect(res.status).toBe(401);
+    });
+
+    it('returns 404 when obligation does not exist', async () => {
+      mockObligationRepo.findOne.mockResolvedValue(null);
+
+      const res = await request(app.getHttpServer())
+        .get(path)
+        .set('Authorization', 'Bearer valid-token');
+
+      expect(res.status).toBe(404);
+      expect(mockObligationSvc.getReminderLogs).not.toHaveBeenCalled();
+    });
+
+    it('returns 404 when obligation belongs to a different contract', async () => {
+      // Obligation exists but is linked to a different contract
+      mockObligationRepo.findOne.mockResolvedValue({
+        ...MOCK_OBLIGATION,
+        contract_id: 'different-contract-uuid',
+      });
+
+      const res = await request(app.getHttpServer())
+        .get(path)
+        .set('Authorization', 'Bearer valid-token');
+
+      expect(res.status).toBe(404);
+      expect(mockObligationSvc.getReminderLogs).not.toHaveBeenCalled();
     });
   });
 });

@@ -6,6 +6,7 @@ import {
   Get,
   Header,
   HttpCode,
+  NotFoundException,
   Param,
   Patch,
   Post,
@@ -158,6 +159,34 @@ export class ComplianceObligationsController {
     @Body() body: UpdateEvidenceDto,
   ): Promise<Obligation> {
     return this.obligationSvc.updateEvidence(obligationId, body.evidence_url);
+  }
+
+  // ─── Phase 7.2-C — Reminder history ──────────────────────────────────────
+
+  /**
+   * GET /contracts/:contractId/obligations/:obligationId/reminders
+   * Returns reminder log entries for one obligation, most-recent first.
+   * Verifies the obligation belongs to the contract before returning data.
+   */
+  @Get('contracts/:contractId/obligations/:obligationId/reminders')
+  async getReminderLogs(
+    @Param('contractId') contractId: string,
+    @Param('obligationId') obligationId: string,
+  ) {
+    const obligation = await this.obligationRepo.findOne({
+      where: { id: obligationId },
+    });
+    if (!obligation || obligation.contract_id !== contractId) {
+      throw new NotFoundException('Obligation not found');
+    }
+    const logs = await this.obligationSvc.getReminderLogs(obligationId);
+    return logs.map((l) => ({
+      id: l.id,
+      reminder_type: l.reminder_type,
+      sent_to: l.sent_to,
+      sent_at: l.sent_at,
+      email_status: l.email_status,
+    }));
   }
 
   // ─── Phase 7.1 — Portfolio & Calendar ────────────────────────────────────

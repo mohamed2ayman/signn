@@ -14,6 +14,7 @@ import {
   ObligationStatus,
   ObligationType,
 } from '../../../database/entities';
+import { ObligationReminderLog } from '../../../database/entities/obligation-reminder-log.entity';
 import { ObligationPortfolioFiltersDto } from '../dto/obligation-portfolio-filters.dto';
 
 /** Shape returned by getCalendar(). */
@@ -70,6 +71,8 @@ export class ComplianceObligationService {
     private readonly contractRepo: Repository<Contract>,
     @InjectRepository(ObligationAssignee)
     private readonly assigneeRepo: Repository<ObligationAssignee>,
+    @InjectRepository(ObligationReminderLog)
+    private readonly reminderLogRepo: Repository<ObligationReminderLog>,
   ) {}
 
   // ─── Phase 3.4 — Layer-4 obligation extraction ───────────────────────────
@@ -177,6 +180,20 @@ export class ComplianceObligationService {
     if (!o) throw new NotFoundException('Obligation not found');
     o.evidence_url = evidenceUrl;
     return this.obligationRepo.save(o);
+  }
+
+  // ─── Phase 7.2-C — Reminder history ──────────────────────────────────────
+
+  /**
+   * Return all reminder log entries for a given obligation, most-recent first.
+   * Max ~8 rows per obligation (one per tier + weekly digest) — no pagination
+   * needed.
+   */
+  async getReminderLogs(obligationId: string): Promise<ObligationReminderLog[]> {
+    return this.reminderLogRepo.find({
+      where: { obligation_id: obligationId },
+      order: { sent_at: 'DESC' },
+    });
   }
 
   // ─── Phase 7.1 — Portfolio & Calendar queries ─────────────────────────────
