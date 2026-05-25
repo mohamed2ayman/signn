@@ -133,6 +133,7 @@
     "unread": "غير مقروء",
     "complete": "إكمال",
     "resolved": "تم الحل",
+    "created": "أُنشئ",
     "version": "النسخة {{version}}"
   },
   "dashboard": {
@@ -334,6 +335,100 @@
       "viewCalendar": "عرض التقويم",
       "exportExcel": "تصدير إلى Excel",
       "clearFilters": "مسح المرشّحات"
+    },
+    "modal": {
+      "add": {
+        "title": "إضافة التزام",
+        "subtitle": "أنشئ التزامًا جديدًا لهذا العقد"
+      },
+      "edit": {
+        "title": "تعديل الالتزام",
+        "subtitle": "تحديث تفاصيل الالتزام"
+      },
+      "markActioned": {
+        "title": "وضع علامة على الالتزام كمُنفّذ",
+        "actionedDate": "تاريخ التنفيذ",
+        "notes": "ملاحظات (اختياري)",
+        "evidenceHeading": "الإثبات (اختياري)",
+        "evidenceMessage": "احمِ نفسك. حمّل إثباتًا على الامتثال — في نزاعات قطاع الإنشاءات، الالتزام بلا إثبات موثّق يُعامَل مثل التزام لم يُنفَّذ. السجلّ المؤرَّخ هو دفاعك الأكثر موثوقية.",
+        "evidenceUrlLabel": "رابط الإثبات",
+        "fileUploadDeferred": "رفع الملفات مباشرةً سيتوفّر في خطوة لاحقة. في الوقت الحالي، الصق رابطًا لملف الإثبات المُستضاف.",
+        "invalidUrl": "يُرجى إدخال رابط صالح",
+        "submitButton": "وضع علامة كمُنفّذ",
+        "waivedReason": "سبب التنازل",
+        "waivedReasonRequired": "يُرجى توضيح سبب التنازل عن الالتزام"
+      },
+      "assign": {
+        "title": "تعيين مستخدم للالتزام",
+        "addUser": "إضافة مستخدم",
+        "searchPlaceholder": "ابحث في أعضاء الفريق...",
+        "noUsers": "لا يوجد أعضاء فريق متاحون",
+        "alreadyAssigned": "هذا المستخدم مُعيَّن بالفعل"
+      },
+      "detail": {
+        "keyDetails": "التفاصيل الرئيسية",
+        "assignees": "المُعيَّنون",
+        "manageAssignees": "إدارة المُعيَّنين",
+        "evidence": "الإثبات",
+        "noEvidence": "لم يُحمَّل أيّ إثبات",
+        "reminderHistory": "سجل التذكيرات",
+        "reminderHistoryDeferred": "سيظهر سجلّ التذكيرات هنا حال شحن نقطة الواجهة المخصّصة في خطوة لاحقة.",
+        "viewClause": "عرض البند",
+        "activityTimeline": "الخط الزمني للنشاط",
+        "created": "أُنشئ",
+        "actioned": "نُفِّذ"
+      }
+    },
+    "form": {
+      "description": "الوصف",
+      "descriptionPlaceholder": "ما الذي يجب القيام به؟",
+      "type": "النوع",
+      "clauseRef": "المرجع البندي",
+      "clauseRefPlaceholder": "مثال: البند 14.7",
+      "dueDate": "تاريخ الاستحقاق",
+      "frequency": "التكرار",
+      "responsibleParty": "الطرف المسؤول",
+      "responsiblePartyPlaceholder": "مثال: المقاول، صاحب العمل",
+      "amount": "المبلغ",
+      "currency": "العملة",
+      "timeframe": "الإطار الزمني",
+      "reminderSchedule": "جدول التذكيرات",
+      "daysBeforeReminder": "قبل {{days}} يومًا",
+      "isCritical": "التزام حرج",
+      "isCriticalHint": "الالتزامات الحرجة تُرسل تذكيرات دائمًا، حتى إن ألغى المستلم اشتراك ملخّص البريد الإلكتروني.",
+      "errors": {
+        "descriptionRequired": "الوصف مطلوب",
+        "descriptionTooLong": "يجب ألّا يتجاوز الوصف 20,000 حرفًا",
+        "dueDateRequired": "تاريخ الاستحقاق مطلوب",
+        "dueDateInPast": "يجب أن يكون تاريخ الاستحقاق اليوم أو لاحقًا",
+        "amountRequired": "المبلغ مطلوب عند تحديد العملة",
+        "currencyRequired": "العملة مطلوبة عند تحديد المبلغ"
+      }
+    },
+    "frequency": {
+      "oneTime": "لمرة واحدة",
+      "monthly": "شهري",
+      "quarterly": "ربع سنوي",
+      "annually": "سنوي"
+    },
+    "calendar": {
+      "title": "تقويم الالتزامات",
+      "subtitle": "جميع الالتزامات عبر عقودك ومشاريعك",
+      "backToList": "العودة إلى القائمة",
+      "monthView": "شهر",
+      "weekView": "أسبوع",
+      "dayView": "يوم",
+      "today": "اليوم",
+      "noEventsInRange": "لا توجد التزامات في هذا النطاق الزمني"
+    },
+    "toast": {
+      "obligationCreated": "تم إنشاء الالتزام",
+      "obligationUpdated": "تم تحديث الالتزام",
+      "obligationActioned": "تم وضع علامة على الالتزام كمُنفّذ",
+      "userAssigned": "تم تعيين المستخدم",
+      "userUnassigned": "تم إزالة المستخدم من المُعيَّنين",
+      "evidenceUploaded": "تم رفع الإثبات",
+      "error": "حدث خطأ ما. يُرجى المحاولة مرة أخرى."
     }
   },
   "notification": {

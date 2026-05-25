@@ -148,6 +148,7 @@
     "unread": "Non lu",
     "complete": "Terminé",
     "resolved": "Résolu",
+    "created": "Créé le",
     "version": "Version {{version}}"
   },
   "dashboard": {
@@ -349,6 +350,100 @@
       "viewCalendar": "Voir le calendrier",
       "exportExcel": "Exporter vers Excel",
       "clearFilters": "Effacer les filtres"
+    },
+    "modal": {
+      "add": {
+        "title": "Ajouter une obligation",
+        "subtitle": "Créer une nouvelle obligation pour ce contrat"
+      },
+      "edit": {
+        "title": "Modifier l'obligation",
+        "subtitle": "Mettre à jour les détails de l'obligation"
+      },
+      "markActioned": {
+        "title": "Marquer l'obligation comme exécutée",
+        "actionedDate": "Date d'exécution",
+        "notes": "Notes (Optionnel)",
+        "evidenceHeading": "Justificatif (Optionnel)",
+        "evidenceMessage": "Protégez-vous. Téléversez une preuve de conformité — dans les litiges de construction, une obligation non documentée équivaut à une obligation non remplie. Un registre horodaté est votre défense la plus fiable.",
+        "evidenceUrlLabel": "URL du justificatif",
+        "fileUploadDeferred": "Le téléversement direct de fichiers arrivera dans une étape ultérieure. Pour l'instant, collez un lien vers votre fichier de preuve hébergé.",
+        "invalidUrl": "Veuillez saisir une URL valide",
+        "submitButton": "Marquer comme exécutée",
+        "waivedReason": "Motif de la renonciation",
+        "waivedReasonRequired": "Veuillez indiquer un motif lorsque vous renoncez à une obligation"
+      },
+      "assign": {
+        "title": "Assigner un utilisateur à l'obligation",
+        "addUser": "Ajouter un utilisateur",
+        "searchPlaceholder": "Rechercher des membres de l'équipe...",
+        "noUsers": "Aucun membre d'équipe disponible",
+        "alreadyAssigned": "Cet utilisateur est déjà assigné"
+      },
+      "detail": {
+        "keyDetails": "Détails principaux",
+        "assignees": "Assignés",
+        "manageAssignees": "Gérer les assignés",
+        "evidence": "Justificatif",
+        "noEvidence": "Aucun justificatif téléversé",
+        "reminderHistory": "Historique des rappels",
+        "reminderHistoryDeferred": "L'historique des rappels apparaîtra ici dès que le point d'API dédié sera livré dans une étape ultérieure.",
+        "viewClause": "Voir la clause",
+        "activityTimeline": "Chronologie d'activité",
+        "created": "Créée le",
+        "actioned": "Exécutée le"
+      }
+    },
+    "form": {
+      "description": "Description",
+      "descriptionPlaceholder": "Que faut-il faire ?",
+      "type": "Type",
+      "clauseRef": "Référence de la clause",
+      "clauseRefPlaceholder": "ex. Clause 14.7",
+      "dueDate": "Date d'échéance",
+      "frequency": "Fréquence",
+      "responsibleParty": "Partie responsable",
+      "responsiblePartyPlaceholder": "ex. ENTREPRENEUR, MAÎTRE D'OUVRAGE",
+      "amount": "Montant",
+      "currency": "Devise",
+      "timeframe": "Délai",
+      "reminderSchedule": "Calendrier des rappels",
+      "daysBeforeReminder": "{{days}} jours avant",
+      "isCritical": "Obligation critique",
+      "isCriticalHint": "Les obligations critiques envoient toujours des rappels, même si le destinataire a désactivé le résumé par e-mail.",
+      "errors": {
+        "descriptionRequired": "La description est requise",
+        "descriptionTooLong": "La description ne doit pas dépasser 20 000 caractères",
+        "dueDateRequired": "La date d'échéance est requise",
+        "dueDateInPast": "La date d'échéance doit être aujourd'hui ou ultérieure",
+        "amountRequired": "Le montant est requis lorsqu'une devise est fournie",
+        "currencyRequired": "La devise est requise lorsqu'un montant est fourni"
+      }
+    },
+    "frequency": {
+      "oneTime": "Ponctuel",
+      "monthly": "Mensuel",
+      "quarterly": "Trimestriel",
+      "annually": "Annuel"
+    },
+    "calendar": {
+      "title": "Calendrier des obligations",
+      "subtitle": "Toutes les obligations dans vos contrats et projets",
+      "backToList": "Retour à la liste",
+      "monthView": "Mois",
+      "weekView": "Semaine",
+      "dayView": "Jour",
+      "today": "Aujourd'hui",
+      "noEventsInRange": "Aucune obligation dans cette plage de dates"
+    },
+    "toast": {
+      "obligationCreated": "Obligation créée",
+      "obligationUpdated": "Obligation mise à jour",
+      "obligationActioned": "Obligation marquée comme exécutée",
+      "userAssigned": "Utilisateur assigné",
+      "userUnassigned": "Utilisateur retiré des assignés",
+      "evidenceUploaded": "Justificatif téléversé",
+      "error": "Une erreur s'est produite. Veuillez réessayer."
     }
   },
   "notification": {

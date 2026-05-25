@@ -148,6 +148,7 @@
     "unread": "Unread",
     "complete": "Complete",
     "resolved": "Resolved",
+    "created": "Created",
     "version": "Version {{version}}"
   },
   "dashboard": {
@@ -349,6 +350,100 @@
       "viewCalendar": "View Calendar",
       "exportExcel": "Export to Excel",
       "clearFilters": "Clear filters"
+    },
+    "modal": {
+      "add": {
+        "title": "Add Obligation",
+        "subtitle": "Create a new obligation for this contract"
+      },
+      "edit": {
+        "title": "Edit Obligation",
+        "subtitle": "Update the obligation's details"
+      },
+      "markActioned": {
+        "title": "Mark Obligation as Actioned",
+        "actionedDate": "Actioned Date",
+        "notes": "Notes (Optional)",
+        "evidenceHeading": "Evidence (Optional)",
+        "evidenceMessage": "Protect yourself. Upload evidence of compliance — in construction disputes, an undocumented obligation is the same as an unmet one. A timestamped record is your most reliable defence.",
+        "evidenceUrlLabel": "Evidence URL",
+        "fileUploadDeferred": "Direct file upload is coming in a future step. For now, paste a link to your hosted evidence file.",
+        "invalidUrl": "Please enter a valid URL",
+        "submitButton": "Mark as Actioned",
+        "waivedReason": "Reason for waiver",
+        "waivedReasonRequired": "Please provide a reason when waiving an obligation"
+      },
+      "assign": {
+        "title": "Assign User to Obligation",
+        "addUser": "Add user",
+        "searchPlaceholder": "Search team members...",
+        "noUsers": "No team members available",
+        "alreadyAssigned": "This user is already assigned"
+      },
+      "detail": {
+        "keyDetails": "Key Details",
+        "assignees": "Assignees",
+        "manageAssignees": "Manage Assignees",
+        "evidence": "Evidence",
+        "noEvidence": "No evidence uploaded",
+        "reminderHistory": "Reminder History",
+        "reminderHistoryDeferred": "Reminder history will appear here once the audit endpoint ships in a future step.",
+        "viewClause": "View Clause",
+        "activityTimeline": "Activity Timeline",
+        "created": "Created",
+        "actioned": "Actioned"
+      }
+    },
+    "form": {
+      "description": "Description",
+      "descriptionPlaceholder": "What needs to be done?",
+      "type": "Type",
+      "clauseRef": "Clause Reference",
+      "clauseRefPlaceholder": "e.g. Clause 14.7",
+      "dueDate": "Due Date",
+      "frequency": "Frequency",
+      "responsibleParty": "Responsible Party",
+      "responsiblePartyPlaceholder": "e.g. CONTRACTOR, EMPLOYER",
+      "amount": "Amount",
+      "currency": "Currency",
+      "timeframe": "Timeframe",
+      "reminderSchedule": "Reminder Schedule",
+      "daysBeforeReminder": "{{days}} days before",
+      "isCritical": "Critical Obligation",
+      "isCriticalHint": "Critical obligations always send reminders, even if the recipient has opted out of email digests.",
+      "errors": {
+        "descriptionRequired": "Description is required",
+        "descriptionTooLong": "Description must be 20,000 characters or fewer",
+        "dueDateRequired": "Due date is required",
+        "dueDateInPast": "Due date must be today or later",
+        "amountRequired": "Amount is required when a currency is provided",
+        "currencyRequired": "Currency is required when an amount is provided"
+      }
+    },
+    "frequency": {
+      "oneTime": "One-time",
+      "monthly": "Monthly",
+      "quarterly": "Quarterly",
+      "annually": "Annually"
+    },
+    "calendar": {
+      "title": "Obligations Calendar",
+      "subtitle": "All obligations across your contracts and projects",
+      "backToList": "Back to List",
+      "monthView": "Month",
+      "weekView": "Week",
+      "dayView": "Day",
+      "today": "Today",
+      "noEventsInRange": "No obligations in this date range"
+    },
+    "toast": {
+      "obligationCreated": "Obligation created",
+      "obligationUpdated": "Obligation updated",
+      "obligationActioned": "Obligation marked as actioned",
+      "userAssigned": "User assigned",
+      "userUnassigned": "User removed from assignees",
+      "evidenceUploaded": "Evidence uploaded",
+      "error": "Something went wrong. Please try again."
     }
   },
   "notification": {
