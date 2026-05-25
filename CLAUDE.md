@@ -1,7 +1,7 @@
 # CLAUDE.md — Project Intelligence File
 > Read this entire file at the start of every Claude Code session before touching any code.
 > This file is the single source of truth for all architectural decisions, rules, and context.
-> Last updated: 2026-05-25 (Phase 7.1 Step 2 shipped — Frontend foundation. New Obligations tab on Contract Detail, upgraded ObligationsPage to portfolio view, 9 reusable obligation primitives under components/obligations/, dir="auto" fix on ProjectObligationsPage, 53 i18n keys × EN/AR/FR. Lessons 97–99 added.)
+> Last updated: 2026-05-25 (Phase 7.2 fixes shipped — 7.2-G route shadowing (PR #26), 7.2-E obligation_status enum (PR #27), 7.2-C reminders endpoint (PR #29). 87 backend tests total. Lessons #108–109 added.)
 
 ---
 
@@ -440,25 +440,19 @@ docker exec sign-postgres psql -U sign_user -d sign_db -c \
 
 ## Known Local Dev Gotchas
 
-### ⚠️ obligation_status enum missing MET/WAIVED
+### ✅ obligation_status enum MET/WAIVED — RESOLVED (Phase 7.2-E, PR #27)
 
-Migration `1718000000002-AddComplianceMonitoring.ts` has a silent-catch
-bug (tracked as Phase 7.2-E) — it claims to add `MET` and `WAIVED` to
-the `obligation_status` enum but doesn't actually do so because it
-references the wrong enum type name. The migrations table marks it
-successful while the work was never done.
+Migration `1718000000002-AddComplianceMonitoring.ts` previously used the
+wrong enum type name (`obligations_status_enum` vs `obligation_status`)
+and swallowed the failure with a silent catch. Fixed 2026-05-25:
 
-If you are setting up a fresh local DB and obligations seeded with status
-`MET` or `WAIVED` fail to insert, run this once:
+- `1718000000002` corrected for fresh rebuilds
+- Corrective migration `1748000000004` runs `ALTER TYPE … ADD VALUE IF
+  NOT EXISTS` for all existing environments
+- `ObligationSchemaCheckService` throws on startup if any required value
+  is missing — the problem can never silently recur
 
-```bash
-docker exec sign-postgres psql -U sign_user -d sign_db -c \
-  "ALTER TYPE obligation_status ADD VALUE IF NOT EXISTS 'MET';"
-docker exec sign-postgres psql -U sign_user -d sign_db -c \
-  "ALTER TYPE obligation_status ADD VALUE IF NOT EXISTS 'WAIVED';"
-```
-
-This is a workaround until 7.2-E ships a proper corrective migration.
+Run `npm run migration:run` once on any DB that predates PR #27.
 
 ---
 
@@ -524,7 +518,7 @@ All work is local development only.
 1. **~~DocuSign webhook was a no-op~~** — resolved in Phase 1.3: webhook now updates contract state correctly. EXECUTED status is safe to build on.
 2. **axios.ts default URL is wrong** — points to port 3001 instead of 3000. Always use `VITE_API_URL`.
 3. **Guest Portal is a stub** — treat `/contractor/*` as not built. Needs full planning session before building.
-4. **~~No automated tests~~** — resolved in Phase 2: 49 tests across all 3 services (33 backend, 8 frontend, 8 AI pipeline).
+4. **~~No automated tests~~** — resolved in Phase 2: 49 tests across all 3 services (33 backend, 8 frontend, 8 AI pipeline). Backend count now 87 as of Phase 7.2-C (PR #29).
 5. **~~No CI pipeline~~** — resolved in Phase 2: GitHub Actions CI runs on every push and PR to main (3 parallel jobs).
 
 ### Local Development Workarounds (before deployment)
@@ -2177,3 +2171,90 @@ dispatchObligationReminder()` to create the in-app row. This is
 a backend gap tracked as **7.2-I** in NEXT_PHASES.md. Once 7.2-I
 ships, obligation reminders will start appearing on the bell badge
 automatically — no further frontend changes required.
+
+---
+
+## Phase 7.2 — Bug Fixes & Backend Enhancements (shipped — 2026-05-25)
+
+Three backend fixes shipped as PRs #26, #27, #29. No frontend changes
+in this batch — Youssef wires the drawer integration separately.
+
+### Phase 7.2-G — Route Shadowing Fix (PR #26)
+
+**Problem:** `GET /obligations/portfolio` and `GET /obligations/calendar`
+returned `400 Validation failed (uuid is expected)` instead of reaching
+their handlers in `ComplianceObligationsController`.
+
+**Root cause:** NestJS registers routes in module-import order. Static-
+before-dynamic sorting only applies *within* one controller, not across
+controllers from different modules. `ObligationsModule` is imported at
+line 190 of `app.module.ts`; `ComplianceModule` at line 218. So
+`ObligationsController`'s `@Get(':id')` was registered first and
+matched `portfolio`/`calendar` before the correct handlers were reached.
+`ParseUUIDPipe` then rejected the non-UUID segment.
+
+**Fix:** UUID regex constraint on all 4 legacy `:id` routes in
+`backend/src/modules/obligations/obligations.controller.ts`:
+```typescript
+@Get(':id([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})')
+```
+
+**Hard rule:** Any dynamic `:id` route that coexists with static routes
+in *other* controllers sharing the same prefix MUST use a UUID regex
+constraint. `ParseUUIDPipe` alone is not enough — it runs after route
+matching, not during.
+
+---
+
+### Phase 7.2-E — Obligation Status Enum Fix (PR #27)
+
+**Problem:** `MET` and `WAIVED` were permanently absent from the
+`obligation_status` PostgreSQL enum on every environment. Mark-as-met
+and waived endpoints would throw at runtime.
+
+**Root cause:** Migration `1718000000002-AddComplianceMonitoring.ts`
+referenced `obligations_status_enum` (wrong — plural + `_enum` suffix)
+instead of `obligation_status` (correct). A `DO $$ BEGIN … EXCEPTION
+WHEN undefined_object THEN null; END $$` block silently swallowed the
+error. The migrations table showed success; the work was never done.
+Same anti-pattern as lesson #31.
+
+**Three-part fix:**
+1. `1718000000002` corrected for fresh rebuilds — uses `ALTER TYPE
+   obligation_status ADD VALUE IF NOT EXISTS` with no catch block.
+2. New corrective migration `1748000000004` — adds MET + WAIVED with
+   `IF NOT EXISTS`, safe on patched and unpatched DBs alike. Sets
+   `transaction = false` (required — see Hard rule below).
+3. New `ObligationSchemaCheckService` (`OnModuleInit`) — queries
+   `pg_enum` on startup and throws if any required value is missing.
+   Prevents silent recurrence.
+4. `data-source.ts`: `migrationsTransactionMode: 'each'` — enables
+   per-migration `transaction = false` overrides (default `'all'` mode
+   blocks them with `ForbiddenTransactionModeOverrideError`).
+
+**Hard rules:**
+- `ALTER TYPE ADD VALUE` requires `transaction = false` on the migration
+  class. PostgreSQL < 14 forbids it inside a transaction block;
+  good practice on all versions.
+- Never use `EXCEPTION WHEN` to swallow migration failures — use
+  `IF NOT EXISTS` / `IF EXISTS` instead (idempotent, no silent failure).
+
+---
+
+### Phase 7.2-C — Reminders Endpoint (PR #29)
+
+**What shipped:**
+- New `GET /contracts/:contractId/obligations/:obligationId/reminders`
+- Returns `obligation_reminder_logs` rows ordered by `sent_at DESC`
+- Contract ownership check: 404 if obligation doesn't belong to the
+  contract in the URL
+- Response shape: `{ id, reminder_type, sent_to, sent_at, email_status }`
+  — `obligation_id` omitted (redundant from URL)
+- Service: `ComplianceObligationService.getReminderLogs()` — injects the
+  `ObligationReminderLog` repo already registered in `ComplianceModule`
+- 7 new tests (2 service unit + 5 HTTP): 200×2, 401, 404×2
+- **Total backend tests: 87** (was 80 before this PR)
+
+**Frontend wiring:** Youssef wires `ObligationDetailDrawer`'s Reminder
+History section to this endpoint — tracked as the remaining 7.2-C
+frontend half.

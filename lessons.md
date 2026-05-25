@@ -1,7 +1,7 @@
 # lessons.md — SIGN + MANAGEX Platform
 > This file documents every bug, issue, and fix that took significant time to resolve.
 > Feed this file to Claude at the start of every session to avoid repeating mistakes.
-> Last updated: 2026-05-24 (Lesson #96 — Phase 7.1: PostgreSQL ADD CONSTRAINT IF NOT EXISTS invalid syntax, @ValidateIf for XOR DTO fields, mock guards must throw not return false for 401.)
+> Last updated: 2026-05-25 (Lessons #108–109 — NestJS cross-controller route shadowing fix + ALTER TYPE ADD VALUE transaction requirement.)
 
 ---
 
@@ -106,6 +106,22 @@
 91. Tailwind — `md:` Sorts BEFORE `ltr:` / `rtl:` in the Stylesheet
 92. AdminLayout Is LTR-Only — No `ltr:` / `rtl:` Variants Exist or Are Needed
 93. Process — Verify Prompt Assumptions Against Actual Code Before Implementing
+94. PostgreSQL — ADD CONSTRAINT IF NOT EXISTS is invalid syntax
+95. DTO Design — @ValidateIf for mutually exclusive fields (XOR validation)
+96. Testing — Mock guards must THROW to produce 401, not return false
+97. Plan-Gating UI — Defer When the Tier Model Doesn't Exist Yet
+98. Reuse Existing Service Types — Don't Re-Declare Across Service Files
+99. Inserting a Tab Into a 2,308-Line File — Three Edit Points, In Order
+100. react-big-calendar — Wire the date-fns Localizer Per-Language
+101. The Two-Step File Upload — Evidence URL Today, Multipart Later
+102. Drawer vs Modal — When to Use Which
+103. Silent catch in TypeORM migrations hides type-name bugs (recurrence of #31)
+104. Real-time deviation reporting > post-hoc commit-message justification
+105. `useState + useEffect` for periodically-changing server data is silently stale
+106. Shared queryKey for cross-component cache coherence
+107. `refetchIntervalInBackground: false` keeps backend load proportional to active users
+108. NestJS — Cross-Controller Route Shadowing: Dynamic `:id` Routes Shadow Static Routes in Later-Registered Controllers
+109. PostgreSQL — ALTER TYPE ADD VALUE Requires `transaction = false` in TypeORM Migrations
 
 ---
 
@@ -3726,3 +3742,106 @@ and substantially cuts the request rate from open-but-unused tabs.
    may not be focused (CI, headless test runners), assume polling
    pauses by design. Don't read "no second request after 30s" as a
    bug; check `document.visibilityState` first.
+
+## 108. NestJS — Cross-Controller Route Shadowing: Dynamic `:id` Routes Shadow Static Routes in Later-Registered Controllers
+
+**Problem:** `GET /obligations/portfolio` and `GET /obligations/calendar`
+returned `400 Validation failed (uuid is expected)` instead of reaching
+their correct handlers in `ComplianceObligationsController`. Both had
+been working during unit tests but failed in the integrated app.
+
+**Root cause:** NestJS registers all routes from module A before module B,
+in the order modules appear in `app.module.ts` imports. Within a single
+controller, static routes are sorted before dynamic — but that sorting
+does NOT apply across controllers from different modules.
+
+`ObligationsController` (from `ObligationsModule`, imported at line 190)
+registers `@Get(':id')` first. `ComplianceObligationsController` (from
+`ComplianceModule`, imported at line 218) registers
+`@Get('obligations/portfolio')` and `@Get('obligations/calendar')` later.
+When `GET /obligations/portfolio` arrives, Express matches the already-
+registered `:id` route and passes `"portfolio"` to `ParseUUIDPipe`, which
+correctly rejects it as not a UUID — but the error message makes it look
+like a client bug, not a routing bug.
+
+**Fix:** UUID regex constraint on all 4 dynamic routes in the earlier-
+registered controller:
+```typescript
+@Get(':id([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})')
+```
+This causes Express to skip the `:id` route for non-UUID segments entirely,
+allowing the later-registered static routes to match.
+
+**Why `ParseUUIDPipe` alone doesn't fix it:** `ParseUUIDPipe` is a pipe,
+not a route matcher. It runs *after* the route has already been matched.
+By the time it rejects `"portfolio"`, the static route in the other
+controller has been bypassed.
+
+**How to avoid:**
+- Any `@Get(':id')` (or `:param`) route that shares a URL prefix with
+  static routes in *any other controller* must use a regex constraint.
+- The symptom is always a 400 "uuid expected" on what appears to be a
+  valid route — check module-import order before assuming client error.
+- When adding a new module that registers routes under an existing prefix
+  (e.g. `/obligations/…`), grep for `:id`-style routes in all earlier-
+  imported modules and add constraints proactively.
+
+**Reference:** `backend/src/modules/obligations/obligations.controller.ts`,
+PR #26 (Phase 7.2-G).
+
+## 109. PostgreSQL — ALTER TYPE ADD VALUE Requires `transaction = false` in TypeORM Migrations
+
+**Problem:** Corrective migration `1748000000004-FixObligationStatusEnum.ts`
+failed with:
+```
+Migrations "FixObligationStatusEnum1748000000004" override the transaction
+mode, but the global transaction mode is "all"
+```
+After fixing the TypeORM config, a second error appeared on PostgreSQL < 14:
+```
+ERROR: ALTER TYPE ... cannot run inside a transaction block
+```
+
+**Root cause — two independent issues:**
+
+1. **TypeORM `migrationsTransactionMode: 'all'` (the default)** wraps every
+   migration run in a single transaction and blocks per-migration
+   `transaction = false` overrides with `ForbiddenTransactionModeOverrideError`.
+   The migration class property `transaction = false` only works when the
+   global mode is `'each'` (each migration gets its own transaction, can
+   opt out) or `'none'`.
+
+2. **PostgreSQL < 14** forbids `ALTER TYPE … ADD VALUE` inside a transaction
+   block at the SQL level. PostgreSQL 14+ relaxed this restriction, but
+   setting `transaction = false` is still good practice for portability.
+
+**Fix — two steps, both required:**
+
+Step 1 — in `data-source.ts`:
+```typescript
+migrationsTransactionMode: 'each',
+```
+
+Step 2 — on the migration class:
+```typescript
+export class FixObligationStatusEnum1748000000004 implements MigrationInterface {
+  transaction = false;  // ALTER TYPE ADD VALUE cannot run inside a transaction
+  // …
+}
+```
+
+**Rules going forward:**
+1. Any migration that contains `ALTER TYPE … ADD VALUE` MUST set
+   `transaction = false` as a class property.
+2. `data-source.ts` MUST have `migrationsTransactionMode: 'each'` — the
+   default `'all'` silently disables all per-migration transaction overrides.
+3. Use `ADD VALUE IF NOT EXISTS` — idempotent, no catch block needed, safe
+   to run on both patched and unpatched databases.
+4. Add a startup assertion (`OnModuleInit`) to verify the enum has all
+   required values after any migration that extends an enum. See
+   `ObligationSchemaCheckService` for the pattern.
+
+**Reference:** `backend/src/database/migrations/1748000000004-FixObligationStatusEnum.ts`,
+`backend/src/config/data-source.ts`, PR #27 (Phase 7.2-E). See also
+lesson #31 and #103 for the silent-catch anti-pattern that caused the
+original bug.
