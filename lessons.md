@@ -3540,3 +3540,72 @@ Assign). The choice wasn't arbitrary.
 **Hard rule:** Never stack modal-on-modal in this codebase. If a modal
 needs to launch another action, close the first and open the second
 (or restructure to use a drawer as the parent).
+
+---
+
+## 103. Silent catch in TypeORM migrations hides type-name bugs (recurrence of #31)
+
+**Context:** Phase 7.1 Step 3 verification (2026-05-25) discovered that
+`1718000000002-AddComplianceMonitoring.ts` had been claiming success for
+weeks while doing nothing. The migration's `ALTER TYPE` referenced
+`obligations_status_enum` (wrong name) instead of `obligation_status`
+(actual Postgres type). The wrapping
+`EXCEPTION WHEN undefined_object THEN null` swallowed the
+"type does not exist" error. The migrations table marked the migration
+done; the database had no MET/WAIVED enum values.
+
+**Lesson:** This is the same anti-pattern as lesson #31 — silent
+exception handlers in migrations turn schema drift into a
+multi-environment time bomb. Every database that ran the broken
+migration recorded success while skipping the real work.
+
+**Rules going forward:**
+1. Migrations may use `IF NOT EXISTS` / `IF EXISTS` clauses for
+   idempotency, but never wrap them in catch-all exception handlers that
+   silently return null.
+2. If a catch IS required (e.g. handling pg version differences), it
+   must log a warning so the failure is visible in deploy logs.
+3. After any migration that mutates an enum or type, the migration
+   itself should `SELECT` and assert the post-state. If the assertion
+   fails, throw — let the migration framework mark it failed.
+4. Add a startup health check that validates enums have all expected
+   values. Fail loud at boot if the schema doesn't match the code's
+   expectations.
+
+**Tracked fix:** Phase 7.2-E in NEXT_PHASES.md.
+
+---
+
+## 104. Real-time deviation reporting > post-hoc commit-message justification
+
+**Context:** Phase 7.1 Step 3 i18n work shipped without the TODO markers
+the original prompt explicitly required. The decision was documented in
+the commit message as "production quality; no TODO placeholders needed"
+but never surfaced to the prompt author for sign-off. The verification
+pass two days later flagged the divergence and required a retroactive
+fix (greppable `_TODO_*` parallel keys + a 7.2-H ticket for legal-
+translator review).
+
+**Lesson:** Spec deviations should be raised as clarifying questions
+before committing, not justified in commit messages after the fact. The
+commit message is a record, not a permission slip. If a prompt says
+"do X" and during implementation X seems unnecessary or counterproductive,
+the answer is to stop and ask, not to skip X and explain why later.
+
+**Rules going forward:**
+1. If an implementation pass concludes a documented requirement is no
+   longer needed, raise it as a STOP-and-report before committing.
+2. Commit messages may explain implementation choices within the
+   specified scope. They are not the venue for deviations from the
+   spec itself.
+3. "It seemed unnecessary" is not sufficient justification for
+   bypassing an explicit requirement that has a forward-looking
+   purpose (like translator-review traceability — the missing TODOs
+   removed a literal grep-able worklist a future translator engagement
+   would have used).
+4. The cost of a quick clarifying question is far lower than the cost
+   of retroactive cleanup once the divergence is discovered.
+
+**Tracked fix:** Phase 7.2-H in NEXT_PHASES.md, plus the
+`_TODO_*` parallel-key pattern in `ar/common.json` and `fr/common.json`
+restored in this housekeeping pass.
