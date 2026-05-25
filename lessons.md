@@ -3439,3 +3439,173 @@ matches typically: tabConfig entry, state-type union, content block. Your
 new tab needs the same three. If the grep returns four (count badge), do
 four. Skipping any of the four is the silent-failure path.
 
+
+---
+
+## 100. react-big-calendar — Wire the date-fns Localizer Per-Language
+
+**What happened:** Phase 7.1 Step 3 added `react-big-calendar` for the
+`/app/obligations/calendar` page. The Calendar component requires a
+localizer instance, and the standard recipe online uses a module-level
+`dateFnsLocalizer({ format, parse, ... })` call. That works in EN-only
+apps but produces month/day labels that never switch when the user
+toggles language inside SIGN — the localizer holds the locale at
+module-load time.
+
+**Why it matters:** SIGN supports EN/AR/FR via `i18next` runtime
+switching. A static localizer pins the calendar to English even when
+the rest of the page is rendering Arabic.
+
+**Fix:** Compute the localizer inside the component via
+`useMemo(() => dateFnsLocalizer({ ..., culture: pickFrom(i18n.language) }),
+[i18n.language])`. Pass `locales: { 'en-US': enUS, ar, fr }` so RBC
+can resolve any of the three. Also pass `culture` as a Calendar prop
+matching the current language — the toolbar messages use that key.
+
+**Rule:**
+- Always memoize the RBC localizer on the active i18n language.
+- Always import all three date-fns locales (`enUS`, `ar`, `fr`) when
+  any obligation surface might render them — the locale package is
+  small.
+- Calendar's parent container MUST set a deterministic height
+  (`height: '70vh', minHeight: 500`). RBC measures the DOM and gets
+  stuck at 0px if the parent is `height: auto`.
+
+---
+
+## 101. The Two-Step File Upload — Evidence URL Today, Multipart Later
+
+**What happened:** Step 3's MarkActionedModal needs an "evidence upload"
+to attach a file to an obligation. The prompt assumed a generic file
+upload endpoint existed. Audit revealed: every backend `FileInterceptor`
+is entity-scoped (knowledge assets, organization policies, support
+attachments, document processing, parse-docx). There is no generic
+`POST /uploads` that returns a URL.
+
+The backend's `PUT /contracts/:id/obligations/:oblId/evidence` accepts
+`{ evidence_url: string }` — it expects a URL already hosted somewhere.
+
+**Why it matters:** Adding a new multer endpoint would violate Hard
+Rule #2 (no backend changes). Picking a wrong upload endpoint
+(e.g. knowledge assets) would write the file under the wrong entity's
+permission scope and break later integrity audits.
+
+**Fix:** Documented the gap to the user up front and asked which path
+to take. User chose: URL input field + protective message + lessons.md
+note for the future backend work.
+
+**Rule:**
+- When the prompt assumes infrastructure that doesn't exist, surface it
+  as a clarifying question BEFORE building — don't silently substitute
+  a different implementation.
+- The two-step evidence-update flow IS the eventual pattern even after
+  multipart upload exists: upload (multipart) returns a URL, then
+  `updateEvidence` attaches it. Step 3 implements step 2 of that flow.
+  When Step 4+ adds the upload endpoint, the MarkActionedModal only
+  needs a new component for the file picker — the second step is
+  already there.
+
+---
+
+## 102. Drawer vs Modal — When to Use Which
+
+**What happened:** Phase 7.1 Step 3 introduced both patterns into the
+obligation UI for the first time. Drawer for detail viewing
+(`ObligationDetailDrawer`), modals for actions (Add/Edit, Mark Actioned,
+Assign). The choice wasn't arbitrary.
+
+**Rule of thumb:**
+- **Use a modal when the user is performing an action with a clear
+  start and end** — fills a form, confirms a state change, picks one
+  option. Modal demands a decision. Examples: AddEdit, MarkActioned,
+  Assign, "Confirm delete?", "Approve this contract?".
+- **Use a drawer when the user is exploring or reviewing**, possibly
+  taking actions but mostly reading. Drawer affords scanning without
+  committing. The drawer can launch modals when the user shifts from
+  "review" to "act" — that's the canonical handoff.
+
+**Mechanical differences in this codebase:**
+
+| Aspect | Modal (`ModalShell`) | Drawer (`ObligationDetailDrawer`) |
+|---|---|---|
+| Position | Centered over backdrop | Right-anchored slide-in |
+| Size on desktop | `max-w-{md|lg|2xl}` | Fixed `w-[480px]` |
+| Size on mobile | Full-width with 16px padding | Full-width |
+| Click outside | Closes | Closes (via overlay div sibling) |
+| Body scroll | Inner div scrolls | Inner div scrolls |
+| Footer | Two-button (cancel + primary) | Two-button (secondary + primary) |
+| Launches more modals? | No (would stack badly) | YES (drawer is the launcher) |
+| State held | Form state | Read-only fetched record |
+
+**Hard rule:** Never stack modal-on-modal in this codebase. If a modal
+needs to launch another action, close the first and open the second
+(or restructure to use a drawer as the parent).
+
+---
+
+## 103. Silent catch in TypeORM migrations hides type-name bugs (recurrence of #31)
+
+**Context:** Phase 7.1 Step 3 verification (2026-05-25) discovered that
+`1718000000002-AddComplianceMonitoring.ts` had been claiming success for
+weeks while doing nothing. The migration's `ALTER TYPE` referenced
+`obligations_status_enum` (wrong name) instead of `obligation_status`
+(actual Postgres type). The wrapping
+`EXCEPTION WHEN undefined_object THEN null` swallowed the
+"type does not exist" error. The migrations table marked the migration
+done; the database had no MET/WAIVED enum values.
+
+**Lesson:** This is the same anti-pattern as lesson #31 — silent
+exception handlers in migrations turn schema drift into a
+multi-environment time bomb. Every database that ran the broken
+migration recorded success while skipping the real work.
+
+**Rules going forward:**
+1. Migrations may use `IF NOT EXISTS` / `IF EXISTS` clauses for
+   idempotency, but never wrap them in catch-all exception handlers that
+   silently return null.
+2. If a catch IS required (e.g. handling pg version differences), it
+   must log a warning so the failure is visible in deploy logs.
+3. After any migration that mutates an enum or type, the migration
+   itself should `SELECT` and assert the post-state. If the assertion
+   fails, throw — let the migration framework mark it failed.
+4. Add a startup health check that validates enums have all expected
+   values. Fail loud at boot if the schema doesn't match the code's
+   expectations.
+
+**Tracked fix:** Phase 7.2-E in NEXT_PHASES.md.
+
+---
+
+## 104. Real-time deviation reporting > post-hoc commit-message justification
+
+**Context:** Phase 7.1 Step 3 i18n work shipped without the TODO markers
+the original prompt explicitly required. The decision was documented in
+the commit message as "production quality; no TODO placeholders needed"
+but never surfaced to the prompt author for sign-off. The verification
+pass two days later flagged the divergence and required a retroactive
+fix (greppable `_TODO_*` parallel keys + a 7.2-H ticket for legal-
+translator review).
+
+**Lesson:** Spec deviations should be raised as clarifying questions
+before committing, not justified in commit messages after the fact. The
+commit message is a record, not a permission slip. If a prompt says
+"do X" and during implementation X seems unnecessary or counterproductive,
+the answer is to stop and ask, not to skip X and explain why later.
+
+**Rules going forward:**
+1. If an implementation pass concludes a documented requirement is no
+   longer needed, raise it as a STOP-and-report before committing.
+2. Commit messages may explain implementation choices within the
+   specified scope. They are not the venue for deviations from the
+   spec itself.
+3. "It seemed unnecessary" is not sufficient justification for
+   bypassing an explicit requirement that has a forward-looking
+   purpose (like translator-review traceability — the missing TODOs
+   removed a literal grep-able worklist a future translator engagement
+   would have used).
+4. The cost of a quick clarifying question is far lower than the cost
+   of retroactive cleanup once the divergence is discovered.
+
+**Tracked fix:** Phase 7.2-H in NEXT_PHASES.md, plus the
+`_TODO_*` parallel-key pattern in `ar/common.json` and `fr/common.json`
+restored in this housekeeping pass.

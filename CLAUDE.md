@@ -438,6 +438,30 @@ docker exec sign-postgres psql -U sign_user -d sign_db -c \
 
 ---
 
+## Known Local Dev Gotchas
+
+### ⚠️ obligation_status enum missing MET/WAIVED
+
+Migration `1718000000002-AddComplianceMonitoring.ts` has a silent-catch
+bug (tracked as Phase 7.2-E) — it claims to add `MET` and `WAIVED` to
+the `obligation_status` enum but doesn't actually do so because it
+references the wrong enum type name. The migrations table marks it
+successful while the work was never done.
+
+If you are setting up a fresh local DB and obligations seeded with status
+`MET` or `WAIVED` fail to insert, run this once:
+
+```bash
+docker exec sign-postgres psql -U sign_user -d sign_db -c \
+  "ALTER TYPE obligation_status ADD VALUE IF NOT EXISTS 'MET';"
+docker exec sign-postgres psql -U sign_user -d sign_db -c \
+  "ALTER TYPE obligation_status ADD VALUE IF NOT EXISTS 'WAIVED';"
+```
+
+This is a workaround until 7.2-E ships a proper corrective migration.
+
+---
+
 ## Session Layer Boundaries (One Session Per Layer — Rule 3)
 
 | Layer | Scope | Never Mix With |
@@ -1944,3 +1968,143 @@ packages, zero layout-shell modifications.
    fixes) should also stay frontend-only. Backend work happens in Step 1
    (already shipped) and any follow-up backend phases.
 
+
+---
+
+## Phase 7.1 Step 3 — Interactive Obligation UI (shipped — 2026-05-25)
+
+Built the four modals + one drawer + one calendar page that turn Step 2's
+read-mostly obligation surfaces into a usable workflow. Replaces every
+console.info placeholder from Step 2. PR #25 (stacked on top of Step 2's
+PR #24). Frontend-only — no backend changes.
+
+### What shipped
+
+**6 new components under `apps/sign/src/components/obligations/`:**
+
+- **`ModalShell.tsx`** — shared centered-card modal shell. Backdrop, body-
+  scroll lock, Escape-to-close, click-outside-to-close, sticky header
+  (title + subtitle + ×), scrollable body, optional sticky footer slot.
+  Sizes: `sm` / `md` / `lg` / `xl`. Every obligation modal renders inside
+  this shell — single source for the modal pattern.
+- **`AddEditObligationModal.tsx`** — create + edit forms. Same component
+  used in both modes (presence of `obligation` prop = edit). 11 fields
+  total: description (with `dir="auto"`), type, clause ref, due date,
+  frequency, responsible party, amount, currency, reminder schedule
+  (4 checkboxes default `[30, 14, 7, 1]`), critical toggle. Conditional:
+  Amount + Currency only render for `PAYMENT | PERFORMANCE_BOND | INSURANCE`
+  types. Validation: required description, due date in the future for
+  create mode, amount ↔ currency mutual requirement. Submits via
+  `obligationService.create` (create) or `complianceService.updateObligation`
+  (edit).
+- **`MarkActionedModal.tsx`** — status select (MET default / COMPLETED /
+  WAIVED w/ required reason), actioned-date (defaults to today, can't be
+  future), notes textarea, **protective evidence message** verbatim,
+  evidence URL input. **No file picker** — Step 3 decision (backend has
+  no generic file upload endpoint; see lesson #101). Submit chains:
+  if evidence URL present → `complianceService.updateEvidence` first,
+  then `complianceService.updateObligation` for the status patch.
+- **`AssignUserModal.tsx`** — chip-based current assignees + searchable
+  team-member picker. Assign and unassign as separate mutations (Step 1
+  backend exposes them as individual operations). 409 Conflict surfaces
+  as inline toast.
+- **`ObligationActionMenu.tsx`** — three-dot dropdown. Items: View Details,
+  Mark Actioned (conditional on effective status), Edit, Assign. Click-
+  outside + Escape close. **Delete intentionally deferred** — no per-role
+  permission model exists; documented in CLAUDE.md "what's deferred" and
+  lesson #102.
+- **`ObligationDetailDrawer.tsx`** — right-anchored slide-in drawer with
+  overlay backdrop. Six sections: Description / Key Details / Assignees /
+  Evidence / Reminder History (deferred placeholder — see below) / Activity
+  Timeline. Sticky header (badges + ×) and footer (Edit + Mark Actioned).
+  Mobile responsive (full-width below `sm`). "View Clause" back-link
+  navigates to `/app/contracts/:id#clause-:id` and closes drawer.
+
+**1 new page:**
+- **`apps/sign/src/pages/app/ObligationsCalendarPage.tsx`** at route
+  `/app/obligations/calendar`. Uses `react-big-calendar` with a date-fns
+  localizer (en-US / ar / fr based on current `i18n.language`). Month /
+  Week / Day views via RBC's built-in toolbar. Events colour-coded by
+  status:
+  - `PENDING` → `#F59E0B` amber
+  - `IN_PROGRESS` → `#3B82F6` blue
+  - `COMPLETED` / `MET` → `#10B981` emerald
+  - `OVERDUE` → `#EF4444` red
+  - `WAIVED` → `#6B7280` gray
+
+  Filter bar: Project / Type / Status. Clicking an event opens the same
+  `ObligationDetailDrawer` used elsewhere. Drawer footer routes to the
+  same modal stack.
+
+**Page wiring:**
+- `ObligationsTab.tsx` — Step 2 placeholder handlers replaced with real
+  modal state. The legacy inline "Mark as Actioned" mutation retired
+  (modal owns the patch now).
+- `ObligationsPage.tsx` — same modal pattern, no Add modal (creation
+  always scoped to a contract). "View Calendar" button now reaches
+  the working calendar route.
+
+**Backend type extension:** `complianceService.ts` `ContractObligation`
+gained `contract_clause_id` and `evidence_url` fields. Both already exist
+on the backend Obligation entity (per Step 1 audit) but were missing from
+the frontend type, blocking the drawer from compiling.
+
+### One new npm package
+- `react-big-calendar ^1.19.4` + `@types/react-big-calendar ^1.16.3`.
+  Chosen because no calendar primitive existed and the prompt's
+  hard-rule list permitted exactly this one package. Hoisted to workspace
+  root per existing npm workspace pattern.
+
+### Decisions documented (asked & answered before implementation)
+
+| Question | Answer |
+|---|---|
+| Branch base | Stacked on `feat/phase-7.1-step-2-frontend` (PR #24 still open) |
+| Evidence input | URL input + protective message (no file picker — no backend endpoint) |
+| Delete action | Hidden entirely until a per-role permission model exists |
+| View Clause back-link | Navigate to `/app/contracts/:id#clause-:id`; close drawer |
+
+### What's deferred — DO NOT rebuild before reading these
+- **Direct file upload for evidence.** Backend has no generic upload
+  endpoint. Adding one is a Step 4+ backend task. Until then, the URL
+  input is the documented path.
+- **Reminder history.** The drawer's Section 5 shows a placeholder. The
+  backend endpoint `GET /contracts/:id/obligations/:oblId/reminders`
+  does not exist yet — adding it is a Step 4+ backend task.
+- **Per-role Delete-obligation permission model.** Backend has DELETE
+  with JWT-only gating; UI Delete deferred until the model is designed.
+- **View Clause auto-tab-switch.** Native hash scroll works when the
+  Clauses tab is the default (which it is). Adding a hash listener to
+  `ContractDetailPage` to switch tabs on `#clause-*` is a Step 4+
+  enhancement — out of Step 3's allowed-edit list.
+- **Assignee filter on the calendar.** The calendar payload from Step 1
+  doesn't include assignee data per event — would require either a richer
+  endpoint or post-fetch hydration. Step 4 work.
+- **Excel export.** Button still a placeholder. Backend has no CSV/XLSX
+  obligation export endpoint.
+
+### Hard rules — never violate
+
+1. **Modal pattern must use `ModalShell`.** Every new obligation modal
+   composes from `ModalShell` — single source for the centered-card
+   pattern. Don't reinvent the overlay/backdrop/Escape/scroll-lock
+   logic per modal.
+2. **`dir="auto"` + `unicodeBidi: 'plaintext'` on every obligation
+   description render in modals AND in the drawer.** Description appears
+   in: AddEdit modal textarea, MarkActioned modal subtitle, Assign modal
+   subtitle, Drawer description section, Drawer assignee row metadata,
+   ObligationCard. All eight sites carry the attribute pair.
+3. **Two-step evidence flow is the canonical pattern.** When evidence URL
+   is provided, call `updateEvidence` BEFORE `updateObligation` so a
+   URL-validation 400 doesn't leave the obligation in
+   MET-without-evidence state. Both calls happen inside the same
+   `mutationFn` so React Query treats them as one transaction.
+4. **Calendar events always open the detail drawer — never navigate
+   away.** Clicking an event must NOT change route; it sets drawer state.
+   Keeps interaction consistent with the rest of the obligation UI.
+5. **Mobile drawer is full-width (`w-full sm:w-[480px]`).** Don't add
+   a fixed `w-[480px]` without the `sm:` breakpoint — that breaks below
+   480 px viewport widths.
+6. **`react-big-calendar` Calendar component must be wrapped in a
+   responsive container with explicit `height: '70vh', minHeight: 500`.**
+   RBC measures its own DOM and needs a parent with deterministic height.

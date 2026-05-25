@@ -520,6 +520,147 @@ Implemented by: Ayman & Youssef | Completed: 2026-05-20
 
 ---
 
+## 🧹 PHASE 7.2 — Deferred from 7.1
+
+Items surfaced during Phase 7.1 implementation (Steps 2-3) and the
+Step 3 housekeeping verification pass. Each item is a real bug or
+acknowledged-deferred decision with a clear scope.
+
+### 7.2-A — Generic file-upload endpoint + obligation evidence FileDropZone
+**Deferred from:** Phase 7.1 Step 3
+**Why:** Backend has no generic file-upload endpoint. PUT /evidence
+accepts a URL string only. Step 3 shipped a URL input + protective
+message instead of a file picker.
+**Scope:** Backend file-upload endpoint with S3 storage + MIME/size
+validation. Frontend swap of URL input for FileDropZone in
+MarkActionedModal. Migration of any existing evidence_url values.
+**Dependencies:** Storage decision (existing S3 bucket or new?). MIME
+allowlist needs review (PDF, DOCX, JPG, PNG were Step 3 placeholders).
+
+### 7.2-B — Per-role permission model for obligation Delete + Edit
+**Deferred from:** Phase 7.1 Step 3
+**Why:** Backend DELETE /obligations/:id is gated only by JWT — any
+authenticated user with contract access can delete. Step 3 hid Delete
+from the UI entirely rather than ship security-theater role checks.
+**Scope:** Define obligation-level permissions. Add per-role checks in
+backend service. Re-enable Delete in ObligationActionMenu gated on the
+new permission. Open question: should Edit also be permission-gated?
+**Dependencies:** Permission-model conversation with Ayman.
+
+### 7.2-C — Reminder history endpoint + ObligationDetailDrawer integration
+**Deferred from:** Phase 7.1 Step 3
+**Why:** No backend GET endpoint for obligation reminder logs. Detail
+drawer's Reminder History section shows a placeholder.
+**Scope:** Backend GET /contracts/:id/obligations/:oblId/reminders
+returning rows from obligation_reminder_logs with tier, sent_to,
+sent_at, email status. Frontend wire-up.
+**Dependencies:** None.
+
+### 7.2-D — Proper clause deep-linking from ObligationDetailDrawer
+**Deferred from:** Phase 7.1 Step 3
+**Why:** "View Clause" back-link uses URL hash navigation only. Works
+in the common case (Clauses is default tab) but won't switch tabs if
+the user lands elsewhere. ContractDetailPage.tsx wasn't on Step 3's
+allowed-edit list.
+**Scope:** Add hash/query-param reading to ContractDetailPage.tsx to
+auto-switch to Clauses tab and scroll on mount. ~10 LOC.
+**Dependencies:** None.
+
+### 7.2-E — Fix obligation_status enum migration + corrective migration
+**Deferred from:** Phase 7.1 Step 3 housekeeping (discovered 2026-05-25)
+**Why:** Migration `1718000000002-AddComplianceMonitoring.ts` lines 96-107
+references enum type name `obligations_status_enum` but the actual Postgres
+type is `obligation_status` (singular, no `_enum` suffix). The
+`EXCEPTION WHEN undefined_object THEN null` clause silently swallows the
+failure, so the migrations table shows the migration as successful while
+the MET and WAIVED enum values were never actually added. Every database
+that ran this migration is missing both values. Same silent-catch
+anti-pattern as lessons.md #31 — second recurrence.
+**Scope:** (1) Fix the enum type name in the existing migration file.
+(2) Create a new corrective migration that does the actual
+`ALTER TYPE ADD VALUE` for MET and WAIVED, gated on whether they already
+exist (some local DBs have been manually patched). (3) Remove or narrow
+the silent catch — at minimum log a warning. (4) Add a one-time check
+to backend startup that asserts the enum has all expected values, fails
+loud if not.
+**Dependencies:** None. Pure backend fix.
+**Note:** Local DB was manually patched via
+`ALTER TYPE obligation_status ADD VALUE IF NOT EXISTS 'MET';` and
+`ALTER TYPE obligation_status ADD VALUE IF NOT EXISTS 'WAIVED';` on
+2026-05-25 to unblock Phase 7.1 Step 3 screenshot work. Other dev
+environments and any deployed environments remain in the broken state
+until 7.2-E ships.
+
+### 7.2-F — Calendar event coloring uses raw status, not effective status
+**Deferred from:** Phase 7.1 Step 3 housekeeping (discovered 2026-05-25)
+**Why:** `ObligationsCalendarPage.tsx`'s event color mapping reads the
+raw `status` field. Every other surface (card list, detail drawer, KPI
+cards) uses `effectiveStatus()` which auto-derives OVERDUE for PENDING
+obligations whose `due_date` has passed. Result: a critical overdue
+obligation displays as amber (PENDING) on the calendar but red (OVERDUE)
+everywhere else. This is the exact dashboard-scanning context where the
+inconsistency matters most.
+**Scope:** Update `eventPropGetter` in `ObligationsCalendarPage.tsx` to
+call `effectiveStatus(obligation)` before color lookup. ~3 LOC. Add a
+test case asserting a PENDING obligation with past-due `due_date`
+renders red.
+**Dependencies:** None. Pure frontend.
+
+### 7.2-G — Backend route ordering: legacy /obligations/:id shadows new specific routes
+**Deferred from:** Phase 7.1 Step 3 housekeeping (discovered 2026-05-25)
+**Why:** `GET /obligations/portfolio` and `GET /obligations/calendar`
+(Step 1 backend endpoints in `compliance-obligations.controller.ts` lines
+170, 183) are unreachable. NestJS matches them against the older
+`@Get(':id')` in `obligations.controller.ts` line 48 first, because that
+route declares no path constraint on `:id`. Both new endpoints return
+`"Validation failed (uuid is expected)"` before reaching the right handler.
+The portfolio page and calendar page therefore render with zero events,
+even when the database is populated.
+**Scope:** Investigate why NestJS resolves `/obligations/portfolio` to
+the legacy `:id` route. Possible causes: (a) controller registration
+order in the module, (b) lack of path constraint on the legacy route,
+(c) the new endpoints should live under a different prefix (e.g.
+`/obligation-views/portfolio` and `/obligation-views/calendar`) to avoid
+the shadowing class altogether. Pick the cleanest fix, not the smallest
+one. Claude Code's initial finding suggested a UUID regex constraint on
+the legacy `:id` route, but that's treating a symptom — the architectural
+question is whether nested routes under the same parent path should ever
+shadow specific paths like this. Add integration tests for
+`GET /obligations/portfolio` and `GET /obligations/calendar` returning
+200 with populated payloads. Backend change + tests.
+**Bug evidence:** See
+`docs/screenshots/phase-7.1-step-3/bug-evidence/bug-7.2-G-portfolio-empty.png`
+and `bug-7.2-G-calendar-empty.png` — both pages render empty despite a
+seeded database containing 5 obligations.
+**Dependencies:** None. Pure backend.
+
+### 7.2-H — Legal-translator review of construction-law i18n terms
+**Deferred from:** Phase 7.1 Step 3 housekeeping (surfaced 2026-05-25)
+**Why:** Construction-law terms in `ar/common.json` and `fr/common.json`
+were translated during Step 3 implementation against FIDIC-aligned usage,
+but have not been reviewed by a qualified legal translator. Arabic
+terminology varies meaningfully by jurisdiction (UAE/Egypt/Saudi/etc.)
+and French construction terminology has Maghreb-specific variants.
+Confident translations in a frontend implementation pass are not a
+substitute for jurisdiction-specific legal-translator review before any
+production launch in MENA or French-speaking markets.
+**Scope:** (1) Identify target launch jurisdictions (likely UAE + Egypt
+primary for AR, France + Morocco/Algeria/Tunisia for FR). (2) Engage a
+legal translator with FIDIC and construction-contract experience for
+each target jurisdiction. (3) Review and refine all `_TODO_*` keyed
+terms in both locale files. (4) Remove the `_TODO_*` parallel keys once
+reviewed. (5) Document the jurisdiction-specific choices made (e.g.
+which Arabic variant for Performance Bond) in CLAUDE.md.
+**Dependencies:** Decision on target launch jurisdictions. Budget for
+qualified translators (this is not a low-cost item — expect $X-$Y per
+jurisdiction for legal-quality review).
+**Note:** Greppable `_TODO_*` markers were added in PR #25 housekeeping
+pass after the original Step 3 implementation shipped without them.
+Search: `grep "_TODO_" apps/sign/src/i18n/locales/ar/common.json` for
+the current worklist.
+
+---
+
 ## 🤖 PHASE 8 — AI Model Migration
 **Status:** ❌ Not started
 
