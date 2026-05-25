@@ -438,6 +438,30 @@ docker exec sign-postgres psql -U sign_user -d sign_db -c \
 
 ---
 
+## Known Local Dev Gotchas
+
+### ⚠️ obligation_status enum missing MET/WAIVED
+
+Migration `1718000000002-AddComplianceMonitoring.ts` has a silent-catch
+bug (tracked as Phase 7.2-E) — it claims to add `MET` and `WAIVED` to
+the `obligation_status` enum but doesn't actually do so because it
+references the wrong enum type name. The migrations table marks it
+successful while the work was never done.
+
+If you are setting up a fresh local DB and obligations seeded with status
+`MET` or `WAIVED` fail to insert, run this once:
+
+```bash
+docker exec sign-postgres psql -U sign_user -d sign_db -c \
+  "ALTER TYPE obligation_status ADD VALUE IF NOT EXISTS 'MET';"
+docker exec sign-postgres psql -U sign_user -d sign_db -c \
+  "ALTER TYPE obligation_status ADD VALUE IF NOT EXISTS 'WAIVED';"
+```
+
+This is a workaround until 7.2-E ships a proper corrective migration.
+
+---
+
 ## Session Layer Boundaries (One Session Per Layer — Rule 3)
 
 | Layer | Scope | Never Mix With |
