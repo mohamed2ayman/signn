@@ -93,17 +93,16 @@ export class AddComplianceMonitoring1718000000002 implements MigrationInterface 
       EXCEPTION WHEN duplicate_object THEN null; END $$;
     `);
 
-    // Extend existing obligations_status_enum with MET + WAIVED
-    await queryRunner.query(`
-      DO $$ BEGIN
-        ALTER TYPE obligations_status_enum ADD VALUE IF NOT EXISTS 'MET';
-      EXCEPTION WHEN undefined_object THEN null; END $$;
-    `);
-    await queryRunner.query(`
-      DO $$ BEGIN
-        ALTER TYPE obligations_status_enum ADD VALUE IF NOT EXISTS 'WAIVED';
-      EXCEPTION WHEN undefined_object THEN null; END $$;
-    `);
+    // Extend existing obligation_status with MET + WAIVED.
+    // NOTE: The original code here used the wrong type name `obligations_status_enum`
+    // (plural with _enum suffix) instead of `obligation_status`. The silent
+    // EXCEPTION WHEN undefined_object catch swallowed the failure on every existing
+    // environment, leaving MET and WAIVED permanently absent. Fixed 2026-05-25.
+    // This file is now correct for fresh rebuilds from scratch.
+    // Existing environments are fixed by corrective migration 1748000000004.
+    // ADD VALUE IF NOT EXISTS is idempotent — no catch block needed.
+    await queryRunner.query(`ALTER TYPE obligation_status ADD VALUE IF NOT EXISTS 'MET'`);
+    await queryRunner.query(`ALTER TYPE obligation_status ADD VALUE IF NOT EXISTS 'WAIVED'`);
 
     // ─── compliance_checks ───────────────────────────────────────
     await queryRunner.query(`
