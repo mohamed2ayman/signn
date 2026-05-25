@@ -685,6 +685,35 @@ events, admin actions. Obligation reminders specifically will start
 appearing on the bell badge automatically once 7.2-I lands. No frontend
 changes required after 7.2-I.
 
+### 7.2-J — Arabic RTL polish for react-big-calendar
+**Surfaced from:** Phase 7.1 cleanup PR #30 (2026-05-25)
+**Why:** Concrete Arabic RTL inventory captured for the first time in
+`docs/screenshots/phase-7.1-step-3/calendar-arabic-rtl.png` shows
+react-big-calendar does not natively support RTL grid layout:
+- Days-of-week stay Mon→Sun (LTR) instead of Sun→Mon (RTL)
+- Day numbers stay Western (27, 28) instead of Arabic-Indic (٢٧، ٢٨)
+- Two pre-existing app-wide issues also visible in the screenshot:
+  breadcrumb chevron `›` does not flip; TopBar "← MANAGEX" arrow does
+  not flip. These are not RBC-specific but were noticed during the
+  same review.
+
+What DOES work (confirmed in same screenshot):
+- Toolbar buttons translate and align correctly
+- Filter labels translate and align correctly
+- Event titles render correctly via the `dir="auto"` event wrapper
+  shipped in Step 4
+
+**Scope:** (1) Custom RBC layout component or library replacement to
+get grid direction mirrored under Arabic locale. (2) Locale-aware
+number formatting for day numbers (Intl.NumberFormat with Arabic-Indic
+digits). (3) Audit-and-fix pass for the pre-existing breadcrumb and
+backlink arrow non-flipping — separate from RBC but discovered in same
+review.
+**Dependencies:** Decision on whether to fix RBC RTL inline (custom
+components) or replace the library entirely. RBC's maintenance is
+mixed — worth a brief review before committing significant work.
+**Reference:** docs/screenshots/phase-7.1-step-3/calendar-arabic-rtl.png
+
 ---
 
 ## 🤖 PHASE 8 — AI Model Migration
