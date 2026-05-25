@@ -45,7 +45,11 @@ export class ObligationsController {
     return this.obligationsService.getDashboard(contractId);
   }
 
-  @Get(':id')
+  // UUID regex constraint prevents static segments like "portfolio" and "calendar"
+  // (registered in ComplianceObligationsController) from being swallowed by this
+  // dynamic route. ParseUUIDPipe still validates the value after matching.
+  // Fix for Phase 7.2-G — obligation route shadowing.
+  @Get(':id([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})')
   async findById(@Param('id', ParseUUIDPipe) id: string) {
     return this.obligationsService.findById(id);
   }
@@ -55,7 +59,7 @@ export class ObligationsController {
     return this.obligationsService.create(dto);
   }
 
-  @Put(':id')
+  @Put(':id([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})')
   async update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateObligationDto,
@@ -63,7 +67,7 @@ export class ObligationsController {
     return this.obligationsService.update(id, dto);
   }
 
-  @Put(':id/complete')
+  @Put(':id([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/complete')
   async complete(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: { evidence_url?: string },
@@ -72,9 +76,10 @@ export class ObligationsController {
     return this.obligationsService.complete(id, user.id, body.evidence_url);
   }
 
-  @Delete(':id')
+  @Delete(':id([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})')
   async delete(@Param('id', ParseUUIDPipe) id: string) {
     await this.obligationsService.delete(id);
     return { message: 'Obligation deleted successfully' };
   }
 }
+ 
