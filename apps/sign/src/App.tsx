@@ -25,6 +25,7 @@ import ClauseReviewPage from '@/pages/app/ClauseReviewPage';
 import ClausesPage from '@/pages/app/ClausesPage';
 import KnowledgeAssetsPage from '@/pages/app/KnowledgeAssetsPage';
 import ObligationsPage from '@/pages/app/ObligationsPage';
+import ObligationsCalendarPage from '@/pages/app/ObligationsCalendarPage';
 import NotificationsPage from '@/pages/app/NotificationsPage';
 import OnboardingPage from '@/pages/app/OnboardingPage';
 import SupportPage from '@/pages/app/SupportPage';
@@ -225,6 +226,8 @@ function App() {
         <Route path="clauses" element={<ClausesPage />} />
         <Route path="knowledge-assets" element={<KnowledgeAssetsPage />} />
         <Route path="obligations" element={<ObligationsPage />} />
+        {/* Phase 7.1 Step 3 — calendar view shipped alongside the portfolio page */}
+        <Route path="obligations/calendar" element={<ObligationsCalendarPage />} />
         <Route path="notifications" element={<NotificationsPage />} />
         <Route path="onboarding" element={<OnboardingPage />} />
         <Route path="support" element={<SupportPage />} />
