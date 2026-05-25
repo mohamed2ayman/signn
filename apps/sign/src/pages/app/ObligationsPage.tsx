@@ -1,13 +1,12 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { obligationService } from '@/services/api/obligationService';
 import type {
   ObligationPortfolioItem,
   PortfolioObligationFilters,
 } from '@/services/api/obligationService';
-import complianceService from '@/services/api/complianceService';
 import { projectService } from '@/services/api/projectService';
 import type { ProjectMember } from '@/types';
 import ObligationKpiRow from '@/components/obligations/ObligationKpiRow';
@@ -19,6 +18,11 @@ import ObligationEmptyState from '@/components/obligations/ObligationEmptyState'
 import ObligationLoadingSkeleton from '@/components/obligations/ObligationLoadingSkeleton';
 import ObligationErrorState from '@/components/obligations/ObligationErrorState';
 import { computeKpis, effectiveStatus } from '@/components/obligations/statusUtils';
+// Phase 7.1 Step 3 — modals + drawer wired to replace Step 2 placeholders.
+import AddEditObligationModal from '@/components/obligations/AddEditObligationModal';
+import MarkActionedModal from '@/components/obligations/MarkActionedModal';
+import AssignUserModal from '@/components/obligations/AssignUserModal';
+import ObligationDetailDrawer from '@/components/obligations/ObligationDetailDrawer';
 
 /**
  * /app/obligations — cross-contract portfolio view.
@@ -38,7 +42,6 @@ import { computeKpis, effectiveStatus } from '@/components/obligations/statusUti
 export default function ObligationsPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const qc = useQueryClient();
   const [filters, setFilters] = useState<ObligationFilters>({});
 
   // Map UI filters → API params. Search is applied client-side because
@@ -150,32 +153,33 @@ export default function ObligationsPage() {
     }).length;
   }, [portfolioQuery.data, filters.contract_id]);
 
-  // ── "Mark as Actioned" mutation ─────────────────────────────────
-  const markActioned = useMutation({
-    mutationFn: ({ contractId, obligationId }: { contractId: string; obligationId: string }) =>
-      complianceService.updateObligation(contractId, obligationId, {
-        status: 'COMPLETED',
-      }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['portfolio-obligations'] }),
-  });
+  // ── Modal + drawer state (Phase 7.1 Step 3) ─────────────────────
+  // Portfolio page doesn't have an "Add" surface — creation flows from
+  // ContractDetailPage's Obligations tab (where the contract is known).
+  // Edit / mark-actioned / assign hold the target obligation.
+  const [editObligation, setEditObligation] = useState<ObligationPortfolioItem | null>(null);
+  const [actioningObligation, setActioningObligation] = useState<ObligationPortfolioItem | null>(null);
+  const [assigningObligation, setAssigningObligation] = useState<ObligationPortfolioItem | null>(null);
+  const [detailObligation, setDetailObligation] = useState<{ id: string; contractId: string } | null>(null);
+
+  const find = (id: string): ObligationPortfolioItem | null =>
+    (portfolioQuery.data ?? []).find((o) => o.id === id) ?? null;
 
   // ── Handlers ────────────────────────────────────────────────────
   const handleViewCalendar = () => navigate('/app/obligations/calendar');
   const handleExport = () => {
+    // Export deferred — backend has no CSV/XLSX endpoint yet. Tracked
+    // in CLAUDE.md "what's deferred" for Phase 7.1 Step 3.
     // eslint-disable-next-line no-console
-    console.info('[ObligationsPage] Export to Excel — deferred to Step 3');
+    console.info('[ObligationsPage] Export to Excel — deferred to a future step');
   };
-  const handleEdit = (id: string) => {
-    // eslint-disable-next-line no-console
-    console.info('[ObligationsPage] Edit obligation — modal in Step 3', id);
-  };
-  const handleAssign = (id: string) => {
-    // eslint-disable-next-line no-console
-    console.info('[ObligationsPage] Assign obligation — modal in Step 3', id);
-  };
+  const handleEdit = (id: string) => setEditObligation(find(id));
+  const handleAssign = (id: string) => setAssigningObligation(find(id));
+  const handleMarkActioned = (id: string) =>
+    setActioningObligation(find(id));
   const handleViewDetails = (id: string) => {
-    // eslint-disable-next-line no-console
-    console.info('[ObligationsPage] View details — page in Step 4', id);
+    const o = find(id);
+    if (o) setDetailObligation({ id: o.id, contractId: o.contract_id });
   };
 
   return (
@@ -284,9 +288,7 @@ export default function ObligationsPage() {
               key={o.id}
               obligation={o}
               showContractLink
-              onMarkActioned={(obligationId) =>
-                markActioned.mutate({ contractId: o.contract_id, obligationId })
-              }
+              onMarkActioned={handleMarkActioned}
               onEdit={handleEdit}
               onAssign={handleAssign}
               onViewDetails={handleViewDetails}
@@ -294,6 +296,38 @@ export default function ObligationsPage() {
           ))}
         </div>
       )}
+
+      {/* ── Modals + drawer (Phase 7.1 Step 3) ──────────────────── */}
+      {/* No Add modal here — creation happens from Contract Detail
+          where the contract context is known. Portfolio is read-mostly. */}
+      <AddEditObligationModal
+        isOpen={!!editObligation}
+        onClose={() => setEditObligation(null)}
+        contractId={editObligation?.contract_id ?? ''}
+        obligation={editObligation}
+      />
+      <MarkActionedModal
+        isOpen={!!actioningObligation}
+        onClose={() => setActioningObligation(null)}
+        contractId={actioningObligation?.contract_id ?? ''}
+        obligation={actioningObligation}
+      />
+      <AssignUserModal
+        isOpen={!!assigningObligation}
+        onClose={() => setAssigningObligation(null)}
+        contractId={assigningObligation?.contract_id ?? ''}
+        projectId={assigningObligation?.project_id ?? undefined}
+        obligation={assigningObligation}
+      />
+      <ObligationDetailDrawer
+        isOpen={!!detailObligation}
+        onClose={() => setDetailObligation(null)}
+        obligationId={detailObligation?.id ?? null}
+        contractId={detailObligation?.contractId ?? ''}
+        onEdit={(o) => setEditObligation(o as ObligationPortfolioItem)}
+        onMarkActioned={(o) => setActioningObligation(o as ObligationPortfolioItem)}
+        onAssign={(o) => setAssigningObligation(o as ObligationPortfolioItem)}
+      />
     </div>
   );
 }

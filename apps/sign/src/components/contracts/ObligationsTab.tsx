@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import complianceService, {
   type ContractObligation,
 } from '@/services/api/complianceService';
@@ -15,6 +15,11 @@ import ObligationEmptyState from '@/components/obligations/ObligationEmptyState'
 import ObligationLoadingSkeleton from '@/components/obligations/ObligationLoadingSkeleton';
 import ObligationErrorState from '@/components/obligations/ObligationErrorState';
 import { computeKpis, effectiveStatus } from '@/components/obligations/statusUtils';
+// Phase 7.1 Step 3 — modals and drawer wired to replace Step 2 placeholders.
+import AddEditObligationModal from '@/components/obligations/AddEditObligationModal';
+import MarkActionedModal from '@/components/obligations/MarkActionedModal';
+import AssignUserModal from '@/components/obligations/AssignUserModal';
+import ObligationDetailDrawer from '@/components/obligations/ObligationDetailDrawer';
 
 interface ObligationsTabProps {
   contractId: string;
@@ -54,7 +59,6 @@ export default function ObligationsTab({
   onCountChange,
 }: ObligationsTabProps) {
   const { t } = useTranslation();
-  const qc = useQueryClient();
   const [filters, setFilters] = useState<ObligationFilters>({});
 
   // ── Load obligations for this contract ──────────────────────────
@@ -76,19 +80,10 @@ export default function ObligationsTab({
     enabled: !!projectId,
   });
 
-  // ── "Mark as Actioned" mutation ─────────────────────────────────
-  // Uses the canonical PATCH /contracts/:id/obligations/:obligationId
-  // endpoint (Phase 3.3, validated via UpdateObligationInlineDto).
-  const markActioned = useMutation({
-    mutationFn: (obligationId: string) =>
-      complianceService.updateObligation(contractId, obligationId, {
-        status: 'COMPLETED',
-      }),
-    onSuccess: () =>
-      qc.invalidateQueries({ queryKey: ['contract-obligations', contractId] }),
-  });
-
   // ── Apply UI filters client-side ────────────────────────────────
+  // (Step 2's inline "Mark as Actioned" mutation was retired in Step 3 —
+  // MarkActionedModal now owns the patch call so it can also take the
+  // optional evidence URL + notes in one flow.)
   const filtered: ContractObligation[] = useMemo(() => {
     const all = obligationsQuery.data ?? [];
     return all.filter((o) => {
@@ -130,24 +125,25 @@ export default function ObligationsTab({
     onCountChange?.(obligationsQuery.data?.length ?? 0);
   }, [obligationsQuery.data?.length, onCountChange]);
 
-  // ── Action handlers ─────────────────────────────────────────────
-  // Step 3 will replace these console.info() calls with real modals.
-  const handleAdd = () => {
-    // eslint-disable-next-line no-console
-    console.info('[ObligationsTab] Add obligation — modal in Step 3');
-  };
-  const handleEdit = (id: string) => {
-    // eslint-disable-next-line no-console
-    console.info('[ObligationsTab] Edit obligation — modal in Step 3', id);
-  };
-  const handleAssign = (id: string) => {
-    // eslint-disable-next-line no-console
-    console.info('[ObligationsTab] Assign obligation — modal in Step 3', id);
-  };
-  const handleViewDetails = (id: string) => {
-    // eslint-disable-next-line no-console
-    console.info('[ObligationsTab] View details — page in Step 4', id);
-  };
+  // ── Modal + drawer state (Phase 7.1 Step 3) ────────────────────
+  // Add modal has no obligation context. Edit / mark-actioned / assign
+  // hold the target obligation so the modal can render its content.
+  // Drawer holds an id (resolves the full record via React Query).
+  const [addModalOpen, setAddModalOpen] = useState(false);
+  const [editObligation, setEditObligation] = useState<ContractObligation | null>(null);
+  const [actioningObligation, setActioningObligation] = useState<ContractObligation | null>(null);
+  const [assigningObligation, setAssigningObligation] = useState<ContractObligation | null>(null);
+  const [detailObligationId, setDetailObligationId] = useState<string | null>(null);
+
+  const findObligation = (id: string): ContractObligation | null =>
+    (obligationsQuery.data ?? []).find((o) => o.id === id) ?? null;
+
+  const handleAdd = () => setAddModalOpen(true);
+  const handleEdit = (id: string) => setEditObligation(findObligation(id));
+  const handleAssign = (id: string) => setAssigningObligation(findObligation(id));
+  const handleMarkActioned = (id: string) =>
+    setActioningObligation(findObligation(id));
+  const handleViewDetails = (id: string) => setDetailObligationId(id);
 
   const addButton = (
     <button
@@ -193,7 +189,7 @@ export default function ObligationsTab({
             <ObligationCard
               key={o.id}
               obligation={o as ObligationPortfolioItem}
-              onMarkActioned={(id) => markActioned.mutate(id)}
+              onMarkActioned={handleMarkActioned}
               onEdit={handleEdit}
               onAssign={handleAssign}
               onViewDetails={handleViewDetails}
@@ -201,6 +197,42 @@ export default function ObligationsTab({
           ))}
         </div>
       )}
+
+      {/* ── Modals + drawer (Phase 7.1 Step 3) ─────────────────── */}
+      <AddEditObligationModal
+        isOpen={addModalOpen}
+        onClose={() => setAddModalOpen(false)}
+        contractId={contractId}
+      />
+      <AddEditObligationModal
+        isOpen={!!editObligation}
+        onClose={() => setEditObligation(null)}
+        contractId={contractId}
+        obligation={editObligation}
+      />
+      <MarkActionedModal
+        isOpen={!!actioningObligation}
+        onClose={() => setActioningObligation(null)}
+        contractId={contractId}
+        obligation={actioningObligation}
+      />
+      <AssignUserModal
+        isOpen={!!assigningObligation}
+        onClose={() => setAssigningObligation(null)}
+        contractId={contractId}
+        projectId={projectId}
+        obligation={assigningObligation as ObligationPortfolioItem | null}
+      />
+      <ObligationDetailDrawer
+        isOpen={!!detailObligationId}
+        onClose={() => setDetailObligationId(null)}
+        obligationId={detailObligationId}
+        contractId={contractId}
+        onEdit={(o) => setEditObligation(o)}
+        onMarkActioned={(o) => setActioningObligation(o)}
+        onAssign={(o) => setAssigningObligation(o)}
+      />
     </div>
   );
 }
+
