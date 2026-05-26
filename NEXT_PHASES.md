@@ -1,15 +1,9 @@
 # SIGN Platform — Development Roadmap
-> Last updated: 2026-05-21
-> Next review: When Phase 5 is complete
+> Last updated: 2026-05-25
+> Next review: When 7.5-7.9 are cleared and 9.1 planning starts
 > Maintained by: Ayman & Youssef
 > Market: Arabic, English, French (Middle East + Global)
 > AI Strategy: Anthropic Claude API now → migrate to open-source models later
-
----
-
-## ⚠️ ACTION REQUIRED
-
-**Update CLAUDE.md immediately:** Remove "Known Bug #2" — the DocuSign webhook is now **fully implemented** with HMAC-SHA256 signature verification and contract state transitions (`FULLY_EXECUTED`, `VOIDED`, etc.). The no-op claim is false as of 2026-05-20.
 
 ---
 
@@ -20,6 +14,7 @@
 | 🔴 CRITICAL | Must be done — blocker for progress |
 | 🟠 HIGH | Important — do in current sprint |
 | 🟡 MEDIUM | Valuable — schedule in next sprint |
+| 🟢 LOW | Nice to have — when time allows |
 | ⏳ BLOCKED | Cannot proceed — external dependency required |
 
 ---
@@ -45,24 +40,24 @@ Implemented by: Ayman & Youssef | Completed: 2026-05-20
 | `VITE_API_URL` | `apps/sign/src/services/api/axios.ts` |
 | `VITE_SOCKET_URL` | `socketService.ts`, `supportSocketService.ts` |
 | `VITE_SIGN_APP_URL` | `apps/managex/src/App.tsx` |
-| `VITE_MANAGEX_URL` | Not yet wired — see Phase 5.4 |
+| `VITE_MANAGEX_URL` | SIGN layouts (TopBar, AuthLayout, AdminLayout) — wired in Phase 5.4 |
 
 ---
 
 ## ✅ PHASE 2 — Testing & CI — COMPLETED
-Implemented by: Ayman | Completed: 2026-05-20
+Implemented by: Ayman | Completed: 2026-05-20 | Expanded through Phase 7.1
 
-- **2.1** Backend Tests ✅ — 6 spec files, 33 tests
-- **2.2** Frontend Tests ✅ — 2 test files, 8 tests (expand coverage in Phase 7.19)
+- **2.1** Backend Tests ✅ — 8 spec files, 87 tests (grew from 33 through Phases 5-7)
+- **2.2** Frontend Tests ✅ — 10 test files, 44 tests (grew from 8 through Phase 7.1)
 - **2.3** AI Pipeline Tests ✅ — 8 tests, Anthropic mocked
-- **2.4** CI/CD Pipeline ✅ — GitHub Actions, 3 parallel jobs, 49 tests total
+- **2.4** CI/CD Pipeline ✅ — GitHub Actions, 3 parallel jobs, **139 tests total**
 
 ---
 
 ## ✅ PHASE 3 — Input Security — COMPLETED
-Implemented by: Ayman & Youssef | Completed: 2026-05-20
+Implemented by: Ayman & Youssef | Completed: 2026-05-25 (ILIKE gap closed in Phase 5.6)
 
-- **3.1** SQL Injection Prevention ✅ (admin-security ILIKE gap → fix in Phase 5.6)
+- **3.1** SQL Injection Prevention ✅ — all 8 ILIKE sites now protected (Phase 5.6 closed the final 2)
 - **3.2** Input Sanitization ✅
 - **3.3** Input Validation ✅
 - **3.4** File Upload Security ✅
@@ -73,177 +68,175 @@ Implemented by: Ayman & Youssef | Completed: 2026-05-20
 ## ✅ PHASE 4 — Security Hardening — COMPLETED
 Implemented by: Ayman & Youssef | Completed: 2026-05-20
 
-- **4.1** Rate Limiting ✅
-- **4.2** JWT & Refresh Token Handling ✅
-- **4.3** Secrets to Env Vars ✅
-- **4.4** Legal Pages & Privacy ✅ (functional gaps remain → fix in Phase 5.5)
+- **4.1** Rate Limiting ✅ — `@nestjs/throttler` + Redis-backed storage, 8 unauthenticated auth endpoints, 429 JSON with Retry-After header, account lockout (5 wrong → 30 min)
+- **4.2** JWT & Refresh Token Handling ✅ — token family tracking (family_id + parent_token_hash), jti UUID on every access token, Redis blacklist on logout, JWT_REFRESH_SECRET required (min 32 chars)
+- **4.3** Secrets to Env Vars ✅ — requireSeedPassword() helper, data-source.ts validates DATABASE_URL independently, 9 new vars in Joi schema, dev-only CSP/CORS gated behind NODE_ENV
+- **4.4** Legal Pages & Privacy ✅ — 14 components (LegalHubPage + 10 policy pages + layout + content), cookie consent system (4 categories), T&C checkbox in registration, AI disclaimers, communications preferences endpoint, 8 consent columns on users table. Remaining gaps closed in Phase 5.5.
 
 #### Password Validation Hardening ✅ (Ayman, PR #13 + #14, 2026-05-20)
 - All 6 password DTOs enforce: min 12 chars, 1 uppercase, 1 number, 1 special character
 - DTOs: RegisterDto, ResetPasswordDto, 3× ChangePasswordDto, AcceptInvitationDto
 - DB `security_policies.password_min_length` = 12
-- Frontend validation on all 4 pages
-- Lessons #78, #79, #80
+- Frontend validation on all 5 pages (Register, Reset, Accept Invitation, MySecurityPage, ProfilePage)
+- Lessons #78, #79, #80, #84
 
 ---
 
-## 📋 PHASE 5 — Documentation, Compliance & Pre-Feature Fixes
-> Current phase. Complete everything here before moving to Phase 6.
-> This phase closes all remaining gaps from Phases 1-4 and prepares the codebase for feature work.
+## ✅ PHASE 5 — Documentation, Compliance & Pre-Feature Fixes — COMPLETED
+Implemented by: Ayman & Youssef | Completed: 2026-05-22
 
 ---
 
-### 5.1 — Keep CLAUDE.md + lessons.md Updated ✅
-**Owner:** Ayman + Youssef | **Status:** ✅ Active habit
-- CLAUDE.md: 1,482 lines, current as of 2026-05-20
-- lessons.md: 80 lessons, current as of 2026-05-20
-- Update CLAUDE.md: remove DocuSign "Known Bug #2" (now fixed)
+### ✅ 5.1 — Keep CLAUDE.md + lessons.md Updated
+**Owner:** Ayman + Youssef | **Status:** ✅ Active ongoing habit
+- CLAUDE.md: ~1,600+ lines, current as of 2026-05-25, covers through Phase 7
+- lessons.md: 109 lessons (#1-109), current as of 2026-05-25
+- DocuSign "Known Bug #2" removed ✅
+- Custom Slash Commands section added ✅
+- Phase 7.2 section added ✅
+- Zero outstanding issues in CLAUDE.md as of 2026-05-22
 
 ---
 
-### 5.2 — Create Basic Setup Guide
-**Owner:** Ayman | **Priority:** 🟡 MEDIUM | **Status:** ⏳ IN PROGRESS
-**Target file:** `docs/SETUP.md`
-**Sections:**
-1. Prerequisites (Node 20, Python 3.11, Docker Desktop, gh CLI)
-2. Clone + install (`npm ci` at repo root)
-3. `.env` setup (copy `.env.example` × 4 services, required vars)
-4. `docker-compose up --build` — first run
-5. Migrations + seed verification
-6. Port map (5173, 5175, 3000, 8000, 5432, 6379)
-7. Working without external APIs (what works without Anthropic, DocuSign, Paymob keys)
-8. Running tests (Jest, Vitest, pytest — all three)
-9. Pre-PR checklist (reference CLAUDE.md)
-10. Common issues and fixes (top 5 from lessons.md)
+### ✅ 5.2 — Create Basic Setup Guide
+**Owner:** Ayman | **Status:** ✅ SHIPPED (PR #15, 2026-05-21)
+- `docs/SETUP.md` — 524 lines, 13 sections
+- Covers: prerequisites, env files, Docker startup, seeds, port map, tests, hot reload, common failures, DB recovery, gh CLI, pre-PR checklist
+- README.md and README-DEV.md updated with links
+- Every command cross-verified against actual codebase
 
 ---
 
-### 5.3 — Clean Up Stale Git Branches
-**Owner:** Ayman | **Priority:** 🟡 MEDIUM | **Status:** ❌ Not started
-- Delete `fix/password-validation-all-dtos` (merged via PR #13)
-- Delete or complete `wip/docusign-webhook-work` (DocuSign is now done on main)
-- Delete `phase-4.4-legal-compliance` if content is on main
+### ✅ 5.3 — Clean Up Stale Git Branches
+**Owner:** Ayman | **Status:** ✅ SHIPPED (2026-05-22)
+- 13 stale remote branches deleted (all verified content is on main before deletion)
+- 3 local branches cleaned
+- Only main + Claude Code worktree branches remain
 
 ---
 
-### 5.4 — Fix Hardcoded ManageX Backlink URLs
-**Owner:** Youssef | **Priority:** 🔴 CRITICAL — do now
-**Status:** ⚠️ 4 files still hardcode `http://localhost:5175/`
-**Files:**
-- `apps/sign/src/layouts/TopBar.tsx:57`
-- `apps/sign/src/layouts/AuthLayout.tsx:35, 65`
-- `apps/sign/src/layouts/AdminLayout.tsx:338`
-
-**Fix:** Replace with `import.meta.env.VITE_MANAGEX_URL || 'http://localhost:5175'`. Add `VITE_MANAGEX_URL` to `apps/sign/.env.example`.
+### ✅ 5.4 — Fix Hardcoded ManageX Backlink URLs
+**Owner:** Youssef | **Status:** ✅ SHIPPED (commit 0a93c3e, 2026-05-22)
+- 4 hardcoded `localhost:5175` URLs replaced with `import.meta.env.VITE_MANAGEX_URL`
+- New `VITE_MANAGEX_URL` env var added to `apps/sign/.env.example`
+- New `ManagexLogo.tsx` component added to SIGN layouts
 
 ---
 
-### 5.5 — Complete Legal Pages & Privacy Compliance Gaps
-**Owner:** Youssef | **Priority:** 🔴 CRITICAL — legally required before any real users
-**Status:** ⚠️ PARTIALLY DONE
-
-**What's done:**
-- 13 `/legal/*` pages present
-- CookieConsentBanner, CookieConsentContext, CookiePreferenceModal all built
-
-**Still missing:**
-1. **T&C acceptance in registration:** No checkbox in `RegisterPage.tsx` → users register without consent. Needs: checkbox + `accepted_terms_at` column on `users` entity + DB migration
-2. **AI output disclaimer:** No disclaimer shown before AI results. Must say: "AI output is a tool, not legal advice."
-3. **French locale:** `apps/sign/src/i18n/locales/` has only `ar/` and `en/` — no `fr/`. All legal pages need French translations.
-4. **Communication preferences UI:** `email_digest_opt_out` exists on `users` entity but has no UI surface
+### ✅ 5.5 — Complete Legal Pages & Privacy Compliance Gaps
+**Owner:** Youssef | **Status:** ✅ SHIPPED (PR #17, 2026-05-22)
+- French locale added (fr/common.json, 381 lines)
+- Language toggle reworked from 2-way (EN/AR) to 3-way dropdown with FR
+- Cookie consent server-side persistence added
+- AI disclaimer added to ClauseReviewPage and ClausesPage
+- All 10 legal pages updated with centralised content
+- Backend DTO + controller updated for cookie consent fields
 
 ---
 
-### 5.6 — Fix Admin-Security ILIKE Search Injection
-**Owner:** Ayman | **Priority:** 🟠 HIGH — 15 min fix
-**Status:** ❌ Not started
-- Two files lack `escapeLikeParam()` on ILIKE patterns: `admin-activity-log.service.ts` and `security-audit-log.service.ts`
-- Module is now on main — deferred from Phase 3.1, fix is overdue
-- Apply same pattern from `common/utils/escape-like.ts` used at 6 other sites
+### ✅ 5.6 — Fix Admin-Security ILIKE Search Injection
+**Owner:** Ayman | **Status:** ✅ SHIPPED (PR #19, 2026-05-25)
+- `escapeLikeParam()` applied to admin-activity-log.service.ts and security-audit-log.service.ts
+- All 8 ILIKE sites across entire backend now protected
+- Phase 3.1 fully closed
 
 ---
 
-### 5.7 — Fix failed_login_attempts Not Resetting on Success
-**Owner:** Ayman | **Priority:** 🟠 HIGH — 10 min investigation
-**Status:** ❌ Not started
-- `failed_login_attempts` may not reset to 0 on successful login
-- If true, counter drifts and users get locked out after 5 total logins regardless of correctness
-- Check `auth.service.ts` login success path: must call `userRepository.update(id, { failed_login_attempts: 0 })`
-- Check all login paths: `login`, `verifyMfa`, `verifyRecoveryCode`
+### ✅ 5.7 — Investigate failed_login_attempts Reset
+**Owner:** Ayman | **Status:** ✅ CONFIRMED WORKING (2026-05-22)
+- `failed_login_attempts` resets correctly at auth.service.ts line 411
+- Reset fires immediately after bcrypt.compare succeeds, before MFA check
+- All 3 login paths covered (login, verifyMfa, verifyRecoveryCode)
+- No bug — no fix needed
 
 ---
 
-### 5.8 — Block Password Reuse in Change-Password
-**Owner:** Ayman | **Priority:** 🟡 MEDIUM — 30 min fix
-**Status:** ❌ Not started
-- `PasswordPolicyService.assertNotReused()` checks password history table but not the current password hash when `history_count = 0`
-- User can change password to the exact same value
-- Fix: add `bcrypt.compare(newPassword, currentHash)` guard in `profile.controller.ts`. If match, reject with "New password must be different from current password."
+### ✅ 5.8 — Block Password Reuse in Change-Password
+**Owner:** Ayman | **Status:** ✅ SHIPPED (PR #20, 2026-05-22)
+- Always-on `bcrypt.compare(newPassword, currentHash)` guard in profile.controller.ts
+- ProfilePage.tsx migrated from legacy `PATCH /auth/change-password` to hardened `POST /me/change-password`
+- Client-side min-length updated from 8 to 12
+- Two legacy change-password endpoints marked deprecated with TODO comments
+- Lessons #83, #84
 
 ---
 
-## 🎨 PHASE 6 — Brand & UI Foundation
-> Youssef-led. Do 6.1-6.4 before feature development.
-> 6.5-6.6 after feature development (features will change the UI).
+## ✅ PHASE 6 — Brand & UI Foundation — MOSTLY COMPLETED
+> 6.1-6.4, 6.7-6.8 done. 6.5-6.6 moved to Phase 6B (after Phase 7 — features will change the UI).
 
 ---
 
-### ✅ 6.1 — CENVOX → ManageX Rename — COMPLETED
-- 71 files rebranded. Backlinks fixed in Phase 5.4.
+### ✅ 6.1 — CENVOX → ManageX Rename
+**Status:** ✅ COMPLETED — 71 files rebranded. Backlinks fixed in Phase 5.4.
 
 ---
 
-### 6.2 — Coming Soon Pages (VENDRIX, SPANTEC, CLAIMX, GUARDIA, DOXEN)
-**Owner:** Youssef | **Priority:** 🟡 MEDIUM | **Status:** ❌ Not started
-- Placeholder cards on ManageX landing page
-- Each card: product name, discipline, brand colour, "Coming Soon" badge, email notification opt-in
-- Do NOT build any functionality — placeholders only
+### ✅ 6.2 — Coming Soon Pages (VENDRIX, SPANTEC, CLAIMX, GUARDIA, DOXEN)
+**Owner:** Youssef | **Status:** ✅ SHIPPED (PR #21, 2026-05-24)
+- 5 sibling product cards upgraded: brand colour border, "Coming Soon" badge, "Notify Me" email input
+- Email capture is local state only — backend wiring in Phase 6.9
 
 ---
 
-### 6.3 — Fine Touches to ManageX Landing
-**Owner:** Youssef | **Priority:** 🟢 LOW | **Status:** ❌ Not started
-- Update mission statement, fix "/" separators, remove "--" artifacts
+### ✅ 6.3 — Fine Touches to ManageX Landing
+**Owner:** Youssef | **Status:** ✅ SHIPPED (PR #21, 2026-05-24)
+- Removed "/" separators from Why ManageX section
+- Replaced brittle split-on-"/" logic with index-based cyan colouring
+- Tone fix: "intelligent enough to treat it that way" → "built to treat it that way"
+- Mission statement intentionally deferred to Phase 6.10
 
 ---
 
-### 6.4 — Mobile View & Responsive Design
-**Owner:** Youssef | **Priority:** 🟡 MEDIUM | **Status:** ❌ Not started
-- Audit all `/app/*` pages for mobile breakpoints (desktop-first currently)
-- Priority: Dashboard, Contract Detail, Clause Review
-- Guest Portal (Phase 7.3) must be mobile-first — owners review on phone
+### ✅ 6.4 — Mobile View & Responsive Design
+**Owner:** Youssef | **Status:** ✅ SHIPPED (PR #22, 2026-05-25)
+- AppLayout mobile shell: hamburger menu, off-canvas sidebar drawer, route-change auto-close, responsive main margin
+- AdminLayout mobile shell: LTR-only off-canvas drawer with hamburger + overlay
+- Table overflow wrappers across 20 files (all 21 tables now scroll horizontally on mobile)
+- ManageX landing mobile nav drawer + hero font fix (h1 min reduced from 52px to 36px)
+- Lessons #85-92
+
+**Deferred to next sprint:**
+- ContractDetailPage full responsive redesign
+- ClauseReviewPage 55/45 split → tab switcher
+- Modal max-width standardization
 
 ---
 
-### 6.5 — Visual Confidentiality (25 Attack Vectors)
-**Owner:** Youssef | **Priority:** 🟡 MEDIUM | **Status:** ❌ Not started
-**DO AFTER Phase 7 features — features will change the UI**
-- Screen capture protection (CSS + JS), right-click disable on clause content
-- Print CSS watermark overlay, DevTools detector
-- Phase 7.17 Insurance Portal must also implement this
+### ✅ 6.7 — Frontend Design Skill
+**Status:** ✅ Already available in Claude Code at `/mnt/skills/public/frontend-design/SKILL.md`
+- No plugin install needed — skill is auto-loaded when Claude Code does UI work
+- Lesson #88: Claude Code has no `/plugin` command — extensibility is via MCP, custom commands, hooks, skills
 
 ---
 
-### 6.6 — Invisible Watermark System
-**Owner:** Youssef | **Priority:** 🟡 MEDIUM | **Status:** ❌ Not started
-**DO AFTER Phase 7 features**
-- Invisible watermarks in downloaded PDFs (user ID + timestamp + org ID)
-- Extend existing pdfmake watermarks from compliance reports
-- Watermark decoder tool in admin portal
-- Mention in Terms & Conditions as legal deterrent
+### ✅ 6.8 — /review Custom Slash Command
+**Owner:** Ayman | **Status:** ✅ SHIPPED (commit 01fd9f4, 2026-05-24)
+- `.claude/commands/review.md` — 8-step structured code review checklist
+- Type `/review` before any PR: diff, 5 security vectors, Phase 3.2 artifacts, console.log sweep, TODO sweep, backend tests, PASS/FAIL report
 
 ---
 
-### 6.7 — Install Frontend Design Plugin
-**Owner:** Ayman or Youssef | **Priority:** 🟢 LOW
-- Install before starting Phase 7 UI work: `/plugin install frontend-design@claude-plugins-official`
-- Skill version already available in Claude Code
+### 6.9 — Waitlist Email Capture & Admin Export
+**Owner:** Youssef (frontend + backend) + Ayman (admin portal)
+**Priority:** 🟡 MEDIUM | **Status:** ❌ Not started
+**Depends on:** 6.2 ✅ (cards already built) — can start anytime
+
+**Tasks:**
+- Database: new `product_waitlist` table (id, email, product_name, created_at, unique on email+product_name)
+- Backend: POST /waitlist endpoint (rate limited per Phase 4.1 pattern, input sanitized per Phase 3.2, 200 on duplicate silently — do not expose whether email already exists)
+- Frontend: wire existing "Notify Me" button in ManageX App.tsx to POST /waitlist
+- Admin Portal: Waitlist Manager (SYSTEM_ADMIN role only), table view filterable by product, Excel export (.xlsx)
+- Launch notification: bulk email per product when ready to launch, using existing email infrastructure
+- No PII in application logs (SOC 2 alignment — Phase 10.3)
 
 ---
 
-### 6.8 — Install Code Review Plugin
-**Owner:** Ayman or Youssef | **Priority:** 🟢 LOW
-- Anthropic-verified plugin for automated PR review
+### 6.10 — Mission Statement Rewrite
+**Owner:** Youssef | **Priority:** 🟡 MEDIUM | **Status:** ⏳ BLOCKED — needs founder brand conversation
+- Answer 5 brand voice questions (primary user, real pain, genuine differentiator, what ManageX should never feel like, a real founder phrase)
+- Write 3 candidate mission statements
+- Pick one, get Ayman's sign-off, implement in App.tsx lines 582-597
+- Wire "Our mission →" CTA href to real destination page
 
 ---
 
@@ -258,435 +251,120 @@ Implemented by: Ayman & Youssef | Completed: 2026-05-20
 
 ---
 
-### 7.1 — Obligation Tracking & Deadline Alerts
-**Owner:** Ayman (AI extraction) + Youssef (UI + notifications)
-**Priority:** 🔴 CRITICAL — URGENT
+### ✅ 7.1 — Obligation Tracking & Deadline Alerts
+**Owner:** Ayman (backend) + Youssef (frontend)
+**Priority:** 🔴 CRITICAL | **Status:** ✅ SHIPPED (PRs #23, #24, #25, #28, 2026-05-25)
 **Competitors:** Document Crunch/Trimble (primary value prop), Tomorro
-**Status:** ❌ Not started
-**Why critical:** Missing a FIDIC notice deadline can void a claim worth millions. This is Trimble's core value prop — SIGN must match before they enter MENA.
 
-**⚠️ Audit first:** `obligations` table + `obligation_reminder_logs` may already exist from Phase 3.4 — **extend, do not rebuild.**
+**What shipped:**
+- **Step 1 (Ayman, PR #23):** 3 migrations (contract dates, obligation_assignees, reminder_schedule), 5 new endpoints (assign, unassign, evidence, portfolio, calendar), reminder processor upgrade (assignee-based sending, OVERDUE escalation, in-app notifications, per-obligation schedule), email consolidated to templates. 47 new backend tests.
+- **Step 2 (Youssef, PR #24):** ObligationsTab on Contract Detail page, upgraded ObligationsPage with portfolio view, 9 reusable obligation components, 53 i18n keys (EN/AR/FR). 36 new frontend tests.
+- **Step 3 (Youssef, PR #25):** 4 modals (AddEditObligationModal, AssignUserModal, MarkActionedModal, ObligationDetailDrawer), ObligationsCalendarPage with react-big-calendar.
+- **Step 4 (Youssef, PR #28):** In-app notification polling (30s refetchInterval), unread count badge on bell icon in TopBar, dir="auto" fixes on obligation text, ProjectDetailPage obligation navigation link.
+- Lessons #94-104
 
-**Tasks:**
-- AI extraction (Arabic + English): payment deadlines, notice periods, milestone dates, termination periods, renewal/expiry dates, insurance renewals
-- Build obligation register: table view per contract with due dates + status (Pending / Actioned / Missed / Not Applicable)
-- Allow manual obligation entry — AI may miss some
-- Build alert system: email at 30/7/1 days before; in-app notification; alerts to contract owner + assigned members
-- Build portfolio obligation view: calendar/timeline across ALL projects
-- Link to Phase 7.5 Project Section enhancements
-
-**Success metric:** A project manager sees all upcoming contract deadlines across all projects in one view and receives email alerts before each deadline.
+**Success metric:** A project manager sees all upcoming contract deadlines across all projects in one view and receives email alerts before each deadline. ✅ Achieved.
 
 ---
 
-### 7.2 — Portfolio-Level Contract Analytics Dashboard
-**Owner:** Youssef
-**Priority:** 🟠 HIGH — URGENT
-**Competitors:** Juro, Luminance, Ironclad
-**Status:** ❌ Not started
-**Why critical:** Drives C-suite adoption — construction directors need portfolio visibility.
-**Depends on:** 7.1 (obligation data feeds dashboard)
-
-**⚠️ Audit first:** Check if any portfolio-level analytics already exist.
-
-**Tasks:**
-- Build Analytics Dashboard (OWNER_ADMIN + SYSTEM_ADMIN roles):
-  - Total active contracts (count + value)
-  - Contract status breakdown (pie chart)
-  - Upcoming expirations next 30/60/90 days (timeline)
-  - Upcoming obligation deadlines next 14 days (list — links to 7.1)
-  - Risk distribution High/Medium/Low (bar chart)
-  - Average time from creation to signature (trend line)
-  - Contracts by counterparty (top 10 table)
-  - Contract value by project
-- All charts filterable by: date range, project, contract type, counterparty
-- Export as PDF report
-- Full Arabic UI support
-
-**Success metric:** A construction director opens SIGN on Monday morning and in 30 seconds knows the state of all contracts across all projects.
+### ✅ 7.2 — Fix Route Shadowing
+**Owner:** Ayman | **Status:** ✅ SHIPPED (PR #26, 2026-05-25)
+- Legacy `/obligations/:id` route (ObligationsModule) shadowed `/obligations/portfolio` and `/obligations/calendar` (ComplianceModule) due to NestJS cross-controller route registration order
+- Fix: UUID regex constraint `@Get(':id([0-9a-f]{8}-...-[0-9a-f]{12})')` on all 4 legacy routes (GET, PUT, PUT/complete, DELETE)
+- Portfolio and calendar pages now return 200
+- Lesson #108
 
 ---
 
-### 7.3 — Guest Portal (`/contractor/*`)
-**Owner:** Youssef | **Priority:** 🟠 HIGH
-**Status:** ❌ Not started
-**⚠️ Requires Plan Mode before any code**
-- Foundation for 7.4 (Counterparty Redlining) — must be built first
-- See CLAUDE.md Portal Architecture for persona (Type B — Responding Party)
-- Scope: view assigned contract, respond to clauses, submit claims/notices, sign. Nothing more.
-- Invitation-based access (secure link, no SIGN account required)
-- Guest dashboard — minimal, mobile-first
+### ✅ 7.3 — Fix Obligation Status Enum Migration
+**Owner:** Ayman | **Status:** ✅ SHIPPED (PR #27, 2026-05-25)
+- Migration 1718000000002 referenced wrong enum name (`obligations_status_enum` instead of `obligation_status`)
+- Silent `EXCEPTION WHEN undefined_object THEN null` catch hid the failure — MET and WAIVED values were never added
+- Corrective migration 1748000000004 adds MET + WAIVED with `IF NOT EXISTS`
+- New `ObligationSchemaCheckService`: startup assertion verifies all 6 enum values on boot (OnModuleInit)
+- `data-source.ts`: `migrationsTransactionMode: 'each'` to support per-migration `transaction = false`
+- Lessons #108, #109
 
 ---
 
-### 7.4 — In-Platform Counterparty Redlining
-**Owner:** Youssef
-**Priority:** 🔴 CRITICAL — URGENT
-**Competitors:** Juro, Tomorro, Luminance (via Word add-in)
-**Status:** ❌ Not started
-**Depends on:** 7.3 (Guest Portal — counterparties need access)
-**Why critical:** Biggest gap vs competitors — once negotiation starts, users leave SIGN.
-
-**⚠️ Audit first:** How do users currently share contracts? Audit `ContractDetailPage.tsx` + negotiation module.
-
-**Tasks:**
-- External guest link: share via secure link (no account required)
-- Inline commenting: counterparty comments on specific clauses
-- Redline suggestions: counterparty proposes changes as tracked changes
-- Internal response workflow: SIGN user accepts/rejects/modifies each redline
-- Full version history: every round preserved and auditable
-- Email notifications on changes
-- Negotiation status: Draft → Shared → Under Review → Agreed → Ready to Sign
-- Arabic + English including RTL-correct tracked changes
-
-**Success metric:** A construction subcontract goes from first draft to fully agreed without leaving SIGN once.
+### ✅ 7.4 — Add Obligation Reminders Endpoint
+**Owner:** Ayman | **Status:** ✅ SHIPPED (PR #29, 2026-05-25)
+- `GET /contracts/:contractId/obligations/:obligationId/reminders`
+- Returns `obligation_reminder_logs` ordered by sent_at DESC
+- Response: `{ id, reminder_type, sent_to, sent_at, email_status }` — obligation_id omitted (redundant from URL)
+- Contract ownership verification (404 if obligation doesn't belong to contract)
+- 7 new tests (2 service unit + 5 HTTP)
 
 ---
 
-### ═══ TIER 2: Deepening the Moat (Do Second) ═══
-
----
-
-### 7.5 — Project Section Enhancements
+### 7.5 — Obligation Type Dropdown Label Consistency
 **Owner:** Youssef | **Priority:** 🟡 MEDIUM | **Status:** ❌ Not started
-- Portfolio-level project dashboard
-- Project health score based on contract status + risk levels
-- Contractor directory within a project
-- Link project phases to contract milestones
-- % Progress field, Member Count display
-- Integrates with 7.1 obligation tracking
+- Obligation type badges may not match the dropdown labels in the Add/Edit modal
+- Audit all 12 obligation type labels for consistency across ObligationsTab, ObligationsPage, and AddEditObligationModal
 
 ---
 
-### 7.6 — RFP & Specification Document Analysis
-**Owner:** Ayman (AI) + Youssef (UI)
-**Priority:** 🟠 HIGH — URGENT
-**Competitors:** Document Crunch/Trimble — investing heavily here
-**Status:** ❌ Not started
-**Why critical:** Construction risk decisions happen BEFORE signing. No general CLM addresses this.
-
-**Tasks:**
-- Extend uploads to accept RFP and Specification document types
-- **RFP Analysis:** extract payment terms, liquidated damages, retention, liability caps; flag onerous provisions vs FIDIC/NEC; generate clarification questions for owner
-- **Specification Analysis:** identify contradictions between sections, flag ambiguous scope, extract referenced standards (ASTM, BS, EN, ECP)
-- Link RFP/Spec to resulting contract — side-by-side comparison
-- Arabic + English
-
-**Success metric:** A contractor uploads an RFP and within 5 minutes has a risk summary and clarification questions — before deciding whether to bid.
+### 7.6 — Calendar Page Plan Gate for Starter Users
+**Owner:** Youssef | **Priority:** 🟡 MEDIUM | **Status:** ❌ Not started
+- ObligationsCalendarPage should show plan upgrade modal for Starter plan users
+- Professional and Enterprise only
+- Check existing plan gating patterns (SubscriptionGuard or frontend check)
 
 ---
 
-### 7.7 — Contract Playbook & Standard Positions
-**Owner:** Ayman (AI) + Youssef (UI)
-**Priority:** 🟠 HIGH
-**Competitors:** Luminance, Ironclad
-**Status:** ❌ Not started
-**Depends on:** 7.1 (obligation data) + 7.4 (redlining data)
-**Why valuable:** Creates switching costs — once a firm builds their playbook, they won't leave.
-
-**Tasks:**
-- Playbook section in Settings (org-level, OWNER_ADMIN only)
-- Define standard positions: payment terms, liability cap, retention rate, defects period, dispute forum, governing law, custom types
-- AI compares each clause against playbook during review
-- Flag deviations: Matches Standard / Minor Deviation / Major Deviation / Non-Standard
-- Arabic + English playbook definitions
-
-**Success metric:** Org admin sets up playbook once. Every contract gives personalised, org-specific risk flags.
+### 7.7 — Wire Reminder History in Detail Drawer
+**Owner:** Youssef | **Priority:** 🟡 MEDIUM | **Status:** ❌ Not started
+- ObligationDetailDrawer currently shows placeholder for Reminder History section
+- Wire to `GET /contracts/:id/obligations/:oblId/reminders` (endpoint shipped in 7.4)
+- Display: tier, sent_to, sent_at, email status per row
 
 ---
 
-### 7.8 — Microsoft Word Add-In (Extend Existing)
-**Owner:** Youssef | **Priority:** 🟡 MEDIUM
-**Competitors:** Luminance, Harvey
-**Status:** ❌ Not started
-
-**⚠️ `apps/word-addin/` already exists — audit before building. Extend, don't rebuild.**
-
-**Tasks:**
-- Audit current state, login from Word, open/edit SIGN contracts, save back with versioning
-- AI risk flags as inline Word comments
-- Playbook suggestions as tracked changes (after 7.7)
-- Arabic RTL support in Word
-- Import Word docs into SIGN from add-in
-- Publish to Microsoft AppSource
-
-**Success metric:** Lawyer reviews AI risk flags in Word and pushes revisions back to SIGN without opening a browser.
+### 7.8 — Portfolio + Calendar Empty State UX
+**Owner:** Youssef | **Priority:** 🟢 LOW | **Status:** ❌ Not started
+- When no obligations exist, portfolio and calendar pages show raw empty arrays
+- Add proper empty state: centered icon + "No obligations tracked yet" heading + CTA to create first obligation
+- Follow existing empty state pattern from other pages
 
 ---
 
-### ═══ TIER 3: Existing Features + Polish ═══
-
----
-
-### 7.9 — Knowledge Base Enhancements
+### 7.9 — Audit All Migrations for Silent Exception Pattern
 **Owner:** Ayman | **Priority:** 🟡 MEDIUM | **Status:** ❌ Not started
-- Bulk import, version history, "Used In" backlinks, scope per-project/all, search
-
-### 7.10 — Poor Scan Quality Handling
-**Owner:** Ayman + Youssef | **Priority:** 🟡 MEDIUM | **Status:** ❌ Not started
-- Detect low DPI, quality warning, re-upload option, image enhancement before OCR, "Human Review Recommended" status
-
-### 7.11 — Multilingual Support (French)
-**Owner:** Ayman + Youssef | **Priority:** 🟡 MEDIUM | **Status:** ❌ Not started
-- Add `fr/` locale, translate UI strings + legal pages, add to language switcher
-- Partially overlaps with Phase 5.5 (French legal pages)
-
-### 7.12 — Official Gazette Integration
-**Owner:** Youssef | **Priority:** 🟡 MEDIUM | **Status:** ❌ Not started
-- Monitor Egyptian Official Gazette, auto-import to Knowledge Base, admin notifications
-- Phase 1: Egypt only; Phase 2: UAE; Phase 3: per-country expansion
-
-### 7.13 — ERP System Integration (SAP / Oracle / Primavera / Dynamics)
-**Owner:** Ayman + Youssef | **Priority:** 🟡 MEDIUM | **Status:** ❌ Not started
-- Abstract integration layer (`ERP_PROVIDER` env var)
-- SAP first (Egyptian gov + large contractors), then Oracle Primavera P6 (MENA scheduling), then MS Dynamics 365
-- Export milestones/payment terms to ERP, import cost data for claims
-- ERP sync status dashboard in admin portal
-
-### 7.14 — Settlement Agreement Acknowledgement Checkbox
-**Owner:** Youssef | **Priority:** 🟡 MEDIUM | **Status:** ❌ Not started
-- Mandatory checkbox in Claims settlement modal per AUP Section 4.3
-- Text: "I understand that executing this settlement agreement has legal consequences. I have obtained independent legal advice or waive my right to do so."
-- Confirm button disabled until checked
-
-### 7.15 — Clause Library Type Dropdown ✅ COMPLETED (Ayman)
-
-### 7.16 — Expand Frontend Test Coverage
-**Owner:** Youssef | **Priority:** 🟡 MEDIUM | **Status:** ⚠️ PARTIAL — only 2 test files
-- Add `ContractDetailPage.test.tsx`, `ClauseReviewPage.test.tsx`
-- Write tests alongside new features as they are built in Phase 7
+- Audit ALL migrations for the same anti-pattern fixed in 7.3: `EXCEPTION WHEN ... THEN null` swallowing errors
+- `grep -rn "EXCEPTION WHEN" backend/src/database/migrations/`
+- Migration 1718000000002 was the known case (fixed), but others may exist
+- Any found: fix with corrective migration + startup assertion
 
 ---
 
-### ═══ TIER 4: Advanced Competitive Features (Do After Tiers 1-3) ═══
+### 7.10 — Wire obligation reminder processor to in-app dispatch
+**Owner:** Ayman | **Priority:** 🟠 HIGH | **Status:** ❌ Not started
+**Deferred from:** Phase 7.1 Step 4 scoping (2026-05-25)
+**Why blocking:** The bell badge polling shipped in 7.1 Step 4 (PR #28)
+works correctly for all dispatched notifications, but the obligation
+reminder processor sends EMAIL only — it doesn't call
+`NotificationDispatchService.dispatchObligationReminder()` to create
+the IN_APP row. Result: obligation reminders never appear on the bell
+badge until this lands. This is the active limitation documented in
+CLAUDE.md.
 
----
+**Scope:**
+- In `obligation-reminder.processor.ts`, after a reminder email is
+  successfully sent for each tier, call
+  `dispatchObligationReminder(obligation, recipient, tier)`. Include
+  `obligation_id`, `contract_id`, `project_id` in the metadata field.
+- Ensure in-app dispatch failure does NOT roll back the email send —
+  log the failure but treat email as the primary durable delivery.
+- Test: trigger a reminder, verify both email goes out AND a
+  notifications row appears with type IN_APP.
 
-### 7.17 — Negotiation History & Institutional Memory
-**Owner:** Ayman (data) + Youssef (UI)
-**Priority:** 🟡 MEDIUM
-**Competitors:** Luminance (biggest 2026 feature)
-**Status:** ❌ Not started
-**Depends on:** 7.4 (Redlining) + 7.7 (Playbook)
-
-**Tasks:**
-- Store negotiation events per contract (proposed → accepted/rejected/modified, who, when)
-- Counterparty profile: past contracts, patterns, accepted positions
-- AI surfaces history for repeat counterparties
-- Reasoning notes: annotate why positions were accepted/rejected
-- Tie into 7.7 Playbook
-
-**Success metric:** New contract with repeat counterparty → SIGN shows relevant negotiation history automatically.
-
----
-
-### 7.18 — Self-Service Contract Generation
-**Owner:** Youssef | **Priority:** 🟡 MEDIUM
-**Competitors:** Juro, Tomorro
-**Status:** ❌ Not started
-**Depends on:** 7.7 (Playbook defines guardrails)
-
-**⚠️ Audit first:** Check if any template/generation feature already exists.
-
-**Tasks:**
-- Template library (admin-managed): fixed/variable clauses, approval rules
-- Self-service flow: select template → fill form → SIGN generates → approval → e-signature
-- Guardrails: fixed clauses trigger legal review if modified
-- Arabic + English templates
-
-**Success metric:** Procurement manager generates subcontract without emailing legal once.
-
----
-
-### 7.19 — Insurance Carrier & Owner Portal
-**Owner:** Youssef (portal) + Ayman (permissions)
-**Priority:** 🟡 MEDIUM
-**Competitors:** Document Crunch/Trimble
-**Status:** ❌ Not started
-**Depends on:** 7.2 (Dashboard) + 7.1 (Obligations)
-
-**Tasks:**
-- External stakeholder portal (separate from Guest Portal 7.3)
-- Project owner: read-only, invited via email, contract list + status + key dates + risk summary
-- Insurance carrier: coverage requirements, compliance status
-- Lender/bank: contract values, payment terms, milestones
-- No SIGN account required — secure time-limited link
-- Permission controls: share scope, set expiry, revoke, audit log
-- Portal notifications on signing/scope changes
-- Arabic + English, mobile-friendly
-- **Must also implement Phase 6.5 visual confidentiality**
-
-**Success metric:** Project owner opens secure link on phone, sees all subcontract status within 2 minutes, no SIGN account needed.
-
----
-
-## 🧹 PHASE 7.2 — Deferred from 7.1
-
-Items surfaced during Phase 7.1 implementation (Steps 2-3) and the
-Step 3 housekeeping verification pass. Each item is a real bug or
-acknowledged-deferred decision with a clear scope.
-
-### 7.2-A — Generic file-upload endpoint + obligation evidence FileDropZone
-**Deferred from:** Phase 7.1 Step 3
-**Why:** Backend has no generic file-upload endpoint. PUT /evidence
-accepts a URL string only. Step 3 shipped a URL input + protective
-message instead of a file picker.
-**Scope:** Backend file-upload endpoint with S3 storage + MIME/size
-validation. Frontend swap of URL input for FileDropZone in
-MarkActionedModal. Migration of any existing evidence_url values.
-**Dependencies:** Storage decision (existing S3 bucket or new?). MIME
-allowlist needs review (PDF, DOCX, JPG, PNG were Step 3 placeholders).
-
-### 7.2-B — Per-role permission model for obligation Delete + Edit
-**Deferred from:** Phase 7.1 Step 3
-**Why:** Backend DELETE /obligations/:id is gated only by JWT — any
-authenticated user with contract access can delete. Step 3 hid Delete
-from the UI entirely rather than ship security-theater role checks.
-**Scope:** Define obligation-level permissions. Add per-role checks in
-backend service. Re-enable Delete in ObligationActionMenu gated on the
-new permission. Open question: should Edit also be permission-gated?
-**Dependencies:** Permission-model conversation with Ayman.
-
-### 7.2-C — Reminder history endpoint + ObligationDetailDrawer integration
-**Deferred from:** Phase 7.1 Step 3
-**Why:** No backend GET endpoint for obligation reminder logs. Detail
-drawer's Reminder History section shows a placeholder.
-**Scope:** Backend GET /contracts/:id/obligations/:oblId/reminders
-returning rows from obligation_reminder_logs with tier, sent_to,
-sent_at, email status. Frontend wire-up.
-**Dependencies:** None.
-
-### 7.2-D — Proper clause deep-linking from ObligationDetailDrawer
-**Deferred from:** Phase 7.1 Step 3
-**Why:** "View Clause" back-link uses URL hash navigation only. Works
-in the common case (Clauses is default tab) but won't switch tabs if
-the user lands elsewhere. ContractDetailPage.tsx wasn't on Step 3's
-allowed-edit list.
-**Scope:** Add hash/query-param reading to ContractDetailPage.tsx to
-auto-switch to Clauses tab and scroll on mount. ~10 LOC.
-**Dependencies:** None.
-
-### 7.2-E — Fix obligation_status enum migration + corrective migration
-**Deferred from:** Phase 7.1 Step 3 housekeeping (discovered 2026-05-25)
-**Why:** Migration `1718000000002-AddComplianceMonitoring.ts` lines 96-107
-references enum type name `obligations_status_enum` but the actual Postgres
-type is `obligation_status` (singular, no `_enum` suffix). The
-`EXCEPTION WHEN undefined_object THEN null` clause silently swallows the
-failure, so the migrations table shows the migration as successful while
-the MET and WAIVED enum values were never actually added. Every database
-that ran this migration is missing both values. Same silent-catch
-anti-pattern as lessons.md #31 — second recurrence.
-**Scope:** (1) Fix the enum type name in the existing migration file.
-(2) Create a new corrective migration that does the actual
-`ALTER TYPE ADD VALUE` for MET and WAIVED, gated on whether they already
-exist (some local DBs have been manually patched). (3) Remove or narrow
-the silent catch — at minimum log a warning. (4) Add a one-time check
-to backend startup that asserts the enum has all expected values, fails
-loud if not.
-**Dependencies:** None. Pure backend fix.
-**Note:** Local DB was manually patched via
-`ALTER TYPE obligation_status ADD VALUE IF NOT EXISTS 'MET';` and
-`ALTER TYPE obligation_status ADD VALUE IF NOT EXISTS 'WAIVED';` on
-2026-05-25 to unblock Phase 7.1 Step 3 screenshot work. Other dev
-environments and any deployed environments remain in the broken state
-until 7.2-E ships.
-
-### 7.2-F — Calendar event coloring uses raw status, not effective status
-**Deferred from:** Phase 7.1 Step 3 housekeeping (discovered 2026-05-25)
-**Why:** `ObligationsCalendarPage.tsx`'s event color mapping reads the
-raw `status` field. Every other surface (card list, detail drawer, KPI
-cards) uses `effectiveStatus()` which auto-derives OVERDUE for PENDING
-obligations whose `due_date` has passed. Result: a critical overdue
-obligation displays as amber (PENDING) on the calendar but red (OVERDUE)
-everywhere else. This is the exact dashboard-scanning context where the
-inconsistency matters most.
-**Scope:** Update `eventPropGetter` in `ObligationsCalendarPage.tsx` to
-call `effectiveStatus(obligation)` before color lookup. ~3 LOC. Add a
-test case asserting a PENDING obligation with past-due `due_date`
-renders red.
-**Dependencies:** None. Pure frontend.
-
-### 7.2-G — Backend route ordering: legacy /obligations/:id shadows new specific routes
-**Deferred from:** Phase 7.1 Step 3 housekeeping (discovered 2026-05-25)
-**Why:** `GET /obligations/portfolio` and `GET /obligations/calendar`
-(Step 1 backend endpoints in `compliance-obligations.controller.ts` lines
-170, 183) are unreachable. NestJS matches them against the older
-`@Get(':id')` in `obligations.controller.ts` line 48 first, because that
-route declares no path constraint on `:id`. Both new endpoints return
-`"Validation failed (uuid is expected)"` before reaching the right handler.
-The portfolio page and calendar page therefore render with zero events,
-even when the database is populated.
-**Scope:** Investigate why NestJS resolves `/obligations/portfolio` to
-the legacy `:id` route. Possible causes: (a) controller registration
-order in the module, (b) lack of path constraint on the legacy route,
-(c) the new endpoints should live under a different prefix (e.g.
-`/obligation-views/portfolio` and `/obligation-views/calendar`) to avoid
-the shadowing class altogether. Pick the cleanest fix, not the smallest
-one. Claude Code's initial finding suggested a UUID regex constraint on
-the legacy `:id` route, but that's treating a symptom — the architectural
-question is whether nested routes under the same parent path should ever
-shadow specific paths like this. Add integration tests for
-`GET /obligations/portfolio` and `GET /obligations/calendar` returning
-200 with populated payloads. Backend change + tests.
-**Bug evidence:** See
-`docs/screenshots/phase-7.1-step-3/bug-evidence/bug-7.2-G-portfolio-empty.png`
-and `bug-7.2-G-calendar-empty.png` — both pages render empty despite a
-seeded database containing 5 obligations.
 **Dependencies:** None. Pure backend.
 
-### 7.2-H — Legal-translator review of construction-law i18n terms
-**Deferred from:** Phase 7.1 Step 3 housekeeping (surfaced 2026-05-25)
-**Why:** Construction-law terms in `ar/common.json` and `fr/common.json`
-were translated during Step 3 implementation against FIDIC-aligned usage,
-but have not been reviewed by a qualified legal translator. Arabic
-terminology varies meaningfully by jurisdiction (UAE/Egypt/Saudi/etc.)
-and French construction terminology has Maghreb-specific variants.
-Confident translations in a frontend implementation pass are not a
-substitute for jurisdiction-specific legal-translator review before any
-production launch in MENA or French-speaking markets.
-**Scope:** (1) Identify target launch jurisdictions (likely UAE + Egypt
-primary for AR, France + Morocco/Algeria/Tunisia for FR). (2) Engage a
-legal translator with FIDIC and construction-contract experience for
-each target jurisdiction. (3) Review and refine all `_TODO_*` keyed
-terms in both locale files. (4) Remove the `_TODO_*` parallel keys once
-reviewed. (5) Document the jurisdiction-specific choices made (e.g.
-which Arabic variant for Performance Bond) in CLAUDE.md.
-**Dependencies:** Decision on target launch jurisdictions. Budget for
-qualified translators (this is not a low-cost item — expect $X-$Y per
-jurisdiction for legal-quality review).
-**Note:** Greppable `_TODO_*` markers were added in PR #25 housekeeping
-pass after the original Step 3 implementation shipped without them.
-Search: `grep "_TODO_" apps/sign/src/i18n/locales/ar/common.json` for
-the current worklist.
+---
 
-### 7.2-I — Wire obligation reminder processor to in-app dispatch
-**Deferred from:** Phase 7.1 Step 4 scoping (discovered 2026-05-25)
-**Why:** CLAUDE.md "Phase 7.1 Step 1 — Hard rule 2" requires every
-reminder tier (30/14/7/1/DUE_TODAY/OVERDUE) to create BOTH an email AND
-an in-app notification row. The current
-`obligation-reminder.processor.ts` sends EMAIL only — it doesn't call
-`NotificationDispatchService.dispatchObligationReminder()` to write the
-IN_APP row. Result: obligation reminders will never appear on the
-notification bell badge, never appear on `NotificationsPage`, and the
-Step 4 polling that's about to ship will work correctly but have no
-obligation-specific rows to poll for.
-**Scope:** In `obligation-reminder.processor.ts`, after a reminder email
-is successfully sent for each tier, call
-`dispatchObligationReminder(obligation, recipient, tier)`. Include
-`obligation_id`, `contract_id`, `project_id` in the metadata field.
-Ensure the in-app dispatch failure does NOT roll back the email send —
-log the failure but treat the email as the primary durable delivery.
-Test: trigger a reminder, verify both an email goes out AND a
-notifications row appears with type `IN_APP`.
-**Dependencies:** None. Pure backend.
-**Note:** Step 4 frontend polling (PR following this filing) works
-correctly for all notifications that ARE dispatched — system, contract
-events, admin actions. Obligation reminders specifically will start
-appearing on the bell badge automatically once 7.2-I lands. No frontend
-changes required after 7.2-I.
-
-### 7.2-J — Arabic RTL polish for react-big-calendar
-**Surfaced from:** Phase 7.1 cleanup PR #30 (2026-05-25)
+### 7.11 — Arabic RTL polish for react-big-calendar
+**Owner:** Youssef | **Priority:** 🟡 MEDIUM | **Status:** ❌ Not started
+**Deferred from:** Phase 7.1 cleanup PR #30 (2026-05-25)
 **Why:** Concrete Arabic RTL inventory captured for the first time in
 `docs/screenshots/phase-7.1-step-3/calendar-arabic-rtl.png` shows
 react-big-calendar does not natively support RTL grid layout:
@@ -694,8 +372,7 @@ react-big-calendar does not natively support RTL grid layout:
 - Day numbers stay Western (27, 28) instead of Arabic-Indic (٢٧، ٢٨)
 - Two pre-existing app-wide issues also visible in the screenshot:
   breadcrumb chevron `›` does not flip; TopBar "← MANAGEX" arrow does
-  not flip. These are not RBC-specific but were noticed during the
-  same review.
+  not flip. Not RBC-specific but noticed during the same review.
 
 What DOES work (confirmed in same screenshot):
 - Toolbar buttons translate and align correctly
@@ -703,40 +380,535 @@ What DOES work (confirmed in same screenshot):
 - Event titles render correctly via the `dir="auto"` event wrapper
   shipped in Step 4
 
-**Scope:** (1) Custom RBC layout component or library replacement to
-get grid direction mirrored under Arabic locale. (2) Locale-aware
-number formatting for day numbers (Intl.NumberFormat with Arabic-Indic
-digits). (3) Audit-and-fix pass for the pre-existing breadcrumb and
-backlink arrow non-flipping — separate from RBC but discovered in same
-review.
+**Scope:**
+- Custom RBC layout component or library replacement to get grid
+  direction mirrored under Arabic locale
+- Locale-aware number formatting for day numbers (`Intl.NumberFormat`
+  with Arabic-Indic digits)
+- Audit-and-fix pass for the pre-existing breadcrumb and backlink arrow
+  non-flipping — separate from RBC but discovered in same review
+
 **Dependencies:** Decision on whether to fix RBC RTL inline (custom
 components) or replace the library entirely. RBC's maintenance is
 mixed — worth a brief review before committing significant work.
-**Reference:** docs/screenshots/phase-7.1-step-3/calendar-arabic-rtl.png
+
+**Reference:** `docs/screenshots/phase-7.1-step-3/calendar-arabic-rtl.png`
+
+---
+
+### 7.12 — Generic file-upload endpoint + obligation evidence FileDropZone
+**Owner:** Ayman (backend) + Youssef (frontend) | **Priority:** 🟡 MEDIUM | **Status:** ❌ Not started
+**Deferred from:** Phase 7.1 Step 3 (2026-05-25)
+**Why:** Backend has no generic file-upload endpoint. PUT /evidence
+accepts a URL string only. Step 3 shipped a URL input + protective
+message in MarkActionedModal instead of a file picker. Users currently
+can't upload evidence directly — they must host the file themselves
+and paste the URL.
+
+**Scope:**
+- Backend: file-upload endpoint with S3 storage + MIME/size validation
+- Frontend: swap URL input for FileDropZone in MarkActionedModal,
+  reusing the existing FileDropZone component from contracts upload
+- Migration of any existing evidence_url values (likely none in
+  production)
+
+**Dependencies:** Storage decision (existing S3 bucket vs new). MIME
+allowlist needs review (PDF, DOCX, JPG, PNG were Step 3 placeholders).
+
+---
+
+### 7.13 — Proper clause deep-linking from ObligationDetailDrawer
+**Owner:** Youssef | **Priority:** 🟢 LOW | **Status:** ❌ Not started
+**Deferred from:** Phase 7.1 Step 3 (2026-05-25)
+**Why:** "View Clause" back-link in ObligationDetailDrawer uses URL
+hash navigation only. Works in the common case (Clauses is the default
+tab on ContractDetailPage) but won't switch tabs if the user lands
+elsewhere. ContractDetailPage.tsx wasn't on Step 3's allowed-edit list.
+
+**Scope:**
+- Add hash/query-param reading to `ContractDetailPage.tsx` to
+  auto-switch to the Clauses tab and scroll to the clause on mount
+- ~10 LOC change
+- Test: navigate to /app/contracts/:id#clause-:id from a fresh tab,
+  verify Clauses tab is active and scroll target is in view
+
+**Dependencies:** None. Pure frontend.
+
+---
+
+### 7.14 — Calendar event coloring uses raw status, not effective status
+**Owner:** Youssef | **Priority:** 🟢 LOW | **Status:** ❌ Not started
+**Deferred from:** Phase 7.1 Step 3 housekeeping (2026-05-25)
+**Why:** `ObligationsCalendarPage.tsx`'s event color mapping reads the
+raw `status` field. Every other surface (card list, detail drawer, KPI
+cards) uses `effectiveStatus()` which auto-derives OVERDUE for PENDING
+obligations whose `due_date` has passed. Result: a critical overdue
+obligation displays as amber (PENDING) on the calendar but red
+(OVERDUE) everywhere else. The dashboard-scanning use case is exactly
+where this inconsistency matters most.
+
+**Scope:**
+- Update `eventPropGetter` in `ObligationsCalendarPage.tsx` to call
+  `effectiveStatus(obligation)` before color lookup
+- ~3 LOC frontend change
+- Add a test case: PENDING obligation with past-due `due_date` renders
+  red (OVERDUE color)
+
+**Dependencies:** None. Pure frontend.
+
+**Reference:** Visible in
+`docs/screenshots/phase-7.1-step-3/calendar-desktop-en.png` — the
+obligation due 2026-04-15 displays amber despite being past-due.
+
+---
+
+### 7.15 — Per-role permission model for obligation Delete + Edit
+**Owner:** Ayman | **Priority:** 🟡 MEDIUM | **Status:** ❌ Not started
+**Deferred from:** Phase 7.1 Step 3 (2026-05-25)
+**Why:** Backend `DELETE /obligations/:id` is gated only by JWT — any
+authenticated user with contract access can delete. Step 3 hid the
+Delete action from the UI entirely rather than ship a security-theater
+role check on the frontend.
+
+**Scope:**
+- Define obligation-level permissions (who can delete? who can edit?)
+- Add per-role checks in backend service
+- Re-enable Delete in ObligationActionMenu gated on the new permission
+- Open question: should obligation Edit also be permission-gated, or
+  stay open to any contract member?
+
+**Dependencies:** Permission-model conversation with Ayman.
+
+---
+
+### 7.16 — Legal-translator review of construction-law i18n terms
+**Owner:** Ayman + Youssef (engagement decision) | **Priority:** 🟡 MEDIUM | **Status:** ❌ Not started — non-engineering item
+**Deferred from:** Phase 7.1 Step 3 housekeeping (2026-05-25)
+**Why:** Construction-law terms in `ar/common.json` and `fr/common.json`
+were translated during Step 3 implementation against FIDIC-aligned
+usage, but have not been reviewed by a qualified legal translator.
+Arabic terminology varies meaningfully by jurisdiction (UAE / Egypt /
+Saudi / etc.) and French construction terminology has Maghreb-specific
+variants. Confident translations in a frontend implementation pass are
+not a substitute for jurisdiction-specific legal-translator review
+before any production launch in MENA or French-speaking markets.
+
+**Scope:**
+1. Identify target launch jurisdictions (likely UAE + Egypt primary
+   for AR; France + Morocco / Algeria / Tunisia for FR)
+2. Engage a legal translator with FIDIC and construction-contract
+   experience for each target jurisdiction
+3. Review and refine all `_TODO_*` keyed terms in both locale files
+4. Remove the `_TODO_*` parallel keys once reviewed
+5. Document the jurisdiction-specific choices made (e.g. which Arabic
+   variant for "Performance Bond") in CLAUDE.md
+
+**Dependencies:** Decision on target launch jurisdictions. Budget for
+qualified translators — this is not a low-cost item, expect significant
+per-jurisdiction cost for legal-quality review.
+
+**Note:** Greppable `_TODO_*` markers were added to both locales in PR
+#25 (Phase 7.1 Step 3 housekeeping). Current worklist:
+`grep "_TODO_" apps/sign/src/i18n/locales/ar/common.json`
+`grep "_TODO_" apps/sign/src/i18n/locales/fr/common.json`
+
+---
+
+### 7.17 — Portfolio-Level Contract Analytics Dashboard
+**Owner:** Youssef
+**Priority:** 🟠 HIGH — URGENT
+**Competitors:** Juro, Luminance, Ironclad
+**Status:** ❌ Not started
+**Depends on:** 7.1 ✅ (obligation data feeds dashboard)
+**Why critical:** Drives C-suite adoption — construction directors need portfolio visibility.
+
+**⚠️ Audit first:** Check if any portfolio-level analytics already exist.
+
+**Tasks:**
+- Build Analytics Dashboard (OWNER_ADMIN + SYSTEM_ADMIN roles):
+  - Total active contracts — count and total value
+  - Contract status breakdown: Draft / In Negotiation / Signed / Expired / Terminated (pie chart)
+  - Upcoming expirations: next 30 / 60 / 90 days (timeline)
+  - Upcoming obligation deadlines: next 14 days (list — links to 7.1)
+  - Risk distribution: High / Medium / Low across portfolio (bar chart)
+  - Average time from creation to signature (trend line)
+  - Contracts by counterparty (top 10 table)
+  - Contract value by project (if value field exists)
+- Make all charts filterable by: date range, project, contract type, counterparty
+- Export analytics as PDF report (for sharing with management)
+- Full Arabic UI support
+
+**Success metric:** A construction director opens SIGN on Monday morning and in 30 seconds knows the state of all their contracts across all projects.
+
+---
+
+### 7.18 — Guest Portal (`/contractor/*`)
+**Owner:** Youssef | **Priority:** 🟠 HIGH
+**Status:** ❌ Not started
+**⚠️ Requires Plan Mode architectural session before any code is written**
+- Foundation for 7.19 (Counterparty Redlining) — must be built first
+- See CLAUDE.md Portal Architecture section for persona definition (Type B — Responding Party)
+- Scope: view assigned contract, respond to clauses, submit claims/notices, sign. Nothing more.
+- Invitation-based access (secure link, no SIGN account required)
+- Build guest dashboard — minimal, mobile-first
+
+---
+
+### 7.19 — In-Platform Counterparty Redlining
+**Owner:** Youssef
+**Priority:** 🔴 CRITICAL — URGENT
+**Competitors:** Juro, Tomorro, Luminance (via Word add-in)
+**Status:** ❌ Not started
+**Depends on:** 7.18 (Guest Portal — counterparties need access layer first)
+**Why critical:** Biggest gap vs competitors — once negotiation starts, users leave SIGN entirely.
+
+**⚠️ Audit first:** How do users currently share contracts? Audit `ContractDetailPage.tsx` + negotiation module.
+
+**Tasks:**
+- Build external guest link: share a contract with a counterparty via a secure link (no account required to view)
+- Build inline commenting: counterparty can leave comments on specific clauses
+- Build redline suggestions: counterparty can propose clause changes which appear as tracked changes
+- Build internal response workflow: SIGN user sees redlines, accepts/rejects/modifies each one
+- Maintain full version history: every round of changes is preserved and auditable
+- Notify both parties by email when changes are made
+- Show negotiation status: Draft → Shared → Under Review → Agreed → Ready to Sign
+- All of the above must work in Arabic and English including RTL-correct tracked changes display
+
+**Success metric:** A construction subcontract can go from first draft to fully agreed without leaving SIGN once.
+
+---
+
+### ═══ TIER 2: Deepening the Moat (Do Second) ═══
+
+---
+
+### 7.20 — Project Section Enhancements
+**Owner:** Youssef | **Priority:** 🟡 MEDIUM | **Status:** ❌ Not started
+- Portfolio-level project dashboard
+- Project health score based on contract status + risk levels
+- Contractor directory within a project
+- Link project phases to contract milestones
+- % Progress field, Member Count display
+- Integrates with 7.1 obligation tracking data
+
+---
+
+### 7.21 — RFP & Specification Document Analysis
+**Owner:** Ayman (AI) + Youssef (UI)
+**Priority:** 🟠 HIGH — URGENT
+**Competitors:** Document Crunch/Trimble — investing heavily here
+**Status:** ❌ Not started
+**Why critical:** Construction risk decisions happen BEFORE signing — during bid evaluation. No general CLM addresses this.
+
+**Tasks:**
+- Extend document upload to accept RFP and Specification document types (in addition to contracts)
+- Build RFP Analysis mode:
+    - Extract: payment terms, liquidated damages, retention, liability caps, insurance requirements, notice periods
+    - Flag: unusual or onerous provisions vs FIDIC/NEC standard
+    - Summarise: key commercial risks for the bid team
+    - Generate: list of clarification questions to send to owner
+- Build Specification Analysis mode:
+    - Identify contradictions between spec sections
+    - Flag ambiguous scope items that could cause disputes
+    - Extract: key technical standards referenced (e.g. ASTM, BS, EN, ECP standards)
+- Link RFP/Spec analysis to the resulting contract when awarded:
+    - Show side-by-side: what was promised in RFP vs what ended up in the contract
+- Support Arabic and English documents
+
+**Success metric:** A contractor uploads an RFP and within 5 minutes has a risk summary and list of clarification questions — before deciding whether to bid.
+
+---
+
+### 7.22 — Contract Playbook & Standard Positions
+**Owner:** Ayman (AI integration) + Youssef (UI)
+**Priority:** 🟠 HIGH
+**Competitors:** Luminance, Ironclad
+**Status:** ❌ Not started
+**Depends on:** 7.1 ✅ (obligation data) + 7.19 (redlining creates the negotiation data playbooks compare against)
+**Why valuable:** Creates switching costs — once a firm has built their playbook in SIGN, they won't leave.
+
+**Tasks:**
+- Build Playbook section in Settings (org-level, OWNER_ADMIN only)
+- Allow admin to define standard positions for common construction clause types:
+    - Payment terms (acceptable range: e.g. 28-45 days)
+    - Liability cap (acceptable: e.g. min 100% of contract value)
+    - Retention rate (acceptable: e.g. max 10%)
+    - Defects liability period (acceptable: e.g. max 24 months)
+    - Dispute resolution (preferred: e.g. ICC Arbitration)
+    - Governing law (preferred: e.g. UAE law / Egyptian law)
+    - And any custom clause type the org wants to track
+- When AI analyses a contract, compare each clause against the org's playbook
+- Flag deviations clearly: "Payment terms: 60 days — your standard is max 45 days. Recommend negotiating."
+- Distinguish between: Matches Standard / Minor Deviation / Major Deviation / Non-Standard (not in playbook)
+- Support Arabic and English playbook definitions
+
+**Success metric:** An org admin sets up their playbook once. Every contract reviewed after that gives personalised, organisation-specific risk flags instead of generic ones.
+
+---
+
+### 7.23 — Microsoft Word Add-In (Extend Existing)
+**Owner:** Youssef | **Priority:** 🟡 MEDIUM
+**Competitors:** Luminance, Harvey
+**Status:** ❌ Not started
+**⚠️ `apps/word-addin/` already exists in the repo — audit current state before building. Extend, do not rebuild.**
+
+**Tasks:**
+- Audit current add-in state — document what is already built
+- Build Microsoft Word Add-In (Office Add-ins API / Office JS framework):
+    - Login to SIGN account from within Word
+    - Open any SIGN contract directly in Word for editing
+    - Save changes back to SIGN with version tracking
+    - View AI risk flags as comments inside the Word document
+    - Apply playbook suggestions as tracked changes (once 7.22 is built)
+    - Send for approval or signature from within Word
+    - Support Arabic RTL documents in Word correctly
+- Build companion feature: import any Word document into SIGN directly from the add-in
+- Publish to Microsoft AppSource for discoverability
+
+**Success metric:** A lawyer can open a SIGN contract in Word, review AI risk flags as inline comments, make edits, and push the revised version back to SIGN — without opening a browser once.
+
+---
+
+### ═══ TIER 3: Existing Features + Polish ═══
+
+---
+
+### 7.24 — Knowledge Base Enhancements
+**Owner:** Ayman | **Priority:** 🟡 MEDIUM | **Status:** ❌ Not started
+- Bulk import from PDF/Word (multiple knowledge assets at once)
+- Version history per knowledge asset
+- "Used In" backlinks — show which contracts used each knowledge asset in analysis
+- Scope option: per-project or all-projects
+- Search within knowledge base
+
+---
+
+### 7.25 — Poor Scan Quality Handling
+**Owner:** Ayman + Youssef | **Priority:** 🟡 MEDIUM | **Status:** ❌ Not started
+- Detect low-quality scanned PDFs (< 150 DPI, low contrast)
+- Show quality warning before extraction begins
+- Offer re-upload with preprocessing tips
+- AI backend: image enhancement (contrast, deskew) before OCR on flagged documents
+- "Human Review Recommended" status in processing pipeline
+
+---
+
+### 7.26 — Multilingual Support (French)
+**Owner:** Ayman + Youssef | **Priority:** 🟡 MEDIUM | **Status:** ⚠️ PARTIAL
+- FR locale added in Phase 5.5 (fr/common.json, 381 lines). Arabic translations still outstanding.
+- Remaining: translate all existing UI strings to French, French versions of all legal pages, language switcher fully tested
+- Partially overlaps with Phase 5.5 work
+
+---
+
+### 7.27 — Official Gazette Integration
+**Owner:** Youssef | **Priority:** 🟡 MEDIUM | **Status:** ❌ Not started
+- Monitor Egyptian Official Gazette for new construction-related legislation
+- Auto-import relevant updates into Knowledge Base
+- Admin notifications when new applicable regulations are detected
+- Phase 1: Egypt only; Phase 2: UAE; Phase 3: per-country expansion
+
+---
+
+### 7.28 — ERP System Integration (SAP / Oracle / Primavera / Dynamics)
+**Owner:** Ayman + Youssef | **Priority:** 🟡 MEDIUM | **Status:** ❌ Not started
+- Abstract integration layer (`ERP_PROVIDER` env var)
+- SAP first (Egyptian government + large contractors)
+- Oracle Primavera P6 (most common MENA construction scheduling tool)
+- Microsoft Dynamics 365 (mid-size contractors)
+- Export milestones/payment terms to ERP project schedules
+- Import cost data from ERP for claims and variation analysis
+- ERP sync status dashboard in admin portal
+
+---
+
+### 7.29 — Settlement Agreement Acknowledgement Checkbox
+**Owner:** Youssef | **Priority:** 🟡 MEDIUM | **Status:** ❌ Not started
+**Legal basis:** AUP Section 4.3
+- Mandatory checkbox in Claims settlement execution modal
+- Text: "I understand that executing this settlement agreement has legal consequences. I have obtained independent legal advice or waive my right to do so."
+- Confirm button remains disabled until checkbox is checked
+
+---
+
+### ✅ 7.30 — Clause Library Type Dropdown — COMPLETED (Ayman)
+- Clickable type dropdown in ClauseReviewPage.tsx and ClausesPage.tsx
+
+---
+
+### 7.31 — Expand Frontend Test Coverage
+**Owner:** Youssef | **Priority:** 🟡 MEDIUM | **Status:** ⚠️ PARTIAL
+- Grew from 2 test files / 8 tests to 10 test files / 44 tests through Phase 7.1
+- Add `ContractDetailPage.test.tsx`, `ClauseReviewPage.test.tsx`
+- Continue writing tests alongside new features as they are built
+
+---
+
+### ═══ TIER 4: Advanced Competitive Features (Do After Tiers 1-3) ═══
+
+---
+
+### 7.32 — Negotiation History & Institutional Memory
+**Owner:** Ayman (data layer) + Youssef (UI)
+**Priority:** 🟡 MEDIUM
+**Competitors:** Luminance — their biggest 2026 feature (January 2026 update)
+**Status:** ❌ Not started
+**Depends on:** 7.19 (Redlining) + 7.22 (Playbook)
+
+**Tasks:**
+- Store negotiation events per contract:
+    - Clause proposed → accepted / rejected / modified
+    - Who made each change and when
+    - Final agreed position per clause
+- Build counterparty profile:
+    - List of all past contracts with this counterparty
+    - Patterns: which clauses they typically push back on
+    - Their accepted positions from previous contracts
+- When starting a new contract with a known counterparty:
+    - AI surfaces: "You last worked with this counterparty in March 2025. They accepted 30-day payment terms but rejected the liquidated damages cap."
+- Store reasoning notes: allow users to annotate why a position was accepted or rejected
+- Tie into 7.22 Playbook: show where counterparty positions deviated from org standard
+
+**Success metric:** When a user creates a contract with a repeat counterparty, SIGN automatically shows relevant history from previous negotiations before they start.
+
+---
+
+### 7.33 — Self-Service Contract Generation for Non-Legal Users
+**Owner:** Youssef | **Priority:** 🟡 MEDIUM
+**Competitors:** Juro, Tomorro
+**Status:** ❌ Not started
+**Depends on:** 7.22 (Playbook defines the guardrails)
+
+**⚠️ Audit first:** Check if any template/generation feature already exists.
+
+**Tasks:**
+- Build Template Library (org-level):
+    - Admin creates approved contract templates
+    - Mark fields as: fixed (cannot change) / editable (can change within limits) / free text (full flexibility)
+    - Set approval requirements per template type: e.g. subcontracts under $50k = no approval needed, above = legal review required
+- Build self-service contract creation flow:
+    - User selects template type
+    - Fills in a simple form (counterparty, value, dates, scope summary)
+    - SIGN generates the contract automatically
+    - Routes for approval if required by template rules
+    - Sends for signature when approved
+- Build guardrail enforcement:
+    - Fixed clauses cannot be edited by non-legal users
+    - If a user tries to change a fixed clause, it triggers legal review
+- Support Arabic and English templates
+
+**Success metric:** A procurement manager generates a standard subcontract, gets it approved, and sends it for signature — all within SIGN, without emailing legal once.
+
+---
+
+### 7.34 — Insurance Carrier & Owner Portal
+**Owner:** Youssef (portal UI) + Ayman (permissions + API)
+**Priority:** 🟡 MEDIUM
+**Competitors:** Document Crunch/Trimble
+**Status:** ❌ Not started
+**Depends on:** 7.17 (Dashboard) + 7.1 ✅ (Obligations)
+
+**Tasks:**
+- Build external stakeholder portal (separate from Guest Portal 7.18):
+    - Project owner: invited via email to a read-only project portal
+    - Portal shows: contract list, status, key dates, risk summary (NOT full contract text unless explicitly shared)
+    - Insurance carrier view: coverage requirements extracted, compliance status
+    - Lender/bank view: contract values, payment terms, milestone schedule extracted from contracts
+    - No SIGN account required — secure link with configurable expiry date
+- Build permission controls:
+    - Choose what to share with each external stakeholder: full contract / summary only / specific sections only
+    - Set portal link expiry date, revoke access at any time
+    - Audit log: see who viewed what and when
+- Build portal-specific notifications:
+    - Notify owner when a contract is signed
+    - Notify insurance carrier when a contract changes scope or value above a threshold
+- Arabic + English, must be mobile-friendly
+- **Must also implement Phase 6B.1 visual confidentiality on this portal**
+
+**Success metric:** A project owner receives a secure portal link from their contractor, opens it on their phone, and within 2 minutes sees the status of all subcontracts on their project — without needing a SIGN account.
+
+---
+
+## 🎨 PHASE 6B — Visual Confidentiality & Watermarks
+> These were originally Phase 6.5 and 6.6. Moved here because features in Phase 7 will change the UI — building protection layers before features means rebuilding them after.
+> Do these AFTER Phase 7 feature development is complete.
+
+---
+
+### 6B.1 — Visual Confidentiality (25 Attack Vectors)
+**Owner:** Youssef | **Priority:** 🟡 MEDIUM | **Status:** ❌ Not started
+- 25 attack vectors across 3 tiers (Casual, Intermediate, Advanced)
+- Components: ScreenshotProtection, KeypressInterceptor, DevToolsDetector, DOMIntegrityGuard, VisibilityOverlay, PrintBlocker, BotDetector, RootJailbreakDetector
+- Screen capture protection (CSS + JS-based), right-click disable on clause content
+- Print CSS watermark overlay, DevTools detector — blur content when DevTools is open
+- ⚠️ 3 scenarios are technically UNBLOCKABLE (physical camera, GPU frame buffer, VM screenshots) — answer is invisible watermark (6B.2)
+- Phase 7.34 Insurance Carrier Portal must also implement this
+
+---
+
+### 6B.2 — Invisible Watermark System
+**Owner:** Youssef | **Priority:** 🟡 MEDIUM | **Status:** ❌ Not started
+- Invisible watermarks in all downloaded contract PDFs (user ID + timestamp + org ID)
+- CSS steganography: diagonal repeating text at opacity 0.03-0.05
+- Unique per user per session: encodes user email, date, contract ID
+- Extend existing pdfmake watermarks from compliance reports
+- Add watermark decoder tool in admin portal
+- Mention watermarking in Terms & Conditions as legal deterrent
 
 ---
 
 ## 🤖 PHASE 8 — AI Model Migration
-**Status:** ❌ Not started
+**Status:** ❌ Not started — begin evaluation during Phase 7
+
+---
 
 ### 8.1 — AI Model Evaluation & Migration Path
-- Document all Claude API prompts, tag each with replacement model
+**Owner:** Ayman + Youssef | **Status:** ❌ Not started
+- Document all Claude API prompts — tag each with the open-source replacement model intended
 - Arabic accuracy test suite on General Conditions (81k chars, 9 chunks) as baseline
 - Migrate only if accuracy improves AND cost is acceptable
-- **Hard rule:** Never migrate without running the Arabic accuracy test suite first
+- **Hard rule:** Never migrate models without running the Arabic accuracy test suite first
+
+---
 
 ### 8.2 — OCR Migration: AWS Textract
+**Owner:** Ayman | **Status:** ❌ Not started
 - Abstract OCR layer: `OCR_PROVIDER` env var (tesseract | textract)
-- Test Arabic scanned documents — compare accuracy
-- ⚠️ Textract Arabic: specific AWS regions only (us-east-1, eu-west-1)
+- Test Arabic scanned documents — compare accuracy between tesseract and Textract
+- ⚠️ Textract Arabic: available in specific AWS regions only (us-east-1, eu-west-1)
+
+---
 
 ### 8.3 — Annotation Setup: Label Studio
+**Owner:** Ayman | **Status:** ❌ Not started
+- `docker run -p 8080:8080 heartexlabs/label-studio`
+- Configure annotation projects for clause extraction, risk classification
+- Import existing extracted clauses as pre-annotations
+
+---
+
 ### 8.4 — Clause Classification: ContractBERT
+**Owner:** Ayman | **Status:** ❌ Not started
+- Fine-tune ContractBERT (or legal-BERT) on annotated clause data from 8.3
+- Compare accuracy vs Claude API for clause type classification
+- Only proceed when 500+ annotated examples available
+
+---
+
 ### 8.5 — Risk Classification & Confidence Threshold
+**Owner:** Ayman | **Status:** ❌ Not started
+- Train risk classifier on annotated data
+- Set confidence threshold: below threshold → flag for human review
+- A/B test: Claude API risk assessment vs trained model
+
+---
 
 ### 8.6 — Model Training Infrastructure (AWS SageMaker)
-- Training jobs config, pipeline: data prep → train → evaluate → deploy
-- Cost: per compute hour. Only needed with 500+ annotated examples
+**Owner:** Ayman + Youssef | **Status:** ❌ Not started
+- Set up SageMaker training jobs configuration
+- Define training pipeline: data prep → train → evaluate → deploy
+- Cost estimate: SageMaker training is charged per compute hour
+- Only needed when you have enough annotated data (500+ examples minimum)
 
 ---
 
@@ -746,146 +918,208 @@ mixed — worth a brief review before committing significant work.
 
 **Status:** ❌ Not started
 
+---
+
 ### 9.1 — Abstract Infrastructure Layers
-**Priority:** 🟠 HIGH — start during Phase 7, before other deployment work
-- Storage: `STORAGE_TYPE=local` → `s3`
-- Email: `EMAIL_PROVIDER=smtp` → `ses`
-- OCR: `OCR_PROVIDER=tesseract` → `textract`
+**Owner:** Ayman | **Priority:** 🟠 HIGH — start during Phase 7, before other deployment work
+**Status:** ❌ Not started
+- Storage: `STORAGE_TYPE=local` (dev) → `s3` (prod)
+- Email: `EMAIL_PROVIDER=smtp` (dev) → `ses` (prod)
+- OCR: `OCR_PROVIDER=tesseract` (dev) → `textract` (prod)
+- ⚠️ Do this BEFORE any other deployment work — swapping after deployment is 10x harder
+
+---
 
 ### 9.2 — AWS Infrastructure Setup
-- RDS PostgreSQL 15 (pgvector + uuid-ossp), ElastiCache Redis, S3 (AES-256)
+**Owner:** Ayman + Youssef | **Status:** ❌ Not started
+- RDS PostgreSQL 15 (pgvector + uuid-ossp extensions), ElastiCache Redis, S3 (AES-256 encryption)
 - ECS or EC2 for containers, VPC security groups, automated backups (7-day retention)
 - Production secrets in AWS Secrets Manager
 - Replace `JWT_REFRESH_SECRET` placeholder with cryptographically random value
 
+---
+
 ### 9.3 — CI → CD Pipeline & Staging
+**Owner:** Ayman + Youssef | **Status:** ❌ Not started
 - Staging deploy job with manual approval gate
 - Blue-green deploy + rollback strategy
 - `docker-compose.prod.yml` — secrets from env vars only
-- Staging environment with separate DB and S3
+- Staging environment with separate DB and S3 bucket
+
+---
 
 ### 9.4 — Monitoring: Sentry + CloudWatch
+**Owner:** Ayman + Youssef | **Status:** ❌ Not started
 - Sentry for React frontend JS errors (free tier)
 - Structured logging (winston/pino) → CloudWatch
 - Alarms: CPU > 80%, Memory > 85%, Error rate > 1%, queue depth > 100
 - Wire `_finalizeLogin` alert (deferred from Phase 1.7): Sentry alert when outer catch fires > N times/hour
 - Wire Paymob activation failure to dead-letter notification (deferred from Phase 1.6)
 
+---
+
 ### 9.5 — Frontend: Vercel Deployment
+**Owner:** Youssef | **Status:** ❌ Not started
 - vercel.json config, custom domain, preview deploys for PRs
 
+---
+
 ### 9.6 — Paymob Webhook Activation
-**Status:** ⏳ BLOCKED — Paymob test API keys required
-**Location:** `subscriptions.service.ts:383` — `TODO(1.6)` in place
+**Owner:** Ayman | **Status:** ⏳ BLOCKED — Paymob test API keys required
+**Location:** `subscriptions.service.ts:383` — `TODO(1.6)` already in place
 **When unblocked:**
-- Idempotency check, DB transaction guard for race conditions
+- Idempotency check — prevent double-activation in race conditions
+- DB transaction guard
 - Admin alert on activation failure
-- Non-200 response on failure for Paymob retry
+- Non-200 response on failure so Paymob knows to retry
+
+---
 
 ### 9.7 — Migrate JWT from localStorage to httpOnly Cookies
-**Priority:** 🟡 MEDIUM — do before production deployment
+**Owner:** Youssef | **Priority:** 🟡 MEDIUM — do before production deployment
+**Status:** ❌ Not started
 - Current JWTs in localStorage (authSlice.ts, axios.ts ×3)
-- ~1 day effort: Set-Cookie (backend) + remove localStorage (frontend) + `axios withCredentials: true` + refresh reads from cookie
+- Zero XSS risk today (Phase 3.5 confirmed zero dangerouslySetInnerHTML)
+- ~1 day effort: Set-Cookie (backend) + remove localStorage (frontend) + `axios withCredentials: true` + refresh endpoint reads from cookie
+
+---
 
 ### 9.8 — Fix localhost:5175 → Production URLs
-- If not already done in Phase 5.4, replace remaining references with production URLs
-- `NODE_ENV !== 'production'` gate on CORS/CSP localhost entries already in place — verify before deploy
+**Owner:** Ayman | **Status:** ❌ Not started
+- If not already done in Phase 5.4, replace any remaining localhost references with production URLs
+- `NODE_ENV !== 'production'` gate on CORS/CSP localhost entries already in place (Phase 4.3) — verify before deploy
 
 ---
 
 ## 🔒 PHASE 10 — SOC 2 Readiness
-**Status:** ❌ Not started
+**Status:** ❌ Not started — build security habits now, formal certification later
+
+---
 
 ### 10.1 — Data Retention & Audit Trail
+**Owner:** Ayman + Youssef | **Status:** ❌ Not started
 - Retention periods: Contracts 7yr, Audit logs 3yr, Sessions 30d
-- Soft delete for contracts (never hard delete), immutable audit_logs
+- Soft delete for contracts — never hard delete, mark as deleted only
+- Immutable `audit_logs` table (no UPDATE/DELETE allowed)
 - Audit log viewer in admin portal
 - Document in `docs/DATA_RETENTION_POLICY.md`
 
+---
+
 ### 10.2 — Encryption & Access Controls
-- RDS encryption at rest, S3 SSE, HTTPS/TLS at load balancer
+**Owner:** Ayman + Youssef | **Status:** ❌ Not started
+- RDS encryption at rest, S3 SSE, HTTPS/TLS enforced at load balancer
 - Never log PII in application logs
 - External penetration test before launch
 
+---
+
 ### 10.3 — AI Prompt Data Compliance (SOC 2 + GDPR)
-- Audit all Anthropic API prompts — no full user PII sent
-- Data anonymization layer before external AI calls
-- MENA privacy: Egypt Law 151 of 2020, UAE Decree-Law No. 45 of 2021
+**Owner:** Ayman | **Status:** ❌ Not started
+- Audit all Anthropic API prompts — ensure no full user PII is sent to external AI
+- Data anonymization layer before any external AI calls
+- MENA privacy law compliance: Egypt Law 151 of 2020, UAE Decree-Law No. 45 of 2021, Saudi PDPL
+
+---
 
 ### 10.4 — Mobile App (PWA First)
-**Status:** ❌ Not started
+**Owner:** Youssef | **Status:** ❌ Not started
+- Progressive Web App first — installable, offline-capable
+- Native shell (Capacitor) later if needed
 
 ---
 
 ## 📊 PHASE 11 — Training Data & AI Improvement
-**Status:** ❌ Not started
+**Status:** ❌ Not started — start collecting data now
+
+---
 
 ### 11.1 — Build Feedback Loop & Training Dataset
-- UI for flagging incorrect clause extractions
-- `clause_extraction_feedback` table + admin review UI
-- Corrections become few-shot examples
-- Track accuracy per document type (Agreement, Particular Conditions, General Conditions)
+**Owner:** Ayman + Youssef | **Status:** ❌ Not started
+- UI for flagging incorrect clause extractions (thumbs up/down on each extracted clause)
+- `clause_extraction_feedback` table + admin review UI (correct + approve)
+- Approved corrections become few-shot examples in future extraction prompts
+- Track extraction accuracy per document type (Agreement, Particular Conditions, General Conditions)
 - Label Studio setup: `docker run -p 8080:8080 heartexlabs/label-studio`
-- Target: 500+ annotated clauses before fine-tuning
+- Target: 500+ annotated clauses before attempting any fine-tuning
 
 ---
 
 ## 🏆 Competitive Moat — Must Never Be Deprioritized
 
-1. **Arabic contract NLP** — genuine extraction + risk analysis, not just translated UI
-2. **MENA regulatory compliance** — UAE PDPL, Egypt Law 151, Saudi PDPL built natively
-3. **Construction-specific clause library** — FIDIC, NEC, local Egyptian/UAE standards
-4. **MENA price accessibility** — enterprise CLMs cost $50k–$500k/year; SIGN targets mid-size MENA firms
+1. **Arabic contract NLP** — genuine Arabic clause extraction and risk analysis, not just a translated UI
+2. **MENA regulatory compliance** — UAE PDPL, Egypt Law 151, Saudi PDPL built natively into the platform
+3. **Construction-specific clause library** — FIDIC, NEC, local Egyptian/UAE standard contracts as reference
+4. **MENA price accessibility** — enterprise CLMs cost $50k–$500k/year. SIGN targets mid-size MENA construction firms
 
-**⚠️ TIMING ALERT:** Trimble acquired Document Crunch (April 2026). Zero MENA presence currently. SIGN has ~12-18 months before they potentially enter. Use this window.
+**⚠️ TIMING ALERT:** Trimble acquired Document Crunch (April 2026) and is integrating it into Trimble Construction One. They currently have zero Arabic/MENA presence. SIGN has approximately 12-18 months before a well-funded competitor with 10,000+ construction project deployments potentially enters the MENA market. Use this window.
 
 ---
 
 ## 🏁 Completion Tracker
 
-| Phase | Task | Status | Owner |
-|-------|------|--------|-------|
-| 1 | All core bug fixes | ✅ Complete | A+Y |
-| 2 | Testing & CI (49 tests) | ✅ Complete | A |
-| 3 | Input Security (all 5) | ✅ Complete | A+Y |
-| 4 | Security Hardening + Password (6 DTOs) | ✅ Complete | A+Y |
-| 5.1 | CLAUDE.md + lessons.md | ✅ Ongoing (80 lessons) | A+Y |
-| 5.2 | docs/SETUP.md | ⏳ In progress | A |
-| 5.3 | Clean stale branches | ❌ Not started | A |
-| 5.4 | Fix ManageX backlinks (4 files) | ❌ Not started | Y |
-| 5.5 | Legal compliance gaps | ❌ Not started | Y |
-| 5.6 | Admin-security ILIKE fix | ❌ Not started | A |
-| 5.7 | failed_login_attempts reset | ❌ Not started | A |
-| 5.8 | Password reuse block | ❌ Not started | A |
-| 6.1 | ManageX Rebrand | ✅ Complete | Y |
-| 6.2 | Coming Soon Pages | ❌ Not started | Y |
-| 6.3 | ManageX Landing Polish | ❌ Not started | Y |
-| 6.4 | Mobile Responsive | ❌ Not started | Y |
-| 6.5 | Visual Confidentiality | ❌ After Phase 7 | Y |
-| 6.6 | Invisible Watermarks | ❌ After Phase 7 | Y |
-| 7.1 | Obligation Tracking | ❌ Not started | A+Y |
-| 7.2 | Portfolio Dashboard | ❌ Not started | Y |
-| 7.3 | Guest Portal | ❌ Not started | Y |
-| 7.4 | Counterparty Redlining | ❌ Not started | Y |
-| 7.5 | Project Enhancements | ❌ Not started | Y |
-| 7.6 | RFP Analysis | ❌ Not started | A+Y |
-| 7.7 | Contract Playbook | ❌ Not started | A+Y |
-| 7.8 | Word Add-In | ❌ Not started | Y |
-| 7.9 | Knowledge Base | ❌ Not started | A |
-| 7.10 | Poor Scan Quality | ❌ Not started | A+Y |
-| 7.11 | French i18n | ❌ Not started | A+Y |
-| 7.12 | Official Gazette | ❌ Not started | Y |
-| 7.13 | ERP Integration | ❌ Not started | A+Y |
-| 7.14 | Settlement Checkbox | ❌ Not started | Y |
-| 7.15 | Clause Library | ✅ Complete | A |
-| 7.16 | Frontend Test Coverage | ⚠️ Partial | Y |
-| 7.17 | Negotiation History | ❌ Not started | A+Y |
-| 7.18 | Self-Service Generation | ❌ Not started | Y |
-| 7.19 | Owner/Insurer Portal | ❌ Not started | Y+A |
-| 8 | AI Migration | ❌ Not started | A+Y |
-| 9 | Deployment | ❌ Not started | A+Y |
-| 10 | SOC 2 | ❌ Not started | A+Y |
-| 11 | Training Data | ❌ Not started | A+Y |
+| Phase | Task | Status | Owner | Date |
+|-------|------|--------|-------|------|
+| 1 | All core bug fixes (1.1-1.5) | ✅ Complete | A+Y | 2026-05-20 |
+| 2 | Testing & CI (139 tests) | ✅ Complete | A | 2026-05-20 |
+| 3 | Input Security (all 5 + ILIKE) | ✅ Complete | A+Y | 2026-05-25 |
+| 4 | Security Hardening + Password | ✅ Complete | A+Y | 2026-05-20 |
+| 5.1 | CLAUDE.md + lessons.md (109) | ✅ Ongoing | A+Y | ongoing |
+| 5.2 | docs/SETUP.md (524 lines) | ✅ Complete | A | 2026-05-21 |
+| 5.3 | Clean stale branches | ✅ Complete | A | 2026-05-22 |
+| 5.4 | Fix ManageX backlinks | ✅ Complete | Y | 2026-05-22 |
+| 5.5 | Legal compliance + FR locale | ✅ Complete | Y | 2026-05-22 |
+| 5.6 | Admin-security ILIKE fix | ✅ Complete | A | 2026-05-25 |
+| 5.7 | failed_login_attempts (no bug) | ✅ Confirmed | A | 2026-05-22 |
+| 5.8 | Password reuse block | ✅ Complete | A | 2026-05-22 |
+| 6.1 | ManageX Rebrand | ✅ Complete | Y | 2026-05-14 |
+| 6.2 | Coming Soon Pages | ✅ Complete | Y | 2026-05-24 |
+| 6.3 | Landing Polish | ✅ Complete | Y | 2026-05-24 |
+| 6.4 | Mobile Responsive | ✅ Complete | Y | 2026-05-25 |
+| 6.7 | Frontend Design Skill | ✅ Available | — | — |
+| 6.8 | /review Command | ✅ Complete | A | 2026-05-24 |
+| 6.9 | Waitlist Email Capture | ❌ Not started | A+Y | |
+| 6.10 | Mission Statement | ⏳ Blocked | Y | |
+| 7.1 | Obligation Tracking (4 steps) | ✅ Complete | A+Y | 2026-05-25 |
+| 7.2 | Route Shadowing Fix | ✅ Complete | A | 2026-05-25 |
+| 7.3 | Enum Migration Fix | ✅ Complete | A | 2026-05-25 |
+| 7.4 | Reminders Endpoint | ✅ Complete | A | 2026-05-25 |
+| 7.5 | Type Dropdown Labels | ❌ Not started | Y | |
+| 7.6 | Calendar Plan Gate | ❌ Not started | Y | |
+| 7.7 | Wire Reminder History | ❌ Not started | Y | |
+| 7.8 | Portfolio Empty State | ❌ Not started | Y | |
+| 7.9 | Audit Silent Migrations | ❌ Not started | A | |
+| 7.10 | In-app Dispatch (Reminder Processor) | ❌ Not started | A | |
+| 7.11 | RTL Polish (react-big-calendar) | ❌ Not started | Y | |
+| 7.12 | File Upload + Evidence FileDropZone | ❌ Not started | A+Y | |
+| 7.13 | Clause Deep-Linking from Drawer | ❌ Not started | Y | |
+| 7.14 | Calendar effectiveStatus Coloring | ❌ Not started | Y | |
+| 7.15 | Obligation Delete/Edit Permissions | ❌ Not started | A | |
+| 7.16 | Legal-Translator i18n Review | ❌ Not started | A+Y | |
+| 7.17 | Portfolio Dashboard | ❌ Not started | Y | |
+| 7.18 | Guest Portal | ❌ Not started | Y | |
+| 7.19 | Counterparty Redlining | ❌ Not started | Y | |
+| 7.20 | Project Enhancements | ❌ Not started | Y | |
+| 7.21 | RFP Analysis | ❌ Not started | A+Y | |
+| 7.22 | Contract Playbook | ❌ Not started | A+Y | |
+| 7.23 | Word Add-In | ❌ Not started | Y | |
+| 7.24 | Knowledge Base | ❌ Not started | A | |
+| 7.25 | Poor Scan Quality | ❌ Not started | A+Y | |
+| 7.26 | French i18n | ⚠️ Partial | A+Y | |
+| 7.27 | Official Gazette | ❌ Not started | Y | |
+| 7.28 | ERP Integration | ❌ Not started | A+Y | |
+| 7.29 | Settlement Checkbox | ❌ Not started | Y | |
+| 7.30 | Clause Library | ✅ Complete | A | |
+| 7.31 | Frontend Tests | ⚠️ Partial (44) | Y | |
+| 7.32 | Negotiation History | ❌ Not started | A+Y | |
+| 7.33 | Self-Service Generation | ❌ Not started | Y | |
+| 7.34 | Owner/Insurer Portal | ❌ Not started | Y+A | |
+| 6B.1 | Visual Confidentiality | ❌ After Phase 7 | Y | |
+| 6B.2 | Invisible Watermarks | ❌ After Phase 7 | Y | |
+| 8 | AI Migration | ❌ Not started | A+Y | |
+| 9 | Deployment | ❌ Not started | A+Y | |
+| 10 | SOC 2 | ❌ Not started | A+Y | |
+| 11 | Training Data | ❌ Not started | A+Y | |
 
 ---
 
@@ -894,47 +1128,46 @@ mixed — worth a brief review before committing significant work.
 | Month | Focus | Status |
 |-------|-------|--------|
 | Month 1 | Bugs, tests, input security | ✅ Done |
-| Month 2 | Security, docs, compliance, pre-feature fixes | ✅ Phase 4 done. Phase 5 in progress |
-| Month 3 | Feature development (Tier 1 + 2) | ⏳ 7.1 → 7.2 → 7.3 → 7.4 → 7.5 → 7.6 |
-| Month 4 | Features (Tier 3-4) + deployment prep (9.1) | ⏳ Phase 7 continued + 9.1 starts |
-| Month 5+ | Deployment, SOC, advanced features | ⏳ Phase 9, 10, 7.17-7.19 |
+| Month 2 | Security, docs, compliance, brand, UI | ✅ Phases 4, 5, 6.1-6.4 done |
+| Month 3 | Feature development (Tier 1) | ✅ 7.1-7.4 done. 7.5-7.19 next |
+| Month 4 | Features (Tier 2-3) + deployment prep (9.1) | ⏳ Phase 7 continued + 9.1 starts |
+| Month 5+ | Deployment, 6B, SOC, advanced features | ⏳ Phase 9, 6B, 10, 7.32-7.34 |
 
 ---
 
 ## 🔥 What's Next (Priority Order)
 
 **Ayman:**
-1. 5.2 — Create docs/SETUP.md (in progress)
-2. 5.7 — Investigate failed_login_attempts reset (10 min)
-3. 5.6 — Fix admin-security ILIKE gap (15 min)
-4. 5.8 — Block password reuse (30 min)
-5. 5.3 — Clean stale branches
-6. Update CLAUDE.md — remove DocuSign "Known Bug #2"
+1. 9.1 — Abstract Infrastructure Layers (highest strategic impact — start now)
+2. 7.9 — Audit all migrations for silent EXCEPTION WHEN pattern
+3. 7.21 — RFP & Specification Document Analysis (AI — competitive priority)
+4. 7.25 — Poor Scan Quality Handling (quick win)
+5. 7.24 — Knowledge Base Enhancements
 
 **Youssef:**
-1. 5.4 — Fix ManageX backlinks (5 min)
-2. 5.5 — Complete legal compliance gaps (T&C checkbox, AI disclaimer, FR locale, comms prefs)
-3. 6.2 — Coming Soon pages
-4. 6.4 — Mobile responsive design
+1. 7.7 — Wire Reminder History in Detail Drawer (quick, endpoint ready)
+2. 7.5 — Obligation Type Dropdown Label Consistency
+3. 7.6 — Calendar Page Plan Gate
+4. 7.8 — Portfolio Empty State UX
+5. 7.17 — Portfolio Dashboard (Tier 1 priority)
+6. 7.18 — Guest Portal (Plan Mode first)
+7. 7.19 — Counterparty Redlining
 
-**Both (after Phase 5 + 6 complete):**
-1. 7.1 — Obligation Tracking (Ayman: AI, Youssef: UI)
-2. 7.2 — Portfolio Dashboard (Youssef)
-3. 7.3 — Guest Portal (Youssef — Plan Mode first)
-4. 7.4 — Counterparty Redlining (Youssef)
+**Both (when convenient):**
+1. 6.9 — Waitlist Email Capture
+2. 6.10 — Mission Statement Rewrite (when brand conversation happens)
 
 ---
 
 ## 💡 Claude's Recommendations (May 2026)
 
-1. **Fix 5.7 (failed_login_attempts) immediately** — Users may get locked out after 5 total logins. 10-min investigation.
-2. **Fix 5.6 this week** — Copy existing escapeLikeParam() pattern. 15 min.
-3. **Start 7.1 (Obligation Tracking) as soon as Phase 5 + 6 are done** — #1 competitive differentiator.
-4. **Start 9.1 (Abstract Infrastructure) during Phase 7** — don't wait until all features are done.
-5. **Phase 6.5–6.6 after features** — Features change UI, protection layers built now need rebuilding.
-6. **AWS SA course** — Ayman is taking this. Maps directly to Phase 9.
+1. **Start 9.1 now** — Abstract infrastructure layers BEFORE more features are built on local storage/SMTP/tesseract. Every feature built on top of local services makes deployment harder later.
+2. **Youssef: clear 7.5-7.8 first** — Quick polish items from 7.1 that take 1-2 hours total, then move to 7.17 Dashboard.
+3. **7.21 (RFP Analysis) is Ayman's next competitive feature** — Unique to construction, Trimble investing heavily, builds on existing AI extraction pipeline.
+4. **Phase 6B after Phase 7** — Features will change UI, protection layers built now need rebuilding.
+5. **AWS SA course** — Ayman is taking this. Maps directly to Phase 9 (RDS, ElastiCache, S3, EC2/ECS, VPC, IAM, CloudWatch).
 
 ---
 
-*Last updated: 2026-05-21*
-*Next review: When Phase 5 is complete*
+*Last updated: 2026-05-25*
+*Next review: When 7.5-7.9 are cleared and 9.1 planning starts*
