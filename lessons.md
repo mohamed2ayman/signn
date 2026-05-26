@@ -3588,7 +3588,7 @@ migration recorded success while skipping the real work.
    values. Fail loud at boot if the schema doesn't match the code's
    expectations.
 
-**Tracked fix:** Phase 7.2-E in NEXT_PHASES.md.
+**Tracked fix:** Phase 7.3 in NEXT_PHASES.md.
 
 ---
 
@@ -3599,7 +3599,7 @@ the original prompt explicitly required. The decision was documented in
 the commit message as "production quality; no TODO placeholders needed"
 but never surfaced to the prompt author for sign-off. The verification
 pass two days later flagged the divergence and required a retroactive
-fix (greppable `_TODO_*` parallel keys + a 7.2-H ticket for legal-
+fix (greppable `_TODO_*` parallel keys + a 7.16 ticket for legal-
 translator review).
 
 **Lesson:** Spec deviations should be raised as clarifying questions
@@ -3622,7 +3622,7 @@ the answer is to stop and ask, not to skip X and explain why later.
 4. The cost of a quick clarifying question is far lower than the cost
    of retroactive cleanup once the divergence is discovered.
 
-**Tracked fix:** Phase 7.2-H in NEXT_PHASES.md, plus the
+**Tracked fix:** Phase 7.16 in NEXT_PHASES.md, plus the
 `_TODO_*` parallel-key pattern in `ar/common.json` and `fr/common.json`
 restored in this housekeeping pass.
 
@@ -3787,7 +3787,7 @@ controller has been bypassed.
   imported modules and add constraints proactively.
 
 **Reference:** `backend/src/modules/obligations/obligations.controller.ts`,
-PR #26 (Phase 7.2-G).
+PR #26 (Phase 7.2).
 
 ## 109. PostgreSQL — ALTER TYPE ADD VALUE Requires `transaction = false` in TypeORM Migrations
 
@@ -3842,6 +3842,6 @@ export class FixObligationStatusEnum1748000000004 implements MigrationInterface 
    `ObligationSchemaCheckService` for the pattern.
 
 **Reference:** `backend/src/database/migrations/1748000000004-FixObligationStatusEnum.ts`,
-`backend/src/config/data-source.ts`, PR #27 (Phase 7.2-E). See also
+`backend/src/config/data-source.ts`, PR #27 (Phase 7.3). See also
 lesson #31 and #103 for the silent-catch anti-pattern that caused the
 original bug.

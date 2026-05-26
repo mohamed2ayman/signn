@@ -1,7 +1,7 @@
 # CLAUDE.md — Project Intelligence File
 > Read this entire file at the start of every Claude Code session before touching any code.
 > This file is the single source of truth for all architectural decisions, rules, and context.
-> Last updated: 2026-05-25 (Phase 7.2 fixes shipped — 7.2-G route shadowing (PR #26), 7.2-E obligation_status enum (PR #27), 7.2-C reminders endpoint (PR #29). 87 backend tests total. Lessons #108–109 added.)
+> Last updated: 2026-05-25 (Phase 7 fixes shipped — 7.2 route shadowing (PR #26), 7.3 obligation_status enum (PR #27), 7.4 reminders endpoint (PR #29). 87 backend tests total. Lessons #108–109 added.)
 
 ---
 
@@ -440,7 +440,7 @@ docker exec sign-postgres psql -U sign_user -d sign_db -c \
 
 ## Known Local Dev Gotchas
 
-### ✅ obligation_status enum MET/WAIVED — RESOLVED (Phase 7.2-E, PR #27)
+### ✅ obligation_status enum MET/WAIVED — RESOLVED (Phase 7.3, PR #27)
 
 Migration `1718000000002-AddComplianceMonitoring.ts` previously used the
 wrong enum type name (`obligations_status_enum` vs `obligation_status`)
@@ -518,7 +518,7 @@ All work is local development only.
 1. **~~DocuSign webhook was a no-op~~** — resolved in Phase 1.3: webhook now updates contract state correctly. EXECUTED status is safe to build on.
 2. **axios.ts default URL is wrong** — points to port 3001 instead of 3000. Always use `VITE_API_URL`.
 3. **Guest Portal is a stub** — treat `/contractor/*` as not built. Needs full planning session before building.
-4. **~~No automated tests~~** — resolved in Phase 2: 49 tests across all 3 services (33 backend, 8 frontend, 8 AI pipeline). Backend count now 87 as of Phase 7.2-C (PR #29).
+4. **~~No automated tests~~** — resolved in Phase 2: 49 tests across all 3 services (33 backend, 8 frontend, 8 AI pipeline). Backend count now 87 as of Phase 7.4 (PR #29).
 5. **~~No CI pipeline~~** — resolved in Phase 2: GitHub Actions CI runs on every push and PR to main (3 parallel jobs).
 
 ### Local Development Workarounds (before deployment)
@@ -2160,7 +2160,7 @@ badge in TopBar/AdminLayout updates instantly without waiting for the
    stale. Use React Query with `refetchInterval` instead. See lesson
    #105.
 
-### Known limitation — obligation reminders blocked on 7.2-I
+### Known limitation — obligation reminders blocked on 7.10
 
 The Step 4 polling correctly refreshes notifications for ALL types that
 the backend actually writes to the `notifications` table — system
@@ -2168,18 +2168,18 @@ events, contract events, admin actions, etc. It does NOT (yet) surface
 obligation reminders, because the obligation-reminder processor sends
 email only and never calls `NotificationDispatchService.
 dispatchObligationReminder()` to create the in-app row. This is
-a backend gap tracked as **7.2-I** in NEXT_PHASES.md. Once 7.2-I
+a backend gap tracked as **7.10** in NEXT_PHASES.md. Once 7.10
 ships, obligation reminders will start appearing on the bell badge
 automatically — no further frontend changes required.
 
 ---
 
-## Phase 7.2 — Bug Fixes & Backend Enhancements (shipped — 2026-05-25)
+## Phase 7.2-7.4 — Bug Fixes & Backend Enhancements (shipped — 2026-05-25)
 
 Three backend fixes shipped as PRs #26, #27, #29. No frontend changes
 in this batch — Youssef wires the drawer integration separately.
 
-### Phase 7.2-G — Route Shadowing Fix (PR #26)
+### Phase 7.2 — Route Shadowing Fix (PR #26)
 
 **Problem:** `GET /obligations/portfolio` and `GET /obligations/calendar`
 returned `400 Validation failed (uuid is expected)` instead of reaching
@@ -2206,7 +2206,7 @@ matching, not during.
 
 ---
 
-### Phase 7.2-E — Obligation Status Enum Fix (PR #27)
+### Phase 7.3 — Obligation Status Enum Fix (PR #27)
 
 **Problem:** `MET` and `WAIVED` were permanently absent from the
 `obligation_status` PostgreSQL enum on every environment. Mark-as-met
@@ -2241,7 +2241,7 @@ Same anti-pattern as lesson #31.
 
 ---
 
-### Phase 7.2-C — Reminders Endpoint (PR #29)
+### Phase 7.4 — Reminders Endpoint (PR #29)
 
 **What shipped:**
 - New `GET /contracts/:contractId/obligations/:obligationId/reminders`
@@ -2256,5 +2256,5 @@ Same anti-pattern as lesson #31.
 - **Total backend tests: 87** (was 80 before this PR)
 
 **Frontend wiring:** Youssef wires `ObligationDetailDrawer`'s Reminder
-History section to this endpoint — tracked as the remaining 7.2-C
+History section to this endpoint — tracked as the remaining 7.7
 frontend half.
