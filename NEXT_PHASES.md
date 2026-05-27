@@ -218,7 +218,7 @@ Implemented by: Ayman & Youssef | Completed: 2026-05-22
 
 ### 6.9 — Waitlist Email Capture & Admin Export
 **Owner:** Youssef (frontend + backend) + Ayman (admin portal)
-**Priority:** 🟡 MEDIUM | **Status:** ❌ Not started
+**Priority:** 🟡 MEDIUM | **Status:** ✅ Complete — 2026-05-27 (PR #33)
 **Depends on:** 6.2 ✅ (cards already built) — can start anytime
 
 **Tasks:**
@@ -1078,7 +1078,7 @@ per-jurisdiction cost for legal-quality review.
 | 6.4 | Mobile Responsive | ✅ Complete | Y | 2026-05-25 |
 | 6.7 | Frontend Design Skill | ✅ Available | — | — |
 | 6.8 | /review Command | ✅ Complete | A | 2026-05-24 |
-| 6.9 | Waitlist Email Capture | ❌ Not started | A+Y | |
+| 6.9 | Waitlist Email Capture | ✅ Complete | A+Y | 2026-05-27 |
 | 6.10 | Mission Statement | ⏳ Blocked | Y | |
 | 7.1 | Obligation Tracking (4 steps) | ✅ Complete | A+Y | 2026-05-25 |
 | 7.2 | Route Shadowing Fix | ✅ Complete | A | 2026-05-25 |

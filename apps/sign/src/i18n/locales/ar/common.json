@@ -29,7 +29,8 @@
     "team": "الفريق",
     "store": "متجر العقود",
     "subscription": "الاشتراك",
-    "security": "الأمان"
+    "security": "الأمان",
+    "waitlist": "قائمة الانتظار"
   },
   "auth": {
     "login": "تسجيل الدخول",
@@ -493,7 +494,23 @@
     "pendingKnowledgeAssetReviews": "مراجعات أصول المعرفة المعلقة",
     "pendingCount": "{{count}} معلق",
     "noPendingReviews": "لا توجد مراجعات معلقة",
-    "recentUsers": "المستخدمون الجدد"
+    "recentUsers": "المستخدمون الجدد",
+    "waitlist": {
+      "title": "قائمة الانتظار",
+      "subtitle": "طلبات التنبيه من بطاقات المنتجات القادمة",
+      "export": "تصدير CSV",
+      "exporting": "جارٍ التصدير…",
+      "empty": "لا توجد إدخالات في قائمة الانتظار بعد",
+      "filter": {
+        "all": "جميع المنتجات"
+      },
+      "columns": {
+        "product": "المنتج",
+        "email": "البريد الإلكتروني",
+        "signedUp": "تاريخ التسجيل"
+      },
+      "total": "{{count}} إدخال"
+    }
   },
   "contractorPortal": {
     "dashboard": "لوحة تحكم المقاول",

@@ -17,6 +17,7 @@ export const THROTTLER_NAMES = [
   'recovery',
   'refresh',
   'invitation',
+  'waitlist',
 ] as const;
 
 export type ThrottlerName = (typeof THROTTLER_NAMES)[number];

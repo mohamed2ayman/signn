@@ -57,6 +57,7 @@ import AdminAnalyticsPage from '@/pages/admin/AdminAnalyticsPage';
 import AdminOrganizationsPage from '@/pages/admin/AdminOrganizationsPage';
 import AdminBillingPage from '@/pages/admin/AdminBillingPage';
 import AdminComingSoonPage from '@/pages/admin/AdminComingSoonPage';
+import AdminWaitlistPage from '@/pages/admin/AdminWaitlistPage';
 import AdminSecuritySettingsPage from '@/pages/admin/AdminSecuritySettingsPage';
 import AdminSecurityDashboardPage from '@/pages/admin/AdminSecurityDashboardPage';
 import AdminSecurityAuditPage from '@/pages/admin/AdminSecurityAuditPage';
@@ -274,6 +275,7 @@ function App() {
         <Route path="organizations"     element={<AdminOrganizationsPage />} />
         <Route path="analytics"         element={<AdminAnalyticsPage />} />
         <Route path="billing"           element={<AdminBillingPage />} />
+        <Route path="waitlist"          element={<AdminWaitlistPage />} />
         <Route path="account-settings"  element={<AdminComingSoonPage title="Account Settings" />} />
       </Route>
 

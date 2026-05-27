@@ -94,6 +94,9 @@ const ICONS = {
   security: (
     <path d="M9 12.75L11.25 15 15 9.75M21 12c0 1.268-.63 2.39-1.593 3.068a3.745 3.745 0 01-1.043 3.296 3.745 3.745 0 01-3.296 1.043A3.745 3.745 0 0112 21c-1.268 0-2.39-.63-3.068-1.593a3.746 3.746 0 01-3.296-1.043 3.745 3.745 0 01-1.043-3.296A3.745 3.745 0 013 12c0-1.268.63-2.39 1.593-3.068a3.745 3.745 0 011.043-3.296 3.746 3.746 0 013.296-1.043A3.746 3.746 0 0112 3c1.268 0 2.39.63 3.068 1.593a3.746 3.746 0 013.296 1.043 3.746 3.746 0 011.043 3.296A3.745 3.745 0 0121 12z" />
   ),
+  waitlist: (
+    <path d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
+  ),
 } as const;
 
 // ── Nav item model ─────────────────────────────────────────────────────
@@ -124,6 +127,7 @@ const NAV_GROUPS: AdminNavItem[][] = [
   [
     { label: 'nav.analytics', path: '/admin/analytics', icon: ICONS.analytics },
     { label: 'nav.billing',   path: '/admin/billing',   icon: ICONS.billing,   opsHidden: true },
+    { label: 'nav.waitlist',  path: '/admin/waitlist',  icon: ICONS.waitlist,  opsHidden: true },
   ],
   // Group 4 — Configuration (pushed to bottom via mt-auto on the group)
   [
