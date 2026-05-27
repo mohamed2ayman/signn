@@ -44,6 +44,7 @@ import { AdminBillingModule } from './modules/admin-billing/admin-billing.module
 import { NegotiationModule } from './modules/negotiation/negotiation.module';
 import { AdminSecurityModule } from './modules/admin-security/admin-security.module';
 import { ComplianceModule } from './modules/compliance/compliance.module';
+import { WaitlistModule } from './modules/waitlist/waitlist.module';
 import { TokenBlacklistModule } from './common/services/token-blacklist.module';
 import { dataSourceOptions } from './config/data-source';
 
@@ -174,6 +175,7 @@ import { dataSourceOptions } from './config/data-source';
           { name: 'recovery',   ttl: 3_600_000,  limit: 3  },
           { name: 'refresh',    ttl: 900_000,    limit: 20 },
           { name: 'invitation', ttl: 3_600_000,  limit: 5  },
+          { name: 'waitlist',   ttl: 3_600_000,  limit: 3  },
         ],
       }),
     }),
@@ -216,6 +218,7 @@ import { dataSourceOptions } from './config/data-source';
     NegotiationModule,
     AdminSecurityModule,
     ComplianceModule,
+    WaitlistModule,
   ],
 })
 export class AppModule {}

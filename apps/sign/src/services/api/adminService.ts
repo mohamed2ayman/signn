@@ -260,6 +260,19 @@ export const adminService = {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   },
+
+  // ─── Waitlist ───────────────────────────────────────────────────────────────
+  getWaitlist: (productName?: string) =>
+    api.get<WaitlistEntry[]>('/admin/waitlist', {
+      params: productName ? { product_name: productName } : undefined,
+    }).then(r => r.data),
+
+  exportWaitlist: async (productName?: string) => {
+    const entries = await api.get<WaitlistEntry[]>('/admin/waitlist/export', {
+      params: productName ? { product_name: productName } : undefined,
+    }).then(r => r.data);
+    return entries;
+  },
 };
 
 // ─── System Analytics types ────────────────────────────────────────────────
@@ -577,4 +590,13 @@ export interface FailedPayment {
   currency: string;
   lastAttempt: string;
   failureCount: number;
+}
+
+// ─── Waitlist types ───────────────────────────────────────────────────────────
+
+export interface WaitlistEntry {
+  id: string;
+  email: string;
+  product_name: string;
+  created_at: string;
 }

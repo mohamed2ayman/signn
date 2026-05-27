@@ -747,6 +747,14 @@ a {
   background: color-mix(in srgb, var(--soon-color, var(--mx-cyan-d)) 10%, transparent);
   border: 1px solid color-mix(in srgb, var(--soon-color, var(--mx-cyan-d)) 25%, transparent);
 }
+.mx-product__notify-error {
+  font-family: var(--f-body);
+  font-size: 12px;
+  font-weight: 400;
+  color: #EF4444;
+  margin-top: 6px;
+  line-height: 1.4;
+}
 .mx-visually-hidden {
   position: absolute;
   width: 1px;

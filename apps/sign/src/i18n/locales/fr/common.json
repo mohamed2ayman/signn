@@ -33,6 +33,7 @@
     "auditLog": "Journal d'audit",
     "security": "Sécurité",
     "billing": "Facturation",
+    "waitlist": "Liste d'attente",
     "accountSettings": "Paramètres du compte",
     "system": "Système"
   },
@@ -508,7 +509,23 @@
     "pendingKnowledgeAssetReviews": "Examens de ressources documentaires en attente",
     "pendingCount": "{{count}} en attente",
     "noPendingReviews": "Aucun examen en attente",
-    "recentUsers": "Utilisateurs récents"
+    "recentUsers": "Utilisateurs récents",
+    "waitlist": {
+      "title": "Liste d'attente",
+      "subtitle": "Inscriptions depuis les cartes Produits à venir",
+      "export": "Exporter CSV",
+      "exporting": "Export en cours…",
+      "empty": "Aucune inscription pour le moment",
+      "filter": {
+        "all": "Tous les produits"
+      },
+      "columns": {
+        "product": "Produit",
+        "email": "E-mail",
+        "signedUp": "Date d'inscription"
+      },
+      "total": "{{count}} inscriptions"
+    }
   },
   "contractorPortal": {
     "dashboard": "Tableau de bord entrepreneur",

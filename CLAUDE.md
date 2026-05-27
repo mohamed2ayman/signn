@@ -1,7 +1,7 @@
 # CLAUDE.md — Project Intelligence File
 > Read this entire file at the start of every Claude Code session before touching any code.
 > This file is the single source of truth for all architectural decisions, rules, and context.
-> Last updated: 2026-05-25 (Phase 7 fixes shipped — 7.2 route shadowing (PR #26), 7.3 obligation_status enum (PR #27), 7.4 reminders endpoint (PR #29). 87 backend tests total. Lessons #108–109 added.)
+> Last updated: 2026-05-27 (Phase 6.9 shipped — waitlist email capture & admin export (PR #33). 104 backend tests total. Lesson #110 added.)
 
 ---
 
@@ -1755,6 +1755,51 @@ Phase 6.7 was originally noted as "Frontend Design plugin install". This was bas
 ### Hard rules added
 - See Custom Slash Commands section above
 - Never attempt `/plugin install` — the command does not exist
+
+---
+
+## Phase 6.9 — Waitlist Email Capture & Admin Export (shipped — 2026-05-27)
+
+Full-stack implementation wiring the "Notify Me" inputs on the 5 MANAGEX Coming Soon product cards (VENDRIX, SPANTEC, CLAIMX, GUARDIA, DOXEN) to a real backend, with a SIGN admin export page. PR #33.
+
+### What shipped
+
+**Backend (new module `backend/src/modules/waitlist/`):**
+- Migration `1749000000001-CreateProductWaitlist.ts` — `product_waitlist` table: UUID PK, email VARCHAR(255), product_name VARCHAR(50), created_at TIMESTAMPTZ. Named unique constraint `uq_product_waitlist_email_product(email, product_name)`. Two indexes: `idx_product_waitlist_product_name`, `idx_product_waitlist_created_at`. `CREATE TABLE IF NOT EXISTS` — no `EXCEPTION WHEN` blocks (per lessons #31, #103).
+- `ProductWaitlist` entity with `@Entity('product_waitlist')`, `@PrimaryGeneratedColumn('uuid')`, `@Column`, `@CreateDateColumn`.
+- `CreateWaitlistEntryDto` — `@IsEmail @MaxLength(255)` on email, `@IsIn(WAITLIST_PRODUCTS)` on product_name. `WAITLIST_PRODUCTS = ['VENDRIX','SPANTEC','CLAIMX','GUARDIA','DOXEN'] as const`.
+- `WaitlistService.create()` — saves entry; on PostgreSQL error code `'23505'` (duplicate key) returns `{ success: true }` silently (no 409 — enumeration risk). `WaitlistService.findAll(productName?)` — optional `WHERE product_name =` filter, ordered by `created_at DESC`.
+- `WaitlistController`:
+  - `POST /waitlist` — unauthenticated, `@ThrottleOnly('waitlist')` (3 req/hr per IP), calls `stripHtml(dto.email)`, returns `{ success: true }`.
+  - `GET /admin/waitlist` — `JwtAuthGuard + RolesGuard + @Roles(SYSTEM_ADMIN)`, optional `?product_name` query param.
+  - `GET /admin/waitlist/export` — same guards, returns full array for CSV assembly.
+- `app.module.ts` — added `{ name: 'waitlist', ttl: 3_600_000, limit: 3 }` to throttlers array + `WaitlistModule` import.
+- `throttle-only.decorator.ts` — `'waitlist'` added to `THROTTLER_NAMES`.
+- 17 new backend tests (5 service + 12 controller), total backend: 104 tests.
+
+**MANAGEX frontend (`apps/managex/src/App.tsx`):**
+- Native `fetch()` — never imports SIGN's `axios.ts` (different app, different process).
+- `API_URL = import.meta.env.VITE_API_URL` with `console.warn` in DEV if undefined.
+- `NotifyEntry` type extended with `loading: boolean`, `error: string | null`.
+- `submitNotify` async — client email regex validation → loading state → `fetch(${API_URL}/waitlist)` → handles 429 ("Too many requests, try again later") / network error / success.
+- JSX: disabled input/button during loading, button shows "Sending…", `<p role="alert">` for inline error.
+- `apps/managex/.env.example` — `VITE_API_URL=http://localhost:3000/api/v1` with lesson #83 warning.
+- `apps/managex/.env` — created locally (gitignored).
+- `apps/managex/src/index.css` — `.mx-product__notify-error` style class added.
+
+**SIGN admin portal:**
+- `AdminWaitlistPage.tsx` — React Query `['admin', 'waitlist', productFilter]`, product-colour badges (VENDRIX=orange, SPANTEC=sky, CLAIMX=purple, GUARDIA=green, DOXEN=yellow), overflow-x-auto table wrapper, `toCsv()` + `downloadCsv()` helpers, CSV filename `managex-waitlist-YYYYMMDD.csv`, empty state with envelope icon.
+- Route: `<Route path="waitlist" element={<AdminWaitlistPage />} />` under `/admin/*` in `App.tsx`.
+- Nav item in AdminLayout Group 3 (Insights): `nav.waitlist`, `/admin/waitlist`, mail/envelope icon, `opsHidden: true`.
+- `adminService.ts` — `getWaitlist(productName?)` + `exportWaitlist(productName?)` + `WaitlistEntry` type.
+- i18n: `nav.waitlist` key added to EN/AR/FR. `admin.waitlist.*` block (title, subtitle, export, exporting, empty, filter.all, columns.*{product,email,signedUp}, total) added to all 3 locales in previous step.
+
+### Hard rules — never violate
+1. **Return 200 on duplicate email+product — NEVER 409.** The `POST /waitlist` endpoint is unauthenticated. A 409 would confirm whether an email is already registered, enabling enumeration attacks. The service catches PG error code `'23505'` and returns `{ success: true }` silently.
+2. **Use `@ThrottleOnly('waitlist')` — NEVER plain `@Throttle`.** Adding `'waitlist'` to `THROTTLER_NAMES` in `throttle-only.decorator.ts` is mandatory when adding the throttler to `app.module.ts`. Both must stay in lock-step.
+3. **Never import SIGN's `axios.ts` from the ManageX app.** They are separate Vite apps with separate processes. Use native `fetch()` in ManageX.
+4. **`VITE_API_URL` missing causes silent `"undefined"` in the fetch URL (lesson #83).** Always document it in `.env.example` with a warning comment. The `console.warn` in DEV mode is the runtime guard.
+5. **Every DTO field must have a class-validator decorator (lesson #40).** Plain `@Body()` without DTO, or a DTO with undecorated fields, bypasses ValidationPipe entirely.
 
 ---
 

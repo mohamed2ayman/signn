@@ -33,6 +33,7 @@
     "auditLog": "Audit Log",
     "security": "Security",
     "billing": "Billing",
+    "waitlist": "Waitlist",
     "accountSettings": "Account Settings",
     "system": "System"
   },
@@ -501,7 +502,23 @@
     "pendingKnowledgeAssetReviews": "Pending Knowledge Asset Reviews",
     "pendingCount": "{{count}} pending",
     "noPendingReviews": "No pending reviews",
-    "recentUsers": "Recent Users"
+    "recentUsers": "Recent Users",
+    "waitlist": {
+      "title": "Product Waitlist",
+      "subtitle": "Email sign-ups from the MANAGEX Coming Soon cards",
+      "export": "Export CSV",
+      "exporting": "Exporting…",
+      "empty": "No waitlist entries yet",
+      "filter": {
+        "all": "All Products"
+      },
+      "columns": {
+        "product": "Product",
+        "email": "Email",
+        "signedUp": "Signed Up"
+      },
+      "total": "{{count}} entries"
+    }
   },
   "contractorPortal": {
     "dashboard": "Contractor Dashboard",

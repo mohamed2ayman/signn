@@ -3845,3 +3845,54 @@ export class FixObligationStatusEnum1748000000004 implements MigrationInterface 
 `backend/src/config/data-source.ts`, PR #27 (Phase 7.3). See also
 lesson #31 and #103 for the silent-catch anti-pattern that caused the
 original bug.
+
+---
+
+## 110. NestJS Testing — `ThrottlerGuard` Cannot Be Resolved Without `ThrottlerModule` — Always `.overrideGuard(ThrottlerGuard)`
+
+**Date:** 2026-05-27 | **Phase:** 6.9 | **Impact:** Test suite cannot start
+
+**The bug:**
+When a controller uses `@ThrottleOnly('waitlist')` (which internally applies
+`@UseGuards(ThrottlerGuard)`), the NestJS `TestingModule` cannot resolve the
+guard's DI dependencies at compile time:
+
+```
+Nest can't resolve dependencies of the ThrottlerGuard
+  (?, Symbol(ThrottlerStorage), Reflector).
+Please make sure that the argument 'THROTTLER:MODULE_OPTIONS' at index [0]
+is available in the RootTestModule context.
+```
+
+`ThrottlerGuard` has 3 constructor parameters (`MODULE_OPTIONS`, `ThrottlerStorage`,
+`Reflector`) that are only available when `ThrottlerModule.forRoot()` is included.
+Adding the full `ThrottlerModule` to the test is wrong — tests must not hit rate
+limits, they must be deterministic.
+
+**The fix:**
+Override the guard with a pass-through mock in `createTestingModule`:
+
+```typescript
+const module = await Test.createTestingModule({ controllers: [...], providers: [...] })
+  .overrideGuard(ThrottlerGuard).useValue({ canActivate: () => true })
+  .overrideGuard(JwtAuthGuard).useValue({ canActivate: () => true })
+  .compile();
+```
+
+**The same issue appears in inline sub-apps built for 403 tests.** If you build
+a second mini-app inside a `describe` block to test role-guard rejection, that
+app also needs `ThrottlerGuard` overridden — it's not enough to only override it
+in the main test app.
+
+**Rules going forward:**
+1. Any test module whose controller carries `@ThrottleOnly` or `@UseGuards(ThrottlerGuard)`
+   MUST call `.overrideGuard(ThrottlerGuard).useValue({ canActivate: () => true })`.
+2. Override BOTH `JwtAuthGuard` AND `ThrottlerGuard` together — if you only override
+   one, the other may still be needed for DI resolution.
+3. Do NOT add `ThrottlerModule.forRoot(...)` to the testing module just to make the
+   guard resolve — tests must be rate-limit-free and deterministic.
+4. This is the same class of problem as mocking any guard that has constructor
+   dependencies: `AuthGuard`, `RolesGuard`, `ThrottlerGuard` — all must be overridden
+   in unit tests, never provided with their real DI tree.
+
+**Reference:** `backend/src/modules/waitlist/waitlist.controller.spec.ts`, PR #33 (Phase 6.9).

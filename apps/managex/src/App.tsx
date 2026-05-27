@@ -182,29 +182,91 @@ const FOOTER_PLATFORM = ['How it works', 'Integrations', 'Security', 'API', 'Pri
 const FOOTER_COMPANY = ['About MANAGEX', 'Research', 'Careers', 'Press', 'Contact'];
 const FOOTER_RESOURCES = ['Documentation', 'Blog', 'Case studies', 'Webinars', 'Help centre'];
 
-type NotifyEntry = { email: string; submitted: boolean };
+// lesson #83: VITE_API_URL missing → URL becomes "undefined/api/v1/waitlist" silently
+const API_URL = import.meta.env.VITE_API_URL as string | undefined;
+if (import.meta.env.DEV && !API_URL) {
+  console.warn('[ManageX] VITE_API_URL is not set — waitlist submissions will fail. Add it to apps/managex/.env');
+}
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+type NotifyEntry = {
+  email: string;
+  submitted: boolean;
+  loading: boolean;
+  error: string | null;
+};
 
 export default function App() {
   const [scrolled, setScrolled] = useState(false);
   const [notifyState, setNotifyState] = useState<Record<string, NotifyEntry>>({});
 
   const getNotifyState = (name: string): NotifyEntry =>
-    notifyState[name] ?? { email: '', submitted: false };
+    notifyState[name] ?? { email: '', submitted: false, loading: false, error: null };
 
   const setNotifyEmail = (name: string, email: string) => {
     setNotifyState((prev) => ({
       ...prev,
-      [name]: { email, submitted: prev[name]?.submitted ?? false },
+      // Clear error when user starts typing again
+      [name]: { ...getNotifyState(name), email, error: null },
     }));
   };
 
-  const submitNotify = (name: string) => {
+  const submitNotify = async (name: string) => {
     const current = getNotifyState(name);
-    if (!current.email.trim()) return;
+    const email = current.email.trim();
+
+    if (!email) return;
+
+    // Client-side format validation before hitting the API
+    if (!EMAIL_RE.test(email)) {
+      setNotifyState((prev) => ({
+        ...prev,
+        [name]: { ...current, error: 'Please enter a valid email address.' },
+      }));
+      return;
+    }
+
+    // Set loading state
     setNotifyState((prev) => ({
       ...prev,
-      [name]: { email: current.email, submitted: true },
+      [name]: { ...current, loading: true, error: null },
     }));
+
+    try {
+      const res = await fetch(`${API_URL}/waitlist`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, product_name: name }),
+      });
+
+      if (res.status === 429) {
+        setNotifyState((prev) => ({
+          ...prev,
+          [name]: { ...current, loading: false, error: 'Too many attempts — please try again later.' },
+        }));
+        return;
+      }
+
+      if (!res.ok) {
+        setNotifyState((prev) => ({
+          ...prev,
+          [name]: { ...current, loading: false, error: 'Something went wrong — please try again.' },
+        }));
+        return;
+      }
+
+      // Success (200/201) — show confirmation, including silent duplicate case
+      setNotifyState((prev) => ({
+        ...prev,
+        [name]: { email, submitted: true, loading: false, error: null },
+      }));
+    } catch {
+      setNotifyState((prev) => ({
+        ...prev,
+        [name]: { ...current, loading: false, error: 'Something went wrong — please try again.' },
+      }));
+    }
   };
 
   // ── Phase 6.4 Step 3D — mobile nav drawer (< 768px only) ─────────────
@@ -574,6 +636,8 @@ export default function App() {
                             value={getNotifyState(p.name).email}
                             onChange={(e) => setNotifyEmail(p.name, e.target.value)}
                             autoComplete="email"
+                            disabled={getNotifyState(p.name).loading}
+                            aria-invalid={!!getNotifyState(p.name).error}
                           />
                           <button
                             type="submit"
@@ -582,11 +646,23 @@ export default function App() {
                               background: p.color,
                               borderColor: p.color,
                               color: '#0C0E14',
+                              opacity: getNotifyState(p.name).loading ? 0.65 : 1,
+                              cursor: getNotifyState(p.name).loading ? 'not-allowed' : 'pointer',
                             }}
+                            disabled={getNotifyState(p.name).loading}
                           >
-                            Notify Me
+                            {getNotifyState(p.name).loading ? 'Sending…' : 'Notify Me'}
                           </button>
                         </form>
+                        {getNotifyState(p.name).error && (
+                          <p
+                            className="mx-product__notify-error"
+                            role="alert"
+                            aria-live="assertive"
+                          >
+                            {getNotifyState(p.name).error}
+                          </p>
+                        )}
                       </>
                     )}
                   </div>
