@@ -7,16 +7,17 @@ export class RenameContractorsToProjectParties1710000000001 implements Migration
     // 1. Create the party_type enum
     await queryRunner.query(`
       DO $$ BEGIN
-        CREATE TYPE "party_type" AS ENUM (
-          'EMPLOYER',
-          'ENGINEERING_CONSULTANT',
-          'DESIGN_CONSULTANT',
-          'COST_CONSULTANT',
-          'CONTRACTOR',
-          'SUBCONTRACTOR'
-        );
-      EXCEPTION WHEN duplicate_object THEN NULL;
-      END $$
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'party_type') THEN
+          CREATE TYPE "party_type" AS ENUM (
+            'EMPLOYER',
+            'ENGINEERING_CONSULTANT',
+            'DESIGN_CONSULTANT',
+            'COST_CONSULTANT',
+            'CONTRACTOR',
+            'SUBCONTRACTOR'
+          );
+        END IF;
+      END $$;
     `);
 
     // 2. Rename the contractors table to project_parties

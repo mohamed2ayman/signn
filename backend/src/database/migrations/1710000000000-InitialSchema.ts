@@ -11,77 +11,86 @@ export class InitialSchema1710000000000 implements MigrationInterface {
     // Create ENUM types
     await queryRunner.query(`
       DO $$ BEGIN
-        CREATE TYPE "user_role" AS ENUM (
-          'SYSTEM_ADMIN', 'OPERATIONS', 'OWNER_ADMIN', 'OWNER_CREATOR',
-          'OWNER_REVIEWER', 'CONTRACTOR_ADMIN', 'CONTRACTOR_CREATOR',
-          'CONTRACTOR_REVIEWER', 'CONTRACTOR_TENDERING'
-        );
-      EXCEPTION WHEN duplicate_object THEN NULL;
-      END $$
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'user_role') THEN
+          CREATE TYPE "user_role" AS ENUM (
+            'SYSTEM_ADMIN', 'OPERATIONS', 'OWNER_ADMIN', 'OWNER_CREATOR',
+            'OWNER_REVIEWER', 'CONTRACTOR_ADMIN', 'CONTRACTOR_CREATOR',
+            'CONTRACTOR_REVIEWER', 'CONTRACTOR_TENDERING'
+          );
+        END IF;
+      END $$;
     `);
 
     await queryRunner.query(`
       DO $$ BEGIN
-        CREATE TYPE "contract_status" AS ENUM (
-          'DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'PENDING_TENDERING',
-          'SENT_TO_CONTRACTOR', 'CONTRACTOR_REVIEWING', 'PENDING_FINAL_APPROVAL',
-          'CHANGES_REQUESTED', 'RISK_ESCALATION_PENDING', 'ACTIVE', 'COMPLETED', 'TERMINATED'
-        );
-      EXCEPTION WHEN duplicate_object THEN NULL;
-      END $$
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'contract_status') THEN
+          CREATE TYPE "contract_status" AS ENUM (
+            'DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'PENDING_TENDERING',
+            'SENT_TO_CONTRACTOR', 'CONTRACTOR_REVIEWING', 'PENDING_FINAL_APPROVAL',
+            'CHANGES_REQUESTED', 'RISK_ESCALATION_PENDING', 'ACTIVE', 'COMPLETED', 'TERMINATED'
+          );
+        END IF;
+      END $$;
     `);
 
     await queryRunner.query(`
       DO $$ BEGIN
-        CREATE TYPE "contract_type_enum" AS ENUM ('FIDIC_RED', 'FIDIC_YELLOW', 'ADHOC', 'UPLOADED');
-      EXCEPTION WHEN duplicate_object THEN NULL;
-      END $$
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'contract_type_enum') THEN
+          CREATE TYPE "contract_type_enum" AS ENUM ('FIDIC_RED', 'FIDIC_YELLOW', 'ADHOC', 'UPLOADED');
+        END IF;
+      END $$;
     `);
 
     await queryRunner.query(`
       DO $$ BEGIN
-        CREATE TYPE "risk_level" AS ENUM ('LOW', 'MEDIUM', 'HIGH');
-      EXCEPTION WHEN duplicate_object THEN NULL;
-      END $$
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'risk_level') THEN
+          CREATE TYPE "risk_level" AS ENUM ('LOW', 'MEDIUM', 'HIGH');
+        END IF;
+      END $$;
     `);
 
     await queryRunner.query(`
       DO $$ BEGIN
-        CREATE TYPE "asset_type" AS ENUM (
-          'LAW', 'INTERNATIONAL_STANDARD', 'ORGANIZATION_POLICY', 'CONTRACT_TEMPLATE', 'KNOWLEDGE'
-        );
-      EXCEPTION WHEN duplicate_object THEN NULL;
-      END $$
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'asset_type') THEN
+          CREATE TYPE "asset_type" AS ENUM (
+            'LAW', 'INTERNATIONAL_STANDARD', 'ORGANIZATION_POLICY', 'CONTRACT_TEMPLATE', 'KNOWLEDGE'
+          );
+        END IF;
+      END $$;
     `);
 
     await queryRunner.query(`
       DO $$ BEGIN
-        CREATE TYPE "asset_review_status" AS ENUM (
-          'PENDING_REVIEW', 'UNDER_REVIEW', 'APPROVED', 'REJECTED', 'AUTO_APPROVED'
-        );
-      EXCEPTION WHEN duplicate_object THEN NULL;
-      END $$
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'asset_review_status') THEN
+          CREATE TYPE "asset_review_status" AS ENUM (
+            'PENDING_REVIEW', 'UNDER_REVIEW', 'APPROVED', 'REJECTED', 'AUTO_APPROVED'
+          );
+        END IF;
+      END $$;
     `);
 
     await queryRunner.query(`
       DO $$ BEGIN
-        CREATE TYPE "subscription_status" AS ENUM ('ACTIVE', 'INACTIVE', 'CANCELLED', 'EXPIRED');
-      EXCEPTION WHEN duplicate_object THEN NULL;
-      END $$
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'subscription_status') THEN
+          CREATE TYPE "subscription_status" AS ENUM ('ACTIVE', 'INACTIVE', 'CANCELLED', 'EXPIRED');
+        END IF;
+      END $$;
     `);
 
     await queryRunner.query(`
       DO $$ BEGIN
-        CREATE TYPE "obligation_status" AS ENUM ('PENDING', 'IN_PROGRESS', 'COMPLETED', 'OVERDUE');
-      EXCEPTION WHEN duplicate_object THEN NULL;
-      END $$
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'obligation_status') THEN
+          CREATE TYPE "obligation_status" AS ENUM ('PENDING', 'IN_PROGRESS', 'COMPLETED', 'OVERDUE');
+        END IF;
+      END $$;
     `);
 
     await queryRunner.query(`
       DO $$ BEGIN
-        CREATE TYPE "notification_type" AS ENUM ('EMAIL', 'IN_APP', 'BOTH');
-      EXCEPTION WHEN duplicate_object THEN NULL;
-      END $$
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'notification_type') THEN
+          CREATE TYPE "notification_type" AS ENUM ('EMAIL', 'IN_APP', 'BOTH');
+        END IF;
+      END $$;
     `);
 
     // Organizations

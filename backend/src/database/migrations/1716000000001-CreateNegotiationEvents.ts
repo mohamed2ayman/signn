@@ -11,23 +11,27 @@ export class CreateNegotiationEvents1716000000001
   async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
       DO $$ BEGIN
-        CREATE TYPE "negotiation_event_type_enum" AS ENUM (
-          'CLAUSE_FLAGGED',
-          'CLAUSE_REPLACED',
-          'CLAUSE_ACCEPTED',
-          'CLAUSE_REJECTED',
-          'AI_SUGGESTION_APPLIED'
-        );
-      EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'negotiation_event_type_enum') THEN
+          CREATE TYPE "negotiation_event_type_enum" AS ENUM (
+            'CLAUSE_FLAGGED',
+            'CLAUSE_REPLACED',
+            'CLAUSE_ACCEPTED',
+            'CLAUSE_REJECTED',
+            'AI_SUGGESTION_APPLIED'
+          );
+        END IF;
+      END $$;
     `);
 
     await queryRunner.query(`
       DO $$ BEGIN
-        CREATE TYPE "negotiation_event_source_enum" AS ENUM (
-          'WORD_ADDIN',
-          'WEB_APP'
-        );
-      EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'negotiation_event_source_enum') THEN
+          CREATE TYPE "negotiation_event_source_enum" AS ENUM (
+            'WORD_ADDIN',
+            'WEB_APP'
+          );
+        END IF;
+      END $$;
     `);
 
     await queryRunner.query(`

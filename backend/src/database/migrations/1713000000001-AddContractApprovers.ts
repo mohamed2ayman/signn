@@ -7,9 +7,9 @@ export class AddContractApprovers1713000000001 implements MigrationInterface {
     // Create the approver status enum
     await queryRunner.query(`
       DO $$ BEGIN
-        CREATE TYPE "approver_status_enum" AS ENUM ('PENDING', 'APPROVED', 'REJECTED');
-      EXCEPTION
-        WHEN duplicate_object THEN null;
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'approver_status_enum') THEN
+          CREATE TYPE "approver_status_enum" AS ENUM ('PENDING', 'APPROVED', 'REJECTED');
+        END IF;
       END $$;
     `);
 

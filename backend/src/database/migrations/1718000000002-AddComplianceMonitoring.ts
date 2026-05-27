@@ -22,75 +22,97 @@ export class AddComplianceMonitoring1718000000002 implements MigrationInterface 
     // ─── Enums ───────────────────────────────────────────────────
     await queryRunner.query(`
       DO $$ BEGIN
-        CREATE TYPE compliance_overall_status_enum AS ENUM
-          ('PENDING', 'COMPLIANT', 'PARTIALLY_COMPLIANT', 'NON_COMPLIANT', 'FAILED');
-      EXCEPTION WHEN duplicate_object THEN null; END $$;
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'compliance_overall_status_enum') THEN
+          CREATE TYPE compliance_overall_status_enum AS ENUM
+            ('PENDING', 'COMPLIANT', 'PARTIALLY_COMPLIANT', 'NON_COMPLIANT', 'FAILED');
+        END IF;
+      END $$;
     `);
     await queryRunner.query(`
       DO $$ BEGIN
-        CREATE TYPE compliance_extraction_status_enum AS ENUM
-          ('PENDING', 'RUNNING', 'COMPLETED', 'FAILED');
-      EXCEPTION WHEN duplicate_object THEN null; END $$;
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'compliance_extraction_status_enum') THEN
+          CREATE TYPE compliance_extraction_status_enum AS ENUM
+            ('PENDING', 'RUNNING', 'COMPLETED', 'FAILED');
+        END IF;
+      END $$;
     `);
     await queryRunner.query(`
       DO $$ BEGIN
-        CREATE TYPE compliance_finding_layer_enum AS ENUM
-          ('STANDARD', 'JURISDICTION', 'PLAYBOOK', 'CONFLICT');
-      EXCEPTION WHEN duplicate_object THEN null; END $$;
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'compliance_finding_layer_enum') THEN
+          CREATE TYPE compliance_finding_layer_enum AS ENUM
+            ('STANDARD', 'JURISDICTION', 'PLAYBOOK', 'CONFLICT');
+        END IF;
+      END $$;
     `);
     await queryRunner.query(`
       DO $$ BEGIN
-        CREATE TYPE compliance_finding_type_enum AS ENUM
-          ('MISSING_CLAUSE', 'DEVIATION', 'CONFLICT',
-           'JURISDICTION_OVERRIDE', 'PLAYBOOK_DEVIATION');
-      EXCEPTION WHEN duplicate_object THEN null; END $$;
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'compliance_finding_type_enum') THEN
+          CREATE TYPE compliance_finding_type_enum AS ENUM
+            ('MISSING_CLAUSE', 'DEVIATION', 'CONFLICT',
+             'JURISDICTION_OVERRIDE', 'PLAYBOOK_DEVIATION');
+        END IF;
+      END $$;
     `);
     await queryRunner.query(`
       DO $$ BEGIN
-        CREATE TYPE compliance_finding_severity_enum AS ENUM
-          ('CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFO');
-      EXCEPTION WHEN duplicate_object THEN null; END $$;
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'compliance_finding_severity_enum') THEN
+          CREATE TYPE compliance_finding_severity_enum AS ENUM
+            ('CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFO');
+        END IF;
+      END $$;
     `);
     await queryRunner.query(`
       DO $$ BEGIN
-        CREATE TYPE compliance_finding_status_enum AS ENUM
-          ('OPEN', 'ACKNOWLEDGED', 'RESOLVED', 'WAIVED');
-      EXCEPTION WHEN duplicate_object THEN null; END $$;
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'compliance_finding_status_enum') THEN
+          CREATE TYPE compliance_finding_status_enum AS ENUM
+            ('OPEN', 'ACKNOWLEDGED', 'RESOLVED', 'WAIVED');
+        END IF;
+      END $$;
     `);
     await queryRunner.query(`
       DO $$ BEGIN
-        CREATE TYPE obligation_reminder_type_enum AS ENUM
-          ('DAYS_30', 'DAYS_14', 'DAYS_7', 'DAYS_1',
-           'DUE_TODAY', 'OVERDUE', 'WEEKLY_DIGEST');
-      EXCEPTION WHEN duplicate_object THEN null; END $$;
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'obligation_reminder_type_enum') THEN
+          CREATE TYPE obligation_reminder_type_enum AS ENUM
+            ('DAYS_30', 'DAYS_14', 'DAYS_7', 'DAYS_1',
+             'DUE_TODAY', 'OVERDUE', 'WEEKLY_DIGEST');
+        END IF;
+      END $$;
     `);
     await queryRunner.query(`
       DO $$ BEGIN
-        CREATE TYPE obligation_reminder_email_status_enum AS ENUM
-          ('SENT', 'FAILED', 'BOUNCED');
-      EXCEPTION WHEN duplicate_object THEN null; END $$;
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'obligation_reminder_email_status_enum') THEN
+          CREATE TYPE obligation_reminder_email_status_enum AS ENUM
+            ('SENT', 'FAILED', 'BOUNCED');
+        END IF;
+      END $$;
     `);
     await queryRunner.query(`
       DO $$ BEGIN
-        CREATE TYPE compliance_report_type_enum AS ENUM
-          ('COMPLIANCE_SUMMARY', 'OBLIGATIONS_REPORT', 'JURISDICTION_CONFLICT');
-      EXCEPTION WHEN duplicate_object THEN null; END $$;
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'compliance_report_type_enum') THEN
+          CREATE TYPE compliance_report_type_enum AS ENUM
+            ('COMPLIANCE_SUMMARY', 'OBLIGATIONS_REPORT', 'JURISDICTION_CONFLICT');
+        END IF;
+      END $$;
     `);
     await queryRunner.query(`
       DO $$ BEGIN
-        CREATE TYPE compliance_report_status_enum AS ENUM
-          ('PENDING', 'RENDERING', 'EMAILED', 'FAILED');
-      EXCEPTION WHEN duplicate_object THEN null; END $$;
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'compliance_report_status_enum') THEN
+          CREATE TYPE compliance_report_status_enum AS ENUM
+            ('PENDING', 'RENDERING', 'EMAILED', 'FAILED');
+        END IF;
+      END $$;
     `);
     await queryRunner.query(`
       DO $$ BEGIN
-        CREATE TYPE obligation_type_enum AS ENUM (
-          'NOTICE_PERIOD', 'PAYMENT', 'PERFORMANCE_BOND', 'INSURANCE',
-          'MILESTONE', 'DEFECTS_LIABILITY', 'DISPUTE_RESOLUTION',
-          'REPORTING', 'EMPLOYER_OBLIGATION', 'CONTRACTOR_OBLIGATION',
-          'ENGINEER_OBLIGATION', 'OTHER'
-        );
-      EXCEPTION WHEN duplicate_object THEN null; END $$;
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'obligation_type_enum') THEN
+          CREATE TYPE obligation_type_enum AS ENUM (
+            'NOTICE_PERIOD', 'PAYMENT', 'PERFORMANCE_BOND', 'INSURANCE',
+            'MILESTONE', 'DEFECTS_LIABILITY', 'DISPUTE_RESOLUTION',
+            'REPORTING', 'EMPLOYER_OBLIGATION', 'CONTRACTOR_OBLIGATION',
+            'ENGINEER_OBLIGATION', 'OTHER'
+          );
+        END IF;
+      END $$;
     `);
 
     // Extend existing obligation_status with MET + WAIVED.
@@ -220,17 +242,21 @@ export class AddComplianceMonitoring1718000000002 implements MigrationInterface 
     // FKs (idempotent — drop & re-add only if missing)
     await queryRunner.query(`
       DO $$ BEGIN
-        ALTER TABLE obligations
-          ADD CONSTRAINT fk_obligations_project
-          FOREIGN KEY (project_id) REFERENCES projects(id);
-      EXCEPTION WHEN duplicate_object THEN null; END $$;
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_obligations_project') THEN
+          ALTER TABLE obligations
+            ADD CONSTRAINT fk_obligations_project
+            FOREIGN KEY (project_id) REFERENCES projects(id);
+        END IF;
+      END $$;
     `);
     await queryRunner.query(`
       DO $$ BEGIN
-        ALTER TABLE obligations
-          ADD CONSTRAINT fk_obligations_compliance_check
-          FOREIGN KEY (compliance_check_id) REFERENCES compliance_checks(id) ON DELETE SET NULL;
-      EXCEPTION WHEN duplicate_object THEN null; END $$;
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_obligations_compliance_check') THEN
+          ALTER TABLE obligations
+            ADD CONSTRAINT fk_obligations_compliance_check
+            FOREIGN KEY (compliance_check_id) REFERENCES compliance_checks(id) ON DELETE SET NULL;
+        END IF;
+      END $$;
     `);
 
     // Backfill obligations.project_id from contracts.project_id
