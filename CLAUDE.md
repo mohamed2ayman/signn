@@ -1,7 +1,7 @@
 # CLAUDE.md — Project Intelligence File
 > Read this entire file at the start of every Claude Code session before touching any code.
 > This file is the single source of truth for all architectural decisions, rules, and context.
-> Last updated: 2026-05-27 (Phase 6.9 shipped — waitlist email capture & admin export (PR #33). 104 backend tests total. Lesson #110 added.)
+> Last updated: 2026-05-27 (Phase 7.9 shipped — 25 EXCEPTION WHEN blocks replaced across 5 migration files (PR #34). Phase 7.10 confirmed already implemented. Lesson #111 added.)
 
 ---
 
@@ -2205,17 +2205,18 @@ badge in TopBar/AdminLayout updates instantly without waiting for the
    stale. Use React Query with `refetchInterval` instead. See lesson
    #105.
 
-### Known limitation — obligation reminders blocked on 7.10
+### Phase 7.10 — confirmed already implemented (2026-05-27)
 
-The Step 4 polling correctly refreshes notifications for ALL types that
-the backend actually writes to the `notifications` table — system
-events, contract events, admin actions, etc. It does NOT (yet) surface
-obligation reminders, because the obligation-reminder processor sends
-email only and never calls `NotificationDispatchService.
-dispatchObligationReminder()` to create the in-app row. This is
-a backend gap tracked as **7.10** in NEXT_PHASES.md. Once 7.10
-ships, obligation reminders will start appearing on the bell badge
-automatically — no further frontend changes required.
+The Phase 7.10 gap described at the time Step 4 was written was confirmed
+**already implemented** during a codebase investigation on 2026-05-27.
+`ObligationReminderProcessor` calls `this.dispatch.dispatchObligationReminder()`
+in two places (primary recipients loop + escalation user path), and
+`NotificationDispatchService.dispatchObligationReminder()` already exists and
+creates `NotificationType.IN_APP` rows in the `notifications` table.
+Module DI wiring (`ObligationsModule` imports `NotificationsModule` which exports
+`NotificationDispatchService`) was also already in place. Two dedicated tests
+in `obligation-reminder.processor.spec.ts` assert the call is made with the
+correct parameters. No code changes were needed — 7.10 can be treated as resolved.
 
 ---
 
@@ -2303,3 +2304,64 @@ Same anti-pattern as lesson #31.
 **Frontend wiring:** Youssef wires `ObligationDetailDrawer`'s Reminder
 History section to this endpoint — tracked as the remaining 7.7
 frontend half.
+
+---
+
+## Phase 7.9 — Audit Silent Migrations (shipped — 2026-05-27, PR #34)
+
+Full audit and source-level fix of the `EXCEPTION WHEN` anti-pattern across
+all TypeORM migration files. No new migration needed — these are fresh-build
+fixes only; existing environments were already corrected by Phase 7.3 (PR #27).
+
+**25 instances patched across 5 files:**
+
+| File | Instances | Type |
+|------|-----------|------|
+| `1710000000000-InitialSchema.ts` | 9 | CREATE TYPE blocks |
+| `1710000000001-RenameContractorsToProjectParties.ts` | 1 | CREATE TYPE block |
+| `1713000000001-AddContractApprovers.ts` | 1 | CREATE TYPE block |
+| `1716000000001-CreateNegotiationEvents.ts` | 2 | CREATE TYPE blocks |
+| `1718000000002-AddComplianceMonitoring.ts` | 10 + 2 | CREATE TYPE + ADD CONSTRAINT blocks |
+
+**Pattern replaced:**
+```sql
+-- BEFORE (dangerous — swallows all errors silently):
+DO $$ BEGIN
+  CREATE TYPE foo_enum AS ENUM ('A', 'B');
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+-- AFTER (idempotent, transparent on failure):
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'foo_enum') THEN
+    CREATE TYPE foo_enum AS ENUM ('A', 'B');
+  END IF;
+END $$;
+```
+
+**For ADD CONSTRAINT blocks:**
+```sql
+-- BEFORE:
+DO $$ BEGIN
+  ALTER TABLE t ADD CONSTRAINT fk_name FOREIGN KEY ...;
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+-- AFTER:
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_name') THEN
+    ALTER TABLE t ADD CONSTRAINT fk_name FOREIGN KEY ...;
+  END IF;
+END $$;
+```
+
+**Why `EXCEPTION WHEN` is dangerous:** Developers copy the pattern and change
+the exception type to `undefined_object` for `ALTER TYPE` statements — which
+silently swallows wrong type names. This was the exact root cause of the
+Phase 7.3 incident where `MET` and `WAIVED` were absent from `obligation_status`
+for months. See lessons #31, #103, and #111.
+
+**Hard rule — never violate:**
+- Never write `EXCEPTION WHEN ... THEN null` in any migration block.
+- For CREATE TYPE: use `IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = '...')`.
+- For ADD CONSTRAINT: use `IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = '...')`.
+- Note: PostgreSQL has no `CREATE TYPE IF NOT EXISTS` or `ADD CONSTRAINT IF NOT EXISTS` syntax
+  — the `DO $$ ... IF NOT EXISTS ... END $$` block is the only correct approach.

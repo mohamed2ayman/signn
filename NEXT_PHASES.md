@@ -329,36 +329,29 @@ Implemented by: Ayman & Youssef | Completed: 2026-05-22
 ---
 
 ### 7.9 — Audit All Migrations for Silent Exception Pattern
-**Owner:** Ayman | **Priority:** 🟡 MEDIUM | **Status:** ❌ Not started
-- Audit ALL migrations for the same anti-pattern fixed in 7.3: `EXCEPTION WHEN ... THEN null` swallowing errors
-- `grep -rn "EXCEPTION WHEN" backend/src/database/migrations/`
-- Migration 1718000000002 was the known case (fixed), but others may exist
-- Any found: fix with corrective migration + startup assertion
+**Owner:** Ayman | **Priority:** 🟡 MEDIUM | **Status:** ✅ Complete — 2026-05-27 (PR #34)
+- Audited ALL 5 migration files — found 25 live `EXCEPTION WHEN` instances
+- Replaced all 25 with `IF NOT EXISTS (SELECT 1 FROM pg_type/pg_constraint ...)` guards
+- No corrective migration needed — source-level fix only (existing envs already patched by PR #27)
+- All 104 backend tests pass
 
 ---
 
 ### 7.10 — Wire obligation reminder processor to in-app dispatch
-**Owner:** Ayman | **Priority:** 🟠 HIGH | **Status:** ❌ Not started
+**Owner:** Ayman | **Priority:** 🟠 HIGH | **Status:** ✅ Complete — already implemented (confirmed 2026-05-27)
 **Deferred from:** Phase 7.1 Step 4 scoping (2026-05-25)
-**Why blocking:** The bell badge polling shipped in 7.1 Step 4 (PR #28)
-works correctly for all dispatched notifications, but the obligation
-reminder processor sends EMAIL only — it doesn't call
-`NotificationDispatchService.dispatchObligationReminder()` to create
-the IN_APP row. Result: obligation reminders never appear on the bell
-badge until this lands. This is the active limitation documented in
-CLAUDE.md.
 
-**Scope:**
-- In `obligation-reminder.processor.ts`, after a reminder email is
-  successfully sent for each tier, call
-  `dispatchObligationReminder(obligation, recipient, tier)`. Include
-  `obligation_id`, `contract_id`, `project_id` in the metadata field.
-- Ensure in-app dispatch failure does NOT roll back the email send —
-  log the failure but treat email as the primary durable delivery.
-- Test: trigger a reminder, verify both email goes out AND a
-  notifications row appears with type IN_APP.
+Codebase investigation on 2026-05-27 confirmed this was already fully
+implemented as part of Phase 7.1 Step 1 backend work:
+- `ObligationReminderProcessor` already calls `this.dispatch.dispatchObligationReminder()`
+  in two places: primary recipients loop (lines 149–155) and escalation user path (lines 320–326)
+- `NotificationDispatchService.dispatchObligationReminder()` exists and creates `IN_APP` rows
+- Module DI wiring already correct (`ObligationsModule` imports `NotificationsModule`)
+- Two dedicated tests in `obligation-reminder.processor.spec.ts` assert the calls
+- No code changes were made — the gap described in the Step 4 notes was written
+  ahead of the implementation that shipped in Step 1
 
-**Dependencies:** None. Pure backend.
+**Dependencies:** None — resolved.
 
 ---
 
@@ -1088,8 +1081,8 @@ per-jurisdiction cost for legal-quality review.
 | 7.6 | Calendar Plan Gate | ❌ Not started | Y | |
 | 7.7 | Wire Reminder History | ❌ Not started | Y | |
 | 7.8 | Portfolio Empty State | ❌ Not started | Y | |
-| 7.9 | Audit Silent Migrations | ❌ Not started | A | |
-| 7.10 | In-app Dispatch (Reminder Processor) | ❌ Not started | A | |
+| 7.9 | Audit Silent Migrations | ✅ Complete (PR #34) | A | 2026-05-27 |
+| 7.10 | In-app Dispatch (Reminder Processor) | ✅ Complete (already done) | A | 2026-05-27 |
 | 7.11 | RTL Polish (react-big-calendar) | ❌ Not started | Y | |
 | 7.12 | File Upload + Evidence FileDropZone | ❌ Not started | A+Y | |
 | 7.13 | Clause Deep-Linking from Drawer | ❌ Not started | Y | |
@@ -1139,10 +1132,11 @@ per-jurisdiction cost for legal-quality review.
 
 **Ayman:**
 1. 9.1 — Abstract Infrastructure Layers (highest strategic impact — start now)
-2. 7.9 — Audit all migrations for silent EXCEPTION WHEN pattern
-3. 7.21 — RFP & Specification Document Analysis (AI — competitive priority)
-4. 7.25 — Poor Scan Quality Handling (quick win)
-5. 7.24 — Knowledge Base Enhancements
+2. 7.21 — RFP & Specification Document Analysis (AI — competitive priority)
+3. 7.25 — Poor Scan Quality Handling (quick win)
+4. 7.24 — Knowledge Base Enhancements
+5. ~~7.9 — Audit Silent Migrations~~ ✅ Done (PR #34)
+6. ~~7.10 — In-app Dispatch~~ ✅ Already implemented
 
 **Youssef:**
 1. 7.7 — Wire Reminder History in Detail Drawer (quick, endpoint ready)
@@ -1154,7 +1148,7 @@ per-jurisdiction cost for legal-quality review.
 7. 7.19 — Counterparty Redlining
 
 **Both (when convenient):**
-1. 6.9 — Waitlist Email Capture
+1. ~~6.9 — Waitlist Email Capture~~ ✅ Done (PR #33)
 2. 6.10 — Mission Statement Rewrite (when brand conversation happens)
 
 ---
@@ -1169,5 +1163,5 @@ per-jurisdiction cost for legal-quality review.
 
 ---
 
-*Last updated: 2026-05-25*
-*Next review: When 7.5-7.9 are cleared and 9.1 planning starts*
+*Last updated: 2026-05-27*
+*Next review: When 7.5-7.8 are cleared and 9.1 planning starts*

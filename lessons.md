@@ -1,7 +1,7 @@
 # lessons.md — SIGN + MANAGEX Platform
 > This file documents every bug, issue, and fix that took significant time to resolve.
 > Feed this file to Claude at the start of every session to avoid repeating mistakes.
-> Last updated: 2026-05-25 (Lessons #108–109 — NestJS cross-controller route shadowing fix + ALTER TYPE ADD VALUE transaction requirement.)
+> Last updated: 2026-05-27 (Lessons #110–111 — ThrottlerGuard DI in tests + EXCEPTION WHEN audit pattern.)
 
 ---
 
@@ -3896,3 +3896,68 @@ in the main test app.
    in unit tests, never provided with their real DI tree.
 
 **Reference:** `backend/src/modules/waitlist/waitlist.controller.spec.ts`, PR #33 (Phase 6.9).
+
+---
+
+## 111. Migration Audit Pattern — `EXCEPTION WHEN` Is Never Safe; Always Use `IF NOT EXISTS` Subquery
+
+**Date:** 2026-05-27 | **Phase:** 7.9 | **Impact:** Silent migration failures, potential data gaps
+
+**The anti-pattern:**
+```sql
+DO $$ BEGIN
+  CREATE TYPE foo_enum AS ENUM ('A', 'B');
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+```
+
+**Why it is dangerous beyond the obvious:**
+`EXCEPTION WHEN duplicate_object THEN null` is commonly copy-pasted as "safe" boilerplate.
+The real danger is template drift: developers copy this block for `ALTER TYPE ... ADD VALUE`
+and change the exception catch to `WHEN undefined_object THEN null`. This silently swallows
+wrong type names — exactly what caused the Phase 7.3 incident where `MET` and `WAIVED` were
+absent from `obligation_status` for months with migrations showing "success".
+
+**The correct patterns:**
+
+For `CREATE TYPE`:
+```sql
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'foo_enum') THEN
+    CREATE TYPE foo_enum AS ENUM ('A', 'B');
+  END IF;
+END $$;
+```
+
+For `ADD CONSTRAINT`:
+```sql
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_name') THEN
+    ALTER TABLE t ADD CONSTRAINT fk_name FOREIGN KEY (col) REFERENCES other(id);
+  END IF;
+END $$;
+```
+
+Note: PostgreSQL has no `CREATE TYPE IF NOT EXISTS` or `ADD CONSTRAINT IF NOT EXISTS`
+syntax — the `DO $$ ... IF NOT EXISTS ... END $$` block is the only correct approach.
+
+**Audit command to run before any new migration is approved:**
+```bash
+grep -rn "EXCEPTION WHEN" backend/src/database/migrations/
+```
+Zero results (except comments) is the passing bar. Any live SQL hit is a bug.
+
+**How to read the results:** `EXCEPTION WHEN duplicate_object` on a CREATE TYPE is low
+risk (benign in practice). `EXCEPTION WHEN undefined_object` on an ALTER TYPE is HIGH
+risk — silently swallows wrong type names. Both patterns must be replaced — the safer
+one because it can be copied into the dangerous one by the next developer.
+
+**Rules going forward:**
+1. Never write `EXCEPTION WHEN ... THEN null` in any migration block.
+2. Run the audit grep before opening any PR that touches migrations.
+3. The 7.9 audit found 25 instances across 5 files — all replaced. Fresh builds
+   from scratch are now clean. Existing environments were already protected by
+   `ObligationSchemaCheckService` (Phase 7.3).
+
+**Reference:** 5 migration files patched, PR #34 (Phase 7.9). See also lessons
+#31 and #103 for earlier encounters with the same class of bug.
+
