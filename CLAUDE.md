@@ -1,7 +1,7 @@
 # CLAUDE.md — Project Intelligence File
 > Read this entire file at the start of every Claude Code session before touching any code.
 > This file is the single source of truth for all architectural decisions, rules, and context.
-> Last updated: 2026-05-28 (Phase 9.1 shipped — Abstract infrastructure layers: StorageService (9.1a), EmailService (9.1b), OCR/text extraction (9.1c). Lessons #112–#113 added.)
+> Last updated: 2026-05-28 (Phase 9.1 shipped — Abstract infrastructure layers: StorageService (9.1a), EmailService (9.1b), OCR/text extraction (9.1c). Gaps #5 and #6 resolved. Lessons #112–#114 added.)
 
 ---
 
@@ -2501,15 +2501,7 @@ a plan. None are urgent for local development. All will be addressed before AWS 
      be insufficient for large multi-page Arabic documents via async API)
    - Integration tests with real Textract API on a scanned Arabic PDF
 
-5. **`contract_status` enum drift** — DB enum has values not in the TypeScript
-   `ContractStatus` enum (`CONTRACTOR_REVIEWING`, `RISK_ESCALATION_PENDING`, etc.).
-   Full audit required before deployment.
-
-6. **`sendGenericEmail` swallows errors** — Bull queue retry logic for email sending
-   is currently dead code (the catch block does not re-throw). Fix when email
-   reliability is prioritized (Phase 9.2 or later).
-
-7. **S3 adapter skeleton** — `S3StorageAdapter.upload()` raises `NotImplementedError`
+5. **S3 adapter skeleton** — `S3StorageAdapter.upload()` raises `NotImplementedError`
    until `AWS_S3_BUCKET` is set and `@aws-sdk/client-s3` is verified in
    `package.json`. The adapter class exists and is wired in; only the
    implementation method body needs filling.

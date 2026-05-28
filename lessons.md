@@ -1,7 +1,7 @@
 # lessons.md — SIGN + MANAGEX Platform
 > This file documents every bug, issue, and fix that took significant time to resolve.
 > Feed this file to Claude at the start of every session to avoid repeating mistakes.
-> Last updated: 2026-05-28 (Lessons #110–113 — ThrottlerGuard DI in tests + EXCEPTION WHEN audit + FROM_EMAIL env var mismatch + NestJS adapter DI pattern.)
+> Last updated: 2026-05-28 (Lessons #110–114 — ThrottlerGuard DI in tests + EXCEPTION WHEN audit + FROM_EMAIL mismatch + NestJS adapter DI pattern + fire-and-forget email callers must catch at caller level.)
 
 ---
 
@@ -126,6 +126,7 @@
 111. Migration Audit Pattern — `EXCEPTION WHEN` Is Never Safe; Always Use `IF NOT EXISTS` Subquery
 112. Email — `FROM_EMAIL` vs `EMAIL_FROM` env var mismatch causes silent wrong-sender address
 113. NestJS — Symbol + `useFactory` Provider Pattern for Swappable Infrastructure Adapters
+114. Email — Fire-and-Forget Callers Must Catch at the Caller Level, Not Inside the Shared Send Method
 
 ---
 
@@ -4094,4 +4095,93 @@ mocker.patch('app.services.text_extractor_factory.get_text_extractor',
 
 **Reference:** `backend/src/modules/storage/`, `backend/src/modules/notifications/`,
 `ai-backend/app/services/text_extractor_factory.py`, PR #35 (Phase 9.1).
+
+---
+
+## 114. Email — Fire-and-Forget Callers Must Catch at the Caller Level, Not Inside the Shared Send Method
+
+**Date:** 2026-05-28 | **Phase:** 9.1 gap fix | **Impact:** Bull queue retries silently broken
+
+**The bug:**
+`sendGenericEmail` (the single transport dispatch point for all outbound email) contained
+a `try/catch` that logged the error and returned normally — it never threw. The
+`EmailQueueProcessor` called `sendGenericEmail` inside its own `try/catch` and re-threw for
+Bull retry. But since `sendGenericEmail` never threw, the processor's `catch` block was
+dead code — **Bull could never retry a failed email job**.
+
+Meanwhile every high-level method (`sendMfaOtp`, `sendPasswordReset`, `sendInvitation`, etc.)
+had no try/catch of its own. This was the correct instinct (fire-and-forget from the auth
+flow) but achieved the wrong way: the swallowing lived in the wrong layer.
+
+**The fix:**
+Remove the `try/catch` from `sendGenericEmail` — make it throw on transport failure.
+Add individual `try/catch` blocks to each high-level convenience method that needs
+fire-and-forget semantics:
+
+```typescript
+// ✅ CORRECT — each caller decides its own error contract
+async sendMfaOtp(email: string, otpCode: string): Promise<void> {
+  // ... build html ...
+  try {
+    await this.sendGenericEmail(email, subject, html);
+  } catch (error) {
+    this.logger.error(`sendMfaOtp failed for ${email}`, error);
+    // Best-effort — must not block the auth flow
+  }
+}
+
+// sendGenericEmail THROWS — queue processor's catch block now executes
+async sendGenericEmail(to: string, subject: string, html: string): Promise<void> {
+  await this.provider.send({ from: this.fromEmail, to, subject, html });
+  this.logger.log(`Email sent successfully to ${to}`);
+}
+```
+
+**The EmailQueueProcessor already had the right pattern:**
+```typescript
+try {
+  await this.emailService.sendGenericEmail(to, subject, html);
+} catch (error) {
+  this.logger.error(`Email job ${job.id} failed → ${to}: ${error.message}`);
+  throw error; // Bull will retry based on queue config
+}
+```
+Before the fix, the `throw error` on the last line was unreachable code.
+After the fix, Bull retries work as designed.
+
+**The principle:**
+A shared send/dispatch method must model the lowest-level transport contract — it
+either sends successfully or throws. The policy of whether that failure is fatal or
+best-effort belongs at each call site, not inside the shared method. Putting the
+swallow inside the shared method removes every caller's ability to opt into retries.
+
+**Inventory of callers and their error contracts:**
+
+| Caller | Error contract | Mechanism |
+|---|---|---|
+| `EmailQueueProcessor.handleSendEmail` | Retryable — Bull retries on throw | Re-throws from its own catch |
+| `sendMfaOtp` | Best-effort — must not block login | try/catch logs and swallows |
+| `sendMfaRecoveryCodes` | Best-effort — must not block MFA setup | try/catch logs and swallows |
+| `sendPasswordReset` | Best-effort — must not break forgot-password | try/catch logs and swallows |
+| `sendInvitation` | Best-effort — must not block user creation | try/catch logs and swallows |
+| `sendContractApprovalRequest` | Best-effort — must not block approval workflow | try/catch logs and swallows |
+| `DocuSignService` (direct) | Best-effort — already had its own catch | Existing try/catch now actually executes |
+
+**How to avoid:**
+When designing a service method that is used by both a queue processor AND synchronous
+callers, always make the base method throw. Give each synchronous caller its own
+try/catch with a comment explaining why it's safe to swallow. This makes the error
+contract explicit and searchable — `grep -n "Best-effort"` finds every intentional swallow.
+
+**Rules going forward:**
+1. `sendGenericEmail` throws — never add a try/catch back to it.
+2. Every new high-level email method (`sendSomethingNew`) MUST decide at the time it
+   is written whether it is retryable (no catch — let it propagate) or best-effort
+   (explicit try/catch with a comment). There is no third option.
+3. If a new email flow needs guaranteed delivery, enqueue it via `NotificationDispatchService`
+   → Bull queue → `EmailQueueProcessor` rather than calling `sendGenericEmail` directly
+   from a synchronous service method.
+
+**Reference:** `backend/src/modules/notifications/email.service.ts`,
+`backend/src/modules/notifications/email-queue.processor.ts`, PR #36.
 

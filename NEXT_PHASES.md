@@ -941,9 +941,10 @@ No new env vars required for existing local dev deployments.
 2. `operations-review.service.ts` writes config JSON to `__dirname` — out of StorageService abstraction
 3. `DocumentProcessingService.getLocalFilePath()` passes local paths to Celery — must pass S3 coordinates for Textract to work
 4. Textract also requires: `boto3` in requirements.txt, block-tree parser for Arabic RTL layout, raised Celery `soft_time_limit`
-5. `contract_status` enum drift — DB has values not in TypeScript enum; audit before deployment
-6. `sendGenericEmail` swallows errors — Bull queue retries are dead code
-7. S3 adapter `upload()` body still raises `NotImplementedError` until `AWS_S3_BUCKET` is set
+5. S3 adapter `upload()` body still raises `NotImplementedError` until `AWS_S3_BUCKET` is set
+
+~~5. `contract_status` enum drift~~ ✅ Resolved 2026-05-28 — audit confirmed no drift (12 values in sync; see comment in `contract.entity.ts`)
+~~6. `sendGenericEmail` swallows errors~~ ✅ Resolved 2026-05-28 — `sendGenericEmail` now throws; Bull retries live; high-level methods catch at caller level (PR #36)
 
 **Hard rules — never violate:**
 - Do NOT set `STORAGE_DRIVER=s3`, `EMAIL_DRIVER=ses`, or `TEXT_EXTRACTOR=textract` in any

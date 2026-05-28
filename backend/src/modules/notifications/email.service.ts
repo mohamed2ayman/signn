@@ -50,7 +50,12 @@ export class EmailService {
       { preheader: 'Your Sign verification code' },
     );
 
-    await this.sendGenericEmail(email, subject, html);
+    try {
+      await this.sendGenericEmail(email, subject, html);
+    } catch (error) {
+      this.logger.error(`sendMfaOtp failed for ${email}`, error);
+      // Best-effort — MFA OTP email failure must not block the auth flow.
+    }
   }
 
   async sendMfaRecoveryCodes(
@@ -86,7 +91,12 @@ export class EmailService {
       { preheader: 'Your Sign MFA recovery codes — save them now' },
     );
 
-    await this.sendGenericEmail(email, subject, html);
+    try {
+      await this.sendGenericEmail(email, subject, html);
+    } catch (error) {
+      this.logger.error(`sendMfaRecoveryCodes failed for ${email}`, error);
+      // Best-effort — recovery-codes email failure must not block MFA setup.
+    }
   }
 
   async sendInvitation(
@@ -105,7 +115,12 @@ export class EmailService {
       invitationLink,
     });
 
-    await this.sendGenericEmail(email, subject, html);
+    try {
+      await this.sendGenericEmail(email, subject, html);
+    } catch (error) {
+      this.logger.error(`sendInvitation failed for ${email}`, error);
+      // Best-effort — invitation email failure must not block user creation.
+    }
   }
 
   async sendPasswordReset(email: string, resetToken: string): Promise<void> {
@@ -126,7 +141,12 @@ export class EmailService {
       { preheader: 'Reset your Sign password' },
     );
 
-    await this.sendGenericEmail(email, subject, html);
+    try {
+      await this.sendGenericEmail(email, subject, html);
+    } catch (error) {
+      this.logger.error(`sendPasswordReset failed for ${email}`, error);
+      // Best-effort — password-reset email failure must not break the forgot-password flow.
+    }
   }
 
   async sendContractApprovalRequest(
@@ -149,27 +169,39 @@ export class EmailService {
       contractLink,
     });
 
-    await this.sendGenericEmail(email, subject, html);
+    try {
+      await this.sendGenericEmail(email, subject, html);
+    } catch (error) {
+      this.logger.error(`sendContractApprovalRequest failed for ${email}`, error);
+      // Best-effort — approval-request email failure must not block the approval workflow.
+    }
   }
 
   // ─── Transport dispatch ───────────────────────────────────────────────────
 
   /**
-   * Single dispatch point for all outbound email.
-   * Delegates transport to the injected IEmailProvider.
-   * Swallows errors so email failures never break the calling flow.
+   * Single transport dispatch point for all outbound email.
+   * Delegates to the injected IEmailProvider and THROWS on failure.
+   *
+   * Callers fall into two categories:
+   *
+   * 1. Bull queue processor (EmailQueueProcessor.handleSendEmail):
+   *    Calls sendGenericEmail directly — receives the thrown error,
+   *    re-throws it, and Bull retries the job based on queue config.
+   *
+   * 2. High-level convenience methods (sendMfaOtp, sendPasswordReset, etc.):
+   *    Each wraps this call in its own try/catch so that email failure
+   *    never breaks the calling auth/user flow (best-effort semantics).
+   *
+   * Direct callers that already have their own try/catch (e.g. DocuSign service)
+   * continue to work correctly — their catch blocks now actually execute.
    */
   async sendGenericEmail(
     to: string,
     subject: string,
     html: string,
   ): Promise<void> {
-    try {
-      await this.provider.send({ from: this.fromEmail, to, subject, html });
-      this.logger.log(`Email sent successfully to ${to}`);
-    } catch (error) {
-      this.logger.error(`Failed to send email to ${to}`, error);
-      // Do not throw — email failures should not break the auth flow
-    }
+    await this.provider.send({ from: this.fromEmail, to, subject, html });
+    this.logger.log(`Email sent successfully to ${to}`);
   }
 }
