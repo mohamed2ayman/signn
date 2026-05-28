@@ -19,6 +19,18 @@ import { ContractorResponse } from './contractor-response.entity';
 import { DocumentUpload } from './document-upload.entity';
 import { ContractApprover } from './contract-approver.entity';
 
+/**
+ * contract_status PostgreSQL enum — drift audit 2026-05-28
+ *
+ * DB query: SELECT unnest(enum_range(NULL::contract_status));
+ * Result: 12 values — perfectly in sync with this TypeScript enum.
+ * No DB values are missing from TypeScript; no TypeScript values are missing from the DB.
+ *
+ * Only 3 live contracts exist in the DB, all using DRAFT.
+ * All 12 values are legitimately reachable via the contract status machine.
+ *
+ * CLAUDE.md known-gap item #5 ("contract_status enum drift") was stale — closed 2026-05-28.
+ */
 export enum ContractStatus {
   DRAFT = 'DRAFT',
   PENDING_APPROVAL = 'PENDING_APPROVAL',
