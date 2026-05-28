@@ -1,11 +1,8 @@
 import { Process, Processor } from '@nestjs/bull';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bull';
-import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import * as fs from 'fs';
-import * as path from 'path';
 import {
   ComplianceCheck,
   ComplianceFinding,
@@ -21,6 +18,7 @@ import { PdfReportService, ReportContext } from '../services/pdf-report.service'
 import { ComplianceReportService } from '../services/compliance-report.service';
 import { NotificationDispatchService } from '../../notifications/notification-dispatch.service';
 import { baseEmailLayout } from '../../notifications/templates/base-layout';
+import { StorageService } from '../../storage/storage.service';
 
 interface RenderReportJob {
   job_id: string;
@@ -29,8 +27,6 @@ interface RenderReportJob {
 @Processor('compliance-jobs')
 export class ComplianceReportProcessor {
   private readonly logger = new Logger(ComplianceReportProcessor.name);
-  private readonly outputDir: string;
-  private readonly baseUrl: string;
 
   constructor(
     @InjectRepository(ComplianceReportJob)
@@ -52,18 +48,8 @@ export class ComplianceReportProcessor {
     private readonly pdf: PdfReportService,
     private readonly reportService: ComplianceReportService,
     private readonly dispatch: NotificationDispatchService,
-    private readonly config: ConfigService,
-  ) {
-    const uploadDir = this.config.get<string>(
-      'UPLOAD_DIR',
-      path.join(process.cwd(), 'uploads'),
-    );
-    this.outputDir = path.join(uploadDir, 'compliance-reports');
-    if (!fs.existsSync(this.outputDir)) {
-      fs.mkdirSync(this.outputDir, { recursive: true });
-    }
-    this.baseUrl = this.config.get<string>('BASE_URL', 'http://localhost:3000');
-  }
+    private readonly storage: StorageService,
+  ) {}
 
   @Process('render-report')
   async handleRenderReport(job: Job<RenderReportJob>): Promise<void> {
@@ -119,16 +105,22 @@ export class ComplianceReportProcessor {
         reportName = 'Critical Obligations Report';
       }
 
-      // Persist the PDF
+      // Persist the PDF via StorageService (local disk or S3 depending on STORAGE_DRIVER)
       const filename = `compliance-${reportJob.id}.pdf`;
-      const filePath = path.join(this.outputDir, filename);
-      await fs.promises.writeFile(filePath, buffer);
+      const storageResult = await this.storage.uploadBuffer(
+        buffer,
+        'compliance-reports',
+        filename,
+        'application/pdf',
+      );
 
       // Mint signed download token (24h)
       const { token, expires } = this.reportService.generateToken();
       const downloadUrl = this.reportService.buildDownloadUrl(token);
 
-      await this.reportService.markEmailed(reportJob.id, filePath, token, expires);
+      // Store the file_url (not a local path) so the download controller can
+      // retrieve the bytes via StorageService.getBuffer() regardless of adapter.
+      await this.reportService.markEmailed(reportJob.id, storageResult.file_url, token, expires);
 
       // Email the user
       await this.dispatch.enqueueEmail({

@@ -138,9 +138,9 @@ def run_research(self, request_data: dict[str, Any]) -> dict[str, Any]:
 @celery_app.task(name="tasks.run_extract_text", bind=True)
 def run_extract_text(self, request_data: dict[str, Any]) -> dict[str, Any]:
     """Extract text content from an uploaded document file."""
-    from app.services.text_extractor import TextExtractorService
+    from app.services.text_extractor_factory import get_text_extractor
 
-    service = TextExtractorService()
+    service = get_text_extractor()
     try:
         result = service.extract(
             file_path=request_data["file_path"],

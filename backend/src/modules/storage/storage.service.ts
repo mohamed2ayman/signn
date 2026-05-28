@@ -1,8 +1,15 @@
-import { Injectable, Logger, BadRequestException } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import * as fs from 'fs';
+import { Injectable, Inject, Logger } from '@nestjs/common';
 import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
+import {
+  STORAGE_ADAPTER,
+  IStorageAdapter,
+} from './interfaces/storage-adapter.interface';
+
+// Re-export StorageResult so the existing import shape
+//   import { StorageService } from '../storage/storage.service'
+// is unchanged for every consumer that references the return type.
+export type { StorageResult } from './interfaces/storage-adapter.interface';
 
 export interface UploadedFile {
   fieldname: string;
@@ -13,116 +20,120 @@ export interface UploadedFile {
   size: number;
 }
 
-export interface StorageResult {
-  file_url: string;
-  file_name: string;
-  file_size: number;
-  mime_type: string;
-}
-
 @Injectable()
 export class StorageService {
   private readonly logger = new Logger(StorageService.name);
-  private readonly uploadDir: string;
-  private readonly baseUrl: string;
 
-  constructor(private readonly configService: ConfigService) {
-    this.uploadDir = this.configService.get<string>(
-      'UPLOAD_DIR',
-      path.join(process.cwd(), 'uploads'),
-    );
-    this.baseUrl = this.configService.get<string>(
-      'BASE_URL',
-      'http://localhost:3000',
-    );
-    this.ensureUploadDirExists();
-  }
+  constructor(
+    @Inject(STORAGE_ADAPTER)
+    private readonly adapter: IStorageAdapter,
+  ) {}
 
-  private ensureUploadDirExists(): void {
-    const dirs = ['documents', 'knowledge-assets', 'contracts', 'policies', 'temp'];
-    for (const dir of dirs) {
-      const fullPath = path.join(this.uploadDir, dir);
-      if (!fs.existsSync(fullPath)) {
-        fs.mkdirSync(fullPath, { recursive: true });
-      }
-    }
-  }
+  // ─── Public API (all consumers use these methods) ─────────────────────────
 
+  /**
+   * Upload a multer file (from a controller @UploadedFile() parameter).
+   * Generates a UUID-based storage key so the original name never appears in
+   * the stored path.  Returns the decoded original name as `file_name`.
+   */
   async uploadFile(
     file: UploadedFile,
     folder: string = 'documents',
-  ): Promise<StorageResult> {
+  ): Promise<import('./interfaces/storage-adapter.interface').StorageResult> {
     // Multer delivers originalname as Latin-1 encoded bytes.
     // Decode to UTF-8 so non-ASCII characters (e.g. Arabic) display correctly.
     const decodedName = Buffer.from(file.originalname, 'latin1').toString('utf-8');
-
     const ext = path.extname(decodedName);
     const fileName = `${uuidv4()}${ext}`;
-    const filePath = path.join(this.uploadDir, folder, fileName);
 
-    await fs.promises.writeFile(filePath, file.buffer);
+    const result = await this.adapter.upload(file.buffer, folder, fileName, file.mimetype);
+    this.logger.log(`File uploaded: ${result.file_url} (${file.size} bytes)`);
 
-    this.logger.log(`File uploaded: ${filePath} (${file.size} bytes)`);
-
-    return {
-      file_url: `${this.baseUrl}/uploads/${folder}/${fileName}`,
-      file_name: decodedName,
-      file_size: file.size,
-      mime_type: file.mimetype,
-    };
+    // Return the human-readable original name, not the UUID-based stored name.
+    return { ...result, file_name: decodedName };
   }
 
-  private assertContained(filePath: string): void {
-    const base = path.resolve(this.uploadDir) + path.sep;
-    if (!path.resolve(filePath).startsWith(base)) {
-      throw new BadRequestException('Invalid file path');
-    }
+  /**
+   * Upload a raw buffer directly.
+   * Used when the file is produced in-process (e.g. PDF renderer, GDPR ZIP)
+   * rather than received from a multipart form upload.
+   */
+  async uploadBuffer(
+    buffer: Buffer,
+    folder: string,
+    filename: string,
+    mimeType: string,
+  ): Promise<import('./interfaces/storage-adapter.interface').StorageResult> {
+    const result = await this.adapter.upload(buffer, folder, filename, mimeType);
+    this.logger.log(`Buffer uploaded: ${result.file_url} (${buffer.length} bytes)`);
+    return result;
   }
 
+  /** Delete a file by its stored `file_url`. Best-effort — never throws. */
   async deleteFile(fileUrl: string): Promise<void> {
-    try {
-      const relativePath = fileUrl.replace(`${this.baseUrl}/uploads/`, '');
-      const filePath = path.join(this.uploadDir, relativePath);
-      this.assertContained(filePath);
-
-      if (fs.existsSync(filePath)) {
-        await fs.promises.unlink(filePath);
-        this.logger.log(`File deleted: ${filePath}`);
-      }
-    } catch (error) {
-      this.logger.error(`Failed to delete file: ${error.message}`);
-    }
+    return this.adapter.delete(fileUrl);
   }
 
+  /**
+   * Retrieve raw bytes for a stored file.
+   * Works for both local and S3 adapters.
+   */
+  async getBuffer(fileUrl: string): Promise<Buffer> {
+    return this.adapter.getBuffer(fileUrl);
+  }
+
+  /**
+   * Return the local filesystem path for a stored file, or **null** if the
+   * active adapter does not use local disk (e.g. S3).
+   *
+   * Callers that absolutely require a local path (currently: the AI
+   * text-extraction pipeline via shared Docker volume) must check for null
+   * and handle accordingly before switching to the S3 adapter.
+   */
+  getLocalPathOrNull(fileUrl: string): string | null {
+    return this.adapter.getLocalPathOrNull(fileUrl);
+  }
+
+  /**
+   * Return a URL suitable for downloading the file.
+   * - Local adapter: returns the `file_url` as-is (served by Express static).
+   * - S3 adapter: returns a presigned GET URL valid for `expiresInSeconds`.
+   */
+  async getDownloadUrl(fileUrl: string, expiresInSeconds?: number): Promise<string> {
+    return this.adapter.getDownloadUrl(fileUrl, expiresInSeconds);
+  }
+
+  // ─── Deprecated wrappers (kept for backward compatibility) ───────────────
+
+  /**
+   * @deprecated Use getBuffer() instead.
+   */
   async getFileBuffer(fileUrl: string): Promise<Buffer> {
-    const relativePath = fileUrl.replace(`${this.baseUrl}/uploads/`, '');
-    const filePath = path.join(this.uploadDir, relativePath);
-    this.assertContained(filePath);
-
-    if (!fs.existsSync(filePath)) {
-      throw new Error(`File not found: ${filePath}`);
-    }
-
-    return fs.promises.readFile(filePath);
+    return this.getBuffer(fileUrl);
   }
 
+  /**
+   * @deprecated Use getLocalPathOrNull() instead.
+   * Throws when the active adapter returns null (non-local storage).
+   */
   getFilePath(fileUrl: string): string {
-    const relativePath = fileUrl.replace(`${this.baseUrl}/uploads/`, '');
-    const filePath = path.join(this.uploadDir, relativePath);
-    this.assertContained(filePath);
-    return filePath;
+    const localPath = this.getLocalPathOrNull(fileUrl);
+    if (localPath === null) {
+      throw new Error(
+        'getFilePath() is not supported with non-local storage. Use getBuffer() instead.',
+      );
+    }
+    return localPath;
   }
 
+  /** Lightweight text extraction for .txt files. Non-txt returns empty string. */
   async extractTextFromFile(fileUrl: string): Promise<string> {
-    const buffer = await this.getFileBuffer(fileUrl);
+    const buffer = await this.getBuffer(fileUrl);
     const ext = path.extname(fileUrl).toLowerCase();
-
-    // Basic text extraction - for PDF/DOCX, AI backend handles OCR
     if (ext === '.txt') {
       return buffer.toString('utf-8');
     }
-
-    // For other file types, return empty - AI backend will handle extraction
+    // For PDF/DOCX, the AI backend handles OCR
     return '';
   }
 }

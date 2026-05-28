@@ -1,7 +1,7 @@
 # CLAUDE.md — Project Intelligence File
 > Read this entire file at the start of every Claude Code session before touching any code.
 > This file is the single source of truth for all architectural decisions, rules, and context.
-> Last updated: 2026-05-27 (Phase 7.9 shipped — 25 EXCEPTION WHEN blocks replaced across 5 migration files (PR #34). Phase 7.10 confirmed already implemented. Lesson #111 added.)
+> Last updated: 2026-05-28 (Phase 9.1 shipped — Abstract infrastructure layers: StorageService (9.1a), EmailService (9.1b), OCR/text extraction (9.1c). Lessons #112–#113 added.)
 
 ---
 
@@ -2365,3 +2365,160 @@ for months. See lessons #31, #103, and #111.
 - For ADD CONSTRAINT: use `IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = '...')`.
 - Note: PostgreSQL has no `CREATE TYPE IF NOT EXISTS` or `ADD CONSTRAINT IF NOT EXISTS` syntax
   — the `DO $$ ... IF NOT EXISTS ... END $$` block is the only correct approach.
+
+---
+
+## Phase 9.1 — Abstract Infrastructure Layers (shipped — 2026-05-28)
+
+Three sub-tasks shipped together as one PR. Zero behaviour change — all defaults unchanged,
+no new env vars required for existing deployments, no Docker rebuild needed for local dev.
+
+### Phase 9.1a — StorageService abstraction (NestJS backend)
+
+**What shipped:**
+- New interface `IStorageAdapter` + DI symbol `STORAGE_ADAPTER` at
+  `backend/src/modules/storage/interfaces/storage-adapter.interface.ts`.
+  Single `upload()` method returns `StorageResult { file_url, storage_key }`.
+- `LocalStorageAdapter` — writes buffer to `/app/uploads/` (previously inlined in `StorageService`).
+- `S3StorageAdapter` — skeleton; `upload()` raises at runtime until `AWS_S3_BUCKET` is set.
+- `StorageModule` (`@Global()`) — `useFactory` reads `STORAGE_DRIVER` env var:
+  `'local'` (default) → `LocalStorageAdapter`; `'s3'` → `S3StorageAdapter`.
+  Providers are lazily imported inside the factory body.
+- `StorageService` — now delegates entirely to the injected `IStorageAdapter`.
+  New `uploadBuffer(buffer, filename, mimeType)` method added (used by PDF reports).
+- **3 fs bypass fixes:** `compliance-report.processor.ts`, `compliance.controller.ts`,
+  `gdpr-export.service.ts` — all now go through `StorageService` instead of writing
+  to `__dirname` or calling `fs` directly.
+- **New Joi vars:** `STORAGE_DRIVER: Joi.string().valid('local','s3').default('local')`.
+
+**Files changed:**
+- `backend/src/modules/storage/interfaces/storage-adapter.interface.ts` (new)
+- `backend/src/modules/storage/adapters/local-storage.adapter.ts` (new)
+- `backend/src/modules/storage/adapters/s3-storage.adapter.ts` (new)
+- `backend/src/modules/storage/storage.module.ts` (rewritten)
+- `backend/src/modules/storage/storage.service.ts` (refactored)
+- `backend/src/modules/compliance/processors/compliance-report.processor.ts`
+- `backend/src/modules/compliance/controllers/compliance.controller.ts`
+- `backend/src/modules/admin-security/services/gdpr-export.service.ts`
+- `backend/src/app.module.ts` (new Joi var)
+
+---
+
+### Phase 9.1b — EmailService abstraction (NestJS backend)
+
+**What shipped:**
+- New interface `IEmailProvider` + DI symbol `EMAIL_PROVIDER` at
+  `backend/src/modules/notifications/interfaces/email-provider.interface.ts`.
+  Single `send({ from, to, subject, html })` method.
+- `SmtpEmailProvider` — wraps nodemailer (existing SMTP path).
+- `SesEmailProvider` — wraps AWS SES `SendEmailCommand` (requires `AWS_ACCESS_KEY_ID` etc.).
+- `NotificationsModule` — `useFactory` reads `EMAIL_DRIVER` env var:
+  `'smtp'` (default) → `SmtpEmailProvider`; `'ses'` → `SesEmailProvider`.
+- `EmailService` — now delegates to the injected `IEmailProvider`.
+  Template rendering (HTML construction) stays in `EmailService`; the provider is
+  pure transport.
+- **`FROM_EMAIL` bug fixed:** env var was referenced as `EMAIL_FROM` in one path,
+  causing silent wrong-sender-address on some email types. Unified to `FROM_EMAIL`
+  throughout. See lesson #112.
+- **`require()` → `import`** for nodemailer — eliminates a dynamic-require anti-pattern.
+- **New Joi vars:** `EMAIL_DRIVER: Joi.string().valid('smtp','ses').default('smtp')`.
+
+**Files changed:**
+- `backend/src/modules/notifications/interfaces/email-provider.interface.ts` (new)
+- `backend/src/modules/notifications/providers/smtp-email.provider.ts` (new)
+- `backend/src/modules/notifications/providers/ses-email.provider.ts` (new)
+- `backend/src/modules/notifications/notifications.module.ts` (rewritten)
+- `backend/src/modules/notifications/email.service.ts` (refactored)
+- `backend/src/app.module.ts` (new Joi var)
+
+---
+
+### Phase 9.1c — OCR/text extraction abstraction (ai-backend)
+
+**What shipped:**
+- New Python ABC `BaseTextExtractor` at
+  `ai-backend/app/services/base_text_extractor.py`.
+  Single abstract method: `extract_pdf(file_path: str, page_count: int) -> str`.
+  First use of the ABC pattern in the ai-backend codebase.
+- `TesseractTextExtractor` at `ai-backend/app/services/tesseract_text_extractor.py`
+  — renamed and refactored from `TextExtractorService`. Key improvement:
+  `self.last_page_count: int = 0` mutable instance state removed;
+  `_ocr_pdf()` now takes an explicit `page_count: int` parameter, eliminating
+  a potential race condition across concurrent Celery workers.
+- `TextractTextExtractor` at `ai-backend/app/services/textract_text_extractor.py`
+  — skeleton only; `extract_pdf()` always raises `NotImplementedError`. Instantiated
+  only when `TEXT_EXTRACTOR=textract` is set. See known gaps below.
+- `get_text_extractor()` factory at `ai-backend/app/services/text_extractor_factory.py`
+  — reads `TEXT_EXTRACTOR` env var; lazy imports inside function body (matching
+  the existing Celery task pattern).
+- `ai-backend/app/services/text_extractor.py` — original file replaced with a
+  one-line backward-compat re-export: `TextExtractorService = TesseractTextExtractor`.
+  Any code that imports `TextExtractorService` continues to work unchanged.
+- `ai-backend/app/tasks.py` — `run_extract_text` updated to call
+  `get_text_extractor()` factory instead of instantiating `TextExtractorService`
+  directly.
+- **New settings fields:** `TEXT_EXTRACTOR: str = "tesseract"`, `AWS_ACCESS_KEY_ID`,
+  `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `AWS_S3_BUCKET` added to
+  `ai-backend/app/config/settings.py`.
+
+**Files changed:**
+- `ai-backend/app/services/base_text_extractor.py` (new)
+- `ai-backend/app/services/tesseract_text_extractor.py` (new — renamed from TextExtractorService)
+- `ai-backend/app/services/textract_text_extractor.py` (new — skeleton)
+- `ai-backend/app/services/text_extractor_factory.py` (new)
+- `ai-backend/app/services/text_extractor.py` (replaced with re-export alias)
+- `ai-backend/app/tasks.py` (factory call in `run_extract_text`)
+- `ai-backend/app/config/settings.py` (5 new fields)
+
+---
+
+### Phase 9.1 — Known Gaps / Future Work
+
+These gaps are documented here so they are NOT accidentally built on top of without
+a plan. None are urgent for local development. All will be addressed before AWS deployment.
+
+1. **`compliance_report_jobs.file_path` semantic change** — column now stores a full
+   URL (e.g., `http://localhost:3000/uploads/compliance-reports/uuid.pdf`) after the
+   9.1a storage abstraction. When switching to S3, the stored value will become an
+   S3 URL. Any code that reads this column and treats it as an absolute filesystem
+   path will break. Audit before switching `STORAGE_DRIVER=s3`.
+
+2. **`operations-review.service.ts` still writes config JSON to `__dirname`** —
+   this service writes a local config file outside the `StorageService` abstraction.
+   Needs a DB migration or StorageService integration in Phase 9.3+.
+
+3. **`DocumentProcessingService.getLocalFilePath()` passes local paths to Celery** —
+   when `TEXT_EXTRACTOR=textract` is activated, this method must be changed to pass
+   S3 coordinates (bucket + key) instead of a local filesystem path. The Textract
+   skeleton raises `NotImplementedError` until this is resolved.
+
+4. **Textract skeleton prerequisites (do NOT implement until all are met):**
+   - S3 storage must be active (`STORAGE_DRIVER=s3`, Phase 9.1a S3 adapter deployed)
+   - `DocumentProcessingService.getLocalFilePath()` replaced with S3-coordinate passing
+   - `boto3` added to `ai-backend/requirements.txt`
+   - Block-tree parser `_parse_textract_blocks()` written for Arabic RTL text layout
+   - Celery `soft_time_limit` raised for async Textract polling (current 1800s may
+     be insufficient for large multi-page Arabic documents via async API)
+   - Integration tests with real Textract API on a scanned Arabic PDF
+
+5. **`contract_status` enum drift** — DB enum has values not in the TypeScript
+   `ContractStatus` enum (`CONTRACTOR_REVIEWING`, `RISK_ESCALATION_PENDING`, etc.).
+   Full audit required before deployment.
+
+6. **`sendGenericEmail` swallows errors** — Bull queue retry logic for email sending
+   is currently dead code (the catch block does not re-throw). Fix when email
+   reliability is prioritized (Phase 9.2 or later).
+
+7. **S3 adapter skeleton** — `S3StorageAdapter.upload()` raises `NotImplementedError`
+   until `AWS_S3_BUCKET` is set and `@aws-sdk/client-s3` is verified in
+   `package.json`. The adapter class exists and is wired in; only the
+   implementation method body needs filling.
+
+**Hard rules — never violate:**
+- Do NOT set `STORAGE_DRIVER=s3` or `EMAIL_DRIVER=ses` or `TEXT_EXTRACTOR=textract`
+  in any environment until the corresponding prerequisites above are met.
+- When Textract is eventually activated, change `DocumentProcessingService` AND update
+  this section to reflect the resolved state. Never leave known-gap items stale.
+- The `BaseTextExtractor` ABC `extract_pdf()` method signature is fixed:
+  `(file_path: str, page_count: int) -> str`. Do not add instance state to pass
+  page_count implicitly — the parameter exists specifically to prevent race conditions.

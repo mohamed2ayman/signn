@@ -1,7 +1,7 @@
 # lessons.md — SIGN + MANAGEX Platform
 > This file documents every bug, issue, and fix that took significant time to resolve.
 > Feed this file to Claude at the start of every session to avoid repeating mistakes.
-> Last updated: 2026-05-27 (Lessons #110–111 — ThrottlerGuard DI in tests + EXCEPTION WHEN audit pattern.)
+> Last updated: 2026-05-28 (Lessons #110–113 — ThrottlerGuard DI in tests + EXCEPTION WHEN audit + FROM_EMAIL env var mismatch + NestJS adapter DI pattern.)
 
 ---
 
@@ -122,6 +122,10 @@
 107. `refetchIntervalInBackground: false` keeps backend load proportional to active users
 108. NestJS — Cross-Controller Route Shadowing: Dynamic `:id` Routes Shadow Static Routes in Later-Registered Controllers
 109. PostgreSQL — ALTER TYPE ADD VALUE Requires `transaction = false` in TypeORM Migrations
+110. NestJS Testing — `ThrottlerGuard` Cannot Be Resolved Without `ThrottlerModule` — Always `.overrideGuard(ThrottlerGuard)`
+111. Migration Audit Pattern — `EXCEPTION WHEN` Is Never Safe; Always Use `IF NOT EXISTS` Subquery
+112. Email — `FROM_EMAIL` vs `EMAIL_FROM` env var mismatch causes silent wrong-sender address
+113. NestJS — Symbol + `useFactory` Provider Pattern for Swappable Infrastructure Adapters
 
 ---
 
@@ -3960,4 +3964,134 @@ one because it can be copied into the dangerous one by the next developer.
 
 **Reference:** 5 migration files patched, PR #34 (Phase 7.9). See also lessons
 #31 and #103 for earlier encounters with the same class of bug.
+
+---
+
+## 112. Email — `FROM_EMAIL` vs `EMAIL_FROM` env var mismatch causes silent wrong-sender address
+
+**Date:** 2026-05-28 | **Phase:** 9.1b | **Impact:** Silent wrong-sender on some email types
+
+**The bug:**
+`EmailService` read `FROM_EMAIL` (the canonical env var) in most email methods,
+but one code path used `EMAIL_FROM` (wrong name). `process.env.EMAIL_FROM` was
+`undefined`, so that path fell back to an empty string or a hardcoded placeholder,
+causing some outgoing emails to show the wrong sender address. No exception was
+thrown — `nodemailer` silently accepted the malformed sender.
+
+**Root cause:**
+Two different names for the same variable — one based on object-field naming
+convention (`FROM_EMAIL: the email address used as the "from"`) and one based on
+the reverse (`EMAIL_FROM: the "from" for email`). Both look correct in isolation.
+The mismatch was invisible in tests because tests mock the transport layer.
+
+**Fix:**
+Unified all references to `FROM_EMAIL` throughout `email.service.ts`. Grep to verify:
+```bash
+grep -rn "EMAIL_FROM\|FROM_EMAIL" backend/src/modules/notifications/
+```
+Should return only `FROM_EMAIL`. Zero `EMAIL_FROM` hits.
+
+**How to avoid:**
+- When an env var controls a "from address", always name it `FROM_EMAIL` (noun first,
+  qualifier second — matches the existing `FROM_EMAIL` in NestJS Joi schema).
+- Add the canonical name to `backend/.env.example` with a comment. Never rely on
+  developer memory.
+- After any EmailService refactor, send a test email through every code path and
+  inspect the `From:` header in the received email.
+
+**Rules going forward:**
+1. `FROM_EMAIL` is the canonical variable. `EMAIL_FROM` does not exist in this codebase — remove on sight.
+2. When adding a new email template method, always use `configService.get<string>('FROM_EMAIL')`, never a hardcoded string or a differently-named env var.
+3. The Joi schema (`app.module.ts`) is the single source of truth for env var names — always check it before adding a `configService.get()` call.
+
+**Reference:** `backend/src/modules/notifications/email.service.ts`, PR #35 (Phase 9.1b).
+
+---
+
+## 113. NestJS — Symbol + `useFactory` Provider Pattern for Swappable Infrastructure Adapters
+
+**Date:** 2026-05-28 | **Phase:** 9.1a/9.1b | **Impact:** Architecture pattern — clean driver swapping
+
+**The pattern:**
+When you need to swap out an infrastructure dependency (storage, email transport, OCR)
+based on an env var, use a Symbol-based DI token + `useFactory` provider:
+
+```typescript
+// 1. Define the token and interface
+export const STORAGE_ADAPTER = Symbol('STORAGE_ADAPTER');
+export interface IStorageAdapter {
+  upload(buffer: Buffer, filename: string, mimeType: string): Promise<StorageResult>;
+}
+
+// 2. Factory provider in the module
+{
+  provide: STORAGE_ADAPTER,
+  inject: [ConfigService],
+  useFactory: (config: ConfigService): IStorageAdapter => {
+    const driver = config.get<string>('STORAGE_DRIVER', 'local');
+    if (driver === 's3') {
+      return new S3StorageAdapter(/* … */);
+    }
+    return new LocalStorageAdapter(/* … */);
+  },
+},
+
+// 3. Inject by token in the service
+constructor(
+  @Inject(STORAGE_ADAPTER) private readonly adapter: IStorageAdapter,
+) {}
+```
+
+**Why Symbol over string token:**
+- Strings can silently conflict if two modules use the same name — `'STORAGE'` from
+  module A and `'STORAGE'` from module B are the same DI token.
+- Symbols are guaranteed unique — `Symbol('STORAGE_ADAPTER')` creates a new, unique
+  token every time, so there can be no accidental conflict.
+- TypeScript type inference flows correctly from `@Inject(STORAGE_ADAPTER)` when the
+  interface is typed on the constructor parameter.
+
+**Lazy imports inside `useFactory`:**
+All concrete adapter imports MUST be inside the `useFactory` function body, not at
+module level. This matches the pattern established in Celery tasks for the same reason:
+avoid importing heavy dependencies (AWS SDK, nodemailer) at module load time.
+
+**`@Global()` for platform-wide adapters:**
+When a service is consumed by many modules (e.g. `StorageService` used by compliance,
+admin-security, document-processing), mark its module `@Global()`. This allows injection
+without explicit imports in every consuming module, which would cause circular dependency
+risks and maintenance churn. NOT appropriate for domain-specific adapters.
+
+**The Python equivalent (ai-backend):**
+```python
+# Factory function with lazy imports
+def get_text_extractor() -> BaseTextExtractor:
+    from app.config.settings import get_settings
+    settings = get_settings()
+    driver = settings.TEXT_EXTRACTOR
+    if driver == 'textract':
+        from app.services.textract_text_extractor import TextractTextExtractor
+        return TextractTextExtractor(…)
+    from app.services.tesseract_text_extractor import TesseractTextExtractor
+    return TesseractTextExtractor()
+```
+
+**Testing impact:**
+In NestJS unit tests, override the symbol token:
+```typescript
+{ provide: STORAGE_ADAPTER, useValue: { upload: jest.fn().mockResolvedValue({ file_url: '…', storage_key: '…' }) } }
+```
+In Python tests (pytest), mock the factory function:
+```python
+mocker.patch('app.services.text_extractor_factory.get_text_extractor',
+             return_value=MagicMock(spec=BaseTextExtractor))
+```
+
+**Rules going forward:**
+1. Every new swappable infrastructure dependency uses Symbol token + `useFactory` + interface. No concrete class imports at the call site.
+2. Lazy imports inside `useFactory` are mandatory for adapters that import heavy SDKs.
+3. `@Global()` only for truly platform-wide services (storage, email). Not for domain modules.
+4. Never reference the concrete class in any consumer — always inject via the interface type.
+
+**Reference:** `backend/src/modules/storage/`, `backend/src/modules/notifications/`,
+`ai-backend/app/services/text_extractor_factory.py`, PR #35 (Phase 9.1).
 
