@@ -1,6 +1,6 @@
 # SIGN Platform — Development Roadmap
-> Last updated: 2026-05-25
-> Next review: When 7.5-7.9 are cleared and 9.1 planning starts
+> Last updated: 2026-05-28
+> Next review: When 7.5-7.8 are cleared; 9.2 AWS setup planning starts
 > Maintained by: Ayman & Youssef
 > Market: Arabic, English, French (Middle East + Global)
 > AI Strategy: Anthropic Claude API now → migrate to open-source models later
@@ -906,20 +906,51 @@ per-jurisdiction cost for legal-quality review.
 ---
 
 ## ☁️ PHASE 9 — Deployment Preparation
-> ⚠️ Phase 9.1 (Abstract Infrastructure Layers) should start during mid-Phase 7, not after.
 > All other Phase 9 tasks start when MVP features are ready.
 
-**Status:** ❌ Not started
+**Status:** ⏳ In progress (9.1 ✅ Complete)
 
 ---
 
-### 9.1 — Abstract Infrastructure Layers
-**Owner:** Ayman | **Priority:** 🟠 HIGH — start during Phase 7, before other deployment work
-**Status:** ❌ Not started
-- Storage: `STORAGE_TYPE=local` (dev) → `s3` (prod)
-- Email: `EMAIL_PROVIDER=smtp` (dev) → `ses` (prod)
-- OCR: `OCR_PROVIDER=tesseract` (dev) → `textract` (prod)
-- ⚠️ Do this BEFORE any other deployment work — swapping after deployment is 10x harder
+### ✅ 9.1 — Abstract Infrastructure Layers
+**Owner:** Ayman | **Status:** ✅ SHIPPED (PR #35, 2026-05-28)
+
+Three adapters abstracted behind interfaces. Zero behaviour change — all defaults unchanged.
+No new env vars required for existing local dev deployments.
+
+- **9.1a — StorageService** (`STORAGE_DRIVER`: `local` default → `s3`):
+  `IStorageAdapter` interface + `STORAGE_ADAPTER` DI symbol. `LocalStorageAdapter` (active).
+  `S3StorageAdapter` (skeleton — raises until `AWS_S3_BUCKET` set). `StorageModule` `@Global()`.
+  3 fs-bypass fixes: `compliance-report.processor.ts`, `compliance.controller.ts`,
+  `gdpr-export.service.ts`. New `uploadBuffer()` method on `StorageService`.
+
+- **9.1b — EmailService** (`EMAIL_DRIVER`: `smtp` default → `ses`):
+  `IEmailProvider` interface + `EMAIL_PROVIDER` DI symbol. `SmtpEmailProvider` (active).
+  `SesEmailProvider` (ready — requires AWS credentials). `FROM_EMAIL` env var mismatch
+  bug fixed (was `EMAIL_FROM` in one code path). `require()` → `import` for nodemailer.
+
+- **9.1c — Text extraction** (`TEXT_EXTRACTOR`: `tesseract` default → `textract`):
+  `BaseTextExtractor` ABC (`extract_pdf(file_path, page_count) -> str`).
+  `TesseractTextExtractor` concrete impl (active — renamed from `TextExtractorService`,
+  `self.last_page_count` mutable state removed, explicit `page_count` param in `_ocr_pdf()`).
+  `TextractTextExtractor` skeleton (raises `NotImplementedError` — see known gaps below).
+  `get_text_extractor()` factory with lazy imports. Backward-compat re-export preserved.
+
+**Known gaps before `s3`/`ses`/`textract` can be activated (do NOT enable without resolving):**
+1. `compliance_report_jobs.file_path` stores full localhost URL after 9.1a — must audit before S3 switch
+2. `operations-review.service.ts` writes config JSON to `__dirname` — out of StorageService abstraction
+3. `DocumentProcessingService.getLocalFilePath()` passes local paths to Celery — must pass S3 coordinates for Textract to work
+4. Textract also requires: `boto3` in requirements.txt, block-tree parser for Arabic RTL layout, raised Celery `soft_time_limit`
+5. `contract_status` enum drift — DB has values not in TypeScript enum; audit before deployment
+6. `sendGenericEmail` swallows errors — Bull queue retries are dead code
+7. S3 adapter `upload()` body still raises `NotImplementedError` until `AWS_S3_BUCKET` is set
+
+**Hard rules — never violate:**
+- Do NOT set `STORAGE_DRIVER=s3`, `EMAIL_DRIVER=ses`, or `TEXT_EXTRACTOR=textract` in any
+  environment until ALL prerequisites above are resolved.
+- The `BaseTextExtractor.extract_pdf()` signature is fixed: `(file_path: str, page_count: int) -> str`.
+  Do not add instance state to pass `page_count` implicitly — the explicit parameter exists to
+  prevent race conditions across concurrent Celery workers.
 
 ---
 
@@ -1110,7 +1141,8 @@ per-jurisdiction cost for legal-quality review.
 | 6B.1 | Visual Confidentiality | ❌ After Phase 7 | Y | |
 | 6B.2 | Invisible Watermarks | ❌ After Phase 7 | Y | |
 | 8 | AI Migration | ❌ Not started | A+Y | |
-| 9 | Deployment | ❌ Not started | A+Y | |
+| 9.1 | Abstract Infrastructure Layers | ✅ Complete (PR #35) | A | 2026-05-28 |
+| 9.2+ | AWS, CI/CD, monitoring, cookies | ❌ Not started | A+Y | |
 | 10 | SOC 2 | ❌ Not started | A+Y | |
 | 11 | Training Data | ❌ Not started | A+Y | |
 
@@ -1131,7 +1163,7 @@ per-jurisdiction cost for legal-quality review.
 ## 🔥 What's Next (Priority Order)
 
 **Ayman:**
-1. 9.1 — Abstract Infrastructure Layers (highest strategic impact — start now)
+1. ~~9.1 — Abstract Infrastructure Layers~~ ✅ Done (PR #35)
 2. 7.21 — RFP & Specification Document Analysis (AI — competitive priority)
 3. 7.25 — Poor Scan Quality Handling (quick win)
 4. 7.24 — Knowledge Base Enhancements
@@ -1155,7 +1187,7 @@ per-jurisdiction cost for legal-quality review.
 
 ## 💡 Claude's Recommendations (May 2026)
 
-1. **Start 9.1 now** — Abstract infrastructure layers BEFORE more features are built on local storage/SMTP/tesseract. Every feature built on top of local services makes deployment harder later.
+1. ~~**Start 9.1 now**~~ ✅ Done (PR #35) — Infrastructure layers abstracted. Before switching any driver to production (`s3`/`ses`/`textract`), resolve the 7 known gaps documented in the 9.1 section above.
 2. **Youssef: clear 7.5-7.8 first** — Quick polish items from 7.1 that take 1-2 hours total, then move to 7.17 Dashboard.
 3. **7.21 (RFP Analysis) is Ayman's next competitive feature** — Unique to construction, Trimble investing heavily, builds on existing AI extraction pipeline.
 4. **Phase 6B after Phase 7** — Features will change UI, protection layers built now need rebuilding.
@@ -1163,5 +1195,5 @@ per-jurisdiction cost for legal-quality review.
 
 ---
 
-*Last updated: 2026-05-27*
-*Next review: When 7.5-7.8 are cleared and 9.1 planning starts*
+*Last updated: 2026-05-28*
+*Next review: When 7.5-7.8 are cleared; 9.2 AWS setup planning starts*

@@ -1,63 +1,44 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Inject, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import * as nodemailer from 'nodemailer';
-import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
 import {
   teamInvitationEmail,
   approvalRequestedEmail,
 } from './templates';
+import { baseEmailLayout } from './templates/base-layout';
+import {
+  EMAIL_PROVIDER,
+  IEmailProvider,
+} from './interfaces/email-provider.interface';
 
 @Injectable()
 export class EmailService {
   private readonly logger = new Logger(EmailService.name);
-  private transporter: nodemailer.Transporter;
-  private sesClient: SESClient;
-  private readonly isProduction: boolean;
+  /** Used by callers that build links (e.g. invitation, password-reset). */
   readonly frontendUrl: string;
   private readonly fromEmail: string;
 
-  constructor(private readonly configService: ConfigService) {
-    this.isProduction =
-      this.configService.get<string>('NODE_ENV') === 'production';
+  constructor(
+    private readonly configService: ConfigService,
+    @Inject(EMAIL_PROVIDER) private readonly provider: IEmailProvider,
+  ) {
     this.frontendUrl = this.configService.get<string>(
       'FRONTEND_URL',
       'http://localhost:5173',
     );
+    // Fixed: was incorrectly reading 'EMAIL_FROM'; the Joi-validated key is 'FROM_EMAIL'.
     this.fromEmail = this.configService.get<string>(
-      'EMAIL_FROM',
-      'noreply@signplatform.com',
+      'FROM_EMAIL',
+      'noreply@sign.ai',
     );
-
-    if (this.isProduction) {
-      this.sesClient = new SESClient({
-        region: this.configService.get<string>('AWS_REGION', 'us-east-1'),
-        credentials: {
-          accessKeyId: this.configService.get<string>('AWS_ACCESS_KEY_ID', ''),
-          secretAccessKey: this.configService.get<string>(
-            'AWS_SECRET_ACCESS_KEY',
-            '',
-          ),
-        },
-      });
-    } else {
-      // Dev mode: use Ethereal or local SMTP (MailHog, etc.)
-      this.transporter = nodemailer.createTransport({
-        host: this.configService.get<string>('SMTP_HOST', 'localhost'),
-        port: this.configService.get<number>('SMTP_PORT', 1025),
-        secure: false,
-        ignoreTLS: true,
-        auth: {
-          user: this.configService.get<string>('SMTP_USER', ''),
-          pass: this.configService.get<string>('SMTP_PASS', ''),
-        },
-      });
-    }
   }
 
+  // ─── High-level send methods ──────────────────────────────────────────────
+  // All template rendering happens here. Providers receive only rendered HTML.
+
   async sendMfaOtp(email: string, otpCode: string): Promise<void> {
-    const { baseEmailLayout } = require('./templates/base-layout');
     const subject = 'Sign — Your Verification Code';
-    const html = baseEmailLayout(`
+    const html = baseEmailLayout(
+      `
       <h1 style="margin:0 0 8px; font-size:22px; font-weight:700; color:#0F1729;">Your Verification Code</h1>
       <p style="margin:12px 0; font-size:14px; color:#4B5563; line-height:1.6;">Use the following code to complete your login:</p>
       <div style="background-color:#F8FAFF; border-radius:12px; padding:24px; text-align:center; margin:24px 0;">
@@ -65,7 +46,9 @@ export class EmailService {
       </div>
       <p style="margin:12px 0; font-size:14px; color:#4B5563;">This code expires in <strong>10 minutes</strong>.</p>
       <p style="margin:20px 0 0; font-size:12px; color:#9CA3AF;">If you did not request this code, please ignore this email.</p>
-    `, { preheader: 'Your Sign verification code' });
+    `,
+      { preheader: 'Your Sign verification code' },
+    );
 
     await this.sendGenericEmail(email, subject, html);
   }
@@ -75,7 +58,6 @@ export class EmailService {
     recoveryCodes: string[],
     method: string,
   ): Promise<void> {
-    const { baseEmailLayout } = require('./templates/base-layout');
     const subject = 'Sign — Your MFA Recovery Codes';
     const codesHtml = recoveryCodes
       .map(
@@ -127,10 +109,10 @@ export class EmailService {
   }
 
   async sendPasswordReset(email: string, resetToken: string): Promise<void> {
-    const { baseEmailLayout } = require('./templates/base-layout');
     const resetLink = `${this.frontendUrl}/auth/reset-password?token=${resetToken}`;
     const subject = 'Sign — Password Reset Request';
-    const html = baseEmailLayout(`
+    const html = baseEmailLayout(
+      `
       <h1 style="margin:0 0 8px; font-size:22px; font-weight:700; color:#0F1729;">Password Reset</h1>
       <p style="margin:12px 0; font-size:14px; color:#4B5563; line-height:1.6;">We received a request to reset your password. Click the button below to set a new one:</p>
       <table role="presentation" cellpadding="0" cellspacing="0" style="margin:28px auto;">
@@ -140,7 +122,9 @@ export class EmailService {
       </table>
       <p style="margin:12px 0; font-size:14px; color:#4B5563;">This link expires in <strong>1 hour</strong>.</p>
       <p style="margin:20px 0 0; font-size:12px; color:#9CA3AF;">If you did not request a password reset, please ignore this email. Your password will remain unchanged.</p>
-    `, { preheader: 'Reset your Sign password' });
+    `,
+      { preheader: 'Reset your Sign password' },
+    );
 
     await this.sendGenericEmail(email, subject, html);
   }
@@ -168,61 +152,24 @@ export class EmailService {
     await this.sendGenericEmail(email, subject, html);
   }
 
+  // ─── Transport dispatch ───────────────────────────────────────────────────
+
+  /**
+   * Single dispatch point for all outbound email.
+   * Delegates transport to the injected IEmailProvider.
+   * Swallows errors so email failures never break the calling flow.
+   */
   async sendGenericEmail(
     to: string,
     subject: string,
     html: string,
   ): Promise<void> {
     try {
-      if (this.isProduction) {
-        await this.sendViaSes(to, subject, html);
-      } else {
-        await this.sendViaSmtp(to, subject, html);
-      }
+      await this.provider.send({ from: this.fromEmail, to, subject, html });
       this.logger.log(`Email sent successfully to ${to}`);
     } catch (error) {
       this.logger.error(`Failed to send email to ${to}`, error);
-      // Do not throw - email failures should not break the auth flow
+      // Do not throw — email failures should not break the auth flow
     }
-  }
-
-  private async sendViaSmtp(
-    to: string,
-    subject: string,
-    html: string,
-  ): Promise<void> {
-    await this.transporter.sendMail({
-      from: this.fromEmail,
-      to,
-      subject,
-      html,
-    });
-  }
-
-  private async sendViaSes(
-    to: string,
-    subject: string,
-    html: string,
-  ): Promise<void> {
-    const command = new SendEmailCommand({
-      Source: this.fromEmail,
-      Destination: {
-        ToAddresses: [to],
-      },
-      Message: {
-        Subject: {
-          Data: subject,
-          Charset: 'UTF-8',
-        },
-        Body: {
-          Html: {
-            Data: html,
-            Charset: 'UTF-8',
-          },
-        },
-      },
-    });
-
-    await this.sesClient.send(command);
   }
 }

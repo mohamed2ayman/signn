@@ -26,6 +26,16 @@ class Settings(BaseSettings):
     NESTJS_API_URL: str = "http://localhost:3000"
     NESTJS_INTERNAL_TOKEN: str = ""
 
+    # ── Text extraction backend ──────────────────────────────────────────────
+    # "tesseract" (default) or "textract" (requires S3 — see Phase 9.1c).
+    TEXT_EXTRACTOR: str = "tesseract"
+
+    # ── AWS / S3 (optional — used by Textract backend and S3 storage adapter)
+    AWS_ACCESS_KEY_ID: str = ""
+    AWS_SECRET_ACCESS_KEY: str = ""
+    AWS_REGION: str = "us-east-1"
+    AWS_S3_BUCKET: str = ""
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

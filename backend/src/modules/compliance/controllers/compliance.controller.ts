@@ -1,7 +1,6 @@
 import {
   Body,
   Controller,
-  ForbiddenException,
   Get,
   Param,
   Patch,
@@ -11,7 +10,6 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { Response } from 'express';
-import * as path from 'path';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { User } from '../../../database/entities';
@@ -20,6 +18,7 @@ import { UpdateFindingStatusDto } from '../dto/update-finding-status.dto';
 import { ComplianceService } from '../services/compliance.service';
 import { ComplianceFindingService } from '../services/compliance-finding.service';
 import { ComplianceReportService } from '../services/compliance-report.service';
+import { StorageService } from '../../storage/storage.service';
 
 @Controller('contracts/:contractId/compliance-checks')
 @UseGuards(JwtAuthGuard)
@@ -107,10 +106,17 @@ export class ComplianceController {
  * Public download endpoint — token-gated, no JWT.
  *   GET /api/v1/compliance/reports/download?token=...
  * Streams the rendered PDF inline. Tokens expire after 24h.
+ *
+ * The file is retrieved via StorageService.getBuffer() so this endpoint
+ * works with both the local adapter (default) and the S3 adapter without
+ * any path-manipulation or sendFile() calls.
  */
 @Controller('compliance')
 export class ComplianceReportDownloadController {
-  constructor(private readonly reports: ComplianceReportService) {}
+  constructor(
+    private readonly reports: ComplianceReportService,
+    private readonly storage: StorageService,
+  ) {}
 
   @Get('reports/download')
   async download(
@@ -122,18 +128,14 @@ export class ComplianceReportDownloadController {
       res.status(410).send('This download link has expired or is invalid.');
       return;
     }
-    const uploadBase =
-      path.resolve(process.env['UPLOAD_DIR'] ?? path.join(process.cwd(), 'uploads')) +
-      path.sep;
-    const resolvedPath = path.resolve(job.file_path);
-    if (!resolvedPath.startsWith(uploadBase)) {
-      throw new ForbiddenException('Invalid file path');
-    }
+
+    const buffer = await this.storage.getBuffer(job.file_path);
+
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader(
       'Content-Disposition',
       `inline; filename="sign-compliance-${job.id}.pdf"`,
     );
-    res.sendFile(resolvedPath);
+    res.end(buffer);
   }
 }

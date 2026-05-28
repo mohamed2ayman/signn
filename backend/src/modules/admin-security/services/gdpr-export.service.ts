@@ -4,15 +4,13 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bull';
-import * as fs from 'fs';
-import * as path from 'path';
 import * as archiver from 'archiver';
 import { v4 as uuidv4 } from 'uuid';
+import { StorageService } from '../../storage/storage.service';
 import {
   AuditLog,
   Claim,
@@ -66,8 +64,6 @@ const EXPORT_RETENTION_HOURS = 24;
 @Injectable()
 export class GdprExportService {
   private readonly logger = new Logger(GdprExportService.name);
-  private readonly exportDir: string;
-  private readonly baseUrl: string;
 
   constructor(
     @InjectRepository(User)
@@ -92,20 +88,10 @@ export class GdprExportService {
     private readonly historyRepo: Repository<PasswordHistory>,
     @InjectQueue('email-queue') private readonly emailQueue: Queue,
     private readonly dataSource: DataSource,
-    private readonly configService: ConfigService,
     private readonly dispatch: NotificationDispatchService,
     private readonly securityEvents: SecurityEventService,
-  ) {
-    const uploadDir = this.configService.get<string>(
-      'UPLOAD_DIR',
-      path.join(process.cwd(), 'uploads'),
-    );
-    this.exportDir = path.join(uploadDir, 'gdpr-exports');
-    if (!fs.existsSync(this.exportDir)) {
-      fs.mkdirSync(this.exportDir, { recursive: true });
-    }
-    this.baseUrl = this.configService.get<string>('BASE_URL', 'http://localhost:3000');
-  }
+    private readonly storage: StorageService,
+  ) {}
 
   /** Synchronously builds the ZIP and returns the download URL. */
   async exportNow(req: GdprExportRequest): Promise<GdprExportResult> {
@@ -114,17 +100,18 @@ export class GdprExportService {
 
     const jobId = uuidv4();
     const filename = `gdpr-export-${user.id}-${jobId}.zip`;
-    const filePath = path.join(this.exportDir, filename);
 
     const data = await this.collectUserData(user.id);
 
-    await new Promise<void>((resolve, reject) => {
-      const output = fs.createWriteStream(filePath);
+    // Buffer the entire ZIP in memory, then hand it to StorageService.
+    // This avoids a direct fs.createWriteStream dependency and works with
+    // both the local adapter and the S3 adapter.
+    const zipBuffer = await new Promise<Buffer>((resolve, reject) => {
+      const chunks: Buffer[] = [];
       const archive = archiver('zip', { zlib: { level: 9 } });
-      output.on('close', () => resolve());
-      output.on('error', reject);
+      archive.on('data', (chunk: Buffer) => chunks.push(chunk));
+      archive.on('end', () => resolve(Buffer.concat(chunks)));
       archive.on('error', reject);
-      archive.pipe(output);
       for (const [name, payload] of Object.entries(data)) {
         archive.append(JSON.stringify(payload, null, 2), { name: `${name}.json` });
       }
@@ -132,8 +119,21 @@ export class GdprExportService {
       void archive.finalize();
     });
 
-    const downloadUrl = `${this.baseUrl}/uploads/gdpr-exports/${filename}`;
+    const storageResult = await this.storage.uploadBuffer(
+      zipBuffer,
+      'gdpr-exports',
+      filename,
+      'application/zip',
+    );
+
     const expiresAt = new Date(Date.now() + EXPORT_RETENTION_HOURS * 60 * 60 * 1000);
+
+    // For local adapter: getDownloadUrl returns file_url as-is (direct link).
+    // For S3 adapter: returns a presigned URL valid for the retention window.
+    const downloadUrl = await this.storage.getDownloadUrl(
+      storageResult.file_url,
+      EXPORT_RETENTION_HOURS * 3600,
+    );
 
     await this.securityEvents.record({
       type: SECURITY_EVENT_TYPES.GDPR_EXPORT,

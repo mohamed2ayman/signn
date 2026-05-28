@@ -113,6 +113,8 @@ import { dataSourceOptions } from './config/data-source';
         AWS_S3_BUCKET:         Joi.string().optional().allow(''),
 
         // ── Email / SMTP (optional — not configured yet)
+        // 'smtp' (default, uses SMTP_HOST/PORT/USER/PASS) or 'ses' (AWS SES).
+        EMAIL_DRIVER:     Joi.string().valid('smtp', 'ses').default('smtp'),
         SMTP_HOST:        Joi.string().optional().allow(''),
         SMTP_PORT:        Joi.number().optional(),
         SMTP_USER:        Joi.string().optional().allow(''),
@@ -122,6 +124,9 @@ import { dataSourceOptions } from './config/data-source';
 
         // ── File storage
         UPLOAD_DIR: Joi.string().optional().default('./uploads'),
+        // 'local' (default, uses Docker named volume) or 's3' (AWS S3).
+        // When 's3', AWS_S3_BUCKET + AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY are required.
+        STORAGE_DRIVER: Joi.string().valid('local', 's3').default('local'),
 
         // ── Seed passwords (only required when running seed scripts, not on app start)
         SEED_ADMIN_PASSWORD_1: Joi.string().min(12).optional(),
