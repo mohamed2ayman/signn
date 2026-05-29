@@ -567,6 +567,7 @@
     "kpis": {
       "totalContracts": "إجمالي العقود",
       "activeContracts": "العقود النشطة",
+      "openRisks": "المخاطر المفتوحة",
       "contractsCreated": "العقود المنشأة",
       "risksFlagged": "المخاطر المرصودة",
       "delta": {

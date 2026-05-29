@@ -4831,3 +4831,38 @@ happened to be off in the test that "worked." Every early "working" test here us
 
 **Reference:** Phase 7.17 Prompt 2b Step 1; `ChartBlock.tsx` (`withRtlChrome`,
 `animation:false`); throwaway iso-bar + rerender-test harnesses (since removed).
+
+## 137. Latin Numerals For Monetary AND Count Values Even Under AR Locale (MENA Construction-Finance Convention)
+
+**Rule:** in the portfolio dashboard (and by extension, any contract-finance
+surface in the SIGN app), monetary amounts AND plain count values render with
+**Latin (0-9) numerals**, ISO currency codes, and ISO date strings — **even
+under the Arabic (rtl) locale**. Do NOT reach for
+`Intl.NumberFormat('ar-EG', ...)` (or similar locale-aware numeric formatting)
+on financial figures. Monetary: `Intl.NumberFormat('en-US', { minimumFractionDigits: 2,
+maximumFractionDigits: 2 }).format(value) + ' ' + isoCode` →
+`"100,000,000.00 EGP"`. Plain counts: `Intl.NumberFormat('en-US').format(n)` →
+`"12"`. Dates from the backend (`YYYY-MM`) are rendered verbatim.
+
+**Why:** MENA construction-finance practice (FIDIC / NEC contracts, AED/EGP/SAR
+financial reporting, project ledgers) consistently uses Latin numerals for
+monetary values regardless of the document's language. Arabic-Indic numerals
+(٠-٩) in a contract-value figure are unusual in this domain and read as a
+confusion source — exactly the kind of subtle "localization win" that
+back-fires in production review meetings. ISO currency codes (EGP, USD, AED)
+are universally readable and avoid the "ج.م.‏" / "$" / Arabic-currency-name
+sprawl. The decision is deliberate and survives locale.
+
+**Anti-pattern to refuse:** "the user is in AR locale, so the contract value
+should use Arabic-Indic numerals — that's what `Intl.NumberFormat('ar-EG')`
+gives me." Refuse the refactor. The next person localizing a number will
+reflexively reintroduce locale-aware numeric formatting on these surfaces; this
+lesson is the durable guard.
+
+**Scope:** applies to the portfolio dashboard's value-per-currency rows, KPI
+counts, top-projects table figures, and any future contract-value display on
+the page. Does NOT apply to non-financial UI numerics (e.g. notification
+counts in the topbar) — there, locale-aware formatting is fine.
+
+**Reference:** Phase 7.17 Prompt 2b Bucket 1 (D4); `KpiCard.tsx`,
+`value-per-currency` rendering.
