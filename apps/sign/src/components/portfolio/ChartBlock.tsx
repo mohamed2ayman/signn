@@ -79,14 +79,14 @@ export function withRtlChrome(config: any, rtl: boolean): any {
     ...config,
     options: {
       ...config.options,
-      // LOAD-BEARING, not cosmetic (lesson #136). The reversed-axis RTL
-      // horizontal bar renders correctly in isolation at any Chart.js version,
-      // but in the React component the grow animation never settles under
-      // re-mount (dev StrictMode / config churn recreate the chart, restarting
-      // the animation) — leaving the bars stuck mid-grow at the wrong anchor.
-      // animation:false removes the animation, so there is nothing to catch and
-      // every chart renders its final geometry deterministically. Re-enabling
-      // animation on any portfolio chart reintroduces the RTL-bar bug.
+      // Off on ALL portfolio charts (lesson #136). Recreating a chart while a
+      // grow animation is in flight can leave it stuck mid-state; a reversed
+      // axis (RTL bar) makes that egregious but is the exposing SYMPTOM, not the
+      // cause — so this applies to every geometry, not just the bar. A single
+      // recreate (production period/filter/locale change) settles fine even
+      // mid-animation; the stuck state only reproduced under dev StrictMode's
+      // rapid double-mount. So this is a prudent default (kills the dev-broken
+      // render + guards future churn), NOT a prod-load-bearing fix.
       animation: false as const,
       locale: rtl ? 'ar' : 'en',
       plugins: {
