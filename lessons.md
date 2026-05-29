@@ -4791,3 +4791,38 @@ form. cf. #132 (verify which DB you're hitting).
 
 **Reference:** Phase 7.17 Prompt 2a verification; dev DB row counts at
 implementation time (2 contracts, 0 risk_analyses).
+
+## 136. Portfolio Chart.js Charts Require `animation: false` (Reversed-Axis RTL Bars Mis-Anchor Under React Re-mount)
+
+A Chart.js horizontal bar with a **reversed value axis** (`scales.x.reverse:true`,
+used so RTL bars grow from the right) rendered as tiny stubs at the wrong end —
+in the live React component, with animation on. The Step-1 debugging first blamed
+the Chart.js version (4.4.0 → 4.5.0), then resize, then animation, dismissing each
+"still broken" read as an unreliable `getChart`/mid-animation capture. None of
+those were isolated against the settled component.
+
+A clean **vanilla** isolation (single chart creation, no React, no StrictMode,
+`getChart` ignored, screenshot pixels after full settle) settled it. The
+reversed-axis RTL bar renders **correctly in all four combinations**: {4.4.0,
+4.5.0} × {animation:false, animation:true}. So it is **NOT a Chart.js version
+bug and NOT a static-config bug** — the 4.5.0 bump was unnecessary and was
+reverted (one Chart.js version in the app).
+
+The bug reproduces **only in the React component with animation ON**: under
+re-mount (dev StrictMode, or config-identity churn) the chart is
+destroyed+recreated, restarting the grow animation, so it never settles and the
+bars stay caught mid-grow at the wrong anchor. `animation:false` removes the
+animation — there is nothing to catch — so every render shows final geometry.
+
+**Rule:** every portfolio Chart.js chart sets `animation: false` (centralized in
+`withRtlChrome`). It is load-bearing for the reversed RTL bar, not cosmetic.
+Re-enabling animation on any portfolio chart reintroduces the bug.
+
+**Method rule (the deeper lesson):** when a fix touches multiple variables
+(version, resize, animation), isolate **one variable at a time against the
+settled state via ground-truth pixels** — never attribute to whichever variable
+happened to be off in the test that "worked." Here, every "working" test had used
+`animation:false`, so animation was never actually isolated until forced to.
+
+**Reference:** Phase 7.17 Prompt 2b Step 1; `ChartBlock.tsx` (`withRtlChrome`,
+`animation:false`); vanilla iso-bar harness (since removed).
