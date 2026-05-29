@@ -58,9 +58,22 @@ describe('Create/UpdateContractDto — value ↔ currency pairing', () => {
     expect(hasErrOn(createErrs({ currency: 'whatever' }), 'currency')).toBe(false);
   });
 
-  it('applies the same rule to UpdateContractDto', () => {
-    expect(hasErrOn(updateErrs({ contract_value: 1000 }), 'currency')).toBe(true);
-    expect(updateErrs({ contract_value: 1000, currency: 'QAR' })).toHaveLength(0);
-    expect(updateErrs({})).toHaveLength(0);
+  // UpdateContractDto deliberately does NOT enforce the pairing at the DTO
+  // layer (payload-only validation can't see the persisted currency). It only
+  // format-validates currency when present; the pairing is enforced on the
+  // merged entity in contracts.service.update() — see the service spec + util spec.
+  describe('UpdateContractDto — format-only currency at the DTO layer', () => {
+    it('accepts a value-only update (pairing is checked later against the merged row)', () => {
+      expect(hasErrOn(updateErrs({ contract_value: 1000 }), 'currency')).toBe(false);
+    });
+    it('accepts value + a valid currency', () => {
+      expect(updateErrs({ contract_value: 1000, currency: 'QAR' })).toHaveLength(0);
+    });
+    it('still rejects a malformed currency when present', () => {
+      expect(hasErrOn(updateErrs({ currency: 'qar' }), 'currency')).toBe(true);
+    });
+    it('accepts an empty update', () => {
+      expect(updateErrs({})).toHaveLength(0);
+    });
   });
 });

@@ -234,4 +234,47 @@ describe('ContractsService', () => {
       );
     });
   });
+
+  // ─── update() — Phase 7.17 Prompt 2a value↔currency pairing ─────────────────
+
+  describe('update() value/currency pairing (merged entity)', () => {
+    it('allows a value-only update on an already-priced contract (currency from the existing row)', async () => {
+      mockContractRepository.findOne.mockResolvedValue({
+        ...SAVED_CONTRACT,
+        contract_value: 1000,
+        currency: 'USD',
+      });
+      await expect(
+        service.update('contract-uuid', { contract_value: 5000 } as any),
+      ).resolves.toBeDefined();
+      expect(mockContractRepository.save).toHaveBeenCalled();
+    });
+
+    it('rejects setting a value on an unpriced contract with no currency', async () => {
+      mockContractRepository.findOne.mockResolvedValue({
+        ...SAVED_CONTRACT,
+        contract_value: null,
+        currency: null,
+      });
+      await expect(
+        service.update('contract-uuid', { contract_value: 5000 } as any),
+      ).rejects.toThrow();
+      expect(mockContractRepository.save).not.toHaveBeenCalled();
+    });
+
+    it('accepts value + currency together on an unpriced contract', async () => {
+      mockContractRepository.findOne.mockResolvedValue({
+        ...SAVED_CONTRACT,
+        contract_value: null,
+        currency: null,
+      });
+      await expect(
+        service.update('contract-uuid', {
+          contract_value: 5000,
+          currency: 'EUR',
+        } as any),
+      ).resolves.toBeDefined();
+      expect(mockContractRepository.save).toHaveBeenCalled();
+    });
+  });
 });

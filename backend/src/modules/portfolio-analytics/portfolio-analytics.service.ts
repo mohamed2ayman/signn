@@ -2,7 +2,6 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, SelectQueryBuilder } from 'typeorm';
 import {
-  Project,
   Contract,
   ContractStatus,
   ContractType,
@@ -79,8 +78,6 @@ export class PortfolioAnalyticsService {
   private readonly logger = new Logger(PortfolioAnalyticsService.name);
 
   constructor(
-    @InjectRepository(Project)
-    private readonly projectRepo: Repository<Project>,
     @InjectRepository(Contract)
     private readonly contractRepo: Repository<Contract>,
     @InjectRepository(RiskAnalysis)
@@ -129,7 +126,7 @@ export class PortfolioAnalyticsService {
       safeQuery(() => this.getValueByCurrency(orgId, projectId), [], 'valueByCurrency'),
       safeQuery(
         () => this.getTimeToSignature(orgId, range, projectId),
-        { avg_days: null, sample_size: 0, trend: [] },
+        { avg_days: null, sample_size: 0, excluded_no_shared_at: 0, trend: [] },
         'timeToSignature',
       ),
       safeQuery(
@@ -314,16 +311,36 @@ export class PortfolioAnalyticsService {
     projectId?: string,
   ) {
     // Anchor = shared_at → executed_at (review→signed interval, NOT created_at;
-    // see Decision D2). Both must be non-null.
+    // see Decision D2). Both must be non-null — but contracts that reached
+    // executed_at WITHOUT a shared_at are NOT silently dropped: they are
+    // counted into `excluded_no_shared_at` so the denominator is auditable
+    // (a non-zero value means the avg is computed over a subset of signed
+    // contracts, which a consumer must be able to see).
     const DIFF_DAYS =
       'EXTRACT(EPOCH FROM (c.executed_at - c.shared_at)) / 86400.0';
 
-    const avgRow = await this.scopedContracts(orgId, projectId)
-      .select(`AVG(${DIFF_DAYS})`, 'days')
-      .addSelect('COUNT(*)', 'count')
-      .andWhere('c.executed_at IS NOT NULL')
-      .andWhere('c.shared_at IS NOT NULL')
-      .getRawOne<{ days: string | null; count: string }>();
+    const [avgRow, excludedRow] = await Promise.all([
+      this.scopedContracts(orgId, projectId)
+        .select(`AVG(${DIFF_DAYS})`, 'days')
+        .addSelect('COUNT(*)', 'count')
+        .andWhere('c.executed_at IS NOT NULL')
+        .andWhere('c.shared_at IS NOT NULL')
+        .getRawOne<{ days: string | null; count: string }>(),
+      this.scopedContracts(orgId, projectId)
+        .select('COUNT(*)', 'count')
+        .andWhere('c.executed_at IS NOT NULL')
+        .andWhere('c.shared_at IS NULL')
+        .getRawOne<{ count: string }>(),
+    ]);
+
+    const excludedNoSharedAt = excludedRow?.count
+      ? parseInt(excludedRow.count, 10)
+      : 0;
+    if (excludedNoSharedAt > 0) {
+      this.logger.warn(
+        `time-to-signature: ${excludedNoSharedAt} signed contract(s) for org ${orgId} have executed_at but no shared_at — excluded from the average.`,
+      );
+    }
 
     const trendRows = await this.scopedContracts(orgId, projectId)
       .select("TO_CHAR(c.executed_at, 'YYYY-MM')", 'month')
@@ -342,6 +359,7 @@ export class PortfolioAnalyticsService {
     return {
       avg_days: round1(avgRow?.days ?? null),
       sample_size: avgRow?.count ? parseInt(avgRow.count, 10) : 0,
+      excluded_no_shared_at: excludedNoSharedAt,
       trend: trendRows.map((t) => ({
         month: t.month,
         avg_days: round1(t.avg_days),
@@ -379,9 +397,22 @@ export class PortfolioAnalyticsService {
   }
 
   /**
-   * Per-project worst-finding risk (PMBOK 5×5 worst-finding rule).
-   * Org-wide (NOT project-scoped) — this is the bar chart across all projects.
-   * This is the query whose plan is verified via EXPLAIN ANALYZE in 2a.
+   * Per-project worst-finding risk (PMBOK 5×5 worst-finding rule):
+   * MAX(risk_score) GROUP BY project, org-wide (NOT project-scoped) — the bar
+   * chart across all projects.
+   *
+   * INDEX / STAGING NOTE (Phase 7.17 Prompt 2a, Addition 1 — INCONCLUSIVE on dev):
+   * The dev EXPLAIN ANALYZE ran against 0 risk_analyses rows, so the planner's
+   * index-vs-seqscan choice there is a degenerate tie-break — it does NOT verify
+   * the MAX(risk_score) aggregation / heap-fetch cost this query was scrutinised
+   * for (it only exercised the contract_id join path, which the empty plan
+   * happened to index-scan). Decision: NO new index — but as a *default*, not
+   * "verified": risk_analyses is write-hot while this is an infrequent
+   * OWNER_ADMIN read, so a covering index trades guaranteed write-amplification
+   * for a speculative read win. The existing IDX_risk_analyses_contract serves
+   * the join. MANDATORY: re-run EXPLAIN ANALYZE against representative staging
+   * row counts; the known fix — IFF MAX heap fetches dominate there — is a
+   * covering index `(contract_id) INCLUDE (risk_score)`. See lesson #134.
    */
   private async getProjectRisk(orgId: string) {
     const rows = await this.riskRepo

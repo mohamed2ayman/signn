@@ -29,6 +29,7 @@ import {
   UpdateStatusDto,
 } from './dto';
 import { escapeLikeParam } from '../../common/utils/escape-like';
+import { assertValueCurrencyPaired } from './utils/value-currency.util';
 import { CollaborationGateway } from '../collaboration/collaboration.gateway';
 import { ContractTemplatesService, isStandardForm, getLicenseOrg } from '../contract-templates/contract-templates.service';
 import { EmailService } from '../notifications/email.service';
@@ -130,6 +131,10 @@ export class ContractsService {
       }
     }
 
+    // Persistence-boundary backstop for the value↔currency invariant
+    // (CreateContractDto already enforces it at the DTO layer).
+    assertValueCurrencyPaired(dto.contract_value, dto.currency);
+
     const contract = this.contractRepository.create({
       project_id: dto.project_id,
       name: dto.name,
@@ -185,6 +190,10 @@ export class ContractsService {
     if (dto.party_type !== undefined) contract.party_type = dto.party_type;
     if (dto.contract_value !== undefined) contract.contract_value = dto.contract_value;
     if (dto.currency !== undefined) contract.currency = dto.currency;
+
+    // Enforce value↔currency on the MERGED state (existing row + payload),
+    // so a value-only update on an already-priced contract is accepted.
+    assertValueCurrencyPaired(contract.contract_value, contract.currency);
 
     await this.contractRepository.save(contract);
 

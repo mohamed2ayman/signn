@@ -81,11 +81,14 @@ export class UpdateContractDto {
   contract_value?: number;
 
   /**
-   * ISO-4217 currency code (3 uppercase letters). Required (via @ValidateIf,
-   * no @IsOptional) whenever contract_value is present in the payload; skipped
-   * otherwise. Note: requiredness keys off the payload, not the persisted row.
+   * ISO-4217 currency code (3 uppercase letters). Format-validated whenever
+   * present, but the value↔currency PAIRING is intentionally NOT enforced here:
+   * payload-only validation cannot see the persisted currency, so requiring it
+   * in the payload would wrongly reject a value-only update on an
+   * already-priced contract. The pairing is enforced on the merged entity in
+   * contracts.service.update() via assertValueCurrencyPaired().
    */
-  @ValidateIf((o) => o.contract_value != null)
+  @IsOptional()
   @IsString()
   @Matches(/^[A-Z]{3}$/, {
     message: 'currency must be a 3-letter uppercase ISO-4217 code',

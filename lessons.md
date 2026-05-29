@@ -4727,3 +4727,37 @@ for the no-op branch. Both branches proven, no DB left mutated.
 
 **Reference:** Phase 7.17 Prompt 1, B.5 migration verification;
 `1748000000011-FixOverrideLogUserIdNullable.ts`.
+
+## 134. EXPLAIN ANALYZE On An Empty/Near-Empty Table Proves Nothing About Index Selection At Scale
+
+The Phase 7.17 Prompt 2a worst-finding query
+(`MAX(risk_score) GROUP BY project` in
+`PortfolioAnalyticsService.getProjectRisk`) was EXPLAIN-ANALYZEd on the dev
+DB — which had **0 rows** in `risk_analyses`. The plan showed clean index
+scans, but that result is **worthless** for the question it was meant to
+answer: at 0 rows the planner's cost estimates are degenerate (every access
+path "wins" by a rounding margin), so it cannot tell you whether the
+aggregation / heap-fetch path holds at 10k or 1M rows. Worse, the empty
+plan only exercised the `contract_id` join path — NOT the `MAX(risk_score)`
+aggregation cost the verification existed to scrutinise.
+
+**Decision recorded correctly:** keep "no index" — but as a *default*, not
+as "verified". The justification is workload shape (`risk_analyses` is
+write-hot; the worst-finding query is an infrequent OWNER_ADMIN read), so a
+covering index would trade guaranteed write-amplification for a speculative
+read win. NOT because an empty-DB EXPLAIN "passed".
+
+**Rule:** any index decision that depends on data volume MUST be verified
+against representative row counts (seeded / staging), never dev's empty
+tables. If you can only EXPLAIN against an empty table, record the result as
+*inconclusive* and defer with an explicit staging re-check plus the named
+fix to apply iff the bottleneck materialises (here:
+`CREATE INDEX … (contract_id) INCLUDE (risk_score)`).
+
+Extends #132 (localhost ≠ Docker Postgres — verify which DB a migration
+hits) and the verification-discipline thread (#131, #133): the environment
+your verification runs against decides whether the verification means
+anything at all.
+
+**Reference:** Phase 7.17 Prompt 2a, Addition 1;
+`PortfolioAnalyticsService.getProjectRisk`.
