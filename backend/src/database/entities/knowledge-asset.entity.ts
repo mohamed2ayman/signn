@@ -68,6 +68,36 @@ export class KnowledgeAsset {
   @Column({ type: 'boolean', default: false })
   include_in_citations: boolean;
 
+  // ─── Phase 7.17 — Prompt 1, S.5: Risk methodology source flagging ────
+  /**
+   * When TRUE, this asset's `content.risk_methodology` jsonb block
+   * provides authoritative L,I defaults for the risk category specified
+   * in `risk_methodology_category` (or for any category when that field
+   * is NULL). Read by `RiskMethodologyResolverService` step 1 via the
+   * B.2 reader.
+   *
+   * **Distinct from `include_in_risk_analysis` above** — that flag
+   * controls whether the asset feeds the AI prompt as context during
+   * risk extraction. This flag controls whether the asset is treated
+   * as authoritative methodology data for L,I scoring. The two flags
+   * are orthogonal: an asset can be either, both, or neither.
+   *
+   * Indexed via partial index `idx_knowledge_assets_risk_methodology`
+   * (only rows with this flag = TRUE are in the index).
+   */
+  @Column({ type: 'boolean', default: false })
+  is_risk_methodology_source: boolean;
+
+  /**
+   * Optional category match for the resolver step-1 lookup. When NULL,
+   * this asset's methodology applies to ANY risk_category (generic
+   * fallback). When set, must match a value in `risk_categories.name`
+   * — application-layer validation only, no DB FK in v1 (matches the
+   * `RiskAnalysis.risk_category` varchar pattern).
+   */
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  risk_methodology_category: string | null;
+
   @Column({ type: 'jsonb', nullable: true })
   content: Record<string, unknown> | null;
 

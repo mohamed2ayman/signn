@@ -511,9 +511,45 @@ per-jurisdiction cost for legal-quality review.
 **Owner:** Youssef
 **Priority:** 🟠 HIGH — URGENT
 **Competitors:** Juro, Luminance, Ironclad
-**Status:** ❌ Not started
+**Status:** 🟡 Prompt 1 in progress (Risk Methodology Foundation) — Prompt 2 (Dashboard) not started
 **Depends on:** 7.1 ✅ (obligation data feeds dashboard)
 **Why critical:** Drives C-suite adoption — construction directors need portfolio visibility.
+
+#### Prompt 1 — Risk Methodology Foundation (in progress)
+
+**Scope:** PMBOK 5×5 qualitative risk scoring as the data foundation for
+Prompt 2's dashboard. Every risk finding gets a Likelihood (1-5) and an
+Impact (1-5); risk_score = L × I; defaults follow a priority chain
+(user KB ref → org learned baseline → platform default → fallback).
+
+**Status as of 2026-05-29:**
+- ✅ B.1 — RiskMethodologyResolverService (14 tests)
+- ✅ S.1-S.5 — schema migrations + entity files + hooks (8 tests)
+- ✅ B.2 — KB risk-methodology reader/validator (24 tests)
+- 🟡 A.1 — AI prompt update (`risk_analyzer.py`) + document-processing resolver wiring — implemented; pending Ayman sign-off on L/I anchor language before prod
+- ❌ A.2 / A.3 — canonical risk categories + platform-default seeds (operator-blocked)
+- ✅ B.3 — override service (OWNER_ADMIN gated, drift warning, append-only audit log)
+- ✅ B.4 — learned baseline computation (Bull job, median of last 50 once ≥10)
+- ✅ B.5 — explanation + drift-report endpoints (8 explanation + 12 drift + 3 controller tests; 2 migrations incl. state-aware corrective)
+- ❌ B.6 — backfill migration for existing RiskAnalysis rows
+- ❌ F.1 — explanation tooltip
+- ❌ F.2 — override modal
+- ❌ F.3 — drift report page
+- ❌ F.4 — KB risk-methodology flagging UI
+
+**Known F.4 product gap to address during F.4 design:** when an
+OWNER_ADMIN flags a KB entry as `is_risk_methodology_source = TRUE` but
+the asset's `content.risk_methodology` block is missing or malformed,
+the B.2 reader silently falls through and the user sees "no effect from
+my flag" with no in-context explanation. F.4's UI MUST surface the
+validation error in-context at save time (not let the user navigate
+away). The B.2 reader's audit-log entries are admin-visible only.
+Without a UI-layer block at save time, the flag becomes a silent no-op
+from the user's perspective. Block the save with the specific reason
+returned by the B.2 reader; offer inline help linking to the methodology
+block schema.
+
+#### Prompt 2 — Portfolio Analytics Dashboard (not started)
 
 **⚠️ Audit first:** Check if any portfolio-level analytics already exist.
 
@@ -523,7 +559,7 @@ per-jurisdiction cost for legal-quality review.
   - Contract status breakdown: Draft / In Negotiation / Signed / Expired / Terminated (pie chart)
   - Upcoming expirations: next 30 / 60 / 90 days (timeline)
   - Upcoming obligation deadlines: next 14 days (list — links to 7.1)
-  - Risk distribution: High / Medium / Low across portfolio (bar chart)
+  - Risk distribution: High / Medium / Low across portfolio (bar chart) — driven by Prompt 1's L×I scoring
   - Average time from creation to signature (trend line)
   - Contracts by counterparty (top 10 table)
   - Contract value by project (if value field exists)

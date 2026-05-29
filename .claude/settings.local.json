@@ -176,7 +176,14 @@
       "Bash(kill -9 95520)",
       "Bash(grep -v -E \"^\\(849|1829\\)$\")",
       "Bash(xargs -r kill -9)",
-      "Bash(ps -p 1829 -o command=)"
+      "Bash(ps -p 1829 -o command=)",
+      "Bash(sed -n '/^## 110\\\\./,$p')",
+      "Read(//tmp/**)",
+      "Bash(cd \"/Users/youssefhazem/Desktop/SIGN PLATFORM\" && echo \"=== context for #109/#110/#111/#119 references ===\" && grep -nE \"#1\\(09|10|11|19\\)\" /tmp/mynew.md)",
+      "Bash(git checkout *)",
+      "Bash(perl -pe 's/^## \\(\\\\d+\\)\\\\./\"## \".\\($1+5\\).\".\"/e; s/#110\\\\b/#115/g; s/#111\\\\b/#116/g; s/#119\\\\b/#124/g;' /tmp/mynew.md)",
+      "Bash(git add *)",
+      "Bash(GIT_EDITOR=true git rebase --continue)"
     ]
   }
 }

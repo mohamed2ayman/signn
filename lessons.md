@@ -4185,3 +4185,545 @@ contract explicit and searchable — `grep -n "Best-effort"` finds every intenti
 **Reference:** `backend/src/modules/notifications/email.service.ts`,
 `backend/src/modules/notifications/email-queue.processor.ts`, PR #36.
 
+
+---
+
+## 115. Phase 7.17 Prompt 1 — Operator-Decision Chain Captured Up-Front
+
+Five operator decisions made before any code in B.1 / S.* / B.2 was
+written. Each is documented in the plan file
+`.claude/plans/delightful-orbiting-zebra.md` and shaped the
+implementation. Captured here because the decisions are non-obvious
+from the shipped code three months out:
+
+- **Decision 1** — `is_platform_owned` column NOT added to
+  `knowledge_assets`. The pre-existing convention `organization_id IS
+  NULL AND source = 'PLATFORM_SEED'` is the platform-owned signal.
+  Avoids duplicate boolean state for the same concept. App-layer KB
+  visibility filter is the enforcement mechanism (deferred to B.2's
+  follow-up work, not yet shipped).
+- **Decision 2** — YAML frontmatter parsing dropped entirely.
+  `is_risk_methodology_source = TRUE` KB entries store methodology
+  as structured fields inside `content` jsonb under a
+  `risk_methodology` key (category / likelihood / impact / optional
+  notes). No YAML library imported. Reader validates the structure
+  at read time.
+- **Decision 3** — `RiskAnalysis.risk_category` stays as a free-text
+  `varchar(100)` — NOT an FK to `risk_categories(id)`. Existing
+  convention preserved; FK migration deferred to a later phase once
+  historical data is reconciled.
+- **Decision 4** — `risk_score` computed via TypeORM
+  `@BeforeInsert` / `@BeforeUpdate` entity hook, NOT via Postgres
+  `GENERATED ALWAYS AS … STORED` or a trigger. Most consistent with
+  this codebase (zero existing generated-column / trigger
+  precedent). See lesson #116 for the gotcha this creates.
+- **Decision 5** — `content.risk_methodology` jsonb shape NOT
+  enforced at DB level (no CHECK constraint on jsonb shape). B.2
+  reader validates at read time; on failure it writes a
+  `KB_RISK_REFERENCE_MALFORMED` audit-log entry and returns null
+  (resolver falls through). Allows the common "edit content first,
+  flag later" workflow.
+
+**Reference:** `.claude/plans/delightful-orbiting-zebra.md` (the
+plan files for B.1, S.*, B.2). All decisions surfaced via
+`AskUserQuestion` during Plan Mode, not unilaterally.
+
+---
+
+## 116. @BeforeInsert / @BeforeUpdate Hooks DO NOT Fire on Repository.update()
+
+Per Decision 4 (lesson #115), `risk_score` on `risk_analyses` is
+computed by an `@BeforeInsert()` + `@BeforeUpdate()` lifecycle hook
+on the `RiskAnalysis` entity (`setRiskScore() { this.risk_score =
+this.likelihood * this.impact }`). The hook fires on
+`Repository.save(entity)` when given a loaded entity instance — but
+it does NOT fire on `Repository.update(criteria, partial)`, which
+is a bulk-SQL path that bypasses entity instantiation entirely.
+
+**Gotcha for any future writer that changes L or I**: must use
+`repo.save(loadedEntity)` not `repo.update(id, { likelihood, impact })`.
+Otherwise the DB row ends up with the new L / I but stale
+`risk_score`, silently breaking every portfolio query that filters
+or sorts on score.
+
+B.3 (override service, not yet shipped) is the first downstream
+consumer this affects. The plan flags it; future writers must respect
+the same constraint. Alternative would be to also expose a static
+helper `RiskAnalysis.computeScore(l, i)` and require callers using
+`.update()` to pass `risk_score` explicitly — but the convention
+"always go through save() for L / I changes" is simpler.
+
+**Reference:** `backend/src/database/entities/risk-analysis.entity.ts`
+(`@BeforeInsert` + `@BeforeUpdate` hooks), Phase 7.17 Prompt 1
+S.1 + Decision 4 in the plan file.
+
+---
+
+## 117. Defense-in-Depth at the Orchestrator Layer — Per-Step Catch Plus Outer Catch
+
+The B.1 `RiskMethodologyResolverService` walks a 4-step priority
+chain. Every individual step (`tryStep1`, `tryStep2`, `tryStep3`,
+`fallback`) has its own try/catch around the DB call so a missing
+row or a query failure returns `null` and the chain continues.
+
+But the **orchestrator's `for` loop** ALSO wraps each
+`await steps[i].call(this, input)` in its own outer try/catch. Same
+behaviour on the inside (catch + warn + fall through), different
+purpose: it absorbs anything that escapes the per-step catch — e.g.
+a future step author forgetting their inner try/catch, or a
+synchronous throw on a path that wasn't Promise-rejection-shaped.
+
+The contract is "the resolver MUST NEVER throw on the read path"
+because the resolver is called inline during AI risk-analysis writes;
+a throw would halt the AI extraction pipeline. The two-layer pattern
+enforces the contract at two places so a single mistake on either
+layer doesn't break it.
+
+Not a textbook DI / SOLID pattern — it's deliberate belt-and-braces
+for a critical-path piece of read-only code. Don't refactor the
+outer try/catch away thinking it's redundant.
+
+**Reference:** `backend/src/modules/risk-analysis/services/risk-methodology-resolver.service.ts`
+(orchestrator loop), Phase 7.17 Prompt 1 B.1 plan file
+"Error handling" + "Defense-in-depth" sections.
+
+---
+
+## 118. Deferred-FK Pattern Across Migrations With Forward Dependencies
+
+When a new column on an existing table references a table that
+another migration in the same phase creates, do NOT create the FK
+constraint in the column-adding migration. Instead:
+
+- Migration A (e.g. S.1 in Phase 7.17): `ADD COLUMN
+  platform_default_ref_id UUID NULL` — no FK constraint.
+- Migration B (e.g. S.2 in Phase 7.17): `CREATE TABLE
+  risk_category_platform_defaults`, then at the end of `up()` add
+  the FK via the `DO $$ BEGIN IF NOT EXISTS (...) THEN ALTER TABLE
+  ... ADD CONSTRAINT ...; END IF; END$$` idempotent pattern.
+- Migration B's `down()` drops the FK constraint FIRST, then drops
+  the table; Migration A's `down()` drops the (now FK-free) column.
+
+This preserves the user's spec numbering (S.1 owns the column, S.2
+owns the table) and avoids reordering S.1 / S.2 just to satisfy a
+referential dependency. Each migration reads cleanly in isolation.
+
+The `ADD CONSTRAINT IF NOT EXISTS` syntax does NOT exist in
+PostgreSQL — always wrap in the `DO $$ BEGIN IF NOT EXISTS (SELECT 1
+FROM pg_constraint WHERE conname = '...') THEN ... END IF; END$$`
+block. See `1748000000002-AddObligationAssigneesAndEscalation.ts:87-100`
+for the canonical idiom, used again in S.1 and S.2 of Phase 7.17.
+
+**Reference:** `backend/src/database/migrations/1748000000005-AddLikelihoodImpactToRiskAnalysis.ts`
+(column added, no FK), `1748000000006-CreateRiskCategoryPlatformDefaults.ts`
+(table + deferred FK).
+
+---
+
+## 119. "Single Function" In Spec Becomes Service When DI Is Needed
+
+Phase 7.17 Prompt 1's original B.2 spec called for a
+"single function `parseRiskMethodologyContent(asset): Promise<...>`"
+that lived in `utils/risk-methodology-reader.ts`. During
+implementation the function needed to inject `Repository<RiskCategory>`
+(for category-name validation) and `Repository<AuditLog>` (for the
+malformed-event audit write). Free functions cannot participate in
+NestJS DI.
+
+**Resolution**: convert to an `@Injectable() class
+RiskMethodologyReaderService` with a single public method `parse()`.
+Honours the spirit of "one piece of parsing logic, one public
+method" while making DI work. Move the file from `utils/` to
+`services/` to match the codebase convention (every other injectable
+in this codebase lives in a `services/` subdirectory).
+
+Cascading edits in B.1 (the caller): switch from module-level
+import `import { parse... } from '...utils/...'` to constructor
+injection of the service. The spec test's `jest.spyOn(readerModule,
+...)` becomes a constructor-injected mock `{ parse: jest.fn() }`.
+Mock setup changes ~12 lines; test assertions stay identical.
+
+Recurrence flag: any future spec written as "a single function" with
+external dependencies (DB, HTTP, config) is almost certainly going
+to need this treatment. Plan for service form from the start.
+
+**Reference:** `backend/src/modules/knowledge-assets/services/risk-methodology-reader.service.ts`
+(the shipped service), B.2 plan file's "Public interface" section.
+
+---
+
+## 120. Pipeline Gap — A Dispatch Without A Consumer Is Invisible To One-Side Greps
+
+Phase 7.17 A.1 surfaced that the per-clause AI risk-analysis pipeline
+had been broken since inception: `finalizeReview()` dispatched the job
+to the AI backend and returned the `risk_job_id` to the caller, but
+nothing on the backend ever polled the job or wrote the results. Per-
+clause risks were silently dropped on the floor; only the cross-document
+conflict path (`pollAndSaveConflicts`) ever populated `risk_analyses`.
+
+The audit-phase grep that looks at producer call-sites (`aiService.triggerRiskAnalysis(...)`)
+shows a healthy dispatch and a `job_id` return path that looks complete.
+Only a follow-up grep that asks "is there a polling consumer for that
+job_id anywhere?" surfaces the gap.
+
+**Rule for future agent runs**: when auditing an async pipeline, grep
+BOTH the dispatch and the consumer side independently. A working
+dispatch + missing consumer is invisible to a grep that only asks
+"is there code that calls X?" without also asking "is there code that
+reads X's output?"
+
+**Reference:** `backend/src/modules/document-processing/document-processing.service.ts`
+(the `pollAndSaveRisks` method shipped in A.1 closes the gap).
+
+---
+
+## 121. Mirror Existing Async Pipelines Verbatim — Don't Reinvent
+
+A.1's new `pollAndSaveRisks` writer copies the structure of the
+pre-existing `pollAndSaveConflicts` verbatim: same 60×3000ms polling
+cadence, same fire-and-forget invocation pattern from `finalizeReview()`
+with `.catch(err => logger.error(...))`, same try/catch shape, same
+logger.warn-on-timeout. The mapping function inside (`saveAiRiskAsRow`)
+diverges to reflect the new schema, but the polling skeleton is identical.
+
+Reinventing the cadence or the error-handling shape would invite
+divergence — over time the two pipelines would drift on retry counts,
+log message format, or timeout behavior, making operational debugging
+harder. When a new async pipeline needs to mirror an existing one,
+copying the structure verbatim is the right move; only the per-finding
+logic differs.
+
+**Reference:** `pollAndSaveConflicts` (lines 679-742) and `pollAndSaveRisks`
+(added in A.1) in `document-processing.service.ts`.
+
+---
+
+## 122. Mutually-Exclusive Conditions In Normalize-Then-Use Patterns
+
+A.1 caught a dead-code bug in the first writer draft:
+
+```ts
+const aiCategory = rawCategory && rawCategory.length > 0
+  ? rawCategory
+  : 'Uncategorized';
+
+// Later:
+if (aiCategory === 'Uncategorized' && rawCategory) {
+  await this.recordUnknownCategory(...);
+}
+```
+
+The two clauses of the `if` are mutually exclusive: `aiCategory ===
+'Uncategorized'` is only true when `rawCategory` was missing or empty,
+but the second clause requires `rawCategory` to be truthy. The audit
+log never fires. The bug only surfaced because a writer integration
+test asserted the audit was called.
+
+**Rule**: any code path that conditionally normalizes a value (raw →
+default placeholder) and then conditionally branches on whether the
+normalization happened MUST keep an explicit flag — `categoryWasUnrecognized:
+boolean` — separate from the normalized value. Don't try to recover
+"did we normalize?" by re-checking the original value alongside the
+normalized one. The conditions will mutually exclude.
+
+**Reference:** the fix in `saveAiRiskAsRow` (A.1) — explicit
+`categoryWasUnrecognized` flag drives the audit-log branch.
+
+---
+
+## 123. "DO NOT MERGE TO PRODUCTION" Comment Block As Structural Gate
+
+A.1's prompt update needed a domain expert (Ayman) to review the L/I
+anchor language before going to production AI traffic, but the code
+needed to land in main so the writer pipeline could be tested
+end-to-end against canned fixtures. Solution: a multi-line `# ═══`
+comment block placed at the top of the `SYSTEM_PROMPT` constant
+itself, explicitly stating "DO NOT MERGE TO PRODUCTION WITHOUT AYMAN
+SIGN-OFF" with the reasoning + two acceptable paths (feature flag /
+config flag) listed.
+
+Comment lives in the affected file — any PR reviewer touching the
+prompt sees it before approving merge. Less brittle than an external
+checklist or a tracking ticket because it cannot be missed without
+deliberate suppression.
+
+**Rule**: when operator review must happen before production rollout
+but the code itself can land in main, drop a `# ═══` (or `// ═══`)
+comment block at the top of the affected constant / function / class.
+Use this pattern for any other future "land but don't roll out"
+constraint — DocuSign template ID swaps, payment-processor key
+changes, etc.
+
+**Reference:** `ai-backend/app/agents/risk_analyzer.py` (the gate
+shipped with A.1).
+
+---
+
+## 124. Pre-Implementation Verification When Plans Say "Verify X Before Relying On It"
+
+B.3's plan flagged three things to verify before any code landed:
+Bull was already in the codebase, `Contract.project_id` was NOT NULL,
+and `Project.organization_id` was NOT NULL. All three were grep-
+confirmed in one round trip; implementation that followed was
+mechanical with zero surprises.
+
+The pattern: when a plan depends on an environmental assumption
+("the FK is non-null", "Bull is wired", "this column exists"), spend
+the 30 seconds to confirm BEFORE writing the code that depends on it.
+Catches the false-assumption case instantly; the all-confirmed case
+costs nothing. Keep this discipline through the rest of Prompt 1
+(and the rest of the platform's life).
+
+**Reference:** B.3 plan's "Pre-implementation verifications" section,
+which closed all three checks before the first edit.
+
+---
+
+## 125. v1 Invariant + Future-Migration TSDoc Pattern
+
+B.3's override service collapsed two fields (likelihood_source +
+impact_source) into one (previous_source) on the override-log table.
+The collapse is correct for v1 (resolver always assigns both from
+the same chain step) but a future phase might relax that. The
+pairing that preserves the invariant AND signals the migration path:
+
+1. **Runtime assertion at the boundary** — `applyOverride()` throws
+   `InternalServerErrorException` immediately after loading the risk
+   if `likelihood_source !== impact_source`. Test case asserts the
+   throw. Future asymmetric-source write paths cannot accidentally
+   produce malformed log rows; they trip the guard first.
+2. **TSDoc on the collapsed schema field** — documents the v1
+   invariant, names the guard that enforces it, and specifies the
+   exact migration (split column into two; remove the guard) needed
+   to safely extend.
+
+Reusable for any future "we're collapsing two fields into one in v1
+on the assumption they're always identical" decision. The pattern
+is what lets v1 ship simply without locking out v2.
+
+**Reference:** `risk-override.service.ts` (the guard) and
+`risk-analysis-override-log.entity.ts` (the TSDoc on `previous_source`).
+
+---
+
+## 126. Post-Commit Cache Invalidation, Not Inside The Transaction
+
+B.3's override service invalidates the resolver's cache for the
+(org, category) pair AFTER the DB transaction commits, not inside
+it. Inside-the-transaction invalidation creates an unbounded
+staleness window: a concurrent reader between the cache-clear and
+the commit hits the DB mid-transaction, sees old values, repopulates
+the cache with stale data; the eventual commit doesn't re-invalidate.
+After-commit invalidation bounds staleness to one in-flight read at
+most (≤ cache TTL).
+
+**Rule**: for analytics-layer caches (resolver L,I defaults, dashboard
+aggregations, etc.), invalidate AFTER commit. The bounded staleness
+window is acceptable. For correctness-critical caches (auth tokens,
+permission checks), the same pattern is necessary but the staleness
+window must be much smaller — consider a sub-second TTL or a
+write-through cache instead.
+
+**Reference:** `risk-override.service.ts` `applyOverride()` — the
+`this.resolver.invalidate(...)` call runs OUTSIDE the
+`dataSource.transaction()` block, with the rationale captured in
+the inline comment.
+
+---
+
+## 127. Fire-And-Forget Enqueue With try/catch + logger.warn
+
+B.3's override service enqueues a `learned-baseline` recompute job
+to Bull after each commit. The enqueue is wrapped in try/catch with
+`logger.warn` on failure — by the time the enqueue runs, the
+override has already committed; a Redis hiccup must not retroactively
+fail the user-facing 200 response.
+
+Same pattern as A.1's `recordUnknownCategory` audit-log write and
+B.2's reader audit-log write. The shape is: post-commit side effect
+that the user doesn't directly need feedback on → fire-and-forget,
+try/catch, warn on failure, return as if it succeeded.
+
+**Rule**: every post-commit enqueue or audit-log write fires inside
+its own try/catch with `logger.warn` on failure. If the operation
+on the other side of the queue is mission-critical (it has to run
+even on Redis outage), pick a different design — but for "degraded-
+mode tolerable" side effects, this pattern keeps the user-facing
+contract clean.
+
+**Reference:** `risk-override.service.ts` (`baselineQueue.add` in
+try/catch); same pattern in `document-processing.service.ts`
+(`recordUnknownCategory`) and `risk-methodology-reader.service.ts`
+(`recordMalformed`).
+
+---
+
+## 128. jest.fn(async () => …) Infers a Zero-Arg Tuple — Type It When Inspecting `.mock.calls`
+
+B.4's processor spec failed to COMPILE (not a logic failure) on first
+run: `mockBaselineRepo.upsert.mock.calls[0][1]` triggered TS2493
+("Tuple type '[]' of length '0' has no element at index '1'").
+
+Cause: `upsert: jest.fn(async () => ({ … }))` — the implementation
+takes zero parameters, so TypeScript infers the mock's args tuple as
+`[]`. Any `.mock.calls[N][argIndex]` access where argIndex >= 0 is
+then out of bounds at the type level.
+
+**Rule**: when a test needs to inspect a mock's call arguments via
+`.mock.calls[N][argIndex]`, type the mock explicitly as
+`jest.fn<ReturnType, [ArgA, ArgB, …]>()`. For B.4 the fix was
+`jest.fn<Promise<any>, [any, any]>()` (TypeORM's `upsert(entity,
+conflictOptions)` is two args). The same trap was hit earlier in A.1's
+writer spec with the resolver mock — typing it `jest.fn<Promise<ResolveDefaultsResult>, [any]>()`
+was the fix there too.
+
+**Reference:** `learned-baseline.processor.spec.ts` (mockBaselineRepo.upsert),
+`ai-risk-writer-integration.spec.ts` (mockResolver.resolveDefaults).
+
+---
+
+## 129. Phase 7.17 Prompt 1 — "Loop Closed" Milestone (Why The Resolver Chain Has 4 Steps)
+
+B.4 completed the feedback loop that gives the risk-methodology
+resolver its four-step chain instead of three. The full cycle:
+
+```
+OWNER_ADMIN override (B.3)
+  → risk_analysis_override_log row
+  → learned-baseline queue job
+      → LearnedBaselineProcessor (B.4): count >= 10 → median of last 50
+        → upsert risk_category_org_learned_baselines → invalidate cache
+          → resolver tryStep2 (ORG_LEARNED) now returns the baseline
+            → next AI finding in that (org, category) defaults to it
+```
+
+Step 2 (ORG_LEARNED) exists ONLY because of this loop — an org's
+accumulated override behaviour becomes the default for its future
+findings once it crosses the 10-override trust threshold. Without
+B.3 + B.4, step 2 would be dead weight and the chain would
+effectively be KB-ref → platform-default → fallback (three steps).
+
+Recorded so a future reader doesn't see step 2 in the resolver and
+wonder where its data comes from — it comes from the override loop,
+not from any direct write path.
+
+**Reference:** `risk-methodology-resolver.service.ts` (tryStep2),
+`risk-override.service.ts` (the enqueue), `learned-baseline.processor.ts`
+(the consumer). Phase 7.17 Prompt 1 plan, B.1 + B.3 + B.4 sections.
+
+---
+
+## 130. Pre-Implementation grep: "Was The Dependency Actually Wired Where The Plan Says?"
+
+Before B.4 added `LearnedBaselineProcessor` (which consumes the
+`learned-baseline` queue), the implementation grepped
+`risk-analysis.module.ts` to confirm B.3's
+`BullModule.registerQueue({ name: 'learned-baseline' })` had actually
+landed there. A 5-second check that catches the "feature was in the
+plan but landed in a different file / got reverted during a later
+edit" class of bug — invisible until boot time when the @Processor
+fails to find its queue.
+
+Generalisation of Lesson #124: when phase N depends on infrastructure
+that phase N-1 was supposed to register, grep-confirm it's where the
+plan claims before building on top of it. Cheap insurance against
+cross-phase drift.
+
+**Reference:** B.4 pre-implementation check against
+`risk-analysis.module.ts:48`.
+
+---
+
+## 131. Edge-Case Walkthroughs Catch Schema Drift; Happy-Path-Only Plans Don't
+
+B.5's deleted-user code path exposed a live `user_id` NOT NULL / FK
+NO-ACTION schema drift on `risk_analysis_override_log` — a drift that
+was invisible from both the migration file (corrected on disk) and the
+entity (declared nullable). It surfaced ONLY because the B.5 plan
+thought through the explanation endpoint's "what do we render when
+`user_id` is NULL (deleted user)?" path → "wait, CAN it be NULL?" →
+check live `\d` + `pg_constraint` → no, it's NOT NULL on already-migrated
+environments.
+
+A plan that only described the success case (finding exists, user
+exists, history renders) would never have asked the question and the
+drift would have shipped, silently blocking user-deletion for anyone
+with override history.
+
+**Generalisation:** when planning a feature, walk at least one
+explicit failure/edge path (null FK, deleted parent, empty set,
+concurrent write). The questions those paths force are where latent
+schema and data-integrity bugs live. Same root cause as the silent-enum
+drift in lessons #31 / #109.
+
+**Reference:** Phase 7.17 Prompt 1, B.5 plan — "Discovered issue:
+user_id schema drift"; corrective migration
+`1748000000011-FixOverrideLogUserIdNullable.ts`.
+
+---
+
+## 132. localhost ≠ Docker Postgres — Verify Which DB A Migration Hits
+
+This machine runs TWO Postgres servers: a host-native instance bound to
+`127.0.0.1:5432` (loopback) and the `sign-postgres` container bound to
+`*:5432`. `localhost` resolves to loopback, so a host-CLI
+`migration:run` against `@localhost:5432/sign_db` hit the **host-native**
+DB — NOT the dockerized `sign_db` the app actually uses. The tell was
+migration 004 (long since applied to the real DB) **re-running** during
+the B.5 migration run.
+
+The catch came from cross-checking the run's output against the
+container's truth: `docker port sign-postgres` (confirms the mapping)
+plus `docker exec sign-postgres psql ... "SELECT count(*) FROM
+migrations"` vs. what the CLI run reported. The counts disagreed → two
+databases.
+
+**Rule:** before trusting any host-CLI migration run, sanity-check the
+migration count or most-recently-applied migration name against the
+container's truth (`docker exec ... psql`). The canonical safe path is
+to run migrations INSIDE the container —
+`docker exec sign-backend npm run typeorm -- migration:run -d
+src/config/data-source.ts` — so `postgres` resolves via the Docker
+network to the real DB. A migration running silently against the wrong
+DB is one of the worst bug classes: it "succeeds," writes nothing useful
+to the DB you care about, and is visible only as "why is migration 004
+re-running?"
+
+**Reference:** Phase 7.17 Prompt 1, B.5 migration verification.
+
+---
+
+## 133. State-Aware Corrective Migrations: Prove BOTH Branches Before Merging
+
+A corrective migration has two branches: the **fix** (drifted env → fix
+it) and the **no-op** (correct env → skip). In practice production may
+only ever exercise the no-op branch — which means the fix branch ships
+as completely untested code to whatever drifted environments exist out
+there. That is exactly the code you most need to be sure of.
+
+Pattern (used to prove `1748000000011`'s fix branch when no real DB was
+actually drifted):
+
+```
+BEGIN;
+  -- induce the exact drift the migration fixes
+  ALTER TABLE ... SET NOT NULL;  ALTER TABLE ... ADD CONSTRAINT ... NO ACTION;
+  SELECT 'DRIFTED', <state>;        -- → t / a
+  -- run the migration's exact up() DO-blocks
+  <corrective DO $$ ... $$ blocks>
+  SELECT 'FIXED', <state>;          -- → f / n
+ROLLBACK;                           -- discard everything; real schema untouched
+```
+
+DRIFTED → FIXED proves the fix branch; ROLLBACK guarantees zero
+collateral on the shared dev DB. The no-op branch is proven separately
+by running the real migration against the already-correct DB and
+confirming the state is unchanged + the re-run reports "No migrations
+are pending."
+
+**Rule:** apply this to every state-aware corrective migration going
+forward — induce-fix-verify-rollback for the fix branch, run-on-correct
+for the no-op branch. Both branches proven, no DB left mutated.
+
+**Reference:** Phase 7.17 Prompt 1, B.5 migration verification;
+`1748000000011-FixOverrideLogUserIdNullable.ts`.

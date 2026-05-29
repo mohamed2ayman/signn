@@ -60,3 +60,7 @@ export { UserSession, DeviceType, SuspiciousReason } from './user-session.entity
 export { KnownDevice } from './known-device.entity';
 export { PasswordHistory } from './password-history.entity';
 export { BlockedIpAttempt, BlockedIpReason } from './blocked-ip-attempt.entity';
+// ─── Phase 7.17 — Prompt 1, S.2 / S.3 / S.4 ─────────────────────────────
+export { RiskCategoryPlatformDefault } from './risk-category-platform-default.entity';
+export { RiskCategoryOrgLearnedBaseline } from './risk-category-org-learned-baseline.entity';
+export { RiskAnalysisOverrideLog } from './risk-analysis-override-log.entity';

@@ -6,6 +6,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import {
+  AuditLog,
   DocumentUpload,
   DocumentProcessingStatus,
   Clause,
@@ -14,10 +15,17 @@ import {
   ContractClause,
   Contract,
   RiskAnalysis,
+  RiskCategory,
   RiskLevel,
 } from '../../database/entities';
 import { StorageService, UploadedFile } from '../storage/storage.service';
 import { AiService } from '../ai/ai.service';
+import { RiskMethodologyResolverService } from '../risk-analysis/services/risk-methodology-resolver.service';
+import { RiskSourceType } from '../risk-analysis/enums/risk-source-type.enum';
+import {
+  mapScoreToRiskLevel,
+  mapSeverityToLikelihoodImpact,
+} from '../risk-analysis/utils/severity-mapping';
 
 @Injectable()
 export class DocumentProcessingService {
@@ -34,8 +42,22 @@ export class DocumentProcessingService {
     private readonly contractRepository: Repository<Contract>,
     @InjectRepository(RiskAnalysis)
     private readonly riskAnalysisRepository: Repository<RiskAnalysis>,
+    // Phase 7.17 — Prompt 1, A.1: audit-logs AI_RETURNED_UNKNOWN_RISK_CATEGORY
+    // events when the AI returns a category that doesn't match the
+    // risk_categories taxonomy.
+    @InjectRepository(AuditLog)
+    private readonly auditLogRepository: Repository<AuditLog>,
+    // Phase 7.17 — Prompt 1, A.1: writer validates AI-returned categories
+    // against the active taxonomy (per plan Decision 9). Unknown values
+    // become 'Uncategorized' + audit log.
+    @InjectRepository(RiskCategory)
+    private readonly riskCategoryRepository: Repository<RiskCategory>,
     private readonly storageService: StorageService,
     private readonly aiService: AiService,
+    // Phase 7.17 — Prompt 1, A.1: resolves default L,I per finding via
+    // the 4-step priority chain (KB ref → org learned → platform default →
+    // fallback). The resolver's 5-min cache makes per-finding calls cheap.
+    private readonly riskResolver: RiskMethodologyResolverService,
   ) {}
 
   /**
@@ -626,6 +648,16 @@ export class DocumentProcessingService {
       org_id: orgId,
     });
 
+    // Phase 7.17 — Prompt 1, A.1: poll the risk job in the background and
+    // save per-clause risks. Before this hook, the risk_job_id was returned
+    // to the caller but never consumed — per-clause risks were silently
+    // dropped. Mirror of the pollAndSaveConflicts pattern below.
+    this.pollAndSaveRisks(contractId, riskResult.job_id, orgId).catch((err) => {
+      this.logger.error(
+        `Risk analysis background task failed for contract ${contractId}: ${err.message}`,
+      );
+    });
+
     // Trigger obligation extraction (with document priority awareness)
     const obligationsResult = await this.aiService.triggerExtractObligations({
       contract_id: contractId,
@@ -791,6 +823,246 @@ export class DocumentProcessingService {
     });
 
     await this.riskAnalysisRepository.save(risk);
+  }
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Phase 7.17 — Prompt 1, A.1: Per-clause AI risk writer
+  //
+  // Before A.1, `finalizeReview()` dispatched the risk-analysis job to
+  // the AI backend but the response was never consumed — per-clause
+  // risks were silently dropped. A.1 closes that gap by mirroring the
+  // pollAndSaveConflicts pattern: poll the job status, then convert
+  // each AI risk into a risk_analyses row using the resolver for
+  // default L,I and the @BeforeInsert hook for risk_score.
+  //
+  // See `.claude/plans/delightful-orbiting-zebra.md` (A.1 plan) for
+  // the full rationale + Decisions 6-10.
+  // ──────────────────────────────────────────────────────────────────────
+
+  /**
+   * Poll the risk-analysis job and save each returned per-clause risk
+   * as a risk_analyses row. Mirrors the pollAndSaveConflicts structure.
+   * Runs as a background task from finalizeReview(); failures are logged
+   * but never thrown (the contract is "fire-and-forget from caller").
+   */
+  private async pollAndSaveRisks(
+    contractId: string,
+    jobId: string,
+    orgId: string,
+  ): Promise<void> {
+    const MAX_POLLS = 60;
+    const POLL_INTERVAL_MS = 3000;
+
+    for (let i = 0; i < MAX_POLLS; i++) {
+      await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+      const jobStatus = await this.aiService.getJobStatus(jobId);
+
+      if (jobStatus.status === 'failed') {
+        this.logger.warn(
+          `Risk analysis job ${jobId} failed: ${jobStatus.error}`,
+        );
+        return;
+      }
+
+      if (jobStatus.status === 'completed') {
+        const result = jobStatus.result?.result || jobStatus.result;
+        const risks: any[] = result?.risks || [];
+
+        if (risks.length === 0) {
+          this.logger.log(`No per-clause risks found for contract ${contractId}`);
+          return;
+        }
+
+        let saved = 0;
+        let skipped = 0;
+        for (const aiRisk of risks) {
+          const ok = await this.saveAiRiskAsRow(contractId, orgId, aiRisk);
+          if (ok) saved++;
+          else skipped++;
+        }
+
+        this.logger.log(
+          `Saved ${saved} AI per-clause risks (${skipped} skipped) for contract ${contractId}`,
+        );
+        return;
+      }
+
+      // Still pending/processing — continue polling
+    }
+
+    this.logger.warn(
+      `Risk analysis job ${jobId} timed out after ${MAX_POLLS} polls`,
+    );
+  }
+
+  /**
+   * Convert one AI-returned risk dict into a risk_analyses row.
+   *
+   * Source attribution per plan Decision 8:
+   *  - AI returned valid L,I  → use them; source = resolver's source
+   *    (USER_KB_REFERENCE / ORG_LEARNED / PLATFORM_DEFAULT) because the
+   *    AI is calibrated against that methodology
+   *  - AI returned only severity → severity-mapped L,I; source = FALLBACK
+   *  - Malformed (no clause_id / description / L+severity) → skip + warn
+   *
+   * Per plan Decision 9, unknown category → 'Uncategorized' placeholder +
+   * audit-log entry, NOT a rejected finding.
+   *
+   * Per plan Decision 10, the legacy `risk_level` column is populated
+   * from `risk_score` via mapScoreToRiskLevel for backward compat.
+   *
+   * @returns true if a row was saved, false if the finding was skipped.
+   */
+  private async saveAiRiskAsRow(
+    contractId: string,
+    orgId: string,
+    aiRisk: any,
+  ): Promise<boolean> {
+    // ── Validate the minimum payload ─────────────────────────────────
+    if (
+      !aiRisk?.clause_id ||
+      !aiRisk?.description ||
+      (!Number.isInteger(aiRisk?.likelihood) &&
+        typeof aiRisk?.severity !== 'string')
+    ) {
+      this.logger.warn(
+        `Skipping AI risk for contract ${contractId}: malformed payload ` +
+          `(missing clause_id/description, or both likelihood and severity)`,
+      );
+      return false;
+    }
+
+    // ── Determine final category (Decision 9) ─────────────────────────
+    // Three branches:
+    //   - AI gave us nothing → category = 'Uncategorized', no audit
+    //     (there is nothing to log — the AI simply omitted the field)
+    //   - AI gave us a value that matches an active risk_categories row →
+    //     store verbatim, no audit
+    //   - AI gave us a value that doesn't match the active taxonomy →
+    //     store as 'Uncategorized', audit log the original value
+    const rawCategory: string | undefined =
+      typeof aiRisk.risk_category === 'string'
+        ? aiRisk.risk_category.trim()
+        : undefined;
+
+    let aiCategory: string;
+    let categoryWasUnrecognized = false;
+    if (!rawCategory || rawCategory.length === 0) {
+      aiCategory = 'Uncategorized';
+    } else {
+      // Validate against the active taxonomy. Single SELECT per finding;
+      // typical contract has 1-10 findings so the cost is bounded.
+      const match = await this.riskCategoryRepository.findOne({
+        where: { name: rawCategory, is_active: true },
+      });
+      if (match) {
+        aiCategory = rawCategory;
+      } else {
+        aiCategory = 'Uncategorized';
+        categoryWasUnrecognized = true;
+      }
+    }
+
+    // ── Resolve defaults via B.1 resolver ─────────────────────────────
+    // 5-min cache on (orgId, category, jurisdiction) keeps repeated
+    // calls within the same job cheap.
+    const resolved = await this.riskResolver.resolveDefaults({
+      organizationId: orgId,
+      riskCategory: aiCategory,
+      // jurisdictionVariant intentionally omitted — A.3 platform-default
+      // seeds with jurisdiction variants are not in yet. Once they land,
+      // pass the contract's jurisdiction here.
+    });
+
+    // ── Determine final L, I and source attribution (Decision 8) ──────
+    let likelihood: number;
+    let impact: number;
+    let likelihoodSource: RiskSourceType;
+    let impactSource: RiskSourceType;
+
+    if (
+      Number.isInteger(aiRisk.likelihood) &&
+      Number.isInteger(aiRisk.impact) &&
+      aiRisk.likelihood >= 1 &&
+      aiRisk.likelihood <= 5 &&
+      aiRisk.impact >= 1 &&
+      aiRisk.impact <= 5
+    ) {
+      // AI returned valid L,I — use them; attribution comes from the
+      // methodology the resolver chose for this category.
+      likelihood = aiRisk.likelihood;
+      impact = aiRisk.impact;
+      likelihoodSource = resolved.likelihood_source;
+      impactSource = resolved.impact_source;
+    } else {
+      // Fall back to severity mapping; source = FALLBACK because the
+      // AI did not use the methodology to produce L,I.
+      const mapped = mapSeverityToLikelihoodImpact(aiRisk.severity);
+      likelihood = mapped.l;
+      impact = mapped.i;
+      likelihoodSource = RiskSourceType.FALLBACK;
+      impactSource = RiskSourceType.FALLBACK;
+    }
+
+    // ── Derive legacy risk_level from L×I (Decision 10) ───────────────
+    const score = likelihood * impact;
+    const riskLevel = mapScoreToRiskLevel(score);
+
+    // ── If category was unknown, audit-log it (Decision 9) ────────────
+    // Fires only when the AI returned a NON-EMPTY value that didn't
+    // match the active taxonomy. AI omitting the field is not audited
+    // — there is nothing to record.
+    if (categoryWasUnrecognized && rawCategory) {
+      await this.recordUnknownCategory(orgId, contractId, rawCategory);
+    }
+
+    // ── Build and save. Going through .save() ensures the
+    //    @BeforeInsert hook on RiskAnalysis fires and sets risk_score.
+    const row = this.riskAnalysisRepository.create({
+      contract_id: contractId,
+      contract_clause_id: aiRisk.clause_id,
+      risk_category: aiCategory,
+      risk_level: riskLevel,
+      likelihood,
+      impact,
+      likelihood_source: likelihoodSource,
+      impact_source: impactSource,
+      platform_default_ref_id: resolved.platform_default_ref_id ?? null,
+      description: aiRisk.description,
+      recommendation: aiRisk.suggestion ?? null,
+      status: 'OPEN',
+    });
+    await this.riskAnalysisRepository.save(row);
+    return true;
+  }
+
+  /**
+   * Audit-log an AI-returned category that doesn't match the active
+   * risk_categories taxonomy. Mirror of B.2's recordMalformed pattern:
+   * wrapped in try/catch so an audit-write failure does NOT propagate
+   * — the writer's contract is "save the row", not "save the row AND
+   * successfully log the category miss".
+   */
+  private async recordUnknownCategory(
+    orgId: string,
+    contractId: string,
+    attemptedCategory: string,
+  ): Promise<void> {
+    try {
+      await this.auditLogRepository.insert({
+        user_id: undefined,
+        organization_id: orgId,
+        action: 'AI_RETURNED_UNKNOWN_RISK_CATEGORY',
+        entity_type: 'contract',
+        entity_id: contractId,
+        new_values: { attempted_category: attemptedCategory } as any,
+      });
+    } catch (err) {
+      this.logger.warn(
+        `Failed to record AI_RETURNED_UNKNOWN_RISK_CATEGORY audit for ` +
+          `contract=${contractId}: ${(err as Error).message}`,
+      );
+    }
   }
 
   /**
