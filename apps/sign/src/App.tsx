@@ -17,6 +17,7 @@ import PortalSelectPage from '@/pages/auth/PortalSelectPage';
 
 // Client Portal pages
 import DashboardPage from '@/pages/app/DashboardPage';
+import PortfolioPage from '@/pages/app/PortfolioPage';
 import ProjectsPage from '@/pages/app/ProjectsPage';
 import ProjectCreationPage from '@/pages/app/ProjectCreationPage';
 import ProjectDetailPage from '@/pages/app/ProjectDetailPage';
@@ -121,6 +122,8 @@ const APP_ACCESS_ROLES: UserRole[] = [...CLIENT_ROLES, ...ADMIN_ROLES];
 // ─── Navigation items ────────────────────────────────────────
 const clientNavItems = [
   { label: 'nav.dashboard', path: '/app/dashboard', icon: '📊' },
+  // OWNER_ADMIN-only — Sidebar filters by role (others never see the link).
+  { label: 'nav.portfolio', path: '/app/portfolio', icon: '📈', roles: [UserRole.OWNER_ADMIN] },
   { label: 'nav.projects', path: '/app/projects', icon: '📁' },
   { label: 'nav.clauses', path: '/app/clauses', icon: '📝' },
   { label: 'nav.knowledge', path: '/app/knowledge-assets', icon: '📚' },
@@ -217,6 +220,15 @@ function App() {
       >
         <Route index element={<Navigate to="/app/dashboard" replace />} />
         <Route path="dashboard" element={<DashboardPage />} />
+        {/* OWNER_ADMIN-only — also enforced by RolesGuard on the API (2a). */}
+        <Route
+          path="portfolio"
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.OWNER_ADMIN]}>
+              <PortfolioPage />
+            </ProtectedRoute>
+          }
+        />
         <Route path="projects" element={<ProjectsPage />} />
         <Route path="projects/new" element={<ProjectCreationPage />} />
         <Route path="projects/:id" element={<ProjectDetailPage />} />

@@ -6,6 +6,7 @@
   },
   "nav": {
     "dashboard": "Tableau de bord",
+    "portfolio": "Portefeuille",
     "projects": "Projets",
     "contracts": "Contrats",
     "clauses": "Bibliothèque de clauses",
@@ -563,5 +564,74 @@
     "ar": "Arabe",
     "fr": "Français",
     "toggle": "FR"
+  },
+  "portfolio": {
+    "title": "Analyses du portefeuille",
+    "subtitle": "Santé des contrats, risques et obligations à l'échelle de l'organisation.",
+    "loadingInline": "Mise à jour…",
+    "filters": {
+      "periodLabel": "Période",
+      "projectLabel": "Projet",
+      "allProjects": "Tous les projets",
+      "period": {
+        "7d": "7 derniers jours",
+        "30d": "30 derniers jours",
+        "90d": "90 derniers jours",
+        "365d": "Dernière année"
+      }
+    },
+    "kpis": {
+      "totalContracts": "Total des contrats",
+      "activeContracts": "Contrats actifs",
+      "contractsCreated": "Contrats créés",
+      "risksFlagged": "Risques signalés",
+      "delta": {
+        "new": "Nouveau",
+        "none": "—"
+      }
+    },
+    "status": {
+      "DRAFT": "Brouillon",
+      "IN_APPROVAL": "En approbation",
+      "WITH_COUNTERPARTY": "Chez la contrepartie",
+      "ACTIVE": "Actif",
+      "COMPLETED": "Terminé",
+      "TERMINATED": "Résilié"
+    },
+    "riskLevel": {
+      "LOW": "Faible",
+      "MEDIUM": "Moyen",
+      "HIGH": "Élevé"
+    },
+    "charts": {
+      "statusPie": { "title": "Contrats par statut" },
+      "riskBar": { "title": "Répartition des risques" },
+      "timeToSig": {
+        "title": "Délai de signature",
+        "daysUnit": "jours",
+        "sample": "sur {{count}} signé(s)",
+        "noTrend": "Aucun contrat signé sur la période",
+        "excludedNote": "{{count}} contrat(s) signé(s) exclu(s) (sans date de partage)."
+      }
+    },
+    "topProjects": {
+      "title": "Principaux projets",
+      "col": {
+        "project": "Projet",
+        "contracts": "Contrats",
+        "active": "Actifs",
+        "worstRisk": "Risque max"
+      }
+    },
+    "empty": {
+      "title": "Aucune donnée de portefeuille pour le moment",
+      "body": "Une fois les contrats, valeurs et risques enregistrés, vos analyses de portefeuille apparaîtront ici.",
+      "widget": "Aucune donnée pour cette période"
+    },
+    "error": {
+      "title": "Échec du chargement des analyses",
+      "body": "Une erreur s'est produite lors de la récupération des données. Il s'agit d'un échec de chargement, pas d'un portefeuille vide.",
+      "retry": "Réessayer"
+    }
   }
 }

@@ -9,7 +9,7 @@ import AppFooter from './AppFooter';
 import LiveChatWidget from '@/components/support-chat/LiveChatWidget';
 
 interface AppLayoutProps {
-  navItems: { label: string; path: string; icon: string }[];
+  navItems: { label: string; path: string; icon: string; roles?: string[] }[];
 }
 
 export default function AppLayout({ navItems }: AppLayoutProps) {
