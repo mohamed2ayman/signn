@@ -4761,3 +4761,33 @@ anything at all.
 
 **Reference:** Phase 7.17 Prompt 2a, Addition 1;
 `PortfolioAnalyticsService.getProjectRisk`.
+
+## 135. A Green Suite On The Empty Dev DB Proves No-Crash, Not Numerical Correctness
+
+The dev DB is empty/near-empty (2 contracts, 0 risk_analyses). That means
+**data-dependent correctness cannot be verified locally** — aggregation
+VALUES (does `MAX(risk_score) GROUP BY project` return the right number?),
+index selection (does the planner pick the right path at scale?), and
+null-population behavior (what does a widget render when every
+`contract_value` is NULL, which is the real post-migration state?) are all
+invisible to a local test run.
+
+A green suite on this DB proves two things and only two things:
+1. **no crash** — the code paths execute without throwing, and
+2. **logic-unit correctness** — pure functions (bucket folds, pairing
+   rules, pctChange) compute the right answer for hand-fed inputs.
+
+It does NOT prove the numbers are right against real data, because there is
+no real data to aggregate.
+
+**Rule:** any aggregation, index, or null-handling decision that depends on
+data volume or distribution is **GATED on staging re-verification against
+representative data** — it is NOT closed by local green. Mark such items
+explicitly as staging-gated in the code/notes rather than letting a passing
+local suite imply they're done.
+
+#134 is the EXPLAIN-specific instance of this principle; this is the general
+form. cf. #132 (verify which DB you're hitting).
+
+**Reference:** Phase 7.17 Prompt 2a verification; dev DB row counts at
+implementation time (2 contracts, 0 risk_analyses).
