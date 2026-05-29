@@ -10,14 +10,14 @@ declare global {
   }
 }
 
-// Chart.js 4.5.0 (NOT 4.4.0): 4.4.0 miscomputes the bar base on a horizontal
-// bar with a reversed value axis (scales.x.reverse) — RTL bars render as tiny
-// stubs at the wrong end. 4.5.0 fixes it (verified in the Step-1 RTL harness).
-// Note: AdminAnalyticsPage has its own loader still on 4.4.0; that's fine — it's
-// SYSTEM_ADMIN-only and this page is OWNER_ADMIN-only, so no single session
-// loads both (they share window.Chart). Align AdminAnalytics to 4.5.0 separately.
+// Chart.js 4.4.0 — same version AdminAnalyticsPage uses, so the app runs ONE
+// Chart.js version (no split). The reversed-axis RTL horizontal bar renders
+// correctly at 4.4.0 in clean isolation — the broken RTL bars seen during
+// Step-1 verification were a React re-mount × animation artifact, NOT a version
+// bug (4.4.0 and 4.5.0 are identical in isolation). The real fix is
+// `animation: false` below. See lesson #136.
 const CHART_CDN =
-  'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.0/chart.umd.min.js';
+  'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js';
 
 export function loadChartJs(): Promise<void> {
   if (typeof window === 'undefined') return Promise.resolve();
@@ -79,11 +79,14 @@ export function withRtlChrome(config: any, rtl: boolean): any {
     ...config,
     options: {
       ...config.options,
-      // Dashboard charts don't animate. Beyond being a sensible default, the
-      // grow animation races badly with a reversed value axis on the
-      // horizontal bar (bars get caught mid-grow at the wrong anchor under
-      // React re-mounts) — disabling it makes the reversed RTL bar render its
-      // final geometry deterministically. Verified in the Step-1 RTL harness.
+      // LOAD-BEARING, not cosmetic (lesson #136). The reversed-axis RTL
+      // horizontal bar renders correctly in isolation at any Chart.js version,
+      // but in the React component the grow animation never settles under
+      // re-mount (dev StrictMode / config churn recreate the chart, restarting
+      // the animation) — leaving the bars stuck mid-grow at the wrong anchor.
+      // animation:false removes the animation, so there is nothing to catch and
+      // every chart renders its final geometry deterministically. Re-enabling
+      // animation on any portfolio chart reintroduces the RTL-bar bug.
       animation: false as const,
       locale: rtl ? 'ar' : 'en',
       plugins: {
