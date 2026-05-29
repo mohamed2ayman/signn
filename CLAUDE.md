@@ -1,7 +1,7 @@
 # CLAUDE.md — Project Intelligence File
 > Read this entire file at the start of every Claude Code session before touching any code.
 > This file is the single source of truth for all architectural decisions, rules, and context.
-> Last updated: 2026-05-28 (Phase 9.1 shipped — Abstract infrastructure layers: StorageService (9.1a), EmailService (9.1b), OCR/text extraction (9.1c). Gaps #5 and #6 resolved. Lessons #112–#114 added.)
+> Last updated: 2026-05-29 (Phase 7.17 Prompt 2a shipped — Portfolio Analytics backend: contract_value/currency migration, portfolio-analytics module + endpoint, obligations `within` param. Lessons #134–#135 added. Aggregation VALUES staging-gated.)
 
 ---
 
@@ -2514,3 +2514,97 @@ a plan. None are urgent for local development. All will be addressed before AWS 
 - The `BaseTextExtractor` ABC `extract_pdf()` method signature is fixed:
   `(file_path: str, page_count: int) -> str`. Do not add instance state to pass
   page_count implicitly — the parameter exists specifically to prevent race conditions.
+
+---
+
+## Phase 7.17 Prompt 2a — Portfolio Analytics Backend (shipped — 2026-05-29)
+
+Backend prerequisite track for the OWNER_ADMIN Portfolio Analytics dashboard
+(Prompt 2b, frontend). Backend-only; no frontend code. Merged after a staged
+review (checkpoint → hardening → docs).
+
+### What shipped
+- **Migration `1750000000001-AddContractValueAndCurrency.ts`** — adds
+  `contract_value NUMERIC(15,2) NULL` + `currency VARCHAR(3) NULL` to `contracts`.
+  `ADD COLUMN IF NOT EXISTS`, **no backfill** (existing rows stay NULL by design;
+  there is no source of truth for legacy values). Down-migration round-trip
+  verified on dev (revert drops both + removes the migrations row; re-run restores).
+- **Contract entity** — the two nullable columns (`decimal(15,2)` mirrors
+  `sub_contracts.contract_value`).
+- **Create/UpdateContractDto + `contracts.service`** — value/currency wired into
+  BOTH `create()` and `update()` (the service maps fields **explicitly**, not via
+  spread — a value added only to the DTO would silently never persist).
+- **New `portfolio-analytics` module** — `GET /api/v1/portfolio-analytics`,
+  `JwtAuthGuard + RolesGuard + @Roles(OWNER_ADMIN)`, org-scoped via the
+  `contract → project → p.organization_id` join (Contract has no direct
+  `organization_id`). Every widget wrapped in a `safeQuery()` so one failing
+  aggregation degrades a single widget, not the page. Widgets: KPIs + QoQ deltas,
+  contracts-by-status (6-bucket), value-per-currency, time-to-signature + trend,
+  30/60/90 expirations, per-project worst-finding risk, org-wide risk
+  distribution, contracts-by-standard-form, top-projects table.
+- **Obligations `within` param** — optional `within` (days) on
+  `ObligationPortfolioFiltersDto`; the service translates it to `from = today`,
+  `to = today + within`. **Explicit `from`/`to` always win** (so callers that
+  never pass `within` are byte-identical to pre-2a behaviour — regression-tested).
+- **Tests** — pure helpers (bucket folds, pctChange), controller role-gating
+  (401/403/200), DTO + merged-entity value↔currency pairing, `within` regression,
+  empty-DB orchestrator null-safety. Full backend suite: 285 green.
+
+### Decisions as shipped (locked)
+- **D1 — contract status pie = 6 buckets, not 5.** `DRAFT` /
+  `IN_APPROVAL` (PENDING_APPROVAL, APPROVED, PENDING_FINAL_APPROVAL,
+  CHANGES_REQUESTED, RISK_ESCALATION_PENDING) / `WITH_COUNTERPARTY`
+  (PENDING_TENDERING, SENT_TO_CONTRACTOR, CONTRACTOR_REVIEWING) / `ACTIVE` /
+  `COMPLETED` / `TERMINATED`. COMPLETED and TERMINATED are kept DISTINCT (the
+  success-vs-failure signal matters). The fold map (`CONTRACT_STATUS_BUCKETS`)
+  is keyed by every one of the 12 `ContractStatus` values — adding a 13th status
+  is a compile error until it is bucketed.
+- **D2 — time-to-signature anchor = `shared_at → executed_at`** (the
+  review→signed interval), NOT `created_at` (which is total cycle time and is
+  what `admin-analytics` measures — the divergence is intentional and documented
+  in code).
+- **D2 — QoQ = rolling `AnalyticsPeriod` (7/30/90/365, default 90)** with
+  `pctChange` against the previous equal-length window. NOT calendar quarters.
+- **D3 — currency is required whenever `contract_value` is set.** Enforced two
+  ways: `CreateContractDto` `@ValidateIf(o => o.contract_value != null)`
+  (payload-only is correct for create); **`update()` enforces it on the MERGED
+  entity** via `assertValueCurrencyPaired()` so a value-only PATCH on an
+  already-priced contract is accepted (currency comes from the persisted row).
+  `UpdateContractDto.currency` is therefore format-only at the DTO layer.
+
+### Verification honesty — READ THIS before building on 2a
+2a is **verified** for: no-crash, clean DI/wiring, logic-unit correctness (pure
+folds + pairing + pctChange), and no regressions — all on the **empty dev DB**
+(2 contracts, 0 risk_analyses). It is **NOT verified** for aggregation VALUES,
+because there is no representative data locally (lessons #134, #135). A green
+suite here proves the code runs and the unit-logic is right, NOT that the numbers
+are right at scale.
+
+**Two staging gates — MUST be cleared against representative data before 2a's
+numbers are trusted in production:**
+1. **Re-EXPLAIN the worst-finding query** (`MAX(risk_score) GROUP BY project` in
+   `PortfolioAnalyticsService.getProjectRisk`). The dev EXPLAIN was inconclusive
+   (0 rows → degenerate planner tie-break). No index was added — that is a
+   workload-shape DEFAULT (write-hot `risk_analyses` vs infrequent OWNER_ADMIN
+   read), not "verified". The fix — IFF heap fetches dominate at scale — is a
+   covering index `(contract_id) INCLUDE (risk_score)`.
+2. **Confirm aggregation values against real data** — every widget's numbers
+   (bucket counts, per-currency sums, time-to-sig averages, expiration buckets,
+   risk distribution) checked against a seeded/representative dataset.
+
+### Hard rules — never violate
+1. **`contract_value`/`currency` map explicitly in `contracts.service`** — never
+   assume DTO presence means persistence; the service does not spread the DTO.
+2. **The value↔currency pairing for UPDATES is enforced on the merged entity**
+   (`assertValueCurrencyPaired` in the service), never payload-only — else
+   value-only updates on priced contracts are wrongly rejected.
+3. **No cross-currency totals** — value is reported per-currency only (no FX in
+   v1). Do not sum across currencies anywhere.
+4. **`within` never overrides explicit `from`/`to`** on the obligations portfolio
+   query — explicit dates win; `within` is the convenience fallback.
+5. **Do NOT add the worst-finding covering index speculatively** — it is gated on
+   staging gate (1) above. Adding it now trades guaranteed write-amplification on
+   a hot table for a speculative read win.
+6. **Org scope always traverses `contract → project`** (Contract has no
+   `organization_id`); never trust a client-supplied org id — use
+   `@OrganizationId()` from the JWT.
