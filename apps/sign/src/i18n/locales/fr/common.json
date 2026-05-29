@@ -583,6 +583,7 @@
     "kpis": {
       "totalContracts": "Total des contrats",
       "activeContracts": "Contrats actifs",
+      "openRisks": "Risques ouverts",
       "contractsCreated": "Contrats créés",
       "risksFlagged": "Risques signalés",
       "delta": {

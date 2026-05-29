@@ -139,9 +139,14 @@ export default function PortfolioPage() {
         <PortfolioEmptyState />
       ) : (
         <div className="flex flex-col gap-6">
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+          {/* KPI strip — 5 cards. `inverseGood` is applied ONLY to genuinely
+              inverse metrics (Risks Flagged) so the badge correctly alarms on
+              up-deltas and reassures on down-deltas. Open Risks is a snapshot
+              count (no delta in the 2a contract). */}
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-5">
             <KpiCard label={t('portfolio.kpis.totalContracts')} value={data.kpis.total_contracts} />
             <KpiCard label={t('portfolio.kpis.activeContracts')} value={data.kpis.active_contracts} />
+            <KpiCard label={t('portfolio.kpis.openRisks')} value={data.kpis.open_risks} />
             <KpiCard
               label={t('portfolio.kpis.contractsCreated')}
               value={data.kpis.contracts_created.current}
@@ -151,6 +156,7 @@ export default function PortfolioPage() {
               label={t('portfolio.kpis.risksFlagged')}
               value={data.kpis.risks_flagged.current}
               delta={data.kpis.risks_flagged}
+              inverseGood
             />
           </div>
 
