@@ -206,6 +206,18 @@ export class ComplianceObligationService {
     orgId: string,
     filters: ObligationPortfolioFiltersDto,
   ): Promise<Obligation[]> {
+    // Resolve the effective date window. Explicit from/to always win; the
+    // `within` convenience window is only applied when neither is supplied,
+    // so callers that never pass `within` see identical behaviour to before.
+    let from = filters.from;
+    let to = filters.to;
+    if (filters.within != null && !from && !to) {
+      const now = new Date();
+      const end = new Date(now.getTime() + filters.within * 24 * 60 * 60 * 1000);
+      from = now.toISOString().slice(0, 10);
+      to = end.toISOString().slice(0, 10);
+    }
+
     const qb = this.obligationRepo
       .createQueryBuilder('o')
       .leftJoinAndSelect('o.contract', 'c')
@@ -226,11 +238,11 @@ export class ComplianceObligationService {
     if (filters.assignee) {
       qb.andWhere('oa.user_id = :assignee', { assignee: filters.assignee });
     }
-    if (filters.from) {
-      qb.andWhere('o.due_date >= :from', { from: filters.from });
+    if (from) {
+      qb.andWhere('o.due_date >= :from', { from });
     }
-    if (filters.to) {
-      qb.andWhere('o.due_date <= :to', { to: filters.to });
+    if (to) {
+      qb.andWhere('o.due_date <= :to', { to });
     }
 
     return qb.orderBy('o.due_date', 'ASC').getMany();

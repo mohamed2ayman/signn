@@ -142,6 +142,8 @@ export class ContractsService {
       created_by: userId,
       status: ContractStatus.DRAFT,
       current_version: 1,
+      contract_value: dto.contract_value ?? null,
+      currency: dto.currency ?? null,
     });
 
     const saved = await this.contractRepository.save(contract);
@@ -181,6 +183,8 @@ export class ContractsService {
 
     if (dto.name !== undefined) contract.name = dto.name;
     if (dto.party_type !== undefined) contract.party_type = dto.party_type;
+    if (dto.contract_value !== undefined) contract.contract_value = dto.contract_value;
+    if (dto.currency !== undefined) contract.currency = dto.currency;
 
     await this.contractRepository.save(contract);
 

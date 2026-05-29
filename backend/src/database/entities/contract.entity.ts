@@ -235,6 +235,24 @@ export class Contract {
   @Column({ type: 'varchar', length: 255, nullable: true })
   escalation_contact_email: string | null;
 
+  // ─── Phase 7.17 Prompt 2a — Portfolio value ─────────────────────────────
+
+  /**
+   * Total contract value (monetary). NULL until the user records it — existing
+   * contracts are never backfilled. decimal(15,2) mirrors sub_contracts.
+   * Powers the Portfolio dashboard's "value per currency" widget.
+   */
+  @Column({ type: 'decimal', precision: 15, scale: 2, nullable: true })
+  contract_value: number | null;
+
+  /**
+   * ISO-4217 currency code (e.g. EGP, AED, USD). Free-text VARCHAR(3),
+   * uppercase, validated by app-layer regex (no enum — the MENA set is too
+   * broad to freeze). Required at the DTO layer whenever contract_value is set.
+   */
+  @Column({ type: 'varchar', length: 3, nullable: true })
+  currency: string | null;
+
   @CreateDateColumn({ type: 'timestamptz' })
   created_at: Date;
 

@@ -22,6 +22,7 @@ import { StorageModule } from './modules/storage/storage.module';
 import { AiModule } from './modules/ai/ai.module';
 import { DocumentProcessingModule } from './modules/document-processing/document-processing.module';
 import { DashboardAnalyticsModule } from './modules/dashboard-analytics/dashboard-analytics.module';
+import { PortfolioAnalyticsModule } from './modules/portfolio-analytics/portfolio-analytics.module';
 import { ExportModule } from './modules/export/export.module';
 import { SupportModule } from './modules/support/support.module';
 import { SupportChatModule } from './modules/support-chat/support-chat.module';
@@ -201,6 +202,7 @@ import { dataSourceOptions } from './config/data-source';
     AiModule,
     DocumentProcessingModule,
     DashboardAnalyticsModule,
+    PortfolioAnalyticsModule,
     ExportModule,
     SupportModule,
     SupportChatModule,

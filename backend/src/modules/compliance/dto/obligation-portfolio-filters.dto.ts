@@ -1,4 +1,12 @@
-import { IsDateString, IsEnum, IsOptional, IsUUID } from 'class-validator';
+import {
+  IsDateString,
+  IsEnum,
+  IsInt,
+  IsOptional,
+  IsUUID,
+  Max,
+  Min,
+} from 'class-validator';
 import { ObligationStatus, ObligationType } from '../../../database/entities';
 
 export class ObligationPortfolioFiltersDto {
@@ -11,6 +19,19 @@ export class ObligationPortfolioFiltersDto {
   @IsOptional()
   @IsDateString()
   to?: string;
+
+  /**
+   * Convenience window: restrict to obligations due within the next N days
+   * (today .. today+N). The service translates this to from/to. If explicit
+   * `from` or `to` is also supplied, those win and `within` is ignored —
+   * so omitting `within` reproduces the exact pre-existing behaviour.
+   * Used by the Portfolio dashboard's "upcoming obligations (14d)" panel.
+   */
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(366)
+  within?: number;
 
   /** Restrict to a single project. */
   @IsOptional()

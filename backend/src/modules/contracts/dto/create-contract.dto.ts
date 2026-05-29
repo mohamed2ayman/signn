@@ -7,8 +7,10 @@ import {
   MaxLength,
   IsDateString,
   IsInt,
+  IsNumber,
   Min,
   IsEmail,
+  Matches,
   ValidateIf,
 } from 'class-validator';
 import { ContractType, LicenseOrganization } from '../../../database/entities';
@@ -86,4 +88,26 @@ export class CreateContractDto {
   @ValidateIf((o) => !o.escalation_contact_user_id)
   @IsEmail()
   escalation_contact_email?: string;
+
+  // ─── Phase 7.17 Prompt 2a — Portfolio value ────────────────────────────
+
+  /** Total contract value (monetary). Optional; pair with `currency`. */
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  contract_value?: number;
+
+  /**
+   * ISO-4217 currency code (3 uppercase letters). Deliberately NOT marked
+   * @IsOptional: the @ValidateIf makes it REQUIRED whenever contract_value is
+   * set (a value with no currency is meaningless), while remaining optional
+   * when no value is provided. Validators are skipped entirely when
+   * contract_value is null/undefined.
+   */
+  @ValidateIf((o) => o.contract_value != null)
+  @IsString()
+  @Matches(/^[A-Z]{3}$/, {
+    message: 'currency must be a 3-letter uppercase ISO-4217 code',
+  })
+  currency?: string;
 }
