@@ -511,7 +511,7 @@ per-jurisdiction cost for legal-quality review.
 **Owner:** Youssef
 **Priority:** 🟠 HIGH — URGENT
 **Competitors:** Juro, Luminance, Ironclad
-**Status:** 🟡 Prompt 1 in progress (Risk Methodology Foundation) — Prompt 2 (Dashboard) not started
+**Status:** 🟢 Prompt 1 backend foundation COMPLETE (S.1–S.5, A.1, B.1–B.6; 216 tests green) — remaining Prompt 1 gaps: A.1 behind a DO-NOT-MERGE-TO-PROD gate pending Ayman's L/I anchor sign-off; A.2/A.3 platform-default seeds operator-blocked; F.* frontend not started. Prompt 2 (Dashboard) not started — backend prereqs now satisfied except the small `contract_value`+`currency` migration.
 **Depends on:** 7.1 ✅ (obligation data feeds dashboard)
 **Why critical:** Drives C-suite adoption — construction directors need portfolio visibility.
 
@@ -531,7 +531,8 @@ Impact (1-5); risk_score = L × I; defaults follow a priority chain
 - ✅ B.3 — override service (OWNER_ADMIN gated, drift warning, append-only audit log)
 - ✅ B.4 — learned baseline computation (Bull job, median of last 50 once ≥10)
 - ✅ B.5 — explanation + drift-report endpoints (8 explanation + 12 drift + 3 controller tests; 2 migrations incl. state-aware corrective)
-- ❌ B.6 — backfill migration for existing RiskAnalysis rows
+- ✅ B.6 — backfill migration for legacy RiskAnalysis rows (HIGH 3/5/15, MEDIUM 3/3/9, LOW 2/2/4 → PLATFORM_DEFAULT with null ref; idempotent via `likelihood_source='FALLBACK'` guard; risk_level not recomputed; no override-log rows)
+  - ⚠️ **Staging real-data verification PENDING** — staging not reachable from the dev environment. Dev run was a 0-row no-op (empty `risk_analyses` table); correctness proven via a rolled-back synthetic-row test (mapping + NULL-ref preservation + USER_OVERRIDE skip + idempotent second UPDATE=0). Run on staging and record the `UPDATE N` count before any prod rollout.
 - ❌ F.1 — explanation tooltip
 - ❌ F.2 — override modal
 - ❌ F.3 — drift report page
