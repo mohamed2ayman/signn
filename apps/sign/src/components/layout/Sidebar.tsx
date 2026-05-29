@@ -1,11 +1,15 @@
 import { Link, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { useSelector } from 'react-redux';
+import type { RootState } from '@/store';
 import SignLogo from '@/components/common/SignLogo';
 
 interface NavItem {
   label: string;
   path: string;
   icon: string;
+  /** If set, the item is shown only when the current user's role is included. */
+  roles?: string[];
 }
 
 interface SidebarProps {
@@ -133,6 +137,7 @@ const iconMap: Record<string, React.ReactNode> = {
 function getIconKey(label: string): string {
   const mapping: Record<string, string> = {
     'nav.dashboard': 'dashboard',
+    'nav.portfolio': 'analytics',
     'nav.projects': 'projects',
     'nav.clauses': 'clauses',
     'nav.knowledge': 'knowledge',
@@ -168,6 +173,14 @@ export default function Sidebar({
 }: SidebarProps) {
   const location = useLocation();
   const { t } = useTranslation();
+  const user = useSelector((s: RootState) => s.auth.user);
+
+  // Per-item role gating: items without `roles` are shown to everyone; items
+  // with `roles` only when the current user's role is included (e.g. the
+  // OWNER_ADMIN-only Portfolio link).
+  const visibleItems = items.filter(
+    (item) => !item.roles || (user?.role != null && item.roles.includes(user.role)),
+  );
 
   return (
     <aside
@@ -218,7 +231,7 @@ export default function Sidebar({
 
       {/* Navigation */}
       <nav className="mt-2 flex-1 space-y-0.5 overflow-y-auto px-3">
-        {items.map((item) => {
+        {visibleItems.map((item) => {
           const isActive =
             location.pathname === item.path ||
             location.pathname.startsWith(item.path + '/');

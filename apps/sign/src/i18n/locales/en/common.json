@@ -6,6 +6,7 @@
   },
   "nav": {
     "dashboard": "Dashboard",
+    "portfolio": "Portfolio",
     "projects": "Projects",
     "contracts": "Contracts",
     "clauses": "Clause Library",
@@ -555,5 +556,74 @@
     "en": "English",
     "ar": "Arabic",
     "toggle": "EN"
+  },
+  "portfolio": {
+    "title": "Portfolio Analytics",
+    "subtitle": "Org-wide contract, risk and obligation health.",
+    "loadingInline": "Updating…",
+    "filters": {
+      "periodLabel": "Period",
+      "projectLabel": "Project",
+      "allProjects": "All projects",
+      "period": {
+        "7d": "Last 7 days",
+        "30d": "Last 30 days",
+        "90d": "Last 90 days",
+        "365d": "Last year"
+      }
+    },
+    "kpis": {
+      "totalContracts": "Total Contracts",
+      "activeContracts": "Active Contracts",
+      "contractsCreated": "Contracts Created",
+      "risksFlagged": "Risks Flagged",
+      "delta": {
+        "new": "New",
+        "none": "—"
+      }
+    },
+    "status": {
+      "DRAFT": "Draft",
+      "IN_APPROVAL": "In Approval",
+      "WITH_COUNTERPARTY": "With Counterparty",
+      "ACTIVE": "Active",
+      "COMPLETED": "Completed",
+      "TERMINATED": "Terminated"
+    },
+    "riskLevel": {
+      "LOW": "Low",
+      "MEDIUM": "Medium",
+      "HIGH": "High"
+    },
+    "charts": {
+      "statusPie": { "title": "Contracts by Status" },
+      "riskBar": { "title": "Risk Distribution" },
+      "timeToSig": {
+        "title": "Time to Signature",
+        "daysUnit": "days",
+        "sample": "across {{count}} signed",
+        "noTrend": "No signed contracts in range",
+        "excludedNote": "{{count}} signed contract(s) excluded (no shared date)."
+      }
+    },
+    "topProjects": {
+      "title": "Top Projects",
+      "col": {
+        "project": "Project",
+        "contracts": "Contracts",
+        "active": "Active",
+        "worstRisk": "Worst Risk"
+      }
+    },
+    "empty": {
+      "title": "No portfolio data yet",
+      "body": "Once contracts, values and risk findings are recorded, your portfolio analytics will appear here.",
+      "widget": "No data for this period"
+    },
+    "error": {
+      "title": "Couldn't load portfolio analytics",
+      "body": "Something went wrong fetching your data. This is a load failure, not an empty portfolio.",
+      "retry": "Retry"
+    }
   }
 }
