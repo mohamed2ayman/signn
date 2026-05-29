@@ -4792,37 +4792,42 @@ form. cf. #132 (verify which DB you're hitting).
 **Reference:** Phase 7.17 Prompt 2a verification; dev DB row counts at
 implementation time (2 contracts, 0 risk_analyses).
 
-## 136. Portfolio Chart.js Charts Require `animation: false` (Reversed-Axis RTL Bars Mis-Anchor Under React Re-mount)
+## 136. Portfolio Chart.js Charts Set `animation: false` (Interrupted Grow-Animation Under React Re-render Leaves Charts Mid-State)
 
-A Chart.js horizontal bar with a **reversed value axis** (`scales.x.reverse:true`,
-used so RTL bars grow from the right) rendered as tiny stubs at the wrong end —
-in the live React component, with animation on. The Step-1 debugging first blamed
-the Chart.js version (4.4.0 → 4.5.0), then resize, then animation, dismissing each
-"still broken" read as an unreliable `getChart`/mid-animation capture. None of
-those were isolated against the settled component.
+**Mechanism (the condition, not the symptom):** recreating a Chart.js chart
+(`destroy()` + `new Chart()`, which is what a React effect does on config change)
+while a grow animation is *in flight* can leave the chart stuck mid-animation. A
+**reversed value axis** (`scales.x.reverse`, used so RTL horizontal bars grow from
+the right) makes the breakage *egregious and obvious* — bars render as stubs at
+the wrong end — but the reversed axis is the **exposing symptom, not the cause**.
+The cause is interrupted animation, so the constraint applies to **ALL portfolio
+charts, not just reversed-axis ones**. (Do not re-enable animation on a
+non-reversed widget citing "it's only the bar" — that's the trap.)
 
-A clean **vanilla** isolation (single chart creation, no React, no StrictMode,
-`getChart` ignored, screenshot pixels after full settle) settled it. The
-reversed-axis RTL bar renders **correctly in all four combinations**: {4.4.0,
-4.5.0} × {animation:false, animation:true}. So it is **NOT a Chart.js version
-bug and NOT a static-config bug** — the 4.5.0 bump was unnecessary and was
-reverted (one Chart.js version in the app).
+**Not a version bug, not a static-config bug.** Clean vanilla isolation (single
+creation, no React, ground-truth pixels after settle) renders the reversed RTL bar
+correctly in all four combos {4.4.0, 4.5.0} × {animation on, off}. The 4.5.0 bump
+was unnecessary and was reverted — the app keeps one Chart.js version (4.4.0).
 
-The bug reproduces **only in the React component with animation ON**: under
-re-mount (dev StrictMode, or config-identity churn) the chart is
-destroyed+recreated, restarting the grow animation, so it never settles and the
-bars stay caught mid-grow at the wrong anchor. `animation:false` removes the
-animation — there is nothing to catch — so every render shows final geometry.
-
-**Rule:** every portfolio Chart.js chart sets `animation: false` (centralized in
-`withRtlChrome`). It is load-bearing for the reversed RTL bar, not cosmetic.
-Re-enabling animation on any portfolio chart reintroduces the bug.
+**Reachability — dev-StrictMode artifact, NOT a confirmed production bug.**
+Verified with the real `ChartBlock`, 4.4.0, animation:TRUE, no StrictMode: a
+**single** chart-recreating re-render (a production period/filter/locale change)
+settles **correctly**, whether the change lands *after* the initial animation or
+*during* it (interrupting it). The stuck state required the *rapid, repeated*
+recreation of dev StrictMode's synchronous double-mount (compounded by a
+mount-time `i18n.changeLanguage`), which the real page does not do (stable
+`useMemo` config; language set at app init; single creation). So `animation:false`
+is **not fixing a production bug** — it is a harmless, prudent dashboard default
+that (a) removes the dev-StrictMode broken-looking render and (b) guards against
+any future change that could make recreations rapid in prod. Keep it on every
+portfolio chart; do not claim it's prod-load-bearing.
 
 **Method rule (the deeper lesson):** when a fix touches multiple variables
 (version, resize, animation), isolate **one variable at a time against the
 settled state via ground-truth pixels** — never attribute to whichever variable
-happened to be off in the test that "worked." Here, every "working" test had used
-`animation:false`, so animation was never actually isolated until forced to.
+happened to be off in the test that "worked." Every early "working" test here used
+`animation:false`, so animation was never actually isolated until forced to; and
+`getChart` reads were unreliable mid-recreate, so only pixels could be trusted.
 
 **Reference:** Phase 7.17 Prompt 2b Step 1; `ChartBlock.tsx` (`withRtlChrome`,
-`animation:false`); vanilla iso-bar harness (since removed).
+`animation:false`); throwaway iso-bar + rerender-test harnesses (since removed).
