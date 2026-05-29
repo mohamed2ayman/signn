@@ -78,7 +78,13 @@ export default function KpiCard({
       <div className="mt-2 flex items-end justify-between gap-2">
         <div className="text-2xl font-bold text-gray-900">{value}</div>
         {badge && (
-          <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${badge.cls}`}>
+          // dir="ltr" on the badge: signed mathematical notation ("+50%", "-30%", "+5")
+          // is NOTATION, not prose, and conventionally reads left-to-right even
+          // under RTL — like phone numbers and ISO dates. Without this, bidi
+          // reorders "+50%" to "50%+" under dir="rtl"; the algorithm is correct
+          // per Unicode but finance readers misread the sign. Harmless for the
+          // Arabic "New" badge (single RTL word renders fine inside an LTR span).
+          <span dir="ltr" className={`rounded-full px-2 py-0.5 text-xs font-semibold ${badge.cls}`}>
             {badge.text}
           </span>
         )}
