@@ -23,6 +23,7 @@ import { AiModule } from './modules/ai/ai.module';
 import { DocumentProcessingModule } from './modules/document-processing/document-processing.module';
 import { DashboardAnalyticsModule } from './modules/dashboard-analytics/dashboard-analytics.module';
 import { PortfolioAnalyticsModule } from './modules/portfolio-analytics/portfolio-analytics.module';
+import { PortfolioExportModule } from './modules/portfolio-export/portfolio-export.module';
 import { ExportModule } from './modules/export/export.module';
 import { SupportModule } from './modules/support/support.module';
 import { SupportChatModule } from './modules/support-chat/support-chat.module';
@@ -218,6 +219,7 @@ import { dataSourceOptions } from './config/data-source';
     DocumentProcessingModule,
     DashboardAnalyticsModule,
     PortfolioAnalyticsModule,
+    PortfolioExportModule,
     ExportModule,
     SupportModule,
     SupportChatModule,
