@@ -68,7 +68,7 @@ export class PortfolioExportDownloadController {
       const httpStatus =
         result.reason === 'malformed' || result.reason === 'invalid_signature' ? 401 : 410;
 
-      await this.audit.record({
+      await this.safeAudit({
         type: reasonToEventType[result.reason] as any,
         actor_id: null,
         organization_id: null,
@@ -94,7 +94,7 @@ export class PortfolioExportDownloadController {
     try {
       const buffer = await this.storage.getBuffer(job.file_path!);
 
-      await this.audit.record({
+      await this.safeAudit({
         type: SECURITY_EVENT_TYPES.PORTFOLIO_EXPORT_DOWNLOAD_SUCCESS,
         actor_id: job.user_id,
         organization_id: job.org_id,
@@ -121,7 +121,7 @@ export class PortfolioExportDownloadController {
         `Portfolio export download race: token verified but file missing for job ${job.id}: ${(err as Error).message}`,
       );
 
-      await this.audit.record({
+      await this.safeAudit({
         type: SECURITY_EVENT_TYPES.PORTFOLIO_EXPORT_DOWNLOAD_NOT_FOUND,
         actor_id: job.user_id,
         organization_id: job.org_id,
@@ -132,6 +132,32 @@ export class PortfolioExportDownloadController {
       });
 
       res.status(410).send('This download link is no longer available.');
+    }
+  }
+
+  /**
+   * Defense-in-depth wrap around SecurityEventService.record().
+   *
+   * The service's record() implementation today catches its own errors
+   * (best-effort, logger.error on failure). This wrapper exists in case
+   * that contract is ever violated by a future refactor: an audit-log
+   * hiccup must NEVER turn a valid 200 download into a 500. The pattern
+   * mirrors the established docusign.service.ts convention (caller-side
+   * try/catch + logger.warn).
+   *
+   * Matters for the success path most of all — a leaked-token / replay
+   * audit logging failure that 500'd a legitimate user's download would
+   * be a self-inflicted DoS on the OWNER_ADMIN flow. The wrap also
+   * applies to failure-outcome audit writes so failure responses can't
+   * be turned into 500s either.
+   */
+  private async safeAudit(input: Parameters<SecurityEventService['record']>[0]): Promise<void> {
+    try {
+      await this.audit.record(input);
+    } catch (err) {
+      this.logger.warn(
+        `Failed to record audit event for portfolio export download: ${(err as Error).message}`,
+      );
     }
   }
 }

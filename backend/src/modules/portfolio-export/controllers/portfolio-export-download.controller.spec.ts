@@ -335,4 +335,96 @@ describe('PortfolioExportDownloadController (GET /portfolio-exports/download)', 
     });
   });
 
+  describe('audit-record failure cannot break the download response (critical-path invariant)', () => {
+    it('still streams the file with 200 when SecurityEventService.record throws on the success path', async () => {
+      // The download controller wraps each audit.record call in safeAudit
+      // (try/catch + logger.warn). Mirrors the docusign.service.ts
+      // convention. The property under test: an audit-log hiccup must
+      // NEVER turn a valid 200 download into a 500. A legitimate user
+      // whose audit row fails to write still gets their PDF.
+      const row = makeRow();
+      const recordThrows = jest.fn().mockRejectedValue(new Error('audit_logs unreachable'));
+      const { controller } = await makeController({
+        verify: jest.fn().mockResolvedValue({ ok: true, job: row }),
+        getBuffer: jest.fn().mockResolvedValue(Buffer.from('pdf-bytes')),
+        record: recordThrows,
+      });
+      const res = makeRes();
+      const warnSpy = jest
+        .spyOn((controller as any).logger, 'warn')
+        .mockImplementation(() => undefined);
+
+      // Must not throw out of the handler — that would propagate to
+      // Nest's exception filter and 500 the user.
+      await expect(
+        controller.download('valid.token', makeReq(), res as unknown as Response),
+      ).resolves.toBeUndefined();
+
+      // The file streamed with 200 and the right headers, even though
+      // the audit write threw.
+      expect(res.statusCode).toBe(200);
+      expect(res.headers['Content-Type']).toBe('application/pdf');
+      expect(res.headers['Content-Disposition']).toContain(`portfolio-export-${JOB_ID}.pdf`);
+      expect(Buffer.isBuffer(res.body)).toBe(true);
+
+      // The audit failure was attempted (so we didn't silently skip it)
+      // and was logged as a warning.
+      expect(recordThrows).toHaveBeenCalledTimes(1);
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      expect(warnSpy.mock.calls[0][0]).toContain('Failed to record audit event');
+
+      warnSpy.mockRestore();
+    });
+
+    it('still returns 410 with the right body when audit throws on a failure outcome', async () => {
+      // Symmetry: failure-outcome audit writes are wrapped too, so a
+      // failure response can't be turned into a 500 either.
+      const recordThrows = jest.fn().mockRejectedValue(new Error('audit_logs unreachable'));
+      const { controller } = await makeController({
+        verify: jest.fn().mockResolvedValue({ ok: false, reason: 'expired' }),
+        record: recordThrows,
+      });
+      const res = makeRes();
+      const warnSpy = jest
+        .spyOn((controller as any).logger, 'warn')
+        .mockImplementation(() => undefined);
+
+      await expect(
+        controller.download('expired.token', makeReq(), res as unknown as Response),
+      ).resolves.toBeUndefined();
+
+      expect(res.statusCode).toBe(410);
+      expect(res.body).toBe('This download link has expired or is no longer available.');
+      expect(recordThrows).toHaveBeenCalledTimes(1);
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+
+      warnSpy.mockRestore();
+    });
+
+    it('still returns 410 with the right body when audit throws on the verify→stream race outcome', async () => {
+      const row = makeRow();
+      const recordThrows = jest.fn().mockRejectedValue(new Error('audit_logs unreachable'));
+      const { controller } = await makeController({
+        verify: jest.fn().mockResolvedValue({ ok: true, job: row }),
+        getBuffer: jest.fn().mockRejectedValue(new Error('ENOENT')),
+        record: recordThrows,
+      });
+      const res = makeRes();
+      const warnSpy = jest
+        .spyOn((controller as any).logger, 'warn')
+        .mockImplementation(() => undefined);
+
+      await expect(
+        controller.download('valid.token', makeReq(), res as unknown as Response),
+      ).resolves.toBeUndefined();
+
+      expect(res.statusCode).toBe(410);
+      expect(res.body).toBe('This download link is no longer available.');
+      // Two warns: the race log + the audit-failure log.
+      expect(warnSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
+
+      warnSpy.mockRestore();
+    });
+  });
+
 });
