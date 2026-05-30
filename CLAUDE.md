@@ -1,7 +1,7 @@
 # CLAUDE.md — Project Intelligence File
 > Read this entire file at the start of every Claude Code session before touching any code.
 > This file is the single source of truth for all architectural decisions, rules, and context.
-> Last updated: 2026-05-29 (Phase 7.17 Prompt 2a shipped — Portfolio Analytics backend: contract_value/currency migration, portfolio-analytics module + endpoint, obligations `within` param. Lessons #134–#135 added. Aggregation VALUES staging-gated.)
+> Last updated: 2026-05-30 (Phase 7.17 Prompt 2b shipped — Portfolio Analytics frontend dashboard: 12 widgets, server-side period+project filters only, per-source error isolation on the attention strip, Latin numerals under AR, animation:false on Chart.js. Lessons #136–#138 added. Aggregation VALUES against representative data still staging-gated per #135.)
 
 ---
 
@@ -2608,3 +2608,164 @@ numbers are trusted in production:**
 6. **Org scope always traverses `contract → project`** (Contract has no
    `organization_id`); never trust a client-supplied org id — use
    `@OrganizationId()` from the JWT.
+
+---
+
+## Phase 7.17 Prompt 2b — Portfolio Analytics Dashboard (shipped — 2026-05-30)
+
+Frontend OWNER_ADMIN portfolio dashboard built on the 2a backend endpoint.
+Frontend-only; no backend code. Merged after live triangulation on
+`/app/portfolio` against real authenticated data — page render + Network tab
+all-200 + console clean of app code + full EN/AR scroll composition review.
+
+### What shipped — the 12-widget dashboard
+
+**Page shell** — new route `/app/portfolio` (`PortfolioPage.tsx`, 221 lines)
+gated by OWNER_ADMIN role + nav entry in the AppLayout sidebar. Page-level
+filters: `period` (7/30/90/365 days, default 90) and `projectId` (org's
+projects), both passed as query params to every widget query — **server-side
+filters only; NO client-side cross-filter** (clicking a status slice does not
+refetch other widgets).
+
+**Infrastructure (new under `apps/sign/src/components/portfolio/`):**
+- `ChartBlock.tsx` (152 lines) — universal RTL-aware Chart.js wrapper.
+  `withRtlChrome` helper applies `animation: false` per #136 and per-geometry
+  RTL flip (axis reversal, bar direction, doughnut rotation, legend alignment).
+- `states.tsx` (83 lines) — `EmptyState`, `LoadingState`, `ErrorState`
+  primitives. **Empty vs Error are distinct components, never collapsed.**
+
+**The 12 widgets:**
+1. **AttentionStrip** — sticky 3-source strip at the top of the page:
+   high-risk count (`/portfolio-analytics?period=90d`), expiring count
+   (`/obligations/portfolio?within=14`), overdue count
+   (`/obligations/portfolio?status=OVERDUE`). **Per-source error states** —
+   each tile renders its own loading/empty/error independently; one failing
+   query never blacks out the strip. Red alarm color reserved for OVERDUE
+   (the only true alarm source); high-risk + expiring stay neutral-gray at 0.
+2. **KPI strip** — 5 cards (Total, Active, Open Risks, Contracts Created,
+   Risks Flagged). Each card carries an `inverseGood` flag — Open Risks and
+   Risks Flagged are lower-is-better, so green QoQ delta = decrease. QoQ
+   delta badges set `dir="ltr"` (signed notation `+12%` / `−3%` reads LTR
+   even under RTL).
+3. **StatusPie** — contracts-by-status doughnut, 6-bucket fold per 2a D1.
+4. **StandardFormDoughnut** — StatusPie clone for contracts-by-standard-form
+   share. Same Chart.js config, different data slice — keeps visual parity
+   and one place to edit doughnut geometry.
+5. **RiskDistributionBar** — org-wide risk-level distribution (Low / Medium /
+   High / Critical) as horizontal bar.
+6. **ProjectRiskBar** — per-project worst-finding
+   (`MAX(risk_score) GROUP BY project`).
+7. **TimeToSignatureTrend** — avg days `shared_at → executed_at` with monthly
+   trend line.
+8. **ValueByCurrencyList** — per-currency contract value totals (no FX in v1
+   per 2a hard-rule 3). Latin numerals + ISO currency codes per #137.
+9. **UpcomingExpirationsCard** — 30/60/90 day bucket counts.
+10. **UpcomingObligationsList** — obligations due within 14 days
+    (`/obligations/portfolio?within=14`).
+11. **TopProjectsTable** — top projects by aggregate contract value.
+
+**Backend integrations:**
+- `portfolioService.ts` (120 lines, new) — typed client for
+  `/api/v1/portfolio-analytics`, response shapes mirror the 2a service.
+- `obligationService.ts` — 4 lines added: typed `within` param on the
+  portfolio query (2a's new param).
+
+**i18n** — 102 keys added per locale × 3 locales (EN / AR / FR) with exact
+parity. New namespace `portfolio.*` covering KPI labels, widget titles,
+empty/error/retry copy, filter labels, attention-strip messages, status /
+risk / standard-form translations.
+
+### Decisions as shipped (locked)
+- **D1 — period + project are server-side filters only.** No client-side
+  cross-filtering. Clicking a status slice does NOT refetch other widgets
+  filtered by that status. Page-level filters refetch all 12 widgets;
+  per-widget clicks navigate (e.g. to a contract list view) but never
+  mutate page state.
+- **D2 — Empty vs Error are distinct UI states.** EmptyState is the
+  *expected* rendering for sparse data (no contracts in period, no
+  obligations in the next 14 days); ErrorState is for failed network calls
+  or thrown queries. Sparse endpoints never render as errors, even on the
+  near-empty dev DB.
+- **D3 — Per-source error isolation on the multi-query attention strip.**
+  The strip fires 3 independent queries; each tile owns its own
+  loading/empty/error state. A 500 on `/obligations/portfolio?status=OVERDUE`
+  does not blank the high-risk or expiring tiles.
+- **D4 — Latin numerals + ISO currency codes for monetary AND counts**
+  under AR per #137. Refuse `Intl.NumberFormat('ar-EG', ...)` on financial
+  figures and KPI counts.
+- **D5 — `animation: false` on every Chart.js chart** per #136. Dev-StrictMode
+  guard + prudent prod default; do NOT re-enable per-widget without first
+  re-deriving the multi-recreate safety argument — "it's only the bar" is
+  the documented trap.
+- **D6 — `dir="ltr"` on every numeric badge** that uses signed notation
+  (`+12%`, `−3%`, `▲`, `▼`). Signed notation reads LTR even under RTL;
+  bare prose with no signs can inherit page direction.
+- **D7 — StandardFormDoughnut is a StatusPie clone, not a new chart.**
+  Same Chart.js config, different data slice.
+
+### Lessons added in this prompt
+- **#136** — Portfolio Chart.js charts set `animation: false` (interrupted
+  grow-animation under React re-render leaves charts mid-state). The
+  Chart.js 4.5.0 bump that landed mid-debug was reverted (commit `3177253`) —
+  the cause was React×animation, not the library version. #136's attribution
+  was corrected post-fix (commit `e144b5a`) to record that `animation:false`
+  is a dev-StrictMode guard + prudent default, NOT a confirmed production bug.
+- **#137** — Latin numerals for monetary AND count values even under AR
+  locale (MENA construction-finance convention).
+- **#138** — `nest start --watch` can silently stop hot-restarting across an
+  edit cascade, leaving the running process as a stale snapshot. Symptom: 404
+  on a route present in CURRENT source AND in CURRENT `dist/`. Tell: the route
+  is absent from the most recent Nest boot's `RouterExplorer.Mapped` log lines.
+  Fix: `docker restart sign-backend`. Rule: verify the route is in the last
+  boot's RouterExplorer log BEFORE debugging the code.
+
+### Verification honesty — READ THIS before building on 2b
+2b is **verified** for:
+1. **No-crash** — all 12 widgets render without throwing on sparse real data
+   (`/app/portfolio` clean under live OWNER_ADMIN session).
+2. **RTL-correct rendering** — full EN + AR scroll composition review
+   passes; every widget drawn, sticky attention strip behaves under scroll,
+   no overlap / break / stuck spinner under either direction.
+3. **Empty-state behavior** — sparse data renders `EmptyState`, NOT
+   `ErrorState`. First-paint attention strip shows honest values (no
+   false-calm gray "0" flash before snapping to the red alarm).
+4. **Authenticated endpoint health** — Network tab confirmed the 3
+   attention-strip queries return 200
+   (`portfolio-analytics?period=90d` 200/2.2kB,
+   `obligations/portfolio?status=OVERDUE` 200/4.7kB,
+   `obligations/portfolio?within=14` 200/3.3kB). All 9 backend aggregations
+   from 2a executed against the real schema and returned valid JSON. Cause (a)
+   (a runtime throw on one of the aggregations against a real-schema null /
+   join / GROUP BY) is ruled out **by execution**, not just by typecheck.
+
+**Aggregation VALUES against representative data remain staging-gated per
+#135.** A sparse-but-valid render proves "no crash + endpoint healthy + RTL
+geometry correct" — it does NOT prove the numbers are right at scale. The 2a
+staging gates carry forward unchanged — 2b inherits them, since the frontend
+renders exactly what 2a returns:
+1. Re-EXPLAIN the worst-finding query at representative scale.
+2. Confirm bucket sums + per-currency totals + time-to-signature averages +
+   expiration bucket counts + risk distribution against a seeded /
+   representative dataset.
+
+### Hard rules — never violate
+1. **Every Chart.js chart in the portfolio uses `animation: false`** per
+   #136. Do not re-enable per-widget without first re-deriving the
+   multi-recreate safety argument from scratch.
+2. **Monetary AND count values render with Latin (0-9) numerals + ISO
+   currency codes** per #137 — including under AR locale. Refuse the
+   `Intl.NumberFormat('ar-EG', ...)` refactor.
+3. **Every signed-notation numeric badge carries `dir="ltr"`** (e.g. KPI QoQ
+   delta cards). Plain count cards (no sign) can inherit page direction.
+4. **Empty and Error are distinct UI states** — never collapse them. Sparse
+   data → `EmptyState`; failed query → `ErrorState`. The dev DB renders as
+   EmptyState by design.
+5. **Page-level filters are server-side only** — `period` and `projectId`
+   query params refetch all widgets. No client-side cross-filter inside
+   the page.
+6. **Per-source error isolation on `AttentionStrip`** — each of the 3
+   sources renders its own state. Do not re-introduce a shared
+   `loading || error` gate that blanks the whole strip on one failure.
+7. **`StandardFormDoughnut` stays a `StatusPie` clone** — same Chart.js
+   config, different data slice. A divergent doughnut config defeats the
+   visual-parity decision.
