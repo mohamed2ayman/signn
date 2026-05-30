@@ -4920,3 +4920,64 @@ your code runs under decides whether the result means anything.
 returning ErrorState despite source-clean typecheck + `PortfolioAnalyticsController`
 present in source and dist; resolved by `docker restart sign-backend`
 (route 404 → 401).
+
+## 139. Irreversible Actions Re-Confirm The Latest User Instruction At The Moment Of Execution — A Plan Locked Earlier Is Not Authorization For The Trigger
+
+A long autonomous run can drift. The plan you locked five turns ago is not the
+same authorization as "act on the user's latest preference." For any action
+that **cannot be cleanly undone** — merge to main, force push, branch delete,
+destructive DB op, payment, public post, production deploy — re-read the
+user's **most recent** message immediately before executing. Not the locked
+plan; the last instruction.
+
+**The specific instance (Phase 7.17 Prompt 2b merge).** Early in the run the
+user offered "squash or fast-forward, your call but tell me which" for the
+PR #38 merge style. Claude chose rebase-merge, reported it as matching the 2a
+precedent, and the conversation moved on through CI watch + Monitor work +
+live DevTools triangulation across many turns. At merge time the locked
+rebase-merge plan ran straight through to `gh pr merge --rebase` without
+re-reading the user's latest message to confirm the deferred decision still
+held. The user surfaced a preference for squash post-merge (to keep two
+debugging-arc commits — the Chart.js revert + the #136 attribution
+correction — off main's permanent history). The merge stands because
+rewriting pushed main is more harmful than the cosmetic gain, but the
+*process* failed regardless of whether a squash instruction was ever explicit
+in a later turn. The failure mode is precisely "deferred decision executed
+without re-confirmation against the latest message," not "Claude dropped a
+later instruction."
+
+**Anti-pattern to refuse:** "I told them the plan N turns ago and they didn't
+object — I'll just execute." That is **not** the same as: "I'm about to do
+the irreversible thing right now; let me re-read their last message to be
+sure nothing has shifted." The former is what failed here. The latter is the
+rule.
+
+**Rule — Pre-MERGE / Pre-IRREVERSIBLE checklist.** For these actions
+specifically:
+- `gh pr merge` (any flag) / `gh pr close`
+- `git push --force*` to any branch
+- `git push origin main` when bypassing PR
+- `git branch -D`, `git tag -d`, `git push --delete`
+- `gh release create`, `gh release delete`
+- Any payment endpoint call (Paymob, Stripe)
+- `DROP TABLE` / `TRUNCATE` / `DELETE` without a tight `WHERE`
+- Any production deploy
+
+Before pulling the trigger, **re-read the user's most recent message in the
+conversation**. If the most recent instruction differs from the locked plan,
+surface the discrepancy and **ASK**; do not silently follow the older plan.
+This is in addition to (not a replacement for) the existing Pre-PR Checklist.
+
+**Compose with:** the existing Pre-PR Checklist (CLAUDE.md → Team Coordination
+Rules). That checklist runs *before opening* a PR. This rule runs *before
+merging* it — and before any other irreversible action that may have been
+decided several turns earlier.
+
+This is the autonomy-discipline analogue of #131 / #133 / #134 (verify the
+environment your verification ran against). For an irreversible action, the
+*instruction* you act under matters at least as much as the *code* you run.
+
+**Reference:** Phase 7.17 Prompt 2b — PR #38 merged via rebase-merge after a
+merge-style decision locked many turns earlier; user's preferred style
+(squash) surfaced post-merge. Merge intentionally not reverted; the lesson is
+the corrective.
