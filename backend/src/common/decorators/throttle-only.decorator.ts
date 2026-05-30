@@ -18,6 +18,7 @@ export const THROTTLER_NAMES = [
   'refresh',
   'invitation',
   'waitlist',
+  'portfolio_export',
 ] as const;
 
 export type ThrottlerName = (typeof THROTTLER_NAMES)[number];

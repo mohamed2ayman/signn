@@ -129,6 +129,15 @@ import { dataSourceOptions } from './config/data-source';
         // When 's3', AWS_S3_BUCKET + AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY are required.
         STORAGE_DRIVER: Joi.string().valid('local', 's3').default('local'),
 
+        // ── Portfolio Export (Phase 7.17 Prompt 2c) ───────────────
+        // HMAC secret for token-gated PDF download links. The bare-HTTP
+        // download endpoint (GET /portfolio-exports/download) has NO JWT
+        // layer behind it (Phase 7.17 Prompt 2c §3 #11 — no global guard,
+        // opt-in only, and the download controller does not opt in).
+        // This secret is the ENTIRE security floor for that endpoint.
+        // min(32) is the strict floor — never lower.
+        PORTFOLIO_EXPORT_DOWNLOAD_SECRET: Joi.string().min(32).required(),
+
         // ── Seed passwords (only required when running seed scripts, not on app start)
         SEED_ADMIN_PASSWORD_1: Joi.string().min(12).optional(),
         SEED_ADMIN_PASSWORD_2: Joi.string().min(12).optional(),
@@ -182,6 +191,12 @@ import { dataSourceOptions } from './config/data-source';
           { name: 'refresh',    ttl: 900_000,    limit: 20 },
           { name: 'invitation', ttl: 3_600_000,  limit: 5  },
           { name: 'waitlist',   ttl: 3_600_000,  limit: 3  },
+          // Phase 7.17 Prompt 2c D6 — abuse mitigation, NOT capacity limit.
+          // Legitimate burst ceiling ≈ 3 (generate, change period,
+          // regenerate, maybe change project filter); 5 leaves slack so a
+          // flaky moment doesn't hit the limit on legitimate use.
+          // Abuse vector: compromised OWNER_ADMIN exfiltration / queue DoS.
+          { name: 'portfolio_export', ttl: 900_000, limit: 5  },
         ],
       }),
     }),
