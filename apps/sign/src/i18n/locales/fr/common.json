@@ -615,7 +615,30 @@
         "sample": "sur {{count}} signé(s)",
         "noTrend": "Aucun contrat signé sur la période",
         "excludedNote": "{{count}} contrat(s) signé(s) exclu(s) (sans date de partage)."
+      },
+      "valueByCurrency": {
+        "title": "Valeur par devise",
+        "count": "{{count}} contrats"
+      },
+      "expirations": {
+        "title": "Expirations à venir",
+        "in_30_days": "Sous 30 jours",
+        "in_60_days": "31–60 jours",
+        "in_90_days": "61–90 jours",
+        "totalWithin90": "{{count}} au total sous 90 jours"
+      },
+      "upcomingObligations": {
+        "title": "Obligations à venir (14j)",
+        "loading": "Chargement…",
+        "error": "Échec du chargement des obligations",
+        "empty": "Aucune obligation due dans les 14 prochains jours"
       }
+    },
+    "attentionStrip": {
+      "highRisks": "risques élevés",
+      "expiringIn30": "expirent (30j)",
+      "overdueObligations": "obligations en retard",
+      "error": "échec du chargement"
     },
     "standardForm": {
       "FIDIC": "FIDIC",

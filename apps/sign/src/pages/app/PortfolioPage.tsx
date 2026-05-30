@@ -7,11 +7,16 @@ import {
   PortfolioPeriod,
 } from '@/services/api/portfolioService';
 import { projectService } from '@/services/api/projectService';
+import { obligationService } from '@/services/api/obligationService';
+import AttentionStrip from '@/components/portfolio/AttentionStrip';
 import KpiCard from '@/components/portfolio/KpiCard';
 import StatusPie from '@/components/portfolio/StatusPie';
 import RiskDistributionBar from '@/components/portfolio/RiskDistributionBar';
 import ProjectRiskBar from '@/components/portfolio/ProjectRiskBar';
 import StandardFormDoughnut from '@/components/portfolio/StandardFormDoughnut';
+import ValueByCurrencyList from '@/components/portfolio/ValueByCurrencyList';
+import UpcomingExpirationsCard from '@/components/portfolio/UpcomingExpirationsCard';
+import UpcomingObligationsList from '@/components/portfolio/UpcomingObligationsList';
 import TimeToSignatureTrend from '@/components/portfolio/TimeToSignatureTrend';
 import TopProjectsTable from '@/components/portfolio/TopProjectsTable';
 import {
@@ -79,6 +84,14 @@ export default function PortfolioPage() {
     queryFn: () => projectService.getAll(),
   });
 
+  // INDEPENDENT second source for the attention strip's overdue signal —
+  // per-source state (loading/error/loaded) is propagated to the strip so a
+  // failure here NEVER reads as "0 overdue" (Amendment 2, multi-source).
+  const overdueQ = useQuery({
+    queryKey: ['obligations', 'overdue'],
+    queryFn: () => obligationService.getPortfolioObligations({ status: 'OVERDUE' }),
+  });
+
   // Amendment 2: "no data yet" (success + empty) is distinct from the error
   // state below. An org with nothing recorded yet → calm empty state.
   const isEmpty =
@@ -141,6 +154,21 @@ export default function PortfolioPage() {
         <PortfolioEmptyState />
       ) : (
         <div className="flex flex-col gap-6">
+          {/* Attention strip — sticky top-of-content; per-signal state so an
+              overdue-query failure renders as an explicit error pill, never as
+              "0 overdue" and never blanking the strip's loaded signals. */}
+          <AttentionStrip
+            highRisks={{ value: data.risk_distribution.levels.HIGH }}
+            expiringIn30={{ value: data.upcoming_expirations.in_30_days }}
+            overdueObligations={
+              overdueQ.isLoading
+                ? { loading: true }
+                : overdueQ.isError
+                  ? { error: true }
+                  : { value: overdueQ.data?.length ?? 0 }
+            }
+          />
+
           {/* KPI strip — 5 cards. `inverseGood` is applied ONLY to genuinely
               inverse metrics (Risks Flagged) so the badge correctly alarms on
               up-deltas and reassures on down-deltas. Open Risks is a snapshot
@@ -172,6 +200,15 @@ export default function PortfolioPage() {
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
             <RiskDistributionBar data={data.risk_distribution} />
             <ProjectRiskBar data={data.project_risk} />
+          </div>
+
+          {/* Trios row — value-per-currency (no FX, list), expirations card (stat
+              tiles), upcoming-obligations 14d (independent obligationService query
+              with its own loaded/empty/failed states). */}
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+            <ValueByCurrencyList data={data.value_by_currency} />
+            <UpcomingExpirationsCard data={data.upcoming_expirations} />
+            <UpcomingObligationsList />
           </div>
 
           <TimeToSignatureTrend data={data.time_to_signature} />
