@@ -131,15 +131,23 @@ describe('PortfolioExportTokenService', () => {
   });
 
   describe('tampered signature / tampered payload', () => {
-    it('rejects a token whose signature has been modified (last byte flipped)', async () => {
+    it('rejects a token whose signature has been modified (first signature byte flipped)', async () => {
       const job = makeJob();
       const findOne = jest.fn().mockResolvedValue(job);
       const svc = await makeService(SECRET_A, findOne);
 
       const token = svc.issue(job.id, job.user_id!, job.expires_at!);
-      const last = token[token.length - 1];
-      const flipped = last === 'A' ? 'B' : 'A';
-      const tampered = token.slice(0, -1) + flipped;
+      const dotIdx = token.indexOf('.');
+      const sigStart = dotIdx + 1;
+      // Tamper the FIRST byte of the signature, NOT the last. The last
+      // base64url char of a 43-char HMAC-SHA256 sig has only 4 data
+      // bits + 2 padding bits; flipping a single char there can leave
+      // the decoded buffer unchanged ~6% of the time and falsely
+      // verify. The first signature char carries 6 data bits (no
+      // padding) so any flip cleanly changes the decoded buffer.
+      const firstSigChar = token[sigStart];
+      const flipped = firstSigChar === 'A' ? 'B' : 'A';
+      const tampered = token.slice(0, sigStart) + flipped + token.slice(sigStart + 1);
 
       const r = await svc.verify(tampered);
       expect(r.ok).toBe(false);
