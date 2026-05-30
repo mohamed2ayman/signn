@@ -1,7 +1,7 @@
 # CLAUDE.md — Project Intelligence File
 > Read this entire file at the start of every Claude Code session before touching any code.
 > This file is the single source of truth for all architectural decisions, rules, and context.
-> Last updated: 2026-05-30 (Phase 7.17 Prompt 2b shipped — Portfolio Analytics frontend dashboard: 12 widgets, server-side period+project filters only, per-source error isolation on the attention strip, Latin numerals under AR, animation:false on Chart.js. Lessons #136–#138 added. Aggregation VALUES against representative data still staging-gated per #135.)
+> Last updated: 2026-05-31 (Phase 7.17 Prompt 2c shipped — Portfolio PDF export: token-gated download (1h reusable, HMAC-before-DB), queue + processor + pdfmake renderer + email, cleanup cron + audit log. Lessons #140–#142 added. Email-dispatch + token-download + renderer-at-scale + cleanup-cron-at-scale carry forward as staging gates per #135. **CRITICAL** — Phase 3.4 compliance PDF reports + Phase 4 ExportService contract PDFs are CURRENTLY BROKEN by the same pdfmake v0.1 require pattern 2c just fixed; see Critical Known Bugs + lesson #142, HIGH priority.)
 
 ---
 
@@ -520,6 +520,7 @@ All work is local development only.
 3. **Guest Portal is a stub** — treat `/contractor/*` as not built. Needs full planning session before building.
 4. **~~No automated tests~~** — resolved in Phase 2: 49 tests across all 3 services (33 backend, 8 frontend, 8 AI pipeline). Backend count now 87 as of Phase 7.4 (PR #29).
 5. **~~No CI pipeline~~** — resolved in Phase 2: GitHub Actions CI runs on every push and PR to main (3 parallel jobs).
+6. **🔴 HIGH PRIORITY — Compliance + Export PDF services are CURRENTLY BROKEN** (discovered Phase 7.17 Prompt 2c). `backend/src/modules/compliance/services/pdf-report.service.ts` and `backend/src/modules/export/export.service.ts` both use the `require('pdfmake')` + `new PdfPrinter(...)` pattern from pdfmake v0.1.x. The installed version is `pdfmake@0.3.7` where the main export is an INSTANCE, not a class. Both services WILL throw `TypeError: PdfPrinter is not a constructor` the moment they are triggered end-to-end. Shipped features (Phase 3.4 compliance reports — COMPLIANCE_SUMMARY / OBLIGATIONS_REPORT / JURISDICTION_CONFLICT — and ExportService's contract-PDF endpoint) currently DO NOT WORK. Mechanically-identical fix proven for 2c renderer in commit `d4dc54a`: `require('pdfmake/js/Printer').default` + `require('pdfmake/js/URLResolver').default` + `await printer.createPdfKitDocument(...)`. Each service gets its OWN small PR. Do NOT file as housekeeping — this is production-breaking known state with a cheap, urgent fix. See lesson #142.
 
 ### Local Development Workarounds (before deployment)
 | Integration | Free Local Workaround |
@@ -550,7 +551,10 @@ All work is local development only.
 | 12 | مادة (N) prefix appearing in extracted clause content | `_strip_article_prefix()` called in `_parse_json()` on every clause | clause_number field stores the number — never repeat it in content |
 
 ### Outstanding Issues (not yet fixed — do not build on top of these)
-No outstanding issues as of 2026-05-22.
+| # | Issue | Severity | Fix | Reference |
+|---|-------|----------|-----|-----------|
+| 1 | `compliance/services/pdf-report.service.ts` uses broken pdfmake v0.1 require pattern — `TypeError: PdfPrinter is not a constructor` on first trigger. Phase 3.4 compliance reports do not work end-to-end. | **HIGH** | Mirror the fix from Phase 7.17 Prompt 2c renderer commit `d4dc54a`: `require('pdfmake/js/Printer').default` + `require('pdfmake/js/URLResolver').default` + `await printer.createPdfKitDocument(...)` + add a no-mock renderer integration test (`%PDF` magic + `%%EOF`). Own small PR. ~30 min. | Lesson #142 |
+| 2 | `export/export.service.ts` uses the same broken pdfmake v0.1 require pattern — ExportService contract-PDF endpoint does not work end-to-end. | **HIGH** | Same fix as issue #1, separate small PR. | Lesson #142 |
 
 ---
 
@@ -2769,3 +2773,228 @@ renders exactly what 2a returns:
 7. **`StandardFormDoughnut` stays a `StatusPie` clone** — same Chart.js
    config, different data slice. A divergent doughnut config defeats the
    visual-parity decision.
+
+---
+
+## Phase 7.17 Prompt 2c — Portfolio PDF Export (shipped — 2026-05-31)
+
+Token-gated PDF export of the portfolio dashboard. Closes the Phase 7.17
+trio: 2a backend → 2b frontend → 2c PDF export. Built in 5 buckets behind
+a single PR.
+
+### What shipped — end-to-end pipeline
+
+```
+Frontend: ExportPdfButton on /app/portfolio → ExportPdfModal
+   (confirmation, 1h expiry copy, single-email recovery)
+   → POST /api/v1/portfolio-exports
+Backend POST: JWT + RolesGuard(@Roles OWNER_ADMIN) + @ThrottleOnly
+   ('portfolio_export', 5/15min/IP)
+   → PortfolioExportService.createJob() persists PENDING row +
+     enqueues `render-export` on `portfolio-export-jobs` queue
+   → 202 { job_id, email }
+Processor (@Process({ name: 'render-export', concurrency: 1 }) explicit
+   per #13): RUNNING → PortfolioAnalyticsService.getPortfolioAnalytics()
+   → PortfolioExportRendererService.render() (pdfmake)
+   → StorageService.uploadBuffer() → token issued in-memory →
+   EmailService.sendGenericEmail() (sync + throws on fail) →
+   COMPLETED with file_path + expires_at on success
+Public download: GET /api/v1/portfolio-exports/download?token=...
+   bare HTTP + token only (no @UseGuards per §3 #11, see lesson #141)
+   → HMAC verify (constant-time, BEFORE DB) → DB existence + status
+     COMPLETED + user_id match → DB-side expires_at re-check →
+     stream file (StorageService.getBuffer)
+Cleanup: PortfolioExportCleanupScheduler registers a repeatable
+   `cleanup-expired` cron every 30 min; PortfolioExportCleanupProcessor
+   sweeps rows where `expires_at < NOW() AND NOT file_deleted` (predicate
+   matches the partial index from Bucket 1).
+```
+
+### Decisions locked (D1–D7)
+
+- **D1 — Token gating: 1h TTL, reusable, no nonce.** Rejected single-use
+  at plan review — MENA mobile networks make on('end') nonce-burn punish
+  legitimate users on flaky connections (partial download burns the link).
+  24h was rejected as too long for org financials (especially deactivated-
+  user residual). 1h gives ≈4× headroom over the realistic ~15min download
+  window and compresses the deactivated-user residual exposure to <1h.
+  Verification chain runs in deliberate code order: parse → constant-time
+  HMAC compare → payload JSON parse → payload expiry → DB existence +
+  COMPLETED + user_id match → DB-side expires_at re-check.
+- **D2 — Queue: 1 attempt + failure email.** No retry on processor failure.
+  Surfacing failure fast > silently retrying a deterministic failure (which
+  most pdfmake / aggregation crashes are).
+- **D3 — StorageService driver + retention.** `STORAGE_DRIVER` per Phase
+  9.1a (local default, S3 future). File-retention TTL coupled to D1 via
+  `PORTFOLIO_EXPORT_TTL_HOURS = 1` — single constant read by both the
+  token issuance and the cleanup cron. Audit row retention = 7 days
+  post-file-deletion.
+- **D4 — Email-only delivery, no in-app notification.** Matches compliance
+  precedent. **Deliberately diverges from compliance's fire-and-forget**:
+  uses `EmailService.sendGenericEmail()` directly + await + throws-on-fail,
+  because the spec mandates "email send fail → status=FAILED + no token";
+  fire-and-forget returns success on enqueue and can't deliver that.
+  Trade: less resilience to transient SMTP, but strict consistency between
+  "row says COMPLETED" and "user got the email."
+- **D5 — pdfmake renderer.** Cover page + watermark + footer + permissions
+  block (printing high-res, edit/copy/annotate denied, random discarded
+  owner password). EN-only labels v1 (Arabic glyph wall in pdfmake
+  explicitly deferred to v2). Latin numerals + ISO currency codes (#137)
+  applied throughout — no `Intl.NumberFormat('ar-EG', ...)` in the PDF
+  even when the requester's UI locale is AR. Real-pdfmake integration
+  test (`%PDF` magic + `%%EOF`) asserts the path works against sparse +
+  null + empty docDef shapes (lesson #140).
+- **D6 — Rate limit: 5/15min per IP.** Abuse mitigation framing (NOT
+  capacity limit). Legitimate burst ceiling ≈3 (generate → change period →
+  regenerate → maybe filter). 5 leaves slack for legit users without
+  enabling efficient exfiltration of compromised OWNER_ADMIN account.
+- **D7 — User-deleted residual exposure: ACCEPT <1h.** Deactivated user's
+  in-flight token still works for up to the remaining TTL after
+  deactivation (max <1h compressed from the D1 fix). Documented as
+  acceptable trade-off — adding a DB-session check on the download
+  endpoint would import the entire JWT model into the bare-HTTP path
+  (lesson #141), creating new failure modes for marginal residual-window
+  benefit.
+
+### Deployment verification — DO NOT BURY THESE
+
+2c's code path is verified by unit + integration tests but four pieces
+require explicit end-to-end verification against real infrastructure at
+deployment time. These are NOT staging-gated as a polish item — they are
+the gate between "the tests pass" and "the feature works in production":
+
+1. **Email dispatch over real SMTP.** Dev has no SMTP server; the
+   processor's email-send call fails with `ECONNREFUSED 127.0.0.1:1025`,
+   which exercises the failure-cleanup path but NOT the success email.
+   Deployment must verify: a real export → real `EmailService.sendGenericEmail()`
+   over real SMTP → email lands in the requester's inbox → contains a
+   working download link.
+2. **Token-gated download against a real issued token.** Unit tests
+   exercise verify() against mocked rows; the bare-HTTP download
+   controller is exercised against mocked storage. Deployment must verify:
+   a real token from a real COMPLETED export → real GET request → real
+   `StorageService.getBuffer()` → real PDF bytes stream back → file opens
+   in Acrobat / Preview cleanly.
+3. **Renderer against representative data.** Real pdfmake works against
+   sparse / null / empty (verified by Bucket 4 integration tests, #140).
+   Deployment must verify: real org data with ~10k contracts, multiple
+   currencies, real time-to-signature distribution → renderer survives
+   without throwing AND output is visually correct (no overflow, no
+   text-clipping, no missing sections, no font-substitution warnings).
+4. **Cleanup cron at scale.** Bucket 1 migration created a partial index
+   on `expires_at WHERE NOT file_deleted`. Bucket 3 cleanup query
+   matches the predicate (EXPLAIN against the dev DB confirmed the SHAPE;
+   the planner correctly chose Seq Scan over 0 rows). Deployment must
+   verify: with N rows (10k+) in `portfolio_export_jobs`, EXPLAIN ANALYZE
+   the cleanup query and confirm `Bitmap Index Scan on
+   idx_portfolio_export_jobs_expires_at`. If the planner falls back to
+   seq scan at scale, the cleanup tick becomes O(N) and the cron's 30-min
+   cadence becomes a slow DDoS on the DB.
+
+Same #135 staging-gate posture carried throughout. Unit/integration tests
+prove no-crash + logic-unit correctness; the four items above prove
+real-environment behavior. They go on the deployment checklist explicitly.
+
+### What the trimmed pipeline check caught — the real bug
+
+The user's Bucket 5 review demanded a trimmed live trigger (query the row
+from a real export) rather than letting email + download defer. That check
+surfaced `TypeError: PdfPrinter is not a constructor` — pdfmake@0.3.7's
+main export is an INSTANCE, not a class. 49 unit tests had passed clean
+because the renderer was mocked at the processor level. The renderer was
+broken from commit `33f4e41` (Bucket 2) through commit `6f459c1` (Bucket
+4) — no test could have caught it because every test mocked the renderer.
+
+Fix at commit `d4dc54a` (post-Bucket-4): `require('pdfmake/js/Printer').default`
++ `require('pdfmake/js/URLResolver').default` + `await
+printer.createPdfKitDocument(...)`. Plus 3 no-mock renderer integration
+tests (real pdfmake) covering sparse / null / empty docDef shapes. Direct
+proof: 2.1KB valid `%PDF` / `%%EOF` buffer for the sparse-data shape.
+
+The same broken pattern lives in `pdf-report.service.ts` (compliance) and
+`export.service.ts` (contract export). Both are SHIPPED but currently
+broken end-to-end — see Critical Known Bugs #6 + Outstanding Issues + lesson
+#142. HIGH priority small-PR fixes; do not file as housekeeping.
+
+### New lessons (added in Bucket 5)
+
+- **#140** — Mocking the external-library render/call path hides total
+  failure (#135 applied to renderers). Any service whose RISK is the
+  external library call itself needs at least one no-mock integration test.
+- **#141** — SIGN has no global JwtAuthGuard. Token-gated endpoints
+  inherit the bare-HTTP threat model — HMAC verification IS the entire
+  auth gate, must precede any DB lookup, the secret env var is the
+  security floor, audit-log every outcome with caller-side try/catch.
+- **#142** — Compliance + Export PDF services use the same broken
+  pdfmake v0.1 require pattern. Known-broken production state, HIGH
+  priority small-PR fix mechanically-identical to the 2c renderer fix.
+
+### Hard rules — never violate
+
+1. **Every download token verifier MUST run HMAC compare BEFORE DB lookup.**
+   The `no-DB-on-HMAC-fail` regression test in
+   `portfolio-export-token.service.spec.ts` asserts
+   `findOne.not.toHaveBeenCalled()` on signature failure. Any refactor that
+   reorders verify() trips the test. Don't reorder for convenience.
+2. **`PORTFOLIO_EXPORT_DOWNLOAD_SECRET` is Joi `.min(32).required()`.**
+   This secret IS the entire security floor on the bare-HTTP download
+   endpoint (lesson #141). Never lower the floor. Rotate by replacing
+   the value — all in-flight tokens become invalid immediately, the 1h
+   TTL caps user-facing impact.
+3. **The cleanup query MUST include `AND NOT file_deleted`.** It matches
+   the partial index from Bucket 1. Without it, the planner falls back
+   to seq scan (#134/#135 index-shape mismatch). The query-shape test
+   in `portfolio-export-cleanup.processor.spec.ts` asserts both WHERE
+   clauses are present.
+4. **`PORTFOLIO_EXPORT_TTL_HOURS = 1` is the single source of truth.**
+   Both the token's signed `expires_at` and the cleanup cron's
+   `WHERE expires_at < NOW()` read from this constant. Changing it
+   cascades automatically. Never hardcode a duration in either path.
+5. **Audit-record calls in the download controller MUST be wrapped in
+   `safeAudit` (try/catch + logger.warn).** A `SecurityEventService.record()`
+   hiccup must NEVER turn a valid 200 download into a 500. Mirrors the
+   docusign.service.ts convention. Tested by 3 critical-path-invariant
+   tests in `portfolio-export-download.controller.spec.ts`.
+6. **`PortfolioExportRendererService` MUST have at least one no-mock
+   integration test against real pdfmake** (lesson #140). The shipped
+   tests cover sparse / null / empty docDef shapes; add to the same spec
+   when new section types are added to the renderer.
+7. **Email is sent synchronously + throws on failure** in the processor —
+   NOT fire-and-forget like compliance. This divergence is deliberate
+   (the "row says COMPLETED implies email delivered" consistency
+   requirement). Do not refactor to `enqueueEmail()` without re-deriving
+   why the spec mandates sync delivery.
+8. **The HMAC secret env var addition pattern is the canonical model**
+   for adding a new bare-HTTP token-gated endpoint. See lesson #141 for
+   the 6-step checklist (no @Public, omit @UseGuards, Joi-require with
+   min(32), HMAC-before-DB tested invariant, audit every outcome with
+   wrapped audit-record).
+
+### Verification honesty
+
+2c is verified for:
+1. **No-crash on real data** — renderer integration tests (`%PDF` /
+   `%%EOF` against sparse / null / empty), backend unit tests
+   (334/334 green), frontend unit tests (67/67 green).
+2. **Security-floor invariants** — HMAC-before-DB regression, wrong-
+   secret rejection, no-DB-on-failed-signature, audit-record wrap on
+   download critical path.
+3. **Boot health post-restart** — Both routes registered, cleanup
+   scheduler initialised, Nest application successfully started.
+4. **Bare-HTTP probe responses** — unauthenticated POST → 401
+   (JwtAuthGuard rejecting), unauthenticated GET → 401 "Invalid
+   download link." (verifier rejecting empty as malformed; controller
+   maps to generic 401 body, no info leak).
+
+2c is NOT verified for:
+1. **Real SMTP delivery** — dev has no SMTP server (deployment gate).
+2. **Real token-gated download** — bare-HTTP probe covers the gate but
+   not the success-stream against a real issued token (deployment gate).
+3. **Renderer against representative data** — sparse + null + empty
+   covered, real ~10k-contract org data NOT covered (deployment gate).
+4. **Cleanup cron at scale** — dev DB has 0 rows; planner pick of
+   Bitmap Index Scan on partial index NOT yet proven at scale
+   (deployment gate; same #135 inherited from 2a worst-finding query).
+
+The four deployment gates are explicit, not buried. They go on the
+deployment checklist.

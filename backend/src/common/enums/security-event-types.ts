@@ -33,6 +33,21 @@ export const SECURITY_EVENT_TYPES = {
    * was leaked. The entire token family is revoked atomically.
    */
   REFRESH_TOKEN_REUSE_DETECTED: 'security.refresh_token_reuse_detected',
+  /**
+   * Phase 7.17 Prompt 2c — portfolio export PDF download events.
+   *
+   * The download endpoint is bare HTTP + token (no global JWT guard
+   * behind it — verified at plan review §3 #11). Every outcome writes
+   * an audit row so leaked-URL probes and successful downloads are both
+   * visible in admin/security for forensics. The HTTP response is
+   * deliberately generic for failures (all 410 or 401, no per-reason
+   * leak to the attacker); the audit log captures the actual reason.
+   */
+  PORTFOLIO_EXPORT_DOWNLOAD_SUCCESS: 'security.portfolio_export.download.success',
+  PORTFOLIO_EXPORT_DOWNLOAD_EXPIRED: 'security.portfolio_export.download.expired',
+  PORTFOLIO_EXPORT_DOWNLOAD_NOT_FOUND: 'security.portfolio_export.download.not_found',
+  PORTFOLIO_EXPORT_DOWNLOAD_INVALID_SIGNATURE: 'security.portfolio_export.download.invalid_signature',
+  PORTFOLIO_EXPORT_DOWNLOAD_MALFORMED: 'security.portfolio_export.download.malformed',
 } as const;
 
 export type SecurityEventType =

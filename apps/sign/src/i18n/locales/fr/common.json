@@ -285,7 +285,12 @@
     "upcoming": "À venir",
     "all": "Toutes",
     "dueDate": "Échéance : {{date}}",
-    "frequency": "Fréquence : {{frequency}}",
+    "frequency": {
+      "oneTime": "Ponctuel",
+      "monthly": "Mensuel",
+      "quarterly": "Trimestriel",
+      "annually": "Annuel"
+    },
     "complete": "Terminer",
     "noObligations": "Aucune obligation trouvée",
     "status": {
@@ -428,12 +433,6 @@
         "amountRequired": "Le montant est requis lorsqu'une devise est fournie",
         "currencyRequired": "La devise est requise lorsqu'un montant est fourni"
       }
-    },
-    "frequency": {
-      "oneTime": "Ponctuel",
-      "monthly": "Mensuel",
-      "quarterly": "Trimestriel",
-      "annually": "Annuel"
     },
     "calendar": {
       "title": "Calendrier des obligations",
@@ -605,10 +604,18 @@
       "HIGH": "Élevé"
     },
     "charts": {
-      "statusPie": { "title": "Contrats par statut" },
-      "riskBar": { "title": "Répartition des risques" },
-      "projectRisk": { "title": "Risque par projet" },
-      "standardForm": { "title": "Par forme standard" },
+      "statusPie": {
+        "title": "Contrats par statut"
+      },
+      "riskBar": {
+        "title": "Répartition des risques"
+      },
+      "projectRisk": {
+        "title": "Risque par projet"
+      },
+      "standardForm": {
+        "title": "Par forme standard"
+      },
       "timeToSig": {
         "title": "Délai de signature",
         "daysUnit": "jours",
@@ -664,6 +671,25 @@
       "title": "Échec du chargement des analyses",
       "body": "Une erreur s'est produite lors de la récupération des données. Il s'agit d'un échec de chargement, pas d'un portefeuille vide.",
       "retry": "Réessayer"
+    },
+    "export": {
+      "button": "Exporter en PDF",
+      "modal": {
+        "title": "Exporter le portefeuille en PDF",
+        "recipient": "L'instantané de votre portefeuille sera envoyé par e-mail à {{email}}.",
+        "expiry": "Le lien de téléchargement expire dans 1 heure.",
+        "recovery": "Livraison par un seul e-mail, pas de notification dans l'application. Si l'e-mail n'arrive pas, vous pouvez réexporter depuis cette page — c'est gratuit et idempotent.",
+        "cancel": "Annuler",
+        "submit": "Exporter en PDF",
+        "submitting": "Demande en cours…"
+      },
+      "toast": {
+        "success": "Votre export est en cours de génération et sera envoyé par e-mail à {{email}}.",
+        "error": {
+          "generic": "Impossible de demander l'export. Veuillez réessayer.",
+          "rateLimit": "Trop de demandes d'export. Veuillez patienter quelques minutes avant de réessayer."
+        }
+      }
     }
   }
 }
