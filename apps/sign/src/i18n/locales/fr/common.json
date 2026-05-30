@@ -607,6 +607,8 @@
     "charts": {
       "statusPie": { "title": "Contrats par statut" },
       "riskBar": { "title": "Répartition des risques" },
+      "projectRisk": { "title": "Risque par projet" },
+      "standardForm": { "title": "Par forme standard" },
       "timeToSig": {
         "title": "Délai de signature",
         "daysUnit": "jours",
@@ -614,6 +616,12 @@
         "noTrend": "Aucun contrat signé sur la période",
         "excludedNote": "{{count}} contrat(s) signé(s) exclu(s) (sans date de partage)."
       }
+    },
+    "standardForm": {
+      "FIDIC": "FIDIC",
+      "NEC": "NEC",
+      "OTHER": "Autre",
+      "ADHOC": "Ad-hoc"
     },
     "topProjects": {
       "title": "Principaux projets",

@@ -591,6 +591,8 @@
     "charts": {
       "statusPie": { "title": "العقود حسب الحالة" },
       "riskBar": { "title": "توزيع المخاطر" },
+      "projectRisk": { "title": "المخاطر حسب المشروع" },
+      "standardForm": { "title": "حسب النموذج المعتمد" },
       "timeToSig": {
         "title": "زمن التوقيع",
         "daysUnit": "يوم",
@@ -598,6 +600,12 @@
         "noTrend": "لا توجد عقود موقّعة في النطاق",
         "excludedNote": "تم استبعاد {{count}} عقد موقّع (بدون تاريخ مشاركة)."
       }
+    },
+    "standardForm": {
+      "FIDIC": "FIDIC",
+      "NEC": "NEC",
+      "OTHER": "أخرى",
+      "ADHOC": "مخصص"
     },
     "topProjects": {
       "title": "أبرز المشاريع",
