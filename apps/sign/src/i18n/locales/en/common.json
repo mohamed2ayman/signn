@@ -607,7 +607,30 @@
         "sample": "across {{count}} signed",
         "noTrend": "No signed contracts in range",
         "excludedNote": "{{count}} signed contract(s) excluded (no shared date)."
+      },
+      "valueByCurrency": {
+        "title": "Value by Currency",
+        "count": "{{count}} contracts"
+      },
+      "expirations": {
+        "title": "Upcoming Expirations",
+        "in_30_days": "Next 30 days",
+        "in_60_days": "31–60 days",
+        "in_90_days": "61–90 days",
+        "totalWithin90": "{{count}} total within 90 days"
+      },
+      "upcomingObligations": {
+        "title": "Upcoming Obligations (14d)",
+        "loading": "Loading…",
+        "error": "Couldn't load obligations",
+        "empty": "No obligations due in the next 14 days"
       }
+    },
+    "attentionStrip": {
+      "highRisks": "high-risk findings",
+      "expiringIn30": "expiring (30d)",
+      "overdueObligations": "overdue obligations",
+      "error": "couldn't load"
     },
     "standardForm": {
       "FIDIC": "FIDIC",

@@ -599,7 +599,30 @@
         "sample": "عبر {{count}} عقد موقّع",
         "noTrend": "لا توجد عقود موقّعة في النطاق",
         "excludedNote": "تم استبعاد {{count}} عقد موقّع (بدون تاريخ مشاركة)."
+      },
+      "valueByCurrency": {
+        "title": "القيمة حسب العملة",
+        "count": "{{count}} عقد"
+      },
+      "expirations": {
+        "title": "العقود المنتهية قريباً",
+        "in_30_days": "خلال 30 يوماً",
+        "in_60_days": "31-60 يوماً",
+        "in_90_days": "61-90 يوماً",
+        "totalWithin90": "{{count}} إجمالي خلال 90 يوماً"
+      },
+      "upcomingObligations": {
+        "title": "الالتزامات القادمة (14 يوماً)",
+        "loading": "جارٍ التحميل…",
+        "error": "تعذّر تحميل الالتزامات",
+        "empty": "لا توجد التزامات مستحقة خلال 14 يوماً"
       }
+    },
+    "attentionStrip": {
+      "highRisks": "مخاطر مرتفعة",
+      "expiringIn30": "تنتهي خلال 30 يوماً",
+      "overdueObligations": "التزامات متأخرة",
+      "error": "تعذّر التحميل"
     },
     "standardForm": {
       "FIDIC": "FIDIC",

@@ -59,6 +59,10 @@ export interface ObligationCalendarEvent {
 export interface PortfolioObligationFilters {
   from?: string; // ISO date
   to?: string; // ISO date
+  /** Convenience window (days) — added in Phase 7.17 Prompt 2a. Server
+   *  translates to from=today, to=today+within. Explicit from/to win if both
+   *  are supplied. Used by the dashboard's "upcoming obligations (14d)" panel. */
+  within?: number;
   project_id?: string;
   status?: ObligationStatus;
   type?: ObligationType;
