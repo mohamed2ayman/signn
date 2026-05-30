@@ -4981,3 +4981,169 @@ environment your verification ran against). For an irreversible action, the
 merge-style decision locked many turns earlier; user's preferred style
 (squash) surfaced post-merge. Merge intentionally not reverted; the lesson is
 the corrective.
+
+## 140. Mocking The External-Library Render/Call Path Hides Total Failure Of That Path — #135 Applied To Renderers
+
+When a service wraps an external library (pdfmake, ffmpeg, sharp, xlsx,
+puppeteer, etc.) and the RISK of the service is the library call itself —
+its API contract, its version compatibility, its config requirements — unit
+tests that mock the wrapper hide total failure of that path. The mock returns
+a happy Buffer; the real call throws on the first production invocation.
+
+**The specific instance (Phase 7.17 Prompt 2c renderer bug).**
+`PortfolioExportProcessor`'s unit tests mocked the renderer:
+
+```typescript
+rendererRender: jest.fn().mockResolvedValue(Buffer.from('pdf-bytes'))
+```
+
+Correct for processor-level invariants (status transitions, file cleanup,
+failure email dispatch). But it left the actual pdfmake call path entirely
+unexercised. The first end-to-end live trigger surfaced
+`TypeError: PdfPrinter is not a constructor` — pdfmake@0.3.7's main export is
+an INSTANCE, not a class; the v0.1.x `require('pdfmake')` pattern returns
+`{ virtualfs, urlAccessPolicy }` and calling `new` on it throws. **49 unit
+tests passed clean over a wrapper that could not generate a single byte of
+PDF.**
+
+**Why the unit tests couldn't have caught it.** The processor mock returned a
+Buffer because that's what the contract advertises. The contract is right;
+the implementation is broken. Mock vs. real are indistinguishable to the
+processor's tests — that's the design of the mock.
+
+**Rule.** Any service whose RISK includes the external library call itself
+MUST have at least one NO-MOCK integration test that exercises the real
+library against representative-shape data. The test asserts real properties
+of real output (PDF: `%PDF` magic + `%%EOF` marker; image: width/height/
+format; video: container + codec; spreadsheet: opens in xlsx parser). One
+test is enough — its presence proves the library path is exercised; its
+absence guarantees you're testing the mock, not the wrapper.
+
+**What "representative-shape data" means.** Data that matches what production
+callers actually feed the wrapper. Sparse-and-empty for the dev DB (empty
+arrays, null fields, zero counts) — exactly the shape that catches "the
+renderer crashes on the null/empty case the mocks didn't feed it." NOT
+carefully-curated fixtures designed to make the happy path render.
+
+**This is #135 applied to renderers.** #135 says "a green local suite proves
+no-crash + logic-unit correctness, NOT that the values are right at scale."
+This lesson says: when the value/byte/file IS the library's output, no-crash
+on real data is itself a separate verification gate — and mocking the library
+can never produce that gate.
+
+**Reference:** Phase 7.17 Prompt 2c renderer fix; commit `d4dc54a`;
+`portfolio-export-renderer.service.spec.ts` (3 no-mock integration tests
+covering sparse / null / empty docDef shapes).
+
+## 141. SIGN Has No Global JWT Guard — Token-Gated Endpoints Inherit The Bare-HTTP Threat Model
+
+A search for `useGlobalGuards(JwtAuthGuard)` or `{ provide: APP_GUARD, useClass:
+JwtAuthGuard }` returns ZERO matches in the SIGN backend. JWT auth is opt-in
+per controller via `@UseGuards(JwtAuthGuard)` on the class or per method.
+There is also no `@Public()` decorator defined anywhere — it does not need
+one because there is nothing to opt OUT of.
+
+**Implications.** Any endpoint without `@UseGuards(JwtAuthGuard)` is bare
+HTTP. Existing examples:
+
+- `ComplianceReportDownloadController` (compliance download, token-gated)
+- `PortfolioExportDownloadController` (Phase 7.17 Prompt 2c, token-gated)
+
+For each, the verification chain IS the entire auth gate. There is no JWT
+layer behind it.
+
+**When you add a new token-gated public endpoint (rare, do carefully):**
+1. Do NOT use `@Public()` — it does not exist.
+2. Simply omit `@UseGuards(JwtAuthGuard)`. That IS the opt-out.
+3. The HMAC secret env var IS the entire security floor. Joi-require it at
+   startup with `.min(32).required()` — refuse to boot below the floor.
+4. Constant-time HMAC compare (`crypto.timingSafeEqual`) MUST run BEFORE any
+   DB lookup. If the DB read ever moves ahead of the signature check,
+   Postgres becomes the unauthenticated attack surface under forged-token
+   spray. Make this a tested invariant (see the no-DB-on-HMAC-fail regression
+   test in `portfolio-export-token.service.spec.ts`).
+5. Audit-log every outcome — success AND each failure reason — with distinct
+   event types so leaked-URL probes are visible in admin/security forensics.
+   HTTP responses should collapse all failure reasons to two codes (401 /
+   410) so an attacker can't enumerate which check failed; the audit row
+   captures the truth.
+6. Wrap the audit-record call in a caller-side try/catch (the docusign
+   convention). An audit-log hiccup must NEVER turn a valid 200 into a 500.
+
+**This is the threat-model side of #138** (verify the route is in the latest
+boot's RouterExplorer log) — both lessons take seriously that the FRAMEWORK
+assumption you make about your endpoint's protection is the one that bites at
+production scale.
+
+**Reference:** Phase 7.17 Prompt 2c §3 #11 plan-review verification;
+`backend/src/main.ts` + `backend/src/app.module.ts` (no APP_GUARD
+registration); `ComplianceReportDownloadController` (line 114, no
+`@UseGuards`); `PortfolioExportDownloadController` (Phase 7.17 Prompt 2c
+Bucket 3).
+
+## 142. Compliance + Export PDF Services Use The Same Broken pdfmake v0.1 Require Pattern — KNOWN-BROKEN Production State, HIGH PRIORITY FIX
+
+**State of the bug.** The following two services use the
+`require('pdfmake')` + `new PdfPrinter(...)` pattern from pdfmake v0.1.x.
+The installed version is `pdfmake@0.3.7` where the main export is an
+INSTANCE, not a class. Both services WILL throw
+`TypeError: PdfPrinter is not a constructor` the moment they are triggered
+end-to-end:
+
+- `backend/src/modules/compliance/services/pdf-report.service.ts` — `toBuffer()`
+  at line ~542. The shipped compliance-report flow (Phase 3.4:
+  COMPLIANCE_SUMMARY / OBLIGATIONS_REPORT / JURISDICTION_CONFLICT) goes
+  through this method.
+- `backend/src/modules/export/export.service.ts` — `toBuffer()` at line ~316.
+  The shipped contract-PDF export goes through this method.
+
+Both features are SHIPPED but have evidently never been triggered end-to-end
+at runtime in dev (otherwise this same `TypeError` would have surfaced when
+a user requested a compliance report or exported a contract PDF). They are
+**latent-broken in production**.
+
+**How this was discovered.** Phase 7.17 Prompt 2c (portfolio export PDF)
+mirrored the compliance precedent verbatim. The first end-to-end live
+trigger crashed with the constructor error. The investigation traced the
+bug to a pdfmake major-version change between when the original
+`pdf-report.service.ts` was written and the current `0.3.7` installation.
+
+**Mechanically-identical fix** (proven for the 2c renderer in commit
+`d4dc54a`). Apply to BOTH services:
+
+```typescript
+// OLD (broken on pdfmake@0.3.x):
+const PdfPrinter = require('pdfmake');
+const printer = new PdfPrinter({ Helvetica: {...} });
+const pdfDoc = printer.createPdfKitDocument(docDef, options);
+// pdfDoc.on('data', ...) — broken; pdfDoc is now a Promise
+
+// NEW (works on pdfmake@0.3.7):
+const PdfPrinter = require('pdfmake/js/Printer').default;
+const URLResolver = require('pdfmake/js/URLResolver').default;
+const printer = new PdfPrinter(
+  { Helvetica: {...} },
+  undefined,
+  new URLResolver(null),
+);
+const pdfDoc = await printer.createPdfKitDocument(docDef, options);
+// now pdfDoc is the pdfkit doc — stream listeners work as before
+```
+
+Plus add a no-mock renderer integration test PER service that asserts a real
+PDF buffer (`%PDF` magic + `%%EOF` marker) — the #140 application.
+
+**Effort.** ~30 minutes per service plus the integration test. Each gets its
+OWN small PR — do NOT bundle into a feature PR.
+
+**Severity.** HIGH. Compliance PDF reporting is a customer-facing shipped
+feature. The same applies to `ExportService`'s contract-PDF endpoint. Both
+currently fail the moment they're invoked.
+
+**Don't file this as housekeeping.** This is a production-breaking known
+state, recorded prominently in CLAUDE.md → "Critical Known Bugs". The fix is
+small AND urgent — schedule it as the next small-PR after Phase 7.17 closes.
+
+**Reference:** Phase 7.17 Prompt 2c renderer fix commit `d4dc54a`; the
+user-mandated trimmed pipeline check that surfaced the bug; lesson #140
+(mock vs. real for external-library wrappers).
