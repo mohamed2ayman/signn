@@ -4866,3 +4866,57 @@ counts in the topbar) — there, locale-aware formatting is fine.
 
 **Reference:** Phase 7.17 Prompt 2b Bucket 1 (D4); `KpiCard.tsx`,
 `value-per-currency` rendering.
+
+## 138. `nest start --watch` Can Silently Stop Hot-Restarting Across An Edit Cascade — Verify The Route Is In The Last Boot's `RouterExplorer` Log Before Debugging The Code
+
+Under rapid sequential edits across many files (a refactor cascade — new module
++ new controller + new service + entity + DTO all touched in one session),
+NestJS dev mode (`nest start --watch`) can fall behind and **stop reloading**
+the running process — leaving a stale Nest snapshot on the network while the
+source on disk has moved on.
+
+**Symptom:** a route present in CURRENT source AND in CURRENT compiled `dist/`
+returns **404** when hit. The frontend (Vite HMR) is serving the latest code
+that calls the new route; the backend is the stale process and 404s. The
+inconsistency reads as "the new route is broken" until you check the backend
+log.
+
+**Tell:** grep the backend log for
+`RouterExplorer.Mapped {/api/v1/<your-route>, GET}`. If the line is **missing
+from the most recent Nest boot's startup section**, the watcher never reloaded
+after the route was added. The `dist/` having the right code is not enough —
+RouterExplorer only registers routes during the bootstrap phase, which only
+re-runs on a successful watch restart.
+
+**Diagnosis sequence (the one that worked, Phase 7.17 Prompt 2b live triage):**
+1. `curl -s -o /dev/null -w "%{http_code}\n" http://localhost:3000/api/v1/<route>`
+   → 404
+2. `docker logs sign-backend | grep "<route>"` → no `RouterExplorer.Mapped` line
+   for it
+3. `docker logs sign-backend | tail -50` → last boot was hours ago, before the
+   route was added
+4. `docker restart sign-backend` → fresh boot, RouterExplorer maps the new
+   route, curl now 401 (auth-gated, registered)
+
+**Fix:** `docker restart sign-backend` — a full process restart, NOT a watcher
+poke. Watcher restart attempts often re-fail in this state; only a clean
+process boot reliably picks up the cascade.
+
+**Don't do:** assume the route is broken in source. `tsc --noEmit` shows zero
+errors; the source is fine; `dist/` has the compiled file. The bug is in the
+process state, not the code state. Editing the source to "fix" a stale-process
+404 introduces a real bug into known-good code.
+
+**Rule:** when a route returns 404 despite current source + current dist,
+confirm `RouterExplorer.Mapped` for it is in the most recent boot log **before**
+opening the editor. If absent, `docker restart sign-backend` first, re-curl,
+**then** decide if there is a code bug.
+
+This is the dev-loop analogue of #132 (verify which DB you're hitting) and #134
+(verify the environment your verification ran against) — the *process state*
+your code runs under decides whether the result means anything.
+
+**Reference:** Phase 7.17 Prompt 2b live triangulation; `/app/portfolio`
+returning ErrorState despite source-clean typecheck + `PortfolioAnalyticsController`
+present in source and dist; resolved by `docker restart sign-backend`
+(route 404 → 401).
