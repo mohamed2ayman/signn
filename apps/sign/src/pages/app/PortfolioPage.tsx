@@ -10,6 +10,8 @@ import { projectService } from '@/services/api/projectService';
 import KpiCard from '@/components/portfolio/KpiCard';
 import StatusPie from '@/components/portfolio/StatusPie';
 import RiskDistributionBar from '@/components/portfolio/RiskDistributionBar';
+import ProjectRiskBar from '@/components/portfolio/ProjectRiskBar';
+import StandardFormDoughnut from '@/components/portfolio/StandardFormDoughnut';
 import TimeToSignatureTrend from '@/components/portfolio/TimeToSignatureTrend';
 import TopProjectsTable from '@/components/portfolio/TopProjectsTable';
 import {
@@ -160,9 +162,16 @@ export default function PortfolioPage() {
             />
           </div>
 
+          {/* Doughnuts row */}
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
             <StatusPie data={data.contracts_by_status} />
+            <StandardFormDoughnut data={data.contracts_by_standard_form} />
+          </div>
+
+          {/* Risk bars row — RiskDistributionBar (3 bands) + ProjectRiskBar (per project, free-text labels) */}
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
             <RiskDistributionBar data={data.risk_distribution} />
+            <ProjectRiskBar data={data.project_risk} />
           </div>
 
           <TimeToSignatureTrend data={data.time_to_signature} />
