@@ -358,46 +358,73 @@ export class PortfolioExportRendererService {
 
   // ─── Renderer (mirrors PdfReportService.toBuffer) ──────────────────
 
-  private toBuffer(docDef: DocDef): Promise<Buffer> {
-    return new Promise((resolve, reject) => {
-      try {
-        // require() rather than import — pdfmake's CJS shape works
-        // cleanly this way and it's the same path PdfReportService uses.
-        const PdfPrinter = require('pdfmake');
-        const printer = new PdfPrinter({
+  private async toBuffer(docDef: DocDef): Promise<Buffer> {
+    try {
+      // pdfmake v0.3.x setup. Three things diverge from the legacy v0.1.x
+      // pattern still used by pdf-report.service.ts (compliance) and
+      // export.service.ts (CSV/PDF export) — both of which would crash
+      // with `TypeError: PdfPrinter is not a constructor` the moment
+      // they were actually triggered (flagged for a separate scope-out
+      // fix from 2c):
+      //   1. `require('pdfmake')` returns an INSTANCE, not a class. The
+      //      Node-side PdfPrinter constructor lives at
+      //      `pdfmake/js/Printer` as `.default`.
+      //   2. PdfPrinter's constructor signature is
+      //      `(fontDescriptors, virtualfs, urlResolver)`. The urlResolver
+      //      is consulted unconditionally during render (even for
+      //      URL-less docs); without one, render throws
+      //      `Cannot read properties of undefined (reading 'resolve')`.
+      //      pdfmake ships URLResolver at `pdfmake/js/URLResolver`.
+      //   3. `createPdfKitDocument` now returns Promise<pdfkitDoc>
+      //      rather than the pdfkit doc directly. We await it before
+      //      attaching the stream listeners.
+      const PdfPrinter = require('pdfmake/js/Printer').default;
+      const URLResolver = require('pdfmake/js/URLResolver').default;
+
+      const printer = new PdfPrinter(
+        {
           Helvetica: {
             normal: 'Helvetica',
             bold: 'Helvetica-Bold',
             italics: 'Helvetica-Oblique',
             bolditalics: 'Helvetica-BoldOblique',
           },
-        });
-        // Random owner password is generated then discarded — the file
-        // opens freely but cannot be edited, copied, or have its forms
-        // filled. Matches compliance precedent exactly.
-        const ownerPassword = crypto.randomBytes(24).toString('base64');
-        const pdfDoc = printer.createPdfKitDocument(docDef, {
-          ownerPassword,
-          permissions: {
-            printing: 'highResolution',
-            modifying: false,
-            copying: false,
-            annotating: false,
-            fillingForms: false,
-            contentAccessibility: true,
-            documentAssembly: false,
-          },
-        });
+        },
+        undefined,
+        // Null access policy disables URL fetching (we never embed
+        // external URLs in the portfolio PDF) but provides the
+        // `resolved()` method Printer expects to await.
+        new URLResolver(null),
+      );
+
+      // Random owner password is generated then discarded — the file
+      // opens freely but cannot be edited, copied, or have its forms
+      // filled. Matches the compliance permissions block exactly.
+      const ownerPassword = crypto.randomBytes(24).toString('base64');
+      const pdfDoc = await printer.createPdfKitDocument(docDef, {
+        ownerPassword,
+        permissions: {
+          printing: 'highResolution',
+          modifying: false,
+          copying: false,
+          annotating: false,
+          fillingForms: false,
+          contentAccessibility: true,
+          documentAssembly: false,
+        },
+      });
+
+      return await new Promise<Buffer>((resolve, reject) => {
         const chunks: Buffer[] = [];
         pdfDoc.on('data', (c: Buffer) => chunks.push(c));
         pdfDoc.on('end', () => resolve(Buffer.concat(chunks)));
         pdfDoc.on('error', (err: Error) => reject(err));
         pdfDoc.end();
-      } catch (err) {
-        this.logger.error('PDF generation failed', err);
-        reject(err);
-      }
-    });
+      });
+    } catch (err) {
+      this.logger.error('PDF generation failed', err);
+      throw err;
+    }
   }
 
   private watermarkCanvas(_width: number, _height: number): any[] {
