@@ -285,7 +285,12 @@
     "upcoming": "Upcoming",
     "all": "All",
     "dueDate": "Due: {{date}}",
-    "frequency": "Frequency: {{frequency}}",
+    "frequency": {
+      "oneTime": "One-time",
+      "monthly": "Monthly",
+      "quarterly": "Quarterly",
+      "annually": "Annually"
+    },
     "complete": "Complete",
     "noObligations": "No obligations found",
     "status": {
@@ -421,12 +426,6 @@
         "amountRequired": "Amount is required when a currency is provided",
         "currencyRequired": "Currency is required when an amount is provided"
       }
-    },
-    "frequency": {
-      "oneTime": "One-time",
-      "monthly": "Monthly",
-      "quarterly": "Quarterly",
-      "annually": "Annually"
     },
     "calendar": {
       "title": "Obligations Calendar",
@@ -597,10 +596,18 @@
       "HIGH": "High"
     },
     "charts": {
-      "statusPie": { "title": "Contracts by Status" },
-      "riskBar": { "title": "Risk Distribution" },
-      "projectRisk": { "title": "Risk by Project" },
-      "standardForm": { "title": "By Standard Form" },
+      "statusPie": {
+        "title": "Contracts by Status"
+      },
+      "riskBar": {
+        "title": "Risk Distribution"
+      },
+      "projectRisk": {
+        "title": "Risk by Project"
+      },
+      "standardForm": {
+        "title": "By Standard Form"
+      },
       "timeToSig": {
         "title": "Time to Signature",
         "daysUnit": "days",
@@ -656,6 +663,25 @@
       "title": "Couldn't load portfolio analytics",
       "body": "Something went wrong fetching your data. This is a load failure, not an empty portfolio.",
       "retry": "Retry"
+    },
+    "export": {
+      "button": "Export PDF",
+      "modal": {
+        "title": "Export portfolio as PDF",
+        "recipient": "Your portfolio snapshot will be emailed to {{email}}.",
+        "expiry": "The download link expires in 1 hour.",
+        "recovery": "Single email delivery, no in-app notification. If the email does not arrive, you can re-export from this page — it is free and idempotent.",
+        "cancel": "Cancel",
+        "submit": "Export PDF",
+        "submitting": "Requesting…"
+      },
+      "toast": {
+        "success": "Your export is being generated and will be emailed to {{email}}.",
+        "error": {
+          "generic": "Could not request export. Please try again.",
+          "rateLimit": "Too many export requests. Please wait a few minutes before trying again."
+        }
+      }
     }
   }
 }

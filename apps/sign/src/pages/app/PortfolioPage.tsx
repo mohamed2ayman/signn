@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
+import { useSelector } from 'react-redux';
+import { RootState } from '@/store';
 import {
   portfolioService,
   PortfolioFilters,
   PortfolioPeriod,
 } from '@/services/api/portfolioService';
+import ExportPdfButton from '@/components/portfolio/ExportPdfButton';
 import { projectService } from '@/services/api/projectService';
 import { obligationService } from '@/services/api/obligationService';
 import AttentionStrip from '@/components/portfolio/AttentionStrip';
@@ -55,6 +58,12 @@ const SELECT_CLS =
 export default function PortfolioPage() {
   const { t } = useTranslation();
   const [view, setView] = useState<PortfolioView>(loadView);
+  // Current user email — shown in the export confirmation modal as the
+  // destination (matches what the backend captures from JWT at request
+  // time per Bucket 3).
+  const currentUserEmail = useSelector(
+    (s: RootState) => s.auth.user?.email ?? '',
+  );
 
   // Persist filter + view state (localStorage v1).
   useEffect(() => {
@@ -104,9 +113,18 @@ export default function PortfolioPage() {
 
   return (
     <div>
-      <div className="mb-6 flex flex-col gap-1">
-        <h1 className="text-2xl font-bold text-gray-900">{t('portfolio.title')}</h1>
-        <p className="text-sm text-gray-500">{t('portfolio.subtitle')}</p>
+      {/* Header — title + Export PDF button (Phase 7.17 Prompt 2c Bucket 4).
+          On mobile the button stacks below; on sm+ it sits at the inline-end. */}
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex flex-col gap-1">
+          <h1 className="text-2xl font-bold text-gray-900">{t('portfolio.title')}</h1>
+          <p className="text-sm text-gray-500">{t('portfolio.subtitle')}</p>
+        </div>
+        <ExportPdfButton
+          period={view.period}
+          projectId={view.project_id || undefined}
+          userEmail={currentUserEmail}
+        />
       </div>
 
       {/* Filter bar — period + project only (server-side filters). */}

@@ -112,9 +112,32 @@ export interface PortfolioFilters {
   project_id?: string;
 }
 
+/** Response from POST /portfolio-exports (Phase 7.17 Prompt 2c Bucket 3). */
+export interface PortfolioExportRequestResponse {
+  job_id: string;
+  email: string;
+}
+
 export const portfolioService = {
   getPortfolioAnalytics: (filters: PortfolioFilters = {}) =>
     api
       .get<PortfolioAnalytics>('/portfolio-analytics', { params: filters })
+      .then((r) => r.data),
+
+  /**
+   * Phase 7.17 Prompt 2c Bucket 4 — request a portfolio PDF export.
+   *
+   * POST /portfolio-exports. JWT + OWNER_ADMIN + 5/15min throttler.
+   * Returns { job_id, email } so the UI can show the destination
+   * email in the success toast. The backend captures user.email at
+   * request time — we don't send the email in the body (the body
+   * carries ONLY period + project_id; scoping is JWT-derived).
+   */
+  requestExport: (period: PortfolioPeriod, projectId?: string) =>
+    api
+      .post<PortfolioExportRequestResponse>('/portfolio-exports', {
+        period,
+        ...(projectId ? { project_id: projectId } : {}),
+      })
       .then((r) => r.data),
 };
