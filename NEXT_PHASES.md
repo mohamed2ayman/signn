@@ -1,5 +1,5 @@
 # SIGN Platform — Development Roadmap
-> Last updated: 2026-05-28
+> Last updated: 2026-06-01
 > Next review: When 7.5-7.8 are cleared; 9.2 AWS setup planning starts
 > Maintained by: Ayman & Youssef
 > Market: Arabic, English, French (Middle East + Global)
@@ -456,7 +456,7 @@ obligation due 2026-04-15 displays amber despite being past-due.
 ---
 
 ### 7.15 — Per-role permission model for obligation Delete + Edit
-**Owner:** Ayman | **Priority:** 🟡 MEDIUM | **Status:** ❌ Not started
+**Owner:** Ayman | **Priority:** 🟡 MEDIUM | **Status:** ✅ Complete (2026-06-01, PR #40)
 **Deferred from:** Phase 7.1 Step 3 (2026-05-25)
 **Why:** Backend `DELETE /obligations/:id` is gated only by JWT — any
 authenticated user with contract access can delete. Step 3 hid the
@@ -703,13 +703,13 @@ block schema.
 
 ---
 
-### 7.24 — Knowledge Base Enhancements
-**Owner:** Ayman | **Priority:** 🟡 MEDIUM | **Status:** ❌ Not started
-- Bulk import from PDF/Word (multiple knowledge assets at once)
-- Version history per knowledge asset
-- "Used In" backlinks — show which contracts used each knowledge asset in analysis
-- Scope option: per-project or all-projects
-- Search within knowledge base
+### ✅ 7.24 — Knowledge Base Enhancements — COMPLETED (2026-06-01, PR #40)
+**Owner:** Ayman | **Priority:** 🟡 MEDIUM | **Status:** ✅ Complete (all 5 sub-phases)
+- ✅ **7.24a** — "Used In" backlinks: `KnowledgeAssetUsage` entity + migration + `GET /knowledge-assets/:id/usages` + frontend expandable row
+- ✅ **7.24b** — Bulk import: `BulkCreateKnowledgeAssetDto` + `POST /knowledge-assets/bulk`, partial-success response
+- ✅ **7.24c** — Retry OCR: `POST /knowledge-assets/:id/retry-ocr` + frontend retry button
+- ✅ **7.24d** — Version history: `KnowledgeAssetVersion` entity + migration + pre-update snapshots + `GET /knowledge-assets/:id/versions[/:number]` + tabbed UI + snapshot modal
+- ✅ **7.24e** — Project scoping: `project_id` FK migration + three-tier visibility (platform / org-wide / project-scoped) in service + compliance knowledge service + frontend Scope column + project filter + upload scope selector
 
 ---
 
@@ -1156,7 +1156,7 @@ No new env vars required for existing local dev deployments.
 | 7.12 | File Upload + Evidence FileDropZone | ❌ Not started | A+Y | |
 | 7.13 | Clause Deep-Linking from Drawer | ❌ Not started | Y | |
 | 7.14 | Calendar effectiveStatus Coloring | ❌ Not started | Y | |
-| 7.15 | Obligation Delete/Edit Permissions | ❌ Not started | A | |
+| 7.15 | Obligation Delete/Edit Permissions | ✅ Complete (PR #40) | A | 2026-06-01 |
 | 7.16 | Legal-Translator i18n Review | ❌ Not started | A+Y | |
 | 7.17 | Portfolio Dashboard | ❌ Not started | Y | |
 | 7.18 | Guest Portal | ❌ Not started | Y | |
@@ -1165,7 +1165,7 @@ No new env vars required for existing local dev deployments.
 | 7.21 | RFP Analysis | ❌ Not started | A+Y | |
 | 7.22 | Contract Playbook | ❌ Not started | A+Y | |
 | 7.23 | Word Add-In | ❌ Not started | Y | |
-| 7.24 | Knowledge Base | ❌ Not started | A | |
+| 7.24 | Knowledge Base | ✅ Complete (PR #40) | A | 2026-06-01 |
 | 7.25 | Poor Scan Quality | ❌ Not started | A+Y | |
 | 7.26 | French i18n | ⚠️ Partial | A+Y | |
 | 7.27 | Official Gazette | ❌ Not started | Y | |
@@ -1202,11 +1202,12 @@ No new env vars required for existing local dev deployments.
 
 **Ayman:**
 1. ~~9.1 — Abstract Infrastructure Layers~~ ✅ Done (PR #35)
-2. 7.21 — RFP & Specification Document Analysis (AI — competitive priority)
-3. 7.25 — Poor Scan Quality Handling (quick win)
-4. 7.24 — Knowledge Base Enhancements
-5. ~~7.9 — Audit Silent Migrations~~ ✅ Done (PR #34)
-6. ~~7.10 — In-app Dispatch~~ ✅ Already implemented
+2. ~~7.15 — Obligation Permission Model~~ ✅ Done (PR #40)
+3. ~~7.24 — Knowledge Base Enhancements (all 5 sub-phases)~~ ✅ Done (PR #40)
+4. 7.21 — RFP & Specification Document Analysis (AI — competitive priority)
+5. 7.25 — Poor Scan Quality Handling (quick win)
+6. ~~7.9 — Audit Silent Migrations~~ ✅ Done (PR #34)
+7. ~~7.10 — In-app Dispatch~~ ✅ Already implemented
 
 **Youssef:**
 1. 7.7 — Wire Reminder History in Detail Drawer (quick, endpoint ready)
