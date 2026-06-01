@@ -94,17 +94,22 @@ export class ContractsService {
     return qb.getMany();
   }
 
-  async findById(id: string): Promise<Contract> {
-    const contract = await this.contractRepository.findOne({
-      where: { id },
-      relations: [
-        'creator',
-        'approver',
-        'project',
-        'contract_clauses',
-        'contract_clauses.clause',
-      ],
-    });
+  async findById(id: string, orgId: string): Promise<Contract> {
+    // Tenancy scope: contract → project → project.organization_id must match
+    // the caller's org. Mirrors the same-file pattern at line 1126 in
+    // getPendingApprovalsForUser (`.andWhere('project.organization_id = :orgId')`).
+    // Out-of-org contracts return 404 (NotFoundException) — never 403 — so
+    // existence is not leaked, matching negotiation.service.ts assertContractInOrg.
+    const contract = await this.contractRepository
+      .createQueryBuilder('contract')
+      .leftJoinAndSelect('contract.creator', 'creator')
+      .leftJoinAndSelect('contract.approver', 'approver')
+      .leftJoinAndSelect('contract.project', 'project')
+      .leftJoinAndSelect('contract.contract_clauses', 'contract_clauses')
+      .leftJoinAndSelect('contract_clauses.clause', 'clause')
+      .where('contract.id = :id', { id })
+      .andWhere('project.organization_id = :orgId', { orgId })
+      .getOne();
 
     if (!contract) {
       throw new NotFoundException('Contract not found');
@@ -115,12 +120,42 @@ export class ContractsService {
       contract.contract_clauses.sort((a, b) => a.order_index - b.order_index);
     }
 
+    // Strip sensitive fields from nested User relations. Mirrors the
+    // destructure-and-omit pattern at users.service.ts:364 and
+    // admin-security/controllers/profile.controller.ts:51 — same field set
+    // (password_hash, mfa_secret, mfa_totp_secret, mfa_recovery_codes,
+    // invitation_token). There is no ClassSerializerInterceptor in the
+    // pipeline, so @Exclude() would be inert; this is the in-house convention.
+    if (contract.creator) {
+      const {
+        password_hash: _ph,
+        mfa_secret: _ms,
+        mfa_totp_secret: _mt,
+        mfa_recovery_codes: _mr,
+        invitation_token: _it,
+        ...safe
+      } = contract.creator as any;
+      contract.creator = safe;
+    }
+    if (contract.approver) {
+      const {
+        password_hash: _ph,
+        mfa_secret: _ms,
+        mfa_totp_secret: _mt,
+        mfa_recovery_codes: _mr,
+        invitation_token: _it,
+        ...safe
+      } = contract.approver as any;
+      contract.approver = safe;
+    }
+
     return contract;
   }
 
   async create(
     dto: CreateContractDto,
     userId: string,
+    orgId: string,
   ): Promise<Contract> {
     // Enforce license acknowledgment for standard forms
     if (isStandardForm(dto.contract_type)) {
@@ -177,14 +212,15 @@ export class ContractsService {
 
     this.logger.log(`Contract created: ${saved.id} by user ${userId}`);
 
-    return this.findById(saved.id);
+    return this.findById(saved.id, orgId);
   }
 
   async update(
     id: string,
     dto: UpdateContractDto,
+    orgId: string,
   ): Promise<Contract> {
-    const contract = await this.findById(id);
+    const contract = await this.findById(id, orgId);
 
     if (dto.name !== undefined) contract.name = dto.name;
     if (dto.party_type !== undefined) contract.party_type = dto.party_type;
@@ -197,15 +233,16 @@ export class ContractsService {
 
     await this.contractRepository.save(contract);
 
-    return this.findById(id);
+    return this.findById(id, orgId);
   }
 
   async updateStatus(
     id: string,
     dto: UpdateStatusDto,
     userId: string,
+    orgId: string,
   ): Promise<Contract> {
-    const contract = await this.findById(id);
+    const contract = await this.findById(id, orgId);
     const oldStatus = contract.status;
     const newStatus = dto.status;
 
@@ -261,11 +298,11 @@ export class ContractsService {
       updatedBy: userId,
     });
 
-    return this.findById(id);
+    return this.findById(id, orgId);
   }
 
-  async delete(id: string): Promise<void> {
-    const contract = await this.findById(id);
+  async delete(id: string, orgId: string): Promise<void> {
+    const contract = await this.findById(id, orgId);
 
     if (contract.status !== ContractStatus.DRAFT) {
       throw new BadRequestException('Only draft contracts can be deleted');
@@ -279,8 +316,9 @@ export class ContractsService {
   async updateParties(
     id: string,
     data: { party_first_name?: string | null; party_second_name?: string | null },
+    orgId: string,
   ): Promise<Contract> {
-    const contract = await this.findById(id);
+    const contract = await this.findById(id, orgId);
 
     if (data.party_first_name !== undefined) {
       contract.party_first_name = data.party_first_name || null;
@@ -290,7 +328,7 @@ export class ContractsService {
     }
 
     await this.contractRepository.save(contract);
-    return this.findById(id);
+    return this.findById(id, orgId);
   }
 
   // ─── Clause Management ─────────────────────────────────────
@@ -298,9 +336,10 @@ export class ContractsService {
   async addClause(
     contractId: string,
     dto: AddClauseDto,
+    orgId: string,
     userId?: string,
   ): Promise<ContractClause> {
-    const contract = await this.findById(contractId);
+    const contract = await this.findById(contractId, orgId);
 
     // Get the next order index if not provided
     let orderIndex = dto.order_index;
@@ -786,8 +825,9 @@ export class ContractsService {
     contractId: string,
     dto: AddCommentDto,
     userId: string,
+    orgId: string,
   ): Promise<ContractComment> {
-    const contract = await this.findById(contractId);
+    const contract = await this.findById(contractId, orgId);
 
     const comment = this.contractCommentRepository.create({
       contract_id: contractId,
@@ -922,12 +962,13 @@ export class ContractsService {
     contractId: string,
     requesterId: string,
     approverIds: string[],
+    orgId: string,
   ): Promise<ContractApprover[]> {
     if (!approverIds || approverIds.length === 0) {
       throw new BadRequestException('At least one approver must be selected');
     }
 
-    const contract = await this.findById(contractId);
+    const contract = await this.findById(contractId, orgId);
 
     if (
       contract.status !== ContractStatus.DRAFT &&
@@ -1012,9 +1053,10 @@ export class ContractsService {
     contractId: string,
     userId: string,
     decision: ApproverStatus.APPROVED | ApproverStatus.REJECTED,
+    orgId: string,
     comment?: string,
   ): Promise<ContractApprover[]> {
-    const contract = await this.findById(contractId);
+    const contract = await this.findById(contractId, orgId);
 
     if (contract.status !== ContractStatus.PENDING_APPROVAL) {
       throw new BadRequestException('Contract is not currently pending approval');

@@ -8,6 +8,7 @@ import {
   JoinColumn,
   OneToMany,
 } from 'typeorm';
+import { Exclude } from 'class-transformer';
 import { Organization } from './organization.entity';
 import { ProjectMember } from './project-member.entity';
 import { Notification } from './notification.entity';
@@ -143,6 +144,7 @@ export class User {
   @Column({ type: 'varchar', length: 255, unique: true })
   email: string;
 
+  @Exclude()
   @Column({ type: 'varchar', length: 255 })
   password_hash: string;
 
@@ -173,15 +175,19 @@ export class User {
   @Column({ type: 'varchar', length: 10, nullable: true })
   mfa_method: string | null; // 'email' | 'totp'
 
+  @Exclude()
   @Column({ type: 'varchar', length: 255, nullable: true })
   mfa_secret: string;
 
+  @Exclude()
   @Column({ type: 'varchar', length: 255, nullable: true })
   mfa_totp_secret: string | null;
 
+  @Exclude()
   @Column({ type: 'jsonb', nullable: true })
   mfa_recovery_codes: string[] | null;
 
+  @Exclude()
   @Column({ type: 'varchar', length: 255, nullable: true })
   invitation_token: string;
 
