@@ -1192,11 +1192,17 @@ export class AuthService {
   }
 
   private sanitizeUser(user: User) {
+    // Plain-object response shape for auth flows. The global
+    // ClassSerializerInterceptor only fires on class instances; this helper
+    // returns a plain object so we strip explicitly. Field set must mirror
+    // the @Exclude()'d fields on User entity (password_hash, mfa_secret,
+    // mfa_totp_secret, mfa_recovery_codes, invitation_token).
     const {
       password_hash,
       mfa_secret,
       mfa_totp_secret,
       mfa_recovery_codes,
+      invitation_token,
       ...sanitized
     } = user;
     return sanitized;

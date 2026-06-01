@@ -1,4 +1,5 @@
-import { Module } from '@nestjs/common';
+import { Module, ClassSerializerInterceptor } from '@nestjs/common';
+import { APP_INTERCEPTOR } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import * as Joi from 'joi';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -243,6 +244,16 @@ import { dataSourceOptions } from './config/data-source';
     AdminSecurityModule,
     ComplianceModule,
     WaitlistModule,
+  ],
+  providers: [
+    // Global response serializer. Triggers class-transformer `instanceToPlain`
+    // on every controller response that is a class instance, applying entity-
+    // level decorators like @Exclude() on User.{password_hash, mfa_secret,
+    // mfa_totp_secret, mfa_recovery_codes, invitation_token}. Plain-object
+    // responses (e.g. auth flows via sanitizeUser) pass through unchanged.
+    // Composes with the global ValidationPipe + HttpExceptionFilter set in
+    // main.ts — interceptors run after pipes and around route handlers.
+    { provide: APP_INTERCEPTOR, useClass: ClassSerializerInterceptor },
   ],
 })
 export class AppModule {}
