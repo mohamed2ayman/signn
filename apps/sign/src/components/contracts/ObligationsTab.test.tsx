@@ -11,6 +11,15 @@ import type { ContractObligation } from '@/services/api/complianceService';
 // Mocks
 // ─────────────────────────────────────────────────────────────────
 
+// Mock react-redux — ObligationsTab calls useSelector for currentUser.
+// Returning null is safe (all usages use optional chaining).
+// Avoids the need for a real Redux <Provider> (lesson #37 / service-level mock).
+vi.mock('react-redux', () => ({
+  useSelector: (selector: (s: any) => any) =>
+    selector({ auth: { user: null } }),
+  useDispatch: vi.fn(() => vi.fn()),
+}));
+
 // react-i18next: t() returns the key (matches the codebase's
 // existing LoginPage.test.tsx + DashboardPage.test.tsx pattern).
 vi.mock('react-i18next', () => ({

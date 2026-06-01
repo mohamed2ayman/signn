@@ -335,7 +335,14 @@
       "markActioned": "Marquer comme exécuté",
       "assign": "Assigner",
       "viewDetails": "Voir les détails",
-      "edit": "Modifier"
+      "edit": "Modifier",
+      "delete": "Supprimer l'obligation"
+    },
+    "deleteConfirm": {
+      "title": "Supprimer l'obligation",
+      "message": "Êtes-vous sûr de vouloir supprimer cette obligation ? Cette action est irréversible.",
+      "confirm": "Supprimer",
+      "cancel": "Annuler"
     },
     "ui": {
       "kpi": {

@@ -25,6 +25,12 @@ interface ObligationCardProps {
   onEdit?: (id: string) => void;
   onAssign?: (id: string) => void;
   onViewDetails?: (id: string) => void;
+  /**
+   * When supplied, a red Delete item appears in the action menu.
+   * Phase 7.15: only pass this for users with APPROVER-equivalent
+   * permission (SYSTEM_ADMIN / OWNER_ADMIN in the frontend gate).
+   */
+  onDelete?: (id: string) => void;
 }
 
 /**
@@ -45,6 +51,7 @@ export default function ObligationCard({
   onEdit,
   onAssign,
   onViewDetails,
+  onDelete,
 }: ObligationCardProps) {
   const { t } = useTranslation();
   const eff = effectiveStatus(obligation.status, obligation.due_date);
@@ -175,6 +182,7 @@ export default function ObligationCard({
             onEdit={onEdit}
             onAssign={onAssign}
             onViewDetails={onViewDetails}
+            onDelete={onDelete}
           />
         </div>
       </div>
@@ -234,6 +242,7 @@ function ActionMenu({
   onEdit,
   onAssign,
   onViewDetails,
+  onDelete,
 }: {
   obligation: ObligationPortfolioItem;
   isActioned: boolean;
@@ -241,6 +250,7 @@ function ActionMenu({
   onEdit?: (id: string) => void;
   onAssign?: (id: string) => void;
   onViewDetails?: (id: string) => void;
+  onDelete?: (id: string) => void;
 }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -271,7 +281,7 @@ function ActionMenu({
       {open && (
         <div
           role="menu"
-          className="absolute right-0 z-20 mt-1 w-44 overflow-hidden rounded-md border border-gray-200 bg-white py-1 shadow-lg"
+          className="absolute right-0 z-20 mt-1 w-48 overflow-hidden rounded-md border border-gray-200 bg-white py-1 shadow-lg"
         >
           {!isActioned && onMarkActioned && (
             <MenuItem
@@ -313,6 +323,20 @@ function ActionMenu({
               {t('obligation.actions.viewDetails')}
             </MenuItem>
           )}
+          {onDelete && (
+            <>
+              <div className="my-1 border-t border-gray-100" role="separator" />
+              <MenuItem
+                onClick={() => {
+                  setOpen(false);
+                  onDelete(obligation.id);
+                }}
+                variant="danger"
+              >
+                {t('obligation.actions.delete')}
+              </MenuItem>
+            </>
+          )}
         </div>
       )}
     </div>
@@ -322,15 +346,21 @@ function ActionMenu({
 function MenuItem({
   onClick,
   children,
+  variant = 'default',
 }: {
   onClick: () => void;
   children: React.ReactNode;
+  variant?: 'default' | 'danger';
 }) {
   return (
     <button
       role="menuitem"
       onClick={onClick}
-      className="block w-full px-3 py-2 text-start text-sm text-gray-700 hover:bg-gray-50"
+      className={`block w-full px-3 py-2 text-start text-sm ${
+        variant === 'danger'
+          ? 'text-red-600 hover:bg-red-50'
+          : 'text-gray-700 hover:bg-gray-50'
+      }`}
     >
       {children}
     </button>

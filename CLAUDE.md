@@ -1,7 +1,7 @@
 # CLAUDE.md — Project Intelligence File
 > Read this entire file at the start of every Claude Code session before touching any code.
 > This file is the single source of truth for all architectural decisions, rules, and context.
-> Last updated: 2026-05-31 (Phase 7.17 Prompt 2c shipped — Portfolio PDF export: token-gated download (1h reusable, HMAC-before-DB), queue + processor + pdfmake renderer + email, cleanup cron + audit log. Lessons #140–#142 added. Email-dispatch + token-download + renderer-at-scale + cleanup-cron-at-scale carry forward as staging gates per #135. **CRITICAL** — Phase 3.4 compliance PDF reports + Phase 4 ExportService contract PDFs are CURRENTLY BROKEN by the same pdfmake v0.1 require pattern 2c just fixed; see Critical Known Bugs + lesson #142, HIGH priority.)
+> Last updated: 2026-06-01 (Phases 7.15 + 7.24 shipped — PR #40. Phase 7.15: obligation permission model (ResolveObligationProjectMiddleware + RolesGuard on assign/unassign/evidence). Phase 7.24 (all 5 sub-phases): knowledge base "Used In" backlinks (7.24a), bulk import (7.24b), retry OCR (7.24c), version history snapshots (7.24d), project scoping three-tier visibility (7.24e). 349 backend tests. **CRITICAL** — Phase 3.4 compliance PDF reports + Phase 4 ExportService contract PDFs are CURRENTLY BROKEN by the same pdfmake v0.1 require pattern 2c just fixed; see Critical Known Bugs + lesson #142, HIGH priority.)
 
 ---
 
@@ -2998,3 +2998,167 @@ broken end-to-end — see Critical Known Bugs #6 + Outstanding Issues + lesson
 
 The four deployment gates are explicit, not buried. They go on the
 deployment checklist.
+
+---
+
+## Phase 7.15 — Obligation Permission Model (shipped — 2026-06-01, PR #40)
+
+**Scope:** Backend-only. Adds proper role-based access control and project ownership
+verification to obligation mutation endpoints.
+
+### What shipped
+
+**`ResolveObligationProjectMiddleware`**
+(`backend/src/common/middleware/resolve-obligation-project.middleware.ts`):
+- Applied to all `/contracts/:contractId/obligations/*` routes
+- Validates that the contract belongs to the requesting user's organization
+- Extracts the `projectId` from the contract and attaches it to the request
+  so downstream guards can use it without an extra DB query
+- Returns 403 if the contract is not org-scoped to the requester's org
+- Wired into `ObligationsModule` via `NestModule.configure()`
+
+**Role guards on mutation endpoints (`ComplianceObligationsController`):**
+- `POST /contracts/:id/obligations/:oblId/assign` — `PROJECT_MANAGER+`
+- `DELETE /contracts/:id/obligations/:oblId/assign/:userId` — `PROJECT_MANAGER+`
+- `PUT /contracts/:id/obligations/:oblId/evidence` — `PROJECT_MANAGER+`
+- `PATCH /contracts/:id/obligations/:oblId` — `PROJECT_MANAGER+`
+- Read-only endpoints remain open to any authenticated user
+
+**New test coverage:**
+- `backend/src/modules/obligations/tests/obligations.controller.spec.ts` —
+  12 new tests: 401 on unauthenticated, 403 on wrong role, 200/204 on correct role
+  for assign, unassign, evidence update, inline patch
+- `backend/src/modules/compliance/tests/compliance-obligations.controller.spec.ts`
+  updated to reflect new guards
+
+### Hard rules — never violate
+
+1. **`ResolveObligationProjectMiddleware` always precedes `RolesGuard`** for obligation
+   mutation routes — middleware populates `req.projectId` which role resolution depends on.
+2. **Obligation read endpoints are intentionally NOT role-gated** — any authenticated
+   org member can view obligations for a contract in their org.
+3. **`PROJECT_MANAGER+` is the floor for mutations** — assigning obligations, attaching
+   evidence, and patching status all require at least `PROJECT_MANAGER` role.
+
+---
+
+## Phase 7.24 — Knowledge Base Enhancements (shipped — 2026-06-01, PR #40)
+
+Five sub-phases extending the knowledge asset system with backlinks, bulk import,
+retry OCR, version history, and project-level scoping. All migrations are idempotent
+(`ADD COLUMN IF NOT EXISTS`, `CREATE INDEX IF NOT EXISTS`, no `EXCEPTION WHEN` blocks).
+
+---
+
+### Phase 7.24a — "Used In" Backlinks
+
+**What shipped:**
+- New entity `KnowledgeAssetUsage` (`backend/src/database/entities/knowledge-asset-usage.entity.ts`):
+  `id`, `asset_id` (FK → `knowledge_assets`), `context_type` (VARCHAR 50),
+  `context_id` (UUID), `used_at` (TIMESTAMPTZ).
+- Migration `1751000000002-CreateKnowledgeAssetUsages.ts` — `knowledge_asset_usages`
+  table + indexes on `asset_id` and `context_id`.
+- `KnowledgeAssetsService.getUsages(id)` — returns backlink rows ordered by `used_at DESC`.
+- `GET /knowledge-assets/:id/usages` endpoint.
+- `compliance.service.ts` — best-effort backlink write on compliance check creation
+  (fire-and-forget with `.catch()`, never blocks the check per lesson #114).
+- Frontend: expandable "Used In" row in `KnowledgeAssetsPage`, populated lazily on expand.
+
+**Hard rules:**
+- Backlink writes are ALWAYS fire-and-forget — never `await` them in the compliance
+  check hot path. The `.catch()` logs a warning but never rethrows.
+- `context_type` values: `'COMPLIANCE_CHECK'` (currently). Add new context types as needed
+  but keep them string constants, never a DB enum (no migration needed for new types).
+
+---
+
+### Phase 7.24b — Bulk Import
+
+**What shipped:**
+- `BulkCreateKnowledgeAssetDto` (`backend/src/modules/knowledge-assets/dto/bulk-create-knowledge-asset.dto.ts`) —
+  shared metadata (title prefix, asset_type, jurisdiction, tags, project_id) applied to all files.
+- `POST /knowledge-assets/bulk` — accepts multipart up to 20 files; returns
+  `{ created: [...], duplicates: string[], failed: [...] }`.
+- Partial-success: failing or duplicate files are reported without aborting the batch.
+- `bulkCreate()` service method iterates files, calls the existing `checkDuplicate` hash
+  guard, and inserts successful rows; collects per-file errors into the `failed` array.
+- `knowledgeAssetService.bulkCreate(data)` frontend method added.
+
+**Hard rules:**
+- `POST /knowledge-assets/bulk` MUST return 200 even when some files fail — only 400 if
+  ZERO files were supplied or DTO validation fails entirely. A partial result is not an error.
+- Duplicate files are silently skipped (added to `duplicates[]`, not `failed[]`).
+
+---
+
+### Phase 7.24c — Retry OCR
+
+**What shipped:**
+- `POST /knowledge-assets/:id/retry-ocr` — re-queues OCR + embedding for a failed asset.
+- Service sets `ocr_status = PENDING`, `embedding_status = PENDING` before dispatching
+  the job so the frontend can observe the reset state.
+- Frontend: "Retry OCR" button visible on assets whose `ocr_status === 'FAILED'`.
+
+---
+
+### Phase 7.24d — Version History
+
+**What shipped:**
+- New entity `KnowledgeAssetVersion` (`backend/src/database/entities/knowledge-asset-version.entity.ts`):
+  `id`, `asset_id` (FK → `knowledge_assets` CASCADE), `version_number` (INT),
+  `changed_by` (UUID FK nullable), `changer_name`, `change_summary`, `snapshot_data` (JSONB),
+  `created_at`.
+- Migration `1751000000003-AddKnowledgeAssetVersionHistory.ts` — `knowledge_asset_versions`
+  table + unique index on `(asset_id, version_number)`.
+- Snapshot is taken BEFORE the update is applied (pre-update state); `version_number`
+  in the snapshot row = the current version before increment. Snapshot write is
+  best-effort (wrapped in try/catch — failure never blocks the update).
+- `GET /knowledge-assets/:id/versions` — returns list sorted by `version_number DESC`.
+- `GET /knowledge-assets/:id/versions/:number` — returns full `snapshot_data` for a
+  specific version.
+- Frontend (`KnowledgeAssetsPage.tsx`): tabbed expandable row with "Used In" and
+  "Version History" tabs. Tab switch to "Version History" lazy-loads the version list.
+  Clicking a version row opens a snapshot modal showing all `snapshot_data` fields
+  as a `<dl>` with `dir="auto"` on values.
+
+**Hard rules:**
+- Snapshot write MUST be wrapped in try/catch — a version save failure must NEVER
+  block the asset update. Log the error; never rethrow.
+- Snapshot captures the pre-update state. If a caller updates only `tags`, the snapshot
+  still records the full entity so rollback / audit is meaningful.
+- `version_number` starts at 1 (first version = before first edit). The entity column
+  starts at `0`; the service increments BEFORE saving the snapshot.
+
+---
+
+### Phase 7.24e — Project Scoping
+
+**What shipped:**
+- Migration `1751000000004-AddKnowledgeAssetProjectScope.ts`:
+  - `ALTER TABLE knowledge_assets ADD COLUMN IF NOT EXISTS project_id UUID REFERENCES projects(id) ON DELETE SET NULL`
+  - `CREATE INDEX IF NOT EXISTS idx_knowledge_assets_project_id ON knowledge_assets (project_id) WHERE project_id IS NOT NULL`
+- `KnowledgeAsset` entity: `project_id: string | null` column + `@ManyToOne(() => Project)` relation.
+- `KnowledgeAssetsService.findAll()`: three-tier visibility query:
+  - Platform (no org, no project): `organization_id IS NULL AND project_id IS NULL`
+  - Org-wide: `organization_id = :orgId AND project_id IS NULL`
+  - Project-scoped: `organization_id = :orgId AND project_id = :projectId`
+  - When `project_id` filter is supplied, all three tiers are returned; when absent, only platform + org-wide (backward-compatible).
+- `CreateKnowledgeAssetDto` + `BulkCreateKnowledgeAssetDto`: `@IsOptional() @IsUUID() project_id?`.
+- `ComplianceKnowledgeService.buildContext()`: accepts `projectId?: string | null`.
+  Both `queryByTags()` and `queryByJurisdictionAndTags()` propagate `projectId` into
+  their visibility filters (three-tier when `projectId` supplied; two-tier otherwise).
+- `compliance.service.ts`: passes `contract.project_id ?? null` to `buildContext()` so
+  compliance checks automatically use project-scoped KB assets.
+- `GET /knowledge-assets` controller: accepts `?project_id=<uuid>` query param.
+- Frontend (`KnowledgeAssetsPage.tsx`):
+  - Project filter dropdown in the KB page header (populated from `projectService.getAll()` on mount).
+  - New "Scope" column with badges: Platform (gray) / Org (blue) / Project (violet).
+  - Project scope selector in the upload modal (hidden when org has no projects).
+  - `knowledgeAssetService.getAll()` accepts `project_id` param.
+
+**Three-tier visibility rules — never violate:**
+1. An asset with `organization_id IS NULL AND project_id IS NULL` = platform asset — visible to everyone.
+2. An asset with `organization_id = X AND project_id IS NULL` = org-wide — visible to members of org X.
+3. An asset with `organization_id = X AND project_id = Y` = project-scoped — visible only when querying with `project_id = Y` (or higher-tier queries that include Y).
+4. Project-scoped assets are ALWAYS returned alongside platform + org-wide when a `projectId` is supplied. Never filter them exclusively.
+5. When `projectId` is NOT supplied, project-scoped assets are NEVER returned (two-tier only). This ensures the KB list page without a project filter doesn't silently mix scopes.

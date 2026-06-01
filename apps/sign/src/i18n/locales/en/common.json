@@ -328,7 +328,14 @@
       "markActioned": "Mark as Actioned",
       "assign": "Assign",
       "viewDetails": "View Details",
-      "edit": "Edit"
+      "edit": "Edit",
+      "delete": "Delete Obligation"
+    },
+    "deleteConfirm": {
+      "title": "Delete Obligation",
+      "message": "Are you sure you want to delete this obligation? This action cannot be undone.",
+      "confirm": "Delete",
+      "cancel": "Cancel"
     },
     "ui": {
       "kpi": {

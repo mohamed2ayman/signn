@@ -1,4 +1,4 @@
-import { IsString, IsEnum, IsOptional, IsBoolean, IsArray, MaxLength } from 'class-validator';
+import { IsString, IsEnum, IsOptional, IsBoolean, IsArray, IsUUID, MaxLength } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { AssetType } from '../../../database/entities';
 
@@ -44,4 +44,13 @@ export class CreateKnowledgeAssetDto {
   @Transform(({ value }) => value === 'true' || value === true)
   @IsBoolean()
   include_in_citations?: boolean;
+
+  /**
+   * Phase 7.24e — optional project scope.
+   * When set, this asset is visible only within the specified project.
+   * Omit (or leave empty) for org-wide or platform-wide assets.
+   */
+  @IsOptional()
+  @IsUUID()
+  project_id?: string;
 }

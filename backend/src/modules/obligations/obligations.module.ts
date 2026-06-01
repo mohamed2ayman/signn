@@ -1,4 +1,4 @@
-import { forwardRef, Module } from '@nestjs/common';
+import { forwardRef, MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { BullModule } from '@nestjs/bull';
 import {
@@ -6,7 +6,9 @@ import {
   Obligation,
   ObligationAssignee,
   ObligationReminderLog,
+  PermissionDefault,
   Project,
+  ProjectMember,
   User,
 } from '../../database/entities';
 import { ObligationsController } from './obligations.controller';
@@ -16,6 +18,8 @@ import { ObligationSchedulerService } from './obligation-scheduler.service';
 import { ObligationSchemaCheckService } from './obligation-schema-check.service';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { ComplianceModule } from '../compliance/compliance.module';
+import { PermissionLevelGuard } from '../../common/guards/permission-level.guard';
+import { ResolveObligationProjectMiddleware } from '../../common/middleware/resolve-obligation-project.middleware';
 
 @Module({
   imports: [
@@ -26,6 +30,8 @@ import { ComplianceModule } from '../compliance/compliance.module';
       Contract,
       Project,
       User,
+      ProjectMember,
+      PermissionDefault,
     ]),
     BullModule.registerQueue({ name: 'obligation-reminders' }),
     NotificationsModule,
@@ -37,7 +43,15 @@ import { ComplianceModule } from '../compliance/compliance.module';
     ObligationReminderProcessor,
     ObligationSchedulerService,
     ObligationSchemaCheckService,
+    PermissionLevelGuard,
+    ResolveObligationProjectMiddleware,
   ],
   exports: [ObligationsService],
 })
-export class ObligationsModule {}
+export class ObligationsModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer
+      .apply(ResolveObligationProjectMiddleware)
+      .forRoutes('obligations');
+  }
+}

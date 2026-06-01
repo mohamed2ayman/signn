@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { BullModule } from '@nestjs/bull';
 import { HttpModule } from '@nestjs/axios';
@@ -10,11 +10,14 @@ import {
   Contract,
   ContractClause,
   KnowledgeAsset,
+  KnowledgeAssetUsage,
   Obligation,
   ObligationAssignee,
   ObligationReminderLog,
   Organization,
+  PermissionDefault,
   Project,
+  ProjectMember,
   User,
 } from '../../database/entities';
 import { ComplianceController, ComplianceReportDownloadController } from './controllers/compliance.controller';
@@ -31,6 +34,8 @@ import { IcalExportService } from './services/ical-export.service';
 import { ComplianceReportProcessor } from './processors/compliance-report.processor';
 import { AiModule } from '../ai/ai.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { PermissionLevelGuard } from '../../common/guards/permission-level.guard';
+import { ResolveObligationProjectMiddleware } from '../../common/middleware/resolve-obligation-project.middleware';
 
 @Module({
   imports: [
@@ -43,11 +48,15 @@ import { NotificationsModule } from '../notifications/notifications.module';
       Contract,
       ContractClause,
       KnowledgeAsset,
+      // Phase 7.24b: write backlink rows when a compliance check consumes assets.
+      KnowledgeAssetUsage,
       Obligation,
       ObligationAssignee,
       ObligationReminderLog,
       Organization,
+      PermissionDefault,
       Project,
+      ProjectMember,
       User,
     ]),
     BullModule.registerQueue({ name: 'compliance-jobs' }),
@@ -70,6 +79,8 @@ import { NotificationsModule } from '../notifications/notifications.module';
     ObligationTokenService,
     IcalExportService,
     ComplianceReportProcessor,
+    PermissionLevelGuard,
+    ResolveObligationProjectMiddleware,
   ],
   exports: [
     ComplianceService,
@@ -78,4 +89,10 @@ import { NotificationsModule } from '../notifications/notifications.module';
     IcalExportService,
   ],
 })
-export class ComplianceModule {}
+export class ComplianceModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer
+      .apply(ResolveObligationProjectMiddleware)
+      .forRoutes('contracts', 'projects', 'obligations');
+  }
+}

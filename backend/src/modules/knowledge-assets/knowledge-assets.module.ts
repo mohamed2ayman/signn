@@ -1,6 +1,12 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { AuditLog, KnowledgeAsset, RiskCategory } from '../../database/entities';
+import {
+  AuditLog,
+  KnowledgeAsset,
+  KnowledgeAssetUsage,
+  KnowledgeAssetVersion,
+  RiskCategory,
+} from '../../database/entities';
 import { KnowledgeAssetsController } from './knowledge-assets.controller';
 import { KnowledgeAssetsService } from './knowledge-assets.service';
 import { RiskMethodologyReaderService } from './services/risk-methodology-reader.service';
@@ -10,6 +16,10 @@ import { StorageModule } from '../storage/storage.module';
   imports: [
     TypeOrmModule.forFeature([
       KnowledgeAsset,
+      // Phase 7.24b: backlink table — records which AI analysis runs used each asset.
+      KnowledgeAssetUsage,
+      // Phase 7.24d: per-version snapshots captured on every update.
+      KnowledgeAssetVersion,
       // Phase 7.17 — Prompt 1, B.2: reader looks up risk categories
       // (active filter) for category-name validation in step 7 of its
       // validation chain.

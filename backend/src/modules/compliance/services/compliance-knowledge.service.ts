@@ -48,21 +48,30 @@ export class ComplianceKnowledgeService {
     orgId: string | null;
     jurisdiction: string | null;
     contractType: string | null;
+    /** Phase 7.24e — when supplied, project-scoped assets are included. */
+    projectId?: string | null;
   }): Promise<KnowledgeContextResult> {
     const [standardAssets, jurisdictionAssets, playbookAssets] =
       await Promise.all([
-        this.queryByTags(input.orgId, [
-          ...(input.contractType ? [`standard:${input.contractType}`] : []),
-          'type:STANDARD',
-        ]),
-        this.queryByJurisdictionAndTags(input.orgId, input.jurisdiction, [
-          'type:MANDATORY_LAW',
-          'type:CONFLICT_GUIDE',
-        ]),
+        this.queryByTags(
+          input.orgId,
+          [
+            ...(input.contractType ? [`standard:${input.contractType}`] : []),
+            'type:STANDARD',
+          ],
+          { projectId: input.projectId },
+        ),
+        this.queryByJurisdictionAndTags(
+          input.orgId,
+          input.jurisdiction,
+          ['type:MANDATORY_LAW', 'type:CONFLICT_GUIDE'],
+          input.projectId,
+        ),
         // Playbook is org-only; SIGN platform doesn't ship playbooks
         input.orgId
           ? this.queryByTags(input.orgId, ['type:PLAYBOOK', 'type:STANDARD'], {
               orgOnly: true,
+              projectId: input.projectId,
             })
           : Promise.resolve([] as KnowledgeAsset[]),
       ]);
@@ -83,14 +92,20 @@ export class ComplianceKnowledgeService {
   // ─── Helpers ──────────────────────────────────────────────
 
   /**
-   * Query approved assets that have ANY of the given tag strings, scoped
-   * to (platform-wide OR specific org). With `orgOnly: true`, restricts
-   * to the user's org.
+   * Query approved assets that have ANY of the given tag strings.
+   *
+   * Visibility tiers (Phase 7.24e):
+   *   - Default (orgId + optional projectId):
+   *       platform (org_id IS NULL AND project_id IS NULL)
+   *       + org-wide (org_id = orgId AND project_id IS NULL)
+   *       + project (org_id = orgId AND project_id = projectId)  ← only when projectId supplied
+   *   - orgOnly: org-wide + project assets only (no platform; used for playbooks)
+   *   - No orgId: platform-only
    */
   private async queryByTags(
     orgId: string | null,
     tags: string[],
-    opts: { orgOnly?: boolean } = {},
+    opts: { orgOnly?: boolean; projectId?: string | null } = {},
   ): Promise<KnowledgeAsset[]> {
     if (tags.length === 0) return [];
     const qb = this.assetRepo
@@ -101,7 +116,6 @@ export class ComplianceKnowledgeService {
       .andWhere(
         new Brackets((b) => {
           tags.forEach((tag, i) => {
-            // tag is a string in the jsonb array → use ?| operator
             b.orWhere(`a.tags @> :tag${i}::jsonb`, {
               [`tag${i}`]: JSON.stringify([tag]),
             });
@@ -110,14 +124,38 @@ export class ComplianceKnowledgeService {
       );
 
     if (opts.orgOnly && orgId) {
-      qb.andWhere('a.organization_id = :orgId', { orgId });
+      // Org-wide + (optionally) project-scoped; no platform assets.
+      if (opts.projectId) {
+        qb.andWhere(
+          '(a.organization_id = :orgId AND a.project_id IS NULL)' +
+            ' OR (a.organization_id = :orgId AND a.project_id = :projectId)',
+          { orgId, projectId: opts.projectId },
+        );
+      } else {
+        qb.andWhere(
+          'a.organization_id = :orgId AND a.project_id IS NULL',
+          { orgId },
+        );
+      }
     } else if (orgId) {
-      qb.andWhere(
-        '(a.organization_id IS NULL OR a.organization_id = :orgId)',
-        { orgId },
-      );
+      // Three-tier (platform + org-wide + project) or two-tier (no projectId).
+      if (opts.projectId) {
+        qb.andWhere(
+          '(a.organization_id IS NULL AND a.project_id IS NULL)' +
+            ' OR (a.organization_id = :orgId AND a.project_id IS NULL)' +
+            ' OR (a.organization_id = :orgId AND a.project_id = :projectId)',
+          { orgId, projectId: opts.projectId },
+        );
+      } else {
+        qb.andWhere(
+          '(a.organization_id IS NULL AND a.project_id IS NULL)' +
+            ' OR (a.organization_id = :orgId AND a.project_id IS NULL)',
+          { orgId },
+        );
+      }
     } else {
-      qb.andWhere('a.organization_id IS NULL');
+      // No org context — platform-only.
+      qb.andWhere('a.organization_id IS NULL AND a.project_id IS NULL');
     }
 
     return qb.getMany();
@@ -126,11 +164,14 @@ export class ComplianceKnowledgeService {
   /**
    * Query assets that match BOTH (jurisdiction:XX in tags OR jurisdiction
    * column matches) AND any of the type-tags.
+   *
+   * Phase 7.24e: accepts optional projectId for three-tier visibility.
    */
   private async queryByJurisdictionAndTags(
     orgId: string | null,
     jurisdiction: string | null,
     tags: string[],
+    projectId?: string | null,
   ): Promise<KnowledgeAsset[]> {
     if (!jurisdiction) return [];
     const jurisdictionTag = `jurisdiction:${jurisdiction}`;
@@ -156,14 +197,26 @@ export class ComplianceKnowledgeService {
           });
         }),
       );
+
     if (orgId) {
-      qb.andWhere(
-        '(a.organization_id IS NULL OR a.organization_id = :orgId)',
-        { orgId },
-      );
+      if (projectId) {
+        qb.andWhere(
+          '(a.organization_id IS NULL AND a.project_id IS NULL)' +
+            ' OR (a.organization_id = :orgId AND a.project_id IS NULL)' +
+            ' OR (a.organization_id = :orgId AND a.project_id = :projectId)',
+          { orgId, projectId },
+        );
+      } else {
+        qb.andWhere(
+          '(a.organization_id IS NULL AND a.project_id IS NULL)' +
+            ' OR (a.organization_id = :orgId AND a.project_id IS NULL)',
+          { orgId },
+        );
+      }
     } else {
-      qb.andWhere('a.organization_id IS NULL');
+      qb.andWhere('a.organization_id IS NULL AND a.project_id IS NULL');
     }
+
     return qb.getMany();
   }
 
