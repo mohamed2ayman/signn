@@ -698,5 +698,26 @@
         }
       }
     }
+  },
+  "document": {
+    "processing": {
+      "queued": "En attente de traitement...",
+      "readingDocument": "Lecture du document...",
+      "preparingClauses": "Document lu. Préparation de l'extraction des clauses...",
+      "extractingClauses": "Extraction des clauses par IA...",
+      "complete": "Traitement terminé",
+      "failed": "Échec du traitement",
+      "failedMessage": "Une erreur est survenue lors du traitement.",
+      "retry": "Relancer le traitement",
+      "pagesProcessed": "{{count}} pages traitées avec succès",
+      "humanReviewRecommended": "Révision recommandée — Qualité de scan insuffisante",
+      "reuploadTip": "Supprimez ce document et importez une version de meilleure qualité pour de meilleurs résultats.",
+      "continueAnyway": "Continuer quand même avec l'extraction partielle",
+      "qualityWarning": {
+        "blur": "Scan flou détecté (score de netteté : {{score}}). Le texte risque d'être mal lu.",
+        "contrast": "Contraste faible détecté (score de contraste : {{score}}). Le texte peut être pâle ou délavé.",
+        "rotation": "Inclinaison de page détectée ({{degrees}}°). Les clauses pourraient être extraites dans le mauvais ordre."
+      }
+    }
   }
 }

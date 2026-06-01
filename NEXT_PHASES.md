@@ -714,12 +714,14 @@ block schema.
 ---
 
 ### 7.25 — Poor Scan Quality Handling
-**Owner:** Ayman + Youssef | **Priority:** 🟡 MEDIUM | **Status:** ❌ Not started
-- Detect low-quality scanned PDFs (< 150 DPI, low contrast)
-- Show quality warning before extraction begins
-- Offer re-upload with preprocessing tips
-- AI backend: image enhancement (contrast, deskew) before OCR on flagged documents
-- "Human Review Recommended" status in processing pipeline
+**Owner:** Ayman + Youssef | **Priority:** 🟡 MEDIUM | **Status:** ✅ Complete (PR #41, 2026-06-01)
+- Detect low-quality scanned PDFs (blur/contrast/rotation) — pure numpy + PIL, no opencv
+- `HUMAN_REVIEW_RECOMMENDED` terminal status in `document_processing_status_enum`
+- `quality_flags VARCHAR[]` column on `document_uploads`
+- AI backend: `_assess_quality()` + `_enhance_image()` in `TesseractTextExtractor`
+- Amber warning banner in `ProcessingStatusCard` with per-flag messages + "Continue anyway" button
+- i18n ×3 (EN/AR/FR) for all quality warning copy
+- 7 new AI-backend tests in `test_quality_detection.py`
 
 ---
 
@@ -1166,7 +1168,7 @@ No new env vars required for existing local dev deployments.
 | 7.22 | Contract Playbook | ❌ Not started | A+Y | |
 | 7.23 | Word Add-In | ❌ Not started | Y | |
 | 7.24 | Knowledge Base | ✅ Complete (PR #40) | A | 2026-06-01 |
-| 7.25 | Poor Scan Quality | ❌ Not started | A+Y | |
+| 7.25 | Poor Scan Quality | ✅ Complete (PR #41) | A+Y | 2026-06-01 |
 | 7.26 | French i18n | ⚠️ Partial | A+Y | |
 | 7.27 | Official Gazette | ❌ Not started | Y | |
 | 7.28 | ERP Integration | ❌ Not started | A+Y | |
@@ -1204,8 +1206,8 @@ No new env vars required for existing local dev deployments.
 1. ~~9.1 — Abstract Infrastructure Layers~~ ✅ Done (PR #35)
 2. ~~7.15 — Obligation Permission Model~~ ✅ Done (PR #40)
 3. ~~7.24 — Knowledge Base Enhancements (all 5 sub-phases)~~ ✅ Done (PR #40)
-4. 7.21 — RFP & Specification Document Analysis (AI — competitive priority)
-5. 7.25 — Poor Scan Quality Handling (quick win)
+4. ~~7.25 — Poor Scan Quality Handling~~ ✅ Done (PR #41)
+5. 7.21 — RFP & Specification Document Analysis (AI — competitive priority)
 6. ~~7.9 — Audit Silent Migrations~~ ✅ Done (PR #34)
 7. ~~7.10 — In-app Dispatch~~ ✅ Already implemented
 
