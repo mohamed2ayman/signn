@@ -1,7 +1,7 @@
 # CLAUDE.md — Project Intelligence File
 > Read this entire file at the start of every Claude Code session before touching any code.
 > This file is the single source of truth for all architectural decisions, rules, and context.
-> Last updated: 2026-06-01 (Phases 7.15 + 7.24 shipped — PR #40. Phase 7.15: obligation permission model (ResolveObligationProjectMiddleware + RolesGuard on assign/unassign/evidence). Phase 7.24 (all 5 sub-phases): knowledge base "Used In" backlinks (7.24a), bulk import (7.24b), retry OCR (7.24c), version history snapshots (7.24d), project scoping three-tier visibility (7.24e). 349 backend tests. **CRITICAL** — Phase 3.4 compliance PDF reports + Phase 4 ExportService contract PDFs are CURRENTLY BROKEN by the same pdfmake v0.1 require pattern 2c just fixed; see Critical Known Bugs + lesson #142, HIGH priority.)
+> Last updated: 2026-06-01 (Phase 7.25 shipped. Poor Scan Quality Handling: blur/contrast/rotation detection in TesseractTextExtractor, HUMAN_REVIEW_RECOMMENDED terminal status, quality_flags column, amber ProcessingStatusCard banner + "Continue anyway" button, i18n ×3. 349 backend tests + 7 new AI-backend tests. **CRITICAL** — Phase 3.4 compliance PDF reports + Phase 4 ExportService contract PDFs are CURRENTLY BROKEN by the same pdfmake v0.1 require pattern 2c just fixed; see Critical Known Bugs + lesson #142, HIGH priority.)
 
 ---
 
@@ -3162,3 +3162,68 @@ retry OCR, version history, and project-level scoping. All migrations are idempo
 3. An asset with `organization_id = X AND project_id = Y` = project-scoped — visible only when querying with `project_id = Y` (or higher-tier queries that include Y).
 4. Project-scoped assets are ALWAYS returned alongside platform + org-wide when a `projectId` is supplied. Never filter them exclusively.
 5. When `projectId` is NOT supplied, project-scoped assets are NEVER returned (two-tier only). This ensures the KB list page without a project filter doesn't silently mix scopes.
+
+---
+
+## Phase 7.25 — Poor Scan Quality Handling (shipped — 2026-06-01)
+
+Detects low-quality scanned PDFs (blurry, low-contrast, skewed), parks processing in a new
+`HUMAN_REVIEW_RECOMMENDED` terminal status, and shows an amber warning banner in the frontend
+with per-flag explanations and a "Continue anyway" bypass.
+
+### What shipped
+
+**AI backend (`ai-backend/app/services/tesseract_text_extractor.py`):**
+- New `_assess_quality(images: list[PIL.Image]) -> list[str]` — samples first 2 pages:
+  - **Blur:** pure-numpy Laplacian via `np.lib.stride_tricks.as_strided`; variance vs `BLUR_THRESHOLD=50.0`
+  - **Contrast:** `PIL.ImageStat.Stat(img.convert("L")).stddev[0]` vs `CONTRAST_THRESHOLD=20.0`
+  - **Rotation:** `pytesseract.image_to_osd(img, output_type=DICT)` on page 1 only; wrapped in `try/except` so OSD failures never block extraction; vs `ROTATION_THRESHOLD=10.0`
+  - Returns flag strings: `"blur:32.1"`, `"contrast:15.4"`, `"rotation:12"`
+- New `_enhance_image(image, flags) -> image` — applies `PIL.ImageOps.autocontrast(cutoff=2)` for contrast flags, `image.rotate(-degrees, expand=True, fillcolor=(255,255,255))` for rotation ≥ 5°; returns same object if no flags
+- `_ocr_pdf()` now returns `tuple[str, list[str]]`; calls `_assess_quality` after `convert_from_path`, applies `_enhance_image` per image when flags fire
+- `extract_pdf()` return type changed to `tuple[str, list[str]]`; digital PDF fast path returns `(text, [])`
+- `run_extract_text` in `tasks.py` calls `result.setdefault("quality_flags", [])` — key always present regardless of file type
+- 3 new settings in `settings.py`: `BLUR_THRESHOLD`, `CONTRAST_THRESHOLD`, `ROTATION_THRESHOLD`
+
+**Backend (NestJS):**
+- Migration `1751000000005-AddHumanReviewQualityFlags.ts` — `transaction = false` (required for `ALTER TYPE ADD VALUE`):
+  - `ALTER TYPE document_processing_status_enum ADD VALUE IF NOT EXISTS 'HUMAN_REVIEW_RECOMMENDED'`
+  - `ALTER TABLE document_uploads ADD COLUMN IF NOT EXISTS quality_flags VARCHAR[] NULL`
+- `DocumentProcessingStatus.HUMAN_REVIEW_RECOMMENDED` added to enum in `document-upload.entity.ts`
+- `quality_flags: string[] | null` column on `DocumentUpload` entity
+- `document-processing.service.ts`:
+  - `pollAndAdvance()` terminal-state guard extended to include `HUMAN_REVIEW_RECOMMENDED`
+  - After text extraction: reads `quality_flags` from AI result; if non-empty → saves flags to DB, sets status to `HUMAN_REVIEW_RECOMMENDED`, returns early (skips clause extraction)
+  - `reprocess()` resets `quality_flags = null` before re-queuing
+
+**Frontend (`apps/sign/src/components/common/ProcessingStatusCard.tsx`):**
+- `HUMAN_REVIEW_RECOMMENDED` entry in `STAGE_CONFIG` — amber `bg-amber-500`, label from i18n key
+- Stage dots: `effectiveStatusForDots()` maps `HUMAN_REVIEW_RECOMMENDED` → `EXTRACTING_TEXT` (branch state, not linear)
+- Amber border/background warning banner when status is `HUMAN_REVIEW_RECOMMENDED`
+- `parseQualityFlag(flag, t)` helper: parses `"blur:32.1"` → translated message with measured value
+- Per-flag messages with `dir="auto"` (Arabic-safe)
+- Re-upload tip and "Continue anyway" button (calls `onRetry` → `reprocess()`)
+- i18n keys added to EN / AR / FR in `apps/sign/src/i18n/locales/*/common.json`:
+  - `document.processing.humanReviewRecommended`, `reuploadTip`, `continueAnyway`
+  - `document.processing.qualityWarning.blur`, `contrast`, `rotation`
+
+**Tests (`ai-backend/tests/test_quality_detection.py` — 7 new tests):**
+- T1: clean checkerboard → no flags
+- T2: solid grey → blur flag (score < 50)
+- T3: solid pale → contrast flag (score < 20)
+- T4: contrast flag → `_enhance_image` returns PIL Image
+- T5: rotation flag ≥ 5° → `_enhance_image` applies rotate, returns PIL Image
+- T6: no flags → `_enhance_image` returns same object (`is img`)
+- T7: `run_extract_text` always includes `quality_flags` key in result dict
+
+### Migration fix documented — lesson #143
+`ALTER TYPE` in NestJS migrations must use the PostgreSQL type name `document_processing_status_enum`
+(TypeORM appends `_enum` suffix), NOT the bare TypeScript enum name. See lesson #143.
+
+### Hard rules — never violate
+1. **`quality_flags` is always present in `run_extract_text` result** — never check with `if 'quality_flags' in result`; use `result.get('quality_flags', [])` or the guaranteed `setdefault`.
+2. **`HUMAN_REVIEW_RECOMMENDED` is a terminal state** — `pollAndAdvance()` returns early on it exactly like `FAILED`. The only exit is `reprocess()`.
+3. **`reprocess()` MUST clear `quality_flags = null`** before re-queuing. Stale flags would re-trigger the amber banner on the retry attempt even if the new upload is clean.
+4. **OSD failures are silent** — `pytesseract.image_to_osd()` is wrapped in `try/except`; if the OSD language pack is absent or the page has no text, rotation check is skipped, never blocking extraction.
+5. **Partial text is preserved** — when quality flags fire, `extracted_text` is still saved to DB. `HUMAN_REVIEW_RECOMMENDED` only skips clause extraction, not text storage.
+6. **TypeORM enum type names use `_enum` suffix** — any `ALTER TYPE` migration on a TypeORM-managed enum must target `<snake_case_column_name>_enum`, not the TypeScript enum name. See lesson #143.

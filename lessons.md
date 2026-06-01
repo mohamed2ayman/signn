@@ -5147,3 +5147,52 @@ small AND urgent — schedule it as the next small-PR after Phase 7.17 closes.
 **Reference:** Phase 7.17 Prompt 2c renderer fix commit `d4dc54a`; the
 user-mandated trimmed pipeline check that surfaced the bug; lesson #140
 (mock vs. real for external-library wrappers).
+
+---
+
+### Lesson #143 — TypeORM Auto-Appends `_enum` Suffix to PostgreSQL Enum Type Names
+
+**Encountered:** Phase 7.25, migration `1751000000005-AddHumanReviewQualityFlags.ts`
+
+**What happened.** The migration ran `ALTER TYPE document_processing_status ADD VALUE IF NOT EXISTS 'HUMAN_REVIEW_RECOMMENDED'` and failed with:
+
+```
+error: type "document_processing_status" does not exist
+```
+
+The fix was changing the target to `document_processing_status_enum`.
+
+**Root cause.** TypeORM auto-generates the PostgreSQL enum type name by taking the column
+name in `snake_case` and appending `_enum`. So a TypeScript `@Column({ type: 'enum', enum: DocumentProcessingStatus })`
+on a column called `processing_status` produces a PostgreSQL type named
+`document_processing_status_enum` — NOT the bare TypeScript enum name
+`DocumentProcessingStatus` or its snake-cased form `document_processing_status`.
+
+**The pattern:**
+- TypeScript enum name: `DocumentProcessingStatus`
+- Column name (snake_case): `processing_status`
+- PostgreSQL type name: `document_processing_status_enum` ← this is what `ALTER TYPE` must target
+
+**The rule.** Before writing any `ALTER TYPE` migration on a TypeORM-managed enum, verify the
+actual PostgreSQL type name with:
+
+```sql
+SELECT typname FROM pg_type WHERE typname LIKE '%processing_status%';
+-- Returns: document_processing_status_enum
+```
+
+Or from inside a running container:
+```bash
+docker exec sign-postgres psql -U sign_user -d sign_db \
+  -c "SELECT typname FROM pg_type WHERE typname LIKE '%status%';"
+```
+
+**Hard rule.** `ALTER TYPE <bare_enum_name> ADD VALUE` is always wrong for TypeORM-managed
+enums. Always use `ALTER TYPE <snake_case_column_name>_enum ADD VALUE IF NOT EXISTS`.
+The `IF NOT EXISTS` keeps the migration idempotent across fresh and existing databases.
+
+**Reference:** Phase 7.25 migration fix; contrast with Phase 7.3 lesson #109 where the
+wrong enum NAME (`obligations_status_enum` vs `obligation_status`) was the bug — here the
+wrong SUFFIX (missing `_enum`) was the bug. Both are the same class: ALTER TYPE fails
+silently when the target name is wrong unless you remove the error-swallowing `EXCEPTION WHEN`
+anti-pattern (lessons #31, #103).

@@ -137,7 +137,15 @@ def run_research(self, request_data: dict[str, Any]) -> dict[str, Any]:
 
 @celery_app.task(name="tasks.run_extract_text", bind=True)
 def run_extract_text(self, request_data: dict[str, Any]) -> dict[str, Any]:
-    """Extract text content from an uploaded document file."""
+    """Extract text content from an uploaded document file.
+
+    The result dict always contains:
+      - ``text`` (str) — extracted text (may be partial on poor scans)
+      - ``page_count`` (int)
+      - ``quality_flags`` (list[str]) — scan quality signals detected during
+        OCR, e.g. ["blur:32.1", "contrast:15.4"].  Empty for digital PDFs
+        and non-PDF formats where no OCR was required.
+    """
     from app.services.text_extractor_factory import get_text_extractor
 
     service = get_text_extractor()
@@ -146,6 +154,9 @@ def run_extract_text(self, request_data: dict[str, Any]) -> dict[str, Any]:
             file_path=request_data["file_path"],
             mime_type=request_data["mime_type"],
         )
+        # Guarantee quality_flags is always present in the result shape so
+        # the NestJS consumer never needs to guard against a missing key.
+        result.setdefault("quality_flags", [])
         return {"status": "completed", "result": result}
     except Exception as e:
         return {"status": "failed", "error": str(e)}
