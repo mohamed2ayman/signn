@@ -9,6 +9,14 @@ interface ObligationActionMenuProps {
   onEdit?: () => void;
   onAssign?: () => void;
   onViewDetails?: () => void;
+  /**
+   * When supplied, a red "Delete Obligation" item appears at the bottom
+   * of the menu. Only pass this prop when the caller has confirmed the
+   * current user holds APPROVER permission (or is SYSTEM_ADMIN /
+   * OWNER_ADMIN). Never show the Delete item to VIEWER / COMMENTER /
+   * EDITOR — the backend now enforces APPROVER for DELETE /obligations/:id.
+   */
+  onDelete?: () => void;
 }
 
 /**
@@ -17,13 +25,12 @@ interface ObligationActionMenuProps {
  * - Item visibility:
  *     View Details   — always
  *     Mark Actioned  — only if effective status is PENDING / IN_PROGRESS / OVERDUE
- *     Edit           — always
- *     Assign         — always (only shown when parent supplies the callback)
+ *     Edit           — always (when callback supplied)
+ *     Assign         — always (when callback supplied)
+ *     Delete         — only when `onDelete` is supplied AND caller confirms
+ *                      the user holds at least APPROVER permission
  *
- * - Delete is NOT shown in Step 3. The backend exposes DELETE
- *   /obligations/:id with JWT-only gating but no per-role permission
- *   model exists on the frontend. Deferred per Step 3 decision
- *   documented in CLAUDE.md (Phase 7.1 Step 3 "what's deferred").
+ * - Delete is shown with a red warning colour to communicate irreversibility.
  *
  * - Click-outside + Escape close.
  * - Keyboard: Enter/Space on trigger toggles; arrow nav inside the menu
@@ -35,6 +42,7 @@ export default function ObligationActionMenu({
   onEdit,
   onAssign,
   onViewDetails,
+  onDelete,
 }: ObligationActionMenuProps) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -79,7 +87,7 @@ export default function ObligationActionMenu({
       {open && (
         <div
           role="menu"
-          className="absolute right-0 z-20 mt-1 w-48 overflow-hidden rounded-md border border-gray-200 bg-white py-1 shadow-lg"
+          className="absolute right-0 z-20 mt-1 w-52 overflow-hidden rounded-md border border-gray-200 bg-white py-1 shadow-lg"
         >
           {onViewDetails && (
             <MenuItem onClick={() => { close(); onViewDetails(); }}>
@@ -101,6 +109,18 @@ export default function ObligationActionMenu({
               {t('obligation.actions.assign')}
             </MenuItem>
           )}
+          {onDelete && (
+            <>
+              {/* Divider before the destructive action */}
+              <div className="my-1 border-t border-gray-100" role="separator" />
+              <MenuItem
+                onClick={() => { close(); onDelete(); }}
+                variant="danger"
+              >
+                {t('obligation.actions.delete')}
+              </MenuItem>
+            </>
+          )}
         </div>
       )}
     </div>
@@ -110,16 +130,22 @@ export default function ObligationActionMenu({
 function MenuItem({
   onClick,
   children,
+  variant = 'default',
 }: {
   onClick: () => void;
   children: React.ReactNode;
+  variant?: 'default' | 'danger';
 }) {
   return (
     <button
       role="menuitem"
       type="button"
       onClick={onClick}
-      className="block w-full px-3 py-2 text-start text-sm text-gray-700 hover:bg-gray-50"
+      className={`block w-full px-3 py-2 text-start text-sm ${
+        variant === 'danger'
+          ? 'text-red-600 hover:bg-red-50'
+          : 'text-gray-700 hover:bg-gray-50'
+      }`}
     >
       {children}
     </button>

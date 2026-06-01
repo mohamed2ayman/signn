@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useSelector } from 'react-redux';
+import { RootState } from '@/store';
 import complianceService, {
   type ContractObligation,
 } from '@/services/api/complianceService';
+import { obligationService } from '@/services/api/obligationService';
 import { projectService } from '@/services/api/projectService';
 import type { ObligationPortfolioItem } from '@/services/api/obligationService';
 import ObligationKpiRow from '@/components/obligations/ObligationKpiRow';
@@ -48,9 +51,7 @@ interface ObligationsTabProps {
  * Mutations done here:
  *   - "Mark as Actioned" → PATCH /contracts/:id/obligations/:obligationId
  *     { status: 'COMPLETED' }  via complianceService.updateObligation
- *
- * Placeholder actions (Add / Assign / Edit / View Details) log to
- * console — modals come in Phase 7.1 Step 3.
+ *   - "Delete" → DELETE /obligations/:id (APPROVER only — Phase 7.15)
  */
 export default function ObligationsTab({
   contractId,
@@ -59,13 +60,31 @@ export default function ObligationsTab({
   onCountChange,
 }: ObligationsTabProps) {
   const { t } = useTranslation();
+  const queryClient = useQueryClient();
   const [filters, setFilters] = useState<ObligationFilters>({});
 
+  // ── Permission gate (Phase 7.15) ────────────────────────────────
+  // Edit  = EDITOR+  (SYSTEM_ADMIN, OWNER_ADMIN, PROJECT_MANAGER, REVIEWER
+  //                   and project members with explicit EDITOR/APPROVER level)
+  // Delete = APPROVER (SYSTEM_ADMIN, OWNER_ADMIN only in the frontend — we
+  //                   cannot cheaply resolve a project member's effective
+  //                   permission level without an extra API call)
+  // Conservative approach: show Delete only for the two roles that bypass
+  // the guard by design. APPROVER project-members can still delete via API.
+  // Show Edit for all roles except VIEWER/COMMENTER defaults (REVIEWER and
+  // above have at least EDITOR level by the JOB_TITLE_DEFAULT_PERMISSION map).
+  const currentUser = useSelector((state: RootState) => state.auth.user);
+  const canEdit =
+    currentUser?.role === 'SYSTEM_ADMIN' ||
+    currentUser?.role === 'OWNER_ADMIN' ||
+    currentUser?.role === 'PROJECT_MANAGER' ||
+    currentUser?.role === 'REVIEWER' ||
+    currentUser?.role === 'CONTRACTOR_ADMIN';
+  const canDelete =
+    currentUser?.role === 'SYSTEM_ADMIN' ||
+    currentUser?.role === 'OWNER_ADMIN';
+
   // ── Load obligations for this contract ──────────────────────────
-  // We always fetch the full list and apply UI filters client-side
-  // for snappier filter UX. The backend can do server-side filtering
-  // via query params too — see complianceService.listContractObligations
-  // — but most contracts have <50 obligations, so client-side is fine.
   const obligationsQuery = useQuery({
     queryKey: ['contract-obligations', contractId],
     queryFn: () => complianceService.listContractObligations(contractId),
@@ -73,7 +92,6 @@ export default function ObligationsTab({
   });
 
   // ── Load project members for the assignee filter ────────────────
-  // Project members carry user info via the ProjectMember.user relation.
   const membersQuery = useQuery({
     queryKey: ['project-members', projectId],
     queryFn: () => projectService.getMembers(projectId!),
@@ -81,17 +99,11 @@ export default function ObligationsTab({
   });
 
   // ── Apply UI filters client-side ────────────────────────────────
-  // (Step 2's inline "Mark as Actioned" mutation was retired in Step 3 —
-  // MarkActionedModal now owns the patch call so it can also take the
-  // optional evidence URL + notes in one flow.)
   const filtered: ContractObligation[] = useMemo(() => {
     const all = obligationsQuery.data ?? [];
     return all.filter((o) => {
       if (filters.type && o.obligation_type !== filters.type) return false;
       if (filters.status) {
-        // Match against EFFECTIVE status so "OVERDUE" picks up
-        // past-due PENDING/IN_PROGRESS obligations the backend hasn't
-        // flipped yet.
         if (effectiveStatus(o.status, o.due_date) !== filters.status) return false;
       }
       if (filters.from && o.due_date) {
@@ -100,9 +112,6 @@ export default function ObligationsTab({
       if (filters.to && o.due_date) {
         if (new Date(o.due_date) > new Date(filters.to)) return false;
       }
-      // assignee filter — applied only when the obligation carries
-      // assignee metadata (contract-scope endpoint may not include it
-      // yet; see ObligationPortfolioItem comment in obligationService).
       if (filters.assignee) {
         const aug = o as ObligationPortfolioItem;
         const has = (aug.assignees ?? []).some((a) => a.user_id === filters.assignee);
@@ -112,28 +121,26 @@ export default function ObligationsTab({
     });
   }, [obligationsQuery.data, filters]);
 
-  // KPI counts use the FULL list (not the filtered one) so the
-  // summary always reflects the whole contract regardless of filter
-  // state. This matches established UX patterns elsewhere.
   const kpis = useMemo(
     () => computeKpis(obligationsQuery.data ?? []),
     [obligationsQuery.data],
   );
 
-  // Notify parent of the count so the tab label badge can update.
   useEffect(() => {
     onCountChange?.(obligationsQuery.data?.length ?? 0);
   }, [obligationsQuery.data?.length, onCountChange]);
 
   // ── Modal + drawer state (Phase 7.1 Step 3) ────────────────────
-  // Add modal has no obligation context. Edit / mark-actioned / assign
-  // hold the target obligation so the modal can render its content.
-  // Drawer holds an id (resolves the full record via React Query).
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [editObligation, setEditObligation] = useState<ContractObligation | null>(null);
   const [actioningObligation, setActioningObligation] = useState<ContractObligation | null>(null);
   const [assigningObligation, setAssigningObligation] = useState<ContractObligation | null>(null);
   const [detailObligationId, setDetailObligationId] = useState<string | null>(null);
+
+  // ── Delete state (Phase 7.15) ───────────────────────────────────
+  const [deletingObligation, setDeletingObligation] = useState<ContractObligation | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const findObligation = (id: string): ContractObligation | null =>
     (obligationsQuery.data ?? []).find((o) => o.id === id) ?? null;
@@ -144,6 +151,27 @@ export default function ObligationsTab({
   const handleMarkActioned = (id: string) =>
     setActioningObligation(findObligation(id));
   const handleViewDetails = (id: string) => setDetailObligationId(id);
+  const handleDelete = (id: string) => {
+    setDeleteError(null);
+    setDeletingObligation(findObligation(id));
+  };
+
+  const confirmDelete = async () => {
+    if (!deletingObligation) return;
+    setDeleteLoading(true);
+    setDeleteError(null);
+    try {
+      await obligationService.delete(deletingObligation.id);
+      await queryClient.invalidateQueries({ queryKey: ['contract-obligations', contractId] });
+      setDeletingObligation(null);
+    } catch (err: any) {
+      setDeleteError(
+        err?.response?.data?.message ?? t('obligation.ui.errorTitle'),
+      );
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
 
   const addButton = (
     <button
@@ -193,6 +221,7 @@ export default function ObligationsTab({
               onEdit={handleEdit}
               onAssign={handleAssign}
               onViewDetails={handleViewDetails}
+              onDelete={canDelete ? handleDelete : undefined}
             />
           ))}
         </div>
@@ -228,11 +257,61 @@ export default function ObligationsTab({
         onClose={() => setDetailObligationId(null)}
         obligationId={detailObligationId}
         contractId={contractId}
-        onEdit={(o) => setEditObligation(o)}
+        onEdit={canEdit ? (o) => setEditObligation(o) : undefined}
         onMarkActioned={(o) => setActioningObligation(o)}
         onAssign={(o) => setAssigningObligation(o)}
       />
+
+      {/* ── Delete confirmation dialog (Phase 7.15) ─────────────── */}
+      {deletingObligation && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/50" onClick={() => !deleteLoading && setDeletingObligation(null)} />
+          <div className="relative z-10 w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
+            <h3 className="text-base font-semibold text-gray-900">
+              {t('obligation.deleteConfirm.title')}
+            </h3>
+            <p
+              className="mt-2 text-sm text-gray-600"
+              dir="auto"
+              style={{ unicodeBidi: 'plaintext' }}
+            >
+              {t('obligation.deleteConfirm.message')}
+            </p>
+            {deletingObligation.description && (
+              <p
+                className="mt-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-800"
+                dir="auto"
+                style={{ unicodeBidi: 'plaintext' }}
+              >
+                {deletingObligation.description}
+              </p>
+            )}
+            {deleteError && (
+              <p className="mt-2 text-sm text-red-600" role="alert">
+                {deleteError}
+              </p>
+            )}
+            <div className="mt-5 flex justify-end gap-3">
+              <button
+                type="button"
+                disabled={deleteLoading}
+                onClick={() => setDeletingObligation(null)}
+                className="rounded-md border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                {t('obligation.deleteConfirm.cancel')}
+              </button>
+              <button
+                type="button"
+                disabled={deleteLoading}
+                onClick={confirmDelete}
+                className="rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                {deleteLoading ? t('common.loading') : t('obligation.deleteConfirm.confirm')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-

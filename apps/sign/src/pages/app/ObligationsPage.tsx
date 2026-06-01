@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useSelector } from 'react-redux';
+import { RootState } from '@/store';
 import { obligationService } from '@/services/api/obligationService';
 import type {
   ObligationPortfolioItem,
@@ -42,7 +44,20 @@ import ObligationDetailDrawer from '@/components/obligations/ObligationDetailDra
 export default function ObligationsPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [filters, setFilters] = useState<ObligationFilters>({});
+
+  // ── Permission gate (Phase 7.15) ────────────────────────────────
+  const currentUser = useSelector((state: RootState) => state.auth.user);
+  const canEdit =
+    currentUser?.role === 'SYSTEM_ADMIN' ||
+    currentUser?.role === 'OWNER_ADMIN' ||
+    currentUser?.role === 'PROJECT_MANAGER' ||
+    currentUser?.role === 'REVIEWER' ||
+    currentUser?.role === 'CONTRACTOR_ADMIN';
+  const canDelete =
+    currentUser?.role === 'SYSTEM_ADMIN' ||
+    currentUser?.role === 'OWNER_ADMIN';
 
   // Map UI filters → API params. Search is applied client-side because
   // the backend portfolio endpoint doesn't expose a search parameter.
@@ -162,6 +177,11 @@ export default function ObligationsPage() {
   const [assigningObligation, setAssigningObligation] = useState<ObligationPortfolioItem | null>(null);
   const [detailObligation, setDetailObligation] = useState<{ id: string; contractId: string } | null>(null);
 
+  // ── Delete state (Phase 7.15) ───────────────────────────────────
+  const [deletingObligation, setDeletingObligation] = useState<ObligationPortfolioItem | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
   const find = (id: string): ObligationPortfolioItem | null =>
     (portfolioQuery.data ?? []).find((o) => o.id === id) ?? null;
 
@@ -180,6 +200,26 @@ export default function ObligationsPage() {
   const handleViewDetails = (id: string) => {
     const o = find(id);
     if (o) setDetailObligation({ id: o.id, contractId: o.contract_id });
+  };
+  const handleDelete = (id: string) => {
+    setDeleteError(null);
+    setDeletingObligation(find(id));
+  };
+  const confirmDelete = async () => {
+    if (!deletingObligation) return;
+    setDeleteLoading(true);
+    setDeleteError(null);
+    try {
+      await obligationService.delete(deletingObligation.id);
+      await queryClient.invalidateQueries({ queryKey: ['portfolio-obligations'] });
+      setDeletingObligation(null);
+    } catch (err: any) {
+      setDeleteError(
+        err?.response?.data?.message ?? t('obligation.ui.errorTitle'),
+      );
+    } finally {
+      setDeleteLoading(false);
+    }
   };
 
   return (
@@ -292,6 +332,7 @@ export default function ObligationsPage() {
               onEdit={handleEdit}
               onAssign={handleAssign}
               onViewDetails={handleViewDetails}
+              onDelete={canDelete ? handleDelete : undefined}
             />
           ))}
         </div>
@@ -324,10 +365,57 @@ export default function ObligationsPage() {
         onClose={() => setDetailObligation(null)}
         obligationId={detailObligation?.id ?? null}
         contractId={detailObligation?.contractId ?? ''}
-        onEdit={(o) => setEditObligation(o as ObligationPortfolioItem)}
+        onEdit={canEdit ? (o) => setEditObligation(o as ObligationPortfolioItem) : undefined}
         onMarkActioned={(o) => setActioningObligation(o as ObligationPortfolioItem)}
         onAssign={(o) => setAssigningObligation(o as ObligationPortfolioItem)}
       />
+
+      {/* ── Delete confirmation dialog (Phase 7.15) ─────────────── */}
+      {deletingObligation && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/50" onClick={() => !deleteLoading && setDeletingObligation(null)} />
+          <div className="relative z-10 w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
+            <h3 className="text-base font-semibold text-gray-900">
+              {t('obligation.deleteConfirm.title')}
+            </h3>
+            <p className="mt-2 text-sm text-gray-600">
+              {t('obligation.deleteConfirm.message')}
+            </p>
+            {deletingObligation.description && (
+              <p
+                className="mt-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-800"
+                dir="auto"
+                style={{ unicodeBidi: 'plaintext' }}
+              >
+                {deletingObligation.description}
+              </p>
+            )}
+            {deleteError && (
+              <p className="mt-2 text-sm text-red-600" role="alert">
+                {deleteError}
+              </p>
+            )}
+            <div className="mt-5 flex justify-end gap-3">
+              <button
+                type="button"
+                disabled={deleteLoading}
+                onClick={() => setDeletingObligation(null)}
+                className="rounded-md border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                {t('obligation.deleteConfirm.cancel')}
+              </button>
+              <button
+                type="button"
+                disabled={deleteLoading}
+                onClick={confirmDelete}
+                className="rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                {deleteLoading ? t('common.loading') : t('obligation.deleteConfirm.confirm')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

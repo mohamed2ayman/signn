@@ -8,6 +8,7 @@ import {
   JoinColumn,
 } from 'typeorm';
 import { Organization } from './organization.entity';
+import { Project } from './project.entity';
 import { User } from './user.entity';
 
 export enum AssetType {
@@ -37,6 +38,18 @@ export class KnowledgeAsset {
   @ManyToOne(() => Organization, (org) => org.knowledge_assets, { nullable: true })
   @JoinColumn({ name: 'organization_id' })
   organization: Organization;
+
+  /**
+   * Phase 7.24e — optional project scope.
+   * When set, this asset is visible only within the specified project
+   * (three-tier: platform → org → project).  NULL = org-wide or platform-wide.
+   */
+  @Column({ type: 'uuid', nullable: true })
+  project_id: string | null;
+
+  @ManyToOne(() => Project, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'project_id' })
+  project: Project | null;
 
   @Column({ type: 'varchar', length: 500 })
   title: string;
@@ -137,6 +150,10 @@ export class KnowledgeAsset {
   @ManyToOne(() => User, { nullable: true })
   @JoinColumn({ name: 'created_by' })
   creator: User;
+
+  /** Monotonically increasing version counter; incremented on every update. */
+  @Column({ type: 'int', default: 1 })
+  version: number;
 
   @CreateDateColumn({ type: 'timestamptz' })
   created_at: Date;

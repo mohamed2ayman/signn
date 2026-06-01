@@ -792,6 +792,8 @@ export interface ConflictDetail {
 export interface KnowledgeAsset {
   id: string;
   organization_id: string | null;
+  /** Phase 7.24e — null means org-wide or platform-wide. */
+  project_id: string | null;
   title: string;
   description: string | null;
   asset_type: AssetType;
@@ -812,6 +814,7 @@ export interface KnowledgeAsset {
   created_at: string;
   updated_at: string;
   organization?: Organization;
+  project?: Project;
   reviewer?: User;
   creator?: User;
 }

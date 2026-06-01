@@ -2,3 +2,4 @@ export { CreateKnowledgeAssetDto } from './create-knowledge-asset.dto';
 export { UpdateKnowledgeAssetDto } from './update-knowledge-asset.dto';
 export { ReviewAssetDto } from './review-asset.dto';
 export { CheckDuplicateDto } from './check-duplicate.dto';
+export { BulkCreateKnowledgeAssetDto } from './bulk-create-knowledge-asset.dto';

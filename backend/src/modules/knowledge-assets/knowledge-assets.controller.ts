@@ -10,11 +10,12 @@ import {
   UseGuards,
   UseInterceptors,
   UploadedFile,
+  UploadedFiles,
   ParseUUIDPipe,
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -27,6 +28,7 @@ import {
   UpdateKnowledgeAssetDto,
   ReviewAssetDto,
   CheckDuplicateDto,
+  BulkCreateKnowledgeAssetDto,
 } from './dto';
 
 @Controller('knowledge-assets')
@@ -56,6 +58,32 @@ export class KnowledgeAssetsController {
     return this.knowledgeAssetsService.checkDuplicateByHash(dto.hash);
   }
 
+  /**
+   * POST /knowledge-assets/bulk
+   * Accepts up to 20 files (PDF + DOCX only, 20 MB each) with shared metadata.
+   * Partial-success model — duplicates and failures are reported per-file
+   * without aborting the entire batch.
+   * Returns: { created, duplicates, failed }
+   */
+  @Post('bulk')
+  @UseInterceptors(
+    FilesInterceptor('files', 20, { limits: { fileSize: 20 * 1024 * 1024 } }),
+  )
+  @HttpCode(HttpStatus.OK)
+  async bulkCreate(
+    @Body() dto: BulkCreateKnowledgeAssetDto,
+    @UploadedFiles() files: any[],
+    @CurrentUser() user: any,
+    @OrganizationId() orgId: string,
+  ) {
+    return this.knowledgeAssetsService.bulkCreate(
+      dto,
+      files || [],
+      user.id,
+      orgId,
+    );
+  }
+
   // ─── Collection routes ────────────────────────────────────────────────────
 
   @Get()
@@ -65,12 +93,32 @@ export class KnowledgeAssetsController {
     @Query('review_status') reviewStatus?: string,
     @Query('embedding_status') embeddingStatus?: string,
     @Query('search') search?: string,
+    /** Exact jurisdiction filter, e.g. ?jurisdiction=EG */
+    @Query('jurisdiction') jurisdiction?: string,
+    /**
+     * Comma-separated tag filter, e.g. ?tags=type:PLAYBOOK,standard:FIDIC_RED_BOOK_2017
+     * The service requires the asset to contain ALL supplied tags.
+     */
+    @Query('tags') tagsParam?: string,
+    /**
+     * Phase 7.24e — optional project scope.
+     * When supplied, assets scoped to this project are included alongside
+     * platform + org-wide assets.
+     */
+    @Query('project_id') projectId?: string,
   ) {
+    const tags = tagsParam
+      ? tagsParam.split(',').map((t) => t.trim()).filter(Boolean)
+      : undefined;
+
     return this.knowledgeAssetsService.findAll(orgId, {
       asset_type: assetType,
       review_status: reviewStatus,
       embedding_status: embeddingStatus,
       search,
+      jurisdiction,
+      tags,
+      project_id: projectId,
     });
   }
 
@@ -100,8 +148,9 @@ export class KnowledgeAssetsController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateKnowledgeAssetDto,
     @OrganizationId() orgId: string,
+    @CurrentUser() user: any,
   ) {
-    return this.knowledgeAssetsService.update(id, dto, orgId);
+    return this.knowledgeAssetsService.update(id, dto, orgId, user?.id);
   }
 
   @Put(':id/review')
@@ -112,6 +161,38 @@ export class KnowledgeAssetsController {
     @CurrentUser() user: any,
   ) {
     return this.knowledgeAssetsService.review(id, dto, user.id);
+  }
+
+  /**
+   * GET /knowledge-assets/:id/versions
+   * Returns the version list for an asset — version_number, changed_by,
+   * changer_name, change_summary, created_at.  Newest-first.
+   */
+  @Get(':id/versions')
+  async getVersions(@Param('id', ParseUUIDPipe) id: string) {
+    return this.knowledgeAssetsService.getVersions(id);
+  }
+
+  /**
+   * GET /knowledge-assets/:id/versions/:versionNumber
+   * Returns the full snapshot for a specific version.
+   */
+  @Get(':id/versions/:versionNumber')
+  async getVersion(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('versionNumber') versionNumber: string,
+  ) {
+    return this.knowledgeAssetsService.getVersion(id, parseInt(versionNumber, 10));
+  }
+
+  /**
+   * GET /knowledge-assets/:id/usages
+   * Returns all "Used In" backlink rows for the asset, most recent first.
+   * Response: Array<{ context_type, context_id, used_at }>
+   */
+  @Get(':id/usages')
+  async getUsages(@Param('id', ParseUUIDPipe) id: string) {
+    return this.knowledgeAssetsService.getUsages(id);
   }
 
   /**
