@@ -39,6 +39,9 @@ const mockQb: any = {
   andWhere: jest.fn().mockReturnThis(),
   orderBy: jest.fn().mockReturnThis(),
   getMany: jest.fn().mockResolvedValue([]),
+  // findById was reshaped to use createQueryBuilder().getOne() so the org-scoping
+  // andWhere can join on contract→project. Default to SAVED_CONTRACT.
+  getOne: jest.fn().mockResolvedValue(SAVED_CONTRACT),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -153,6 +156,7 @@ describe('ContractsService', () => {
     mockContractVersionRepository.create.mockReturnValue({ id: 'version-uuid', version_number: 1 });
     mockContractVersionRepository.save.mockResolvedValue({ id: 'version-uuid', version_number: 1 });
     mockQb.getMany.mockResolvedValue([]);
+    mockQb.getOne.mockResolvedValue(SAVED_CONTRACT);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -190,18 +194,18 @@ describe('ContractsService', () => {
     };
 
     it('returns a contract object with an id', async () => {
-      const result = await service.create(dto, 'user-uuid');
+      const result = await service.create(dto, 'user-uuid', 'org-uuid');
       expect(result).toBeDefined();
       expect(result.id).toBe('contract-uuid');
     });
 
     it('returns a contract with status DRAFT', async () => {
-      const result = await service.create(dto, 'user-uuid');
+      const result = await service.create(dto, 'user-uuid', 'org-uuid');
       expect(result.status).toBe(ContractStatus.DRAFT);
     });
 
     it('does NOT call instantiateTemplate for a non-standard (ADHOC) contract type', async () => {
-      await service.create(dto, 'user-uuid');
+      await service.create(dto, 'user-uuid', 'org-uuid');
       expect(mockContractTemplatesService.instantiateTemplate).not.toHaveBeenCalled();
     });
   });
@@ -239,31 +243,32 @@ describe('ContractsService', () => {
 
   describe('update() value/currency pairing (merged entity)', () => {
     it('allows a value-only update on an already-priced contract (currency from the existing row)', async () => {
-      mockContractRepository.findOne.mockResolvedValue({
+      // findById was reshaped to use createQueryBuilder().getOne(), so mock getOne (not findOne).
+      mockQb.getOne.mockResolvedValue({
         ...SAVED_CONTRACT,
         contract_value: 1000,
         currency: 'USD',
       });
       await expect(
-        service.update('contract-uuid', { contract_value: 5000 } as any),
+        service.update('contract-uuid', { contract_value: 5000 } as any, 'org-uuid'),
       ).resolves.toBeDefined();
       expect(mockContractRepository.save).toHaveBeenCalled();
     });
 
     it('rejects setting a value on an unpriced contract with no currency', async () => {
-      mockContractRepository.findOne.mockResolvedValue({
+      mockQb.getOne.mockResolvedValue({
         ...SAVED_CONTRACT,
         contract_value: null,
         currency: null,
       });
       await expect(
-        service.update('contract-uuid', { contract_value: 5000 } as any),
+        service.update('contract-uuid', { contract_value: 5000 } as any, 'org-uuid'),
       ).rejects.toThrow();
       expect(mockContractRepository.save).not.toHaveBeenCalled();
     });
 
     it('accepts value + currency together on an unpriced contract', async () => {
-      mockContractRepository.findOne.mockResolvedValue({
+      mockQb.getOne.mockResolvedValue({
         ...SAVED_CONTRACT,
         contract_value: null,
         currency: null,
@@ -272,9 +277,104 @@ describe('ContractsService', () => {
         service.update('contract-uuid', {
           contract_value: 5000,
           currency: 'EUR',
-        } as any),
+        } as any, 'org-uuid'),
       ).resolves.toBeDefined();
       expect(mockContractRepository.save).toHaveBeenCalled();
+    });
+  });
+
+  // ─── findById() — tenancy scoping + sensitive-field stripping (audit J.2 + K) ─
+  // These tests exercise the in-process service logic against MOCKED repositories.
+  // They prove (a) the org-scoping andWhere clause is wired, (b) a null queryBuilder
+  // result throws NotFoundException, and (c) sensitive User fields are stripped
+  // from creator/approver. They do NOT prove the SQL actually filters at the DB
+  // layer — that needs the live runtime probe from audit section K to be re-run
+  // against the patched endpoint. See 7.17 lesson #135 ("tests passing ≠ it works").
+
+  describe('findById()', () => {
+    it('returns the contract when the org matches', async () => {
+      mockQb.getOne.mockResolvedValue(SAVED_CONTRACT);
+      const result = await service.findById('contract-uuid', 'org-uuid');
+      expect(result.id).toBe('contract-uuid');
+    });
+
+    it('applies the project.organization_id = :orgId filter on the contract→project join', async () => {
+      mockQb.getOne.mockResolvedValue(SAVED_CONTRACT);
+      await service.findById('contract-uuid', 'org-uuid');
+      // Mirror of the same-file pattern at line 1126 in getPendingApprovalsForUser.
+      expect(mockQb.andWhere).toHaveBeenCalledWith(
+        'project.organization_id = :orgId',
+        { orgId: 'org-uuid' },
+      );
+    });
+
+    it('throws NotFoundException (NOT 403) when the contract is not in the caller org', async () => {
+      // Cross-tenant read: the query returns no row because the andWhere filters it out.
+      mockQb.getOne.mockResolvedValue(undefined);
+      await expect(
+        service.findById('contract-uuid', 'other-org-uuid'),
+      ).rejects.toThrow('Contract not found');
+    });
+
+    it('strips password_hash and MFA secrets from the loaded creator relation', async () => {
+      mockQb.getOne.mockResolvedValue({
+        ...SAVED_CONTRACT,
+        creator: {
+          id: 'user-uuid',
+          email: 'creator@org-a.test',
+          first_name: 'Creator',
+          last_name: 'User',
+          password_hash: '$2b$10$REDACTED_BCRYPT_HASH',
+          mfa_secret: 'mfa-secret-value',
+          mfa_totp_secret: 'totp-secret-value',
+          mfa_recovery_codes: ['code-1', 'code-2'],
+          invitation_token: 'invite-token-value',
+        },
+      });
+
+      const result = await service.findById('contract-uuid', 'org-uuid');
+
+      expect(result.creator).toBeDefined();
+      expect((result.creator as any).password_hash).toBeUndefined();
+      expect((result.creator as any).mfa_secret).toBeUndefined();
+      expect((result.creator as any).mfa_totp_secret).toBeUndefined();
+      expect((result.creator as any).mfa_recovery_codes).toBeUndefined();
+      expect((result.creator as any).invitation_token).toBeUndefined();
+      // Non-sensitive fields must be preserved
+      expect(result.creator.email).toBe('creator@org-a.test');
+      expect(result.creator.first_name).toBe('Creator');
+    });
+
+    it('strips password_hash and MFA secrets from the loaded approver relation', async () => {
+      mockQb.getOne.mockResolvedValue({
+        ...SAVED_CONTRACT,
+        approver: {
+          id: 'approver-uuid',
+          email: 'approver@org-a.test',
+          password_hash: '$2b$10$REDACTED_BCRYPT_HASH',
+          mfa_secret: 'mfa-secret-value',
+          mfa_totp_secret: 'totp-secret-value',
+          mfa_recovery_codes: ['code-1'],
+          invitation_token: 'invite-token-value',
+        },
+      });
+
+      const result = await service.findById('contract-uuid', 'org-uuid');
+
+      expect(result.approver).toBeDefined();
+      expect((result.approver as any).password_hash).toBeUndefined();
+      expect((result.approver as any).mfa_secret).toBeUndefined();
+      expect((result.approver as any).mfa_totp_secret).toBeUndefined();
+      expect((result.approver as any).mfa_recovery_codes).toBeUndefined();
+      expect((result.approver as any).invitation_token).toBeUndefined();
+      expect((result.approver as any).email).toBe('approver@org-a.test');
+    });
+
+    it('does nothing when creator/approver relations are absent (no destructure crash)', async () => {
+      mockQb.getOne.mockResolvedValue({ ...SAVED_CONTRACT }); // no creator/approver keys
+      await expect(
+        service.findById('contract-uuid', 'org-uuid'),
+      ).resolves.toBeDefined();
     });
   });
 });
