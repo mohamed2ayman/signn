@@ -1,7 +1,7 @@
 # lessons.md — SIGN + MANAGEX Platform
 > This file documents every bug, issue, and fix that took significant time to resolve.
 > Feed this file to Claude at the start of every session to avoid repeating mistakes.
-> Last updated: 2026-05-28 (Lessons #110–114 — ThrottlerGuard DI in tests + EXCEPTION WHEN audit + FROM_EMAIL mismatch + NestJS adapter DI pattern + fire-and-forget email callers must catch at caller level.)
+> Last updated: 2026-06-02 (Lesson #144 — Always audit ALL locales when an i18n task names one specific language.)
 
 ---
 
@@ -5196,3 +5196,41 @@ wrong enum NAME (`obligations_status_enum` vs `obligation_status`) was the bug �
 wrong SUFFIX (missing `_enum`) was the bug. Both are the same class: ALTER TYPE fails
 silently when the target name is wrong unless you remove the error-swallowing `EXCEPTION WHEN`
 anti-pattern (lessons #31, #103).
+
+---
+
+### Lesson #144 — Always Audit ALL Locales When an i18n Task Names One Specific Language
+
+**Encountered:** Phase 7.26, i18n completion audit.
+
+**What happened.** The task was titled "French i18n Completion" — auditing whether French
+was complete. Full investigation of all three locale files revealed:
+- FR was already structurally complete (all EN keys present)
+- EN itself was missing `language.fr` — the key the LanguageToggle reads to label the
+  French option in an English session
+- AR was missing 12 keys across 4 sections (`portal`, `userType`, 4 `nav` keys, `language.fr`)
+
+A task scoped to "French" would have naturally focused only on `fr/common.json`. The real
+bugs were in EN and AR.
+
+**The pattern.** i18n gaps are rarely isolated to the locale the task mentions. Adding a
+feature (e.g. Phase 7.25 scan quality) requires adding keys to all three locales at once.
+When a locale audit is ordered for one language, ALL locales need reading:
+1. The named locale may already be correct
+2. The reference locale (EN) may be missing keys (e.g. `language.fr`)
+3. Other locales may have gaps that context reveals
+
+**Hard rule.** When a task touches any locale file, or when an audit names one locale,
+read all three locale files before drawing any conclusions. The audit target may be the
+least-broken of the three.
+
+**Corollary — adding a new locale option (e.g. Spanish):**
+1. Add the language key to ALL existing locale files in the same commit
+2. Register in `LanguageToggle.tsx`
+3. Add the new locale file itself
+All three changes go in one commit — a partial add leaves the switcher label broken
+in all locales that are missing the new key.
+
+**Reference:** Phase 7.26 Track A investigation; lesson #83 (silent `undefined` from
+missing Vite env vars is the same class — missing config in one place silently breaks
+a different place).

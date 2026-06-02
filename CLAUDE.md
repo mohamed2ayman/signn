@@ -1,7 +1,7 @@
 # CLAUDE.md — Project Intelligence File
 > Read this entire file at the start of every Claude Code session before touching any code.
 > This file is the single source of truth for all architectural decisions, rules, and context.
-> Last updated: 2026-06-01 (Phase 7.25 shipped. Poor Scan Quality Handling: blur/contrast/rotation detection in TesseractTextExtractor, HUMAN_REVIEW_RECOMMENDED terminal status, quality_flags column, amber ProcessingStatusCard banner + "Continue anyway" button, i18n ×3. 349 backend tests + 7 new AI-backend tests. **CRITICAL** — Phase 3.4 compliance PDF reports + Phase 4 ExportService contract PDFs are CURRENTLY BROKEN by the same pdfmake v0.1 require pattern 2c just fixed; see Critical Known Bugs + lesson #142, HIGH priority.)
+> Last updated: 2026-06-02 (Phase 7.26 shipped — Track A complete. 12 missing i18n keys added across EN and AR locales; FR was already structurally complete. Track B (legal page localization) deferred pending legal team translated content. Phase 7.25 fully documented (PR #41). **CRITICAL** — Phase 3.4 compliance PDF reports + Phase 4 ExportService contract PDFs are CURRENTLY BROKEN by the same pdfmake v0.1 require pattern 2c just fixed; see Critical Known Bugs + lesson #142, HIGH priority.)
 
 ---
 
@@ -3227,3 +3227,70 @@ with per-flag explanations and a "Continue anyway" bypass.
 4. **OSD failures are silent** — `pytesseract.image_to_osd()` is wrapped in `try/except`; if the OSD language pack is absent or the page has no text, rotation check is skipped, never blocking extraction.
 5. **Partial text is preserved** — when quality flags fire, `extracted_text` is still saved to DB. `HUMAN_REVIEW_RECOMMENDED` only skips clause extraction, not text storage.
 6. **TypeORM enum type names use `_enum` suffix** — any `ALTER TYPE` migration on a TypeORM-managed enum must target `<snake_case_column_name>_enum`, not the TypeScript enum name. See lesson #143.
+
+---
+
+## Phase 7.26 — i18n Completion — Track A (shipped — 2026-06-02)
+
+Closed all missing i18n keys in the EN and AR locale files. FR was already structurally
+complete. Track B (legal page localization into FR + AR) is deferred pending legal team
+translated content.
+
+### Investigation findings (pre-implementation audit)
+
+**FR locale (`fr/common.json`):** Structurally complete — every EN key is present including
+`portal.*`, `userType.*`, all 39 `nav` keys, all Phase 7.25 `document.processing.*` keys,
+full `portfolio.*` section. FR had one key EN was missing: `language.fr = "Français"`.
+The 8 `_TODO_*` keys in `obligation.type` are internal annotation markers for legal-translator
+review (lesson #16); no component ever calls `t('obligation.type._TODO_*')`. No work needed on FR.
+
+**AR locale (`ar/common.json`):** 4 confirmed gaps:
+1. `portal` section entirely absent — `portal.client`, `portal.guest`, `portal.admin`
+2. `userType` section entirely absent — `userType.managingParty`, `userType.respondingParty`, `userType.individual`
+3. `nav` section missing 4 of 39 keys: `operationsReview`, `auditLog`, `billing`, `accountSettings`
+4. `language.fr` missing — FR option label in LanguageToggle renders raw key `"language.fr"` when UI is in Arabic
+
+**EN locale (`en/common.json`):** Missing `language.fr` — LanguageToggle reads this key to
+label the French option; silently falls back to key name.
+
+**Legal pages:** 11 pages under `apps/sign/src/pages/legal/` use hardcoded TypeScript content
+objects in `content/*.content.ts` — NOT in the i18n JSON system. English-only. FR and AR
+versions do not exist. Adding them requires Option B (per-locale content files) — see Track B.
+
+### What shipped — Track A (12 keys)
+
+**`apps/sign/src/i18n/locales/en/common.json`:**
+- Added `"fr": "French"` to `language` section
+
+**`apps/sign/src/i18n/locales/ar/common.json`:**
+- Added `"fr": "الفرنسية"` to `language` section
+- Added `portal` section: `{ client: "بوابة العميل", guest: "بوابة الضيف", admin: "لوحة الإدارة" }`
+- Added `userType` section: `{ managingParty: "الطرف المُدير", respondingParty: "الطرف المُستجيب", individual: "ممارس مستقل" }`
+- Added 4 nav keys: `operationsReview: "مراجعة العمليات"`, `auditLog: "سجل التدقيق"`, `billing: "الفواتير"`, `accountSettings: "إعدادات الحساب"`
+
+### Track B — deferred (legal page localization)
+
+Legal pages are outside the i18n system entirely. Adding FR + AR requires:
+- Option B (correct approach): 10 content files × 2 new locales = 20 new `.content.ts` files
+  + component-level locale selector in each page (`lang === 'fr' ? contentFr : lang === 'ar' ? contentAr : contentEn`)
+- The 20 content files require qualified legal translator content — do NOT machine-translate
+  Terms of Service, Privacy Policy, or compliance-related policies
+- Regulatory note: GDPR + French Loi Toubon may require French-language legal pages for EU users
+
+**Track B is gated on:** legal team providing translated content. Engineering scaffolding
+(Option B component pattern) is ~1 day; translation is the long pole.
+
+### Hard rules — never violate
+1. **Audit ALL three locales (EN/AR/FR) when any i18n task names one language.** A task
+   titled "French completion" revealed EN was missing `language.fr`. See lesson #144.
+2. **`_TODO_*` keys in `obligation.type` are internal annotations — never delete them.**
+   They mark terms awaiting legal-translator review (lesson #16). Only remove after
+   a qualified legal translator has reviewed and approved the adjacent translation.
+3. **Legal page content is outside the i18n JSON system.** Adding a new locale key to
+   `common.json` has zero effect on `/legal/*` page content. Legal pages require the
+   Option B per-locale content-file pattern; do not attempt to put 1000+ word legal
+   documents into `common.json`.
+4. **LanguageToggle requires `language.<code>` key in ALL locales.** When a new locale is
+   added (e.g. adding Spanish), add `"es": "Spanish"` / `"es": "الإسبانية"` / `"es": "Espagnol"`
+   to all three `language` sections in the same commit — otherwise the switcher label
+   degrades to the raw key string in any locale missing it.

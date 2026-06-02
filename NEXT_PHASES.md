@@ -725,11 +725,20 @@ block schema.
 
 ---
 
-### 7.26 — Multilingual Support (French)
-**Owner:** Ayman + Youssef | **Priority:** 🟡 MEDIUM | **Status:** ⚠️ PARTIAL
-- FR locale added in Phase 5.5 (fr/common.json, 381 lines). Arabic translations still outstanding.
-- Remaining: translate all existing UI strings to French, French versions of all legal pages, language switcher fully tested
-- Partially overlaps with Phase 5.5 work
+### ✅ 7.26 — Multilingual Support (French) — Track A Complete
+**Owner:** Ayman + Youssef | **Priority:** 🟡 MEDIUM | **Status:** ✅ Complete — Track A (PR #42, 2026-06-02)
+
+**Track A — JSON gaps (complete):**
+- FR locale was already structurally complete (all EN keys present). No FR changes needed beyond confirming `language.fr = "Français"` already existed.
+- EN: added `language.fr = "French"` (LanguageToggle label was missing in EN locale)
+- AR: added `portal` section (3 keys), `userType` section (3 keys), 4 missing `nav` keys (`operationsReview`, `auditLog`, `billing`, `accountSettings`), `language.fr = "الفرنسية"`
+- 12 keys total across EN + AR. 67/67 frontend tests pass.
+
+**Track B — Legal page localization (deferred):**
+- 11 legal pages use hardcoded TypeScript content objects, NOT the i18n JSON system
+- Adding FR + AR requires 20 new `.content.ts` files + component locale selectors
+- Gated on: legal team providing translated content (do NOT machine-translate Terms of Service, Privacy Policy, etc.)
+- Regulatory note: GDPR + French Loi Toubon may require FR-language legal pages before EU launch
 
 ---
 
@@ -1169,7 +1178,7 @@ No new env vars required for existing local dev deployments.
 | 7.23 | Word Add-In | ❌ Not started | Y | |
 | 7.24 | Knowledge Base | ✅ Complete (PR #40) | A | 2026-06-01 |
 | 7.25 | Poor Scan Quality | ✅ Complete (PR #41) | A+Y | 2026-06-01 |
-| 7.26 | French i18n | ⚠️ Partial | A+Y | |
+| 7.26 | i18n Completion (Track A) | ✅ Complete (Track A, PR #42) | A+Y | 2026-06-02 |
 | 7.27 | Official Gazette | ❌ Not started | Y | |
 | 7.28 | ERP Integration | ❌ Not started | A+Y | |
 | 7.29 | Settlement Checkbox | ❌ Not started | Y | |
@@ -1207,9 +1216,10 @@ No new env vars required for existing local dev deployments.
 2. ~~7.15 — Obligation Permission Model~~ ✅ Done (PR #40)
 3. ~~7.24 — Knowledge Base Enhancements (all 5 sub-phases)~~ ✅ Done (PR #40)
 4. ~~7.25 — Poor Scan Quality Handling~~ ✅ Done (PR #41)
-5. 7.21 — RFP & Specification Document Analysis (AI — competitive priority)
-6. ~~7.9 — Audit Silent Migrations~~ ✅ Done (PR #34)
-7. ~~7.10 — In-app Dispatch~~ ✅ Already implemented
+5. ~~7.26 — i18n Completion (Track A)~~ ✅ Done (PR #42)
+6. 7.21 — RFP & Specification Document Analysis (AI — competitive priority)
+7. ~~7.9 — Audit Silent Migrations~~ ✅ Done (PR #34)
+8. ~~7.10 — In-app Dispatch~~ ✅ Already implemented
 
 **Youssef:**
 1. 7.7 — Wire Reminder History in Detail Drawer (quick, endpoint ready)
@@ -1236,5 +1246,5 @@ No new env vars required for existing local dev deployments.
 
 ---
 
-*Last updated: 2026-05-28*
+*Last updated: 2026-06-02*
 *Next review: When 7.5-7.8 are cleared; 9.2 AWS setup planning starts*

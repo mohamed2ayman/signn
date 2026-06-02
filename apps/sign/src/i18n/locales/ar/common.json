@@ -31,7 +31,21 @@
     "store": "متجر العقود",
     "subscription": "الاشتراك",
     "security": "الأمان",
-    "waitlist": "قائمة الانتظار"
+    "waitlist": "قائمة الانتظار",
+    "operationsReview": "مراجعة العمليات",
+    "auditLog": "سجل التدقيق",
+    "billing": "الفواتير",
+    "accountSettings": "إعدادات الحساب"
+  },
+  "portal": {
+    "client": "بوابة العميل",
+    "guest": "بوابة الضيف",
+    "admin": "لوحة الإدارة"
+  },
+  "userType": {
+    "managingParty": "الطرف المُدير",
+    "respondingParty": "الطرف المُستجيب",
+    "individual": "ممارس مستقل"
   },
   "auth": {
     "login": "تسجيل الدخول",
@@ -553,6 +567,7 @@
   "language": {
     "en": "الإنجليزية",
     "ar": "العربية",
+    "fr": "الفرنسية",
     "toggle": "عربي"
   },
   "portfolio": {
