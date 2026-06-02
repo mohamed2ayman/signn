@@ -17,6 +17,7 @@ import { PermissionLevelGuard } from '../../common/guards/permission-level.guard
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { OrganizationId } from '../../common/decorators/organization.decorator';
 import { UserRole, PermissionLevel } from '../../database/entities';
 import { ContractsService } from './contracts.service';
 import {
@@ -57,8 +58,11 @@ export class ContractsController {
   }
 
   @Get(':id')
-  async findById(@Param('id', ParseUUIDPipe) id: string) {
-    return this.contractsService.findById(id);
+  async findById(
+    @Param('id', ParseUUIDPipe) id: string,
+    @OrganizationId() orgId: string,
+  ) {
+    return this.contractsService.findById(id, orgId);
   }
 
   @Post()
@@ -66,8 +70,9 @@ export class ContractsController {
   async create(
     @Body() dto: CreateContractDto,
     @CurrentUser() user: any,
+    @OrganizationId() orgId: string,
   ) {
-    return this.contractsService.create(dto, user.id);
+    return this.contractsService.create(dto, user.id, orgId);
   }
 
   @Put(':id')
@@ -75,8 +80,9 @@ export class ContractsController {
   async update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateContractDto,
+    @OrganizationId() orgId: string,
   ) {
-    return this.contractsService.update(id, dto);
+    return this.contractsService.update(id, dto, orgId);
   }
 
   @Put(':id/status')
@@ -85,14 +91,18 @@ export class ContractsController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateStatusDto,
     @CurrentUser() user: any,
+    @OrganizationId() orgId: string,
   ) {
-    return this.contractsService.updateStatus(id, dto, user.id);
+    return this.contractsService.updateStatus(id, dto, user.id, orgId);
   }
 
   @Delete(':id')
   @RequirePermission(PermissionLevel.EDITOR)
-  async delete(@Param('id', ParseUUIDPipe) id: string) {
-    await this.contractsService.delete(id);
+  async delete(
+    @Param('id', ParseUUIDPipe) id: string,
+    @OrganizationId() orgId: string,
+  ) {
+    await this.contractsService.delete(id, orgId);
     return { message: 'Contract deleted successfully' };
   }
 
@@ -103,8 +113,9 @@ export class ContractsController {
   async updateParties(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: UpdatePartiesDto,
+    @OrganizationId() orgId: string,
   ) {
-    return this.contractsService.updateParties(id, body);
+    return this.contractsService.updateParties(id, body, orgId);
   }
 
   // ─── Clause Management ─────────────────────────────────────
@@ -120,8 +131,9 @@ export class ContractsController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: AddClauseDto,
     @CurrentUser() user: any,
+    @OrganizationId() orgId: string,
   ) {
-    return this.contractsService.addClause(id, dto, user.id);
+    return this.contractsService.addClause(id, dto, orgId, user.id);
   }
 
   @Put(':id/clauses/:clauseId')
@@ -215,8 +227,9 @@ export class ContractsController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: AddCommentDto,
     @CurrentUser() user: any,
+    @OrganizationId() orgId: string,
   ) {
-    return this.contractsService.addComment(id, dto, user.id);
+    return this.contractsService.addComment(id, dto, user.id, orgId);
   }
 
   @Put(':id/comments/:commentId/resolve')
@@ -277,8 +290,9 @@ export class ContractsController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: RequestApprovalDto,
     @CurrentUser() user: any,
+    @OrganizationId() orgId: string,
   ) {
-    return this.contractsService.requestApproval(id, user.id, dto.approver_ids);
+    return this.contractsService.requestApproval(id, user.id, dto.approver_ids, orgId);
   }
 
   /**
@@ -291,8 +305,9 @@ export class ContractsController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: ReviewApprovalDto,
     @CurrentUser() user: any,
+    @OrganizationId() orgId: string,
   ) {
-    return this.contractsService.reviewApproval(id, user.id, dto.decision, dto.comment);
+    return this.contractsService.reviewApproval(id, user.id, dto.decision, orgId, dto.comment);
   }
 
   /**

@@ -1,7 +1,7 @@
 # lessons.md — SIGN + MANAGEX Platform
 > This file documents every bug, issue, and fix that took significant time to resolve.
 > Feed this file to Claude at the start of every session to avoid repeating mistakes.
-> Last updated: 2026-06-02 (Lesson #144 — Always audit ALL locales when an i18n task names one specific language.)
+> Last updated: 2026-06-02 (Lessons #143–#147 — TypeORM auto-appends _enum suffix + audit ALL locales on i18n tasks + missing @RequirePermission silently disables auth + hand-applied secret-stripping doesn't scale + nest start --watch hot-reload contaminates before/after verification.)
 
 ---
 
@@ -5234,3 +5234,210 @@ in all locales that are missing the new key.
 **Reference:** Phase 7.26 Track A investigation; lesson #83 (silent `undefined` from
 missing Vite env vars is the same class — missing config in one place silently breaks
 a different place).
+
+---
+
+### Lesson #145 — A Missing @RequirePermission Decorator Silently Disables Authorization — "There Is A Guard Stack" Does NOT Mean "The Route Is Authorized"
+
+`GET /api/v1/contracts/:id` had `@UseGuards(JwtAuthGuard, RolesGuard,
+PermissionLevelGuard)` at the controller class level but NO
+`@RequirePermission(...)` decorator on the handler method itself. Both
+RolesGuard and PermissionLevelGuard early-return `true` when their reflected
+metadata is absent (`if (!requiredRoles || requiredRoles.length === 0)
+return true;` and `if (!requiredLevel) return true;` respectively). Only
+JwtAuthGuard ran. **Any authenticated user, of any role, in any
+organization, could read any contract by id by hitting the endpoint with a
+valid JWT and the contract's UUID** — confirmed live against the running
+container in audit J.2 / K (a fresh CONTRACTOR_REVIEWER in org B fetched
+a 245KB body of an org-A contract including the creator's bcrypt
+`password_hash`).
+
+**The trap that makes the obvious fix wrong.** Adding `@RequirePermission`
+naively would 403 legitimate users. PermissionLevelGuard reads the project
+id from `request.params.project_id || request.params.id || ...`. For a
+contract-scoped route like `/contracts/:id`, `request.params.id` is the
+CONTRACT id, not a project id. The guard would query
+`memberRepository.findOne({ where: { project_id: <contract_id>, user_id }})`,
+find nothing, and throw `ForbiddenException`. So the apparent quick-fix
+(slap on the decorator) breaks authorized in-org users without closing the
+gap.
+
+**The correct fix shape.** Scope inside the SERVICE via the
+contract→project→organization_id join — the in-house pattern at
+`getPendingApprovalsForUser` line 1126 in the same file:
+`.andWhere('project.organization_id = :orgId', { orgId })`. Plumb the
+caller's `orgId` from the controller via the existing `@OrganizationId()`
+param decorator (`backend/src/common/decorators/organization.decorator.ts`).
+Return 404 NotFoundException (not 403) on out-of-org, matching
+`negotiation.service.ts assertContractInOrg` — does not leak existence.
+
+**Defense-in-depth note.** Strip sensitive fields from any nested User
+relation returned by the same query (creator/approver) using the local
+destructure-and-omit pattern from `users.service.ts:364`. The global
+ClassSerializerInterceptor + entity `@Exclude` (lesson #146) backstops this
+at the serializer layer, but both fire and both produce the same output;
+the manual strip is preserved as a service-layer floor.
+
+**How to avoid.** When auditing controller security, do NOT read the
+class-level `@UseGuards(...)` line and conclude "authorized." Walk every
+handler method and verify it has the metadata decorator the guard expects
+(`@Roles(...)` for RolesGuard, `@RequirePermission(...)` for
+PermissionLevelGuard). Absence of metadata = early-return = no
+authorization on THAT method. The pattern of "guards on the class,
+metadata on the method" is mandatory in this codebase — class-only is a
+guard no-op.
+
+**Reference:** Audit `docs/audits/7.18-guest-portal-audit.md` sections J.2
+(static analysis), K (live cross-tenant probe — leak confirmed), L (live
+verification of the fix — 404 cross-tenant, 200 in-org with zero sensitive
+fields); commit `c632849` (fix(contracts): scope findById by org + strip
+sensitive fields on creator/approver).
+
+---
+
+### Lesson #146 — Hand-Applied "Strip Secrets Before Returning" Conventions Do Not Scale And Fail Silently — Use Structural Stripping
+
+The codebase had a real, documented in-house convention for stripping
+sensitive User fields before returning: manual destructure-and-omit, e.g.
+`const { password_hash, mfa_secret, mfa_totp_secret, mfa_recovery_codes,
+...safe } = user; return safe;` at `users.service.ts:364` and
+`admin-security/controllers/profile.controller.ts:51`. The convention WAS
+followed everywhere a User was returned as the PRIMARY response object —
+GET /users/me, GET /me/profile, etc. But it was **forgotten on every
+endpoint that returned a User as a NESTED relation** — contracts.creator,
+claims.submitter, notices.submitter, negotiation_events.performer, audit
+log.user, comment.user, project.members[].user, support_chat.user,
+support_ticket.assignee, knowledge_asset.reviewer, and so on. 22 endpoints
+total (audit Section E master list). Each one leaked the User's bcrypt
+`password_hash` to any authenticated caller via the relation join.
+
+**Why manual stripping is structurally fragile.**
+- A new endpoint that loads a User relation has to remember to add the
+  destructure. There is no compile-time or test-time check that enforces it.
+- A new module added by a different teammate inherits no protection.
+- A new sensitive column added to the User entity in the future has to be
+  added to every existing manual-strip site (search-and-replace across
+  inconsistently-named helpers — `sanitizeUser`, plus ad-hoc destructures).
+- Tests for the stripping at a per-site granularity require populating
+  fixtures with the sensitive fields then asserting absence — easy to
+  forget.
+
+**The durable fix is structural.** Register `ClassSerializerInterceptor`
+globally via `APP_INTERCEPTOR` in `app.module.ts`, and add `@Exclude()` on
+the User entity for each sensitive field (`password_hash`, `mfa_secret`,
+`mfa_totp_secret`, `mfa_recovery_codes`, `invitation_token`). Now every
+endpoint that returns a User instance — directly or via a relation, on this
+release or any future one — gets the strip for free. `instanceToPlain`
+removes the `@Exclude`-decorated properties before the response is
+serialized. Adding a new sensitive column = add one decorator in one place.
+
+**Caveat — `ClassSerializerInterceptor` only fires on class INSTANCES.**
+Plain-object response paths slip past it unchanged. The biggest such path
+in this codebase is `auth.service.ts sanitizeUser`, which already
+returns a plain destructured object — the interceptor never touches it. So
+the structural fix has TWO parts:
+1. Entity `@Exclude` + global interceptor (covers every instance-return path).
+2. The plain-object helper still needs an explicit strip; updated
+   `sanitizeUser` to add `invitation_token` to its destructure list so its
+   field set mirrors the entity's `@Exclude` set.
+
+**Audit-before-flipping-the-global-switch checklist** (saved as a
+pre-Strategy-1 safety audit in this codebase). Confirm BEFORE enabling
+the interceptor globally:
+- Every leak site returns class instances (not plain objects mapped via
+  `.toJSON()` / `JSON.parse(JSON.stringify(...))` / explicit
+  `instanceToPlain`). If it returns plain objects, `@Exclude` is INERT
+  for that path.
+- No entity has pre-existing `@Transform` / `@Expose` / `@Type` decorators
+  that would fire on OUTPUT (they're direction-agnostic). If any exist,
+  the global flip can change shape unexpectedly.
+- No consumer (frontend, integration test, external API) reads any of the
+  to-be-excluded fields off a response. Especially for fields that are
+  CURRENTLY on the wire (e.g. `invitation_token` was on the auth/login
+  user object via `sanitizeUser`) — those consumers exist in theory; grep
+  the frontend tree explicitly.
+- No `excludeExtraneousValues: true` is set anywhere (would flip to
+  strict `@Expose`-only mode and break every endpoint).
+
+**How the gap was caught.** Audit-section K live-probe of `GET
+/contracts/:id` returned a 245KB body with the contract's creator
+loaded as a relation; `grep password_hash` on the body returned 1 hit.
+Mapping the same shape across the codebase produced the 22-endpoint
+"wider footprint" list.
+
+**Verification of the structural fix.** Live regression diff against the
+historical pre-fix body (section M): 4/4 sampled endpoints with 20/20
+zero sensitive-field counts; top-level keys identical (36 vs 36); all 9
+date fields byte-identical (ISO 8601 with `Z` preserved); first of 85
+contract_clauses byte-identical; all 32 common creator keys identical.
+The ONLY divergence is the 5 stripped keys. No regression to date or
+decimal serialization, no relation dropping.
+
+**Reference:** Audit `docs/audits/password-hash-leak-fix-audit.md`
+sections A–E (Strategy-1 safety analysis) and section M (live
+regression-diff verification); commit `ca37e15` (fix(security): global
+ClassSerializerInterceptor + @Exclude on User sensitive fields; strip
+invitation_token in sanitizeUser).
+
+---
+
+### Lesson #147 — `nest start --watch` Hot-Reload Silently Contaminates Before/After Verification — Prove Build Identity Before Trusting A "Before" Capture
+
+During the audit-M verification of the global `ClassSerializerInterceptor`
+fix, the plan was to capture the CURRENTLY-RUNNING container's response
+shape as "before," then rebuild/restart and capture "after," then diff.
+The currently-running container's StartedAt (`2026-06-01T16:05:56Z`) was
+hours OLDER than every Strategy-1 source edit (`18:39–18:41Z`) — at first
+glance the perfect pre-fix baseline. **In reality, `nest start --watch`
+had already hot-reloaded the changes inside the running container** before
+the planned restart, so the captured "before" was actually post-Strategy-1.
+An in-process before/after diff would have shown zero differences and
+proven nothing — while looking green.
+
+**How it was caught.** The verification probe checked an expected-PRESENT
+field (`invitation_token` on the auth/login user object — present in every
+prior K/L capture via `sanitizeUser`) and found it already gone. That
+single anomaly forced a second check; docker logs confirmed `File change
+detected. Starting incremental compilation...` lines at 18:38:50 PM, 18:39:11
+PM, 18:39:39 PM, 18:40:13 PM — each matching a source-edit mtime. The
+hot-reload had silently fired four times during the session.
+
+**Rule for any future fix-verification probe against a `--watch`
+container.**
+1. **Prove build identity in BOTH directions, UTC-aligned.** Compare
+   container StartedAt vs latest source mtime via `TZ=UTC stat` — but ALSO
+   consider that hot-reload may have applied the change without restarting,
+   making StartedAt < source-mtime even though the new code IS running.
+   Check `docker logs sign-backend --since 30m | grep -i 'File change
+   detected\|nest application'` to detect hot-reload events.
+2. **If hot-reload may have already applied the change, the in-process
+   "before" capture is no longer trustworthy.** The only valid pre-change
+   baseline is one captured BEFORE the source was edited — e.g. a response
+   body preserved on disk from an earlier audit section. In audit M, the
+   section-K leaked-body capture (`by2msoj3p.txt`, 250,855 bytes, preserved
+   from a probe run days earlier on the pre-J.2 pre-Strategy-1 codebase)
+   served as the historical baseline. Compare the new "after" against THAT,
+   not against a freshly-captured "before" that may be contaminated.
+3. **Always include at least one expected-PRESENT field in the verification
+   probe**, not only expected-ABSENT checks. Expected-absent probes can't
+   distinguish "fix worked" from "baseline was already post-fix." An
+   expected-present field that comes back empty is the canary for the
+   second case.
+4. **Restart explicitly anyway**, even when hot-reload looks healthy, to
+   ensure a clean canonical boot — eliminates any half-loaded hot-reload
+   state and gives a deterministic StartedAt for the audit record.
+
+**Reinforces #138.** That lesson covers `nest start --watch` silently
+STOPPING hot-restart across an edit cascade (running stale code that no
+longer matches source). This one covers the inverse — `--watch` silently
+RESTARTING such that the "before" snapshot you intend to capture is
+already the "after." `--watch` is non-deterministic in BOTH directions; the
+running process is "whatever it is" and must always be empirically pinned
+before being used as a verification anchor.
+
+**Reference:** Audit `docs/audits/password-hash-leak-fix-audit.md` section
+M Step 0/1 (container build-identity check + hot-reload disclosure +
+historical-baseline substitution); docker logs `File change detected`
+trail at 18:38:50–18:40:21 PM matching the four source-edit mtimes; the
+historical pre-fix response body at the section-K tool-results path;
+lesson #138 (`nest start --watch` can silently STOP hot-restarting).
