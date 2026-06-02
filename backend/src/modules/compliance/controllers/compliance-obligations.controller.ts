@@ -19,8 +19,11 @@ import { Response } from 'express';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
+import { RolesGuard } from '../../../common/guards/roles.guard';
+import { PermissionLevelGuard } from '../../../common/guards/permission-level.guard';
+import { RequirePermission } from '../../../common/decorators/require-permission.decorator';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
-import { Obligation, ObligationStatus, User } from '../../../database/entities';
+import { Obligation, ObligationStatus, PermissionLevel, User } from '../../../database/entities';
 import { IcalExportService } from '../services/ical-export.service';
 import { ComplianceObligationService } from '../services/compliance-obligation.service';
 import { ObligationFiltersDto } from '../dto/obligation-filters.dto';
@@ -34,7 +37,7 @@ import { ObligationCalendarQueryDto } from '../dto/obligation-calendar-query.dto
 const ONE_YEAR_MS = 365 * 24 * 60 * 60 * 1000;
 
 @Controller()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, PermissionLevelGuard)
 export class ComplianceObligationsController {
   constructor(
     @InjectRepository(Obligation)
@@ -46,6 +49,7 @@ export class ComplianceObligationsController {
   // ─── Existing Phase 3.4 endpoints ────────────────────────────────────────
 
   @Get('contracts/:contractId/obligations')
+  @RequirePermission(PermissionLevel.VIEWER)
   async listForContract(
     @Param('contractId') contractId: string,
     @Query() filters: ObligationFiltersDto,
@@ -63,6 +67,7 @@ export class ComplianceObligationsController {
   }
 
   @Patch('contracts/:contractId/obligations/:obligationId')
+  @RequirePermission(PermissionLevel.EDITOR)
   async update(
     @Param('obligationId') id: string,
     @Body() body: UpdateObligationInlineDto,
@@ -83,6 +88,7 @@ export class ComplianceObligationsController {
   }
 
   @Get('contracts/:contractId/obligations/ical')
+  @RequirePermission(PermissionLevel.VIEWER)
   @Header('Content-Type', 'text/calendar; charset=utf-8')
   async icalForContract(
     @Param('contractId') contractId: string,
@@ -104,6 +110,7 @@ export class ComplianceObligationsController {
   }
 
   @Get('projects/:projectId/obligations')
+  @RequirePermission(PermissionLevel.VIEWER)
   async listForProject(
     @Param('projectId') projectId: string,
     @Query() filters: ObligationFiltersDto,
@@ -126,8 +133,10 @@ export class ComplianceObligationsController {
   /**
    * POST /contracts/:contractId/obligations/:obligationId/assign
    * Assign a user to an obligation. Returns 409 if already assigned.
+   * EDITOR required — assigning responsibility is a write operation.
    */
   @Post('contracts/:contractId/obligations/:obligationId/assign')
+  @RequirePermission(PermissionLevel.EDITOR)
   async assignUser(
     @Param('obligationId') obligationId: string,
     @Body() body: AssignObligationDto,
@@ -139,8 +148,10 @@ export class ComplianceObligationsController {
   /**
    * DELETE /contracts/:contractId/obligations/:obligationId/assign/:userId
    * Remove a user's assignment from an obligation.
+   * EDITOR required — modifying assignee membership is a write operation.
    */
   @Delete('contracts/:contractId/obligations/:obligationId/assign/:userId')
+  @RequirePermission(PermissionLevel.EDITOR)
   @HttpCode(204)
   async unassignUser(
     @Param('obligationId') obligationId: string,
@@ -152,8 +163,10 @@ export class ComplianceObligationsController {
   /**
    * PUT /contracts/:contractId/obligations/:obligationId/evidence
    * Attach an evidence URL to an obligation.
+   * EDITOR required — evidence is part of obligation completion state.
    */
   @Put('contracts/:contractId/obligations/:obligationId/evidence')
+  @RequirePermission(PermissionLevel.EDITOR)
   async updateEvidence(
     @Param('obligationId') obligationId: string,
     @Body() body: UpdateEvidenceDto,
@@ -169,6 +182,7 @@ export class ComplianceObligationsController {
    * Verifies the obligation belongs to the contract before returning data.
    */
   @Get('contracts/:contractId/obligations/:obligationId/reminders')
+  @RequirePermission(PermissionLevel.VIEWER)
   async getReminderLogs(
     @Param('contractId') contractId: string,
     @Param('obligationId') obligationId: string,
@@ -195,6 +209,9 @@ export class ComplianceObligationsController {
    * GET /obligations/portfolio
    * Org-scoped cross-contract obligation portfolio.
    * Optional filters: from, to, project_id, status, type, assignee.
+   *
+   * No @RequirePermission — org-wide endpoint, no project context.
+   * JwtAuthGuard + RolesGuard are sufficient.
    */
   @Get('obligations/portfolio')
   async getPortfolio(
@@ -208,6 +225,8 @@ export class ComplianceObligationsController {
    * GET /obligations/calendar?from=YYYY-MM-DD&to=YYYY-MM-DD
    * Org-scoped calendar events for obligations in the given date range.
    * Max range: 1 year.
+   *
+   * No @RequirePermission — org-wide endpoint, no project context.
    */
   @Get('obligations/calendar')
   async getCalendar(

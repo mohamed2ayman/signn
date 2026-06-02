@@ -18,6 +18,10 @@ export enum DocumentProcessingStatus {
   EXTRACTING_CLAUSES = 'EXTRACTING_CLAUSES',
   CLAUSES_EXTRACTED = 'CLAUSES_EXTRACTED',
   FAILED = 'FAILED',
+  /** Phase 7.25 — OCR attempted but scan quality was too low for reliable
+   *  extraction. quality_flags holds the detected signals. The user must
+   *  re-upload a higher-quality scan or explicitly continue anyway. */
+  HUMAN_REVIEW_RECOMMENDED = 'HUMAN_REVIEW_RECOMMENDED',
 }
 
 @Entity('document_uploads')
@@ -77,6 +81,12 @@ export class DocumentUpload {
 
   @Column({ type: 'text', nullable: true })
   error_message: string | null;
+
+  /** Phase 7.25 — scan quality signals detected during OCR.
+   *  E.g. ["blur:32.1", "contrast:15.4", "rotation:12"].
+   *  NULL when no quality check was needed (digital PDFs, DOCX, etc.). */
+  @Column({ type: 'varchar', array: true, nullable: true })
+  quality_flags: string[] | null;
 
   @Column({ type: 'varchar', length: 255, nullable: true })
   processing_job_id: string | null;

@@ -1,7 +1,7 @@
 # CLAUDE.md — Project Intelligence File
 > Read this entire file at the start of every Claude Code session before touching any code.
 > This file is the single source of truth for all architectural decisions, rules, and context.
-> Last updated: 2026-05-31 (Phase 7.17 Prompt 2c shipped — Portfolio PDF export: token-gated download (1h reusable, HMAC-before-DB), queue + processor + pdfmake renderer + email, cleanup cron + audit log. Lessons #140–#142 added. Email-dispatch + token-download + renderer-at-scale + cleanup-cron-at-scale carry forward as staging gates per #135. **CRITICAL** — Phase 3.4 compliance PDF reports + Phase 4 ExportService contract PDFs are CURRENTLY BROKEN by the same pdfmake v0.1 require pattern 2c just fixed; see Critical Known Bugs + lesson #142, HIGH priority.)
+> Last updated: 2026-06-02 (Phase 7.26 shipped — Track A complete. 12 missing i18n keys added across EN and AR locales; FR was already structurally complete. Track B (legal page localization) deferred pending legal team translated content. Phase 7.25 fully documented (PR #41). **CRITICAL** — Phase 3.4 compliance PDF reports + Phase 4 ExportService contract PDFs are CURRENTLY BROKEN by the same pdfmake v0.1 require pattern 2c just fixed; see Critical Known Bugs + lesson #142, HIGH priority.)
 
 ---
 
@@ -106,18 +106,22 @@ SYSTEM_ADMIN > OWNER_ADMIN > PROJECT_MANAGER > REVIEWER > CONTRACTOR_ADMIN > CON
 | Type | Who They Are | Portal They Use | Subscription |
 |------|-------------|-----------------|--------------|
 | Type A — Managing Party | A firm that creates projects, drafts contracts, manages contractors | Client Portal `/app/*` | Has own SIGN subscription |
-| Type B — Responding Party (Guest) | An individual or firm invited to respond to a specific contract. No own subscription. | Guest Portal `/contractor/*` | No subscription — invited access only |
+| Type B — Responding Party (Guest) | An external counterparty invited to respond to a specific contract. **Progressive identity**: enters via a secure invitation link, views the assigned contract with no password; sets a password on first action requiring durable identity (sign, upload a version, leave attributed comments) and is upgraded to a lightweight **restricted user row** with a guest role, hard-walled to the invited contract(s). | Guest Portal `/contractor/*` | No SIGN subscription. Guest **counts per inviting org are capped by that org's subscription plan** and Operations-configurable from the admin portal. |
 | Type C — Individual Practitioner | Solo professional (independent engineer, consultant, etc.) | Client Portal `/app/*` with personal workspace mode | Has own personal subscription |
 
 ### Portal Rules — Never Violate
 1. The portal at `/contractor/*` is the **Guest Portal** — NOT "Contractor Portal". Rename all references in code, UI labels, and comments.
 2. A contractor FIRM with its own SIGN subscription uses the **Client Portal** (`/app/*`) — they are Type A, never directed to Guest Portal.
-3. The same person can be a managing party on one project AND a responding party on another. The Client Portal handles both via project-level roles — not by switching portals.
+3. A person may hold different PROJECT-LEVEL ROLES across projects inside the Client Portal — e.g. a managing-party role on one project and an internal reviewing/responding role on another — all handled via project-level permissions in the Client Portal, not by switching portals. NOTE: 'responding role' here means an INTERNAL Client-Portal project role, and is distinct from the external 'Type B — Responding Party (Guest)' persona in Rules 5–6, who is an external counterparty in the Guest Portal hard-walled to their invited contract(s). The case of the same real person being BOTH an internal Client-Portal user AND an external guest (separate user rows / contexts) is out of scope for the 7.18 build and will be specified if/when required.
 4. Type C practitioners use Client Portal (`/app/*`) in **personal workspace mode**: no team management UI, no org management UI, lighter sidebar, personal dashboard. Same codebase — UI mode flag set by subscription type.
-5. Guest Portal (`/contractor/*`) is ONLY for invited parties with no subscription. Access via secure invitation link only.
-6. Guest Portal is minimal: view assigned contract, respond to clauses, submit claims/notices, sign. Nothing more.
+5. Guest Portal (`/contractor/*`) onboarding follows the **progressive-identity** model. Entry is via a secure invitation link with **no password required for view**. The first action requiring durable identity (sign, upload a new version, leave attributed comments) triggers password creation, after which the visitor becomes a lightweight **restricted user row** with a guest role and no subscription. Access is **HARD-WALLED to the invited contract(s) at the data/service layer** (project-scoped guards + service-layer ownership joins) — NOT just at the UI level. The guest user row never gains visibility into anything outside its invitation scope, regardless of role.
+6. Guest Portal capabilities are **scoped, metered, and Operations-configurable** — not "minimal." A guest CAN: view the assigned contract; see the existing AI clause classification on it; download a **watermarked** copy; add comments; upload a new version; trigger AI extraction + classification on their own uploads (**METERED** per the inviting org's plan); use the AI assistant (**rate-limited**); sign; trigger risk + compliance analysis on their uploads with **findings PREVIEWED but full detail GATED behind upgrade**. Everything else is blocked or surfaced as a paid-tier upsell. All allowances (per-action quotas, AI assistant rate limits, watermark policy, version-upload size, etc.) are Operations-configurable from the admin portal.
 7. Never build separate UIs for managing vs responding roles inside the Client Portal — use project-level permissions instead.
 8. Personal subscription plans must set a `workspace_mode: personal` flag that hides team/org features in the Client Portal.
+
+### 2026-06-02 — Guest persona redefinition (supersedes prior "no-account / link-only / minimal" definition)
+
+Per the approved 7.18 Guest Portal architecture plan: the Guest Portal is the **first door on a shared external-access foundation**. The Type B row + Rules 5 and 6 above replace the earlier "no-account, link-only, minimal" definition. A **free/freemium tier on the same foundation is the planned next sprint** — its rules will extend, not replace, the progressive-identity + restricted-user-row + hard-wall + Ops-configurable-allowances model established here. Any new external-access surface must compose with this foundation, not bypass it.
 
 ---
 
@@ -2998,3 +3002,299 @@ broken end-to-end — see Critical Known Bugs #6 + Outstanding Issues + lesson
 
 The four deployment gates are explicit, not buried. They go on the
 deployment checklist.
+
+---
+
+## Phase 7.15 — Obligation Permission Model (shipped — 2026-06-01, PR #40)
+
+**Scope:** Backend-only. Adds proper role-based access control and project ownership
+verification to obligation mutation endpoints.
+
+### What shipped
+
+**`ResolveObligationProjectMiddleware`**
+(`backend/src/common/middleware/resolve-obligation-project.middleware.ts`):
+- Applied to all `/contracts/:contractId/obligations/*` routes
+- Validates that the contract belongs to the requesting user's organization
+- Extracts the `projectId` from the contract and attaches it to the request
+  so downstream guards can use it without an extra DB query
+- Returns 403 if the contract is not org-scoped to the requester's org
+- Wired into `ObligationsModule` via `NestModule.configure()`
+
+**Role guards on mutation endpoints (`ComplianceObligationsController`):**
+- `POST /contracts/:id/obligations/:oblId/assign` — `PROJECT_MANAGER+`
+- `DELETE /contracts/:id/obligations/:oblId/assign/:userId` — `PROJECT_MANAGER+`
+- `PUT /contracts/:id/obligations/:oblId/evidence` — `PROJECT_MANAGER+`
+- `PATCH /contracts/:id/obligations/:oblId` — `PROJECT_MANAGER+`
+- Read-only endpoints remain open to any authenticated user
+
+**New test coverage:**
+- `backend/src/modules/obligations/tests/obligations.controller.spec.ts` —
+  12 new tests: 401 on unauthenticated, 403 on wrong role, 200/204 on correct role
+  for assign, unassign, evidence update, inline patch
+- `backend/src/modules/compliance/tests/compliance-obligations.controller.spec.ts`
+  updated to reflect new guards
+
+### Hard rules — never violate
+
+1. **`ResolveObligationProjectMiddleware` always precedes `RolesGuard`** for obligation
+   mutation routes — middleware populates `req.projectId` which role resolution depends on.
+2. **Obligation read endpoints are intentionally NOT role-gated** — any authenticated
+   org member can view obligations for a contract in their org.
+3. **`PROJECT_MANAGER+` is the floor for mutations** — assigning obligations, attaching
+   evidence, and patching status all require at least `PROJECT_MANAGER` role.
+
+---
+
+## Phase 7.24 — Knowledge Base Enhancements (shipped — 2026-06-01, PR #40)
+
+Five sub-phases extending the knowledge asset system with backlinks, bulk import,
+retry OCR, version history, and project-level scoping. All migrations are idempotent
+(`ADD COLUMN IF NOT EXISTS`, `CREATE INDEX IF NOT EXISTS`, no `EXCEPTION WHEN` blocks).
+
+---
+
+### Phase 7.24a — "Used In" Backlinks
+
+**What shipped:**
+- New entity `KnowledgeAssetUsage` (`backend/src/database/entities/knowledge-asset-usage.entity.ts`):
+  `id`, `asset_id` (FK → `knowledge_assets`), `context_type` (VARCHAR 50),
+  `context_id` (UUID), `used_at` (TIMESTAMPTZ).
+- Migration `1751000000002-CreateKnowledgeAssetUsages.ts` — `knowledge_asset_usages`
+  table + indexes on `asset_id` and `context_id`.
+- `KnowledgeAssetsService.getUsages(id)` — returns backlink rows ordered by `used_at DESC`.
+- `GET /knowledge-assets/:id/usages` endpoint.
+- `compliance.service.ts` — best-effort backlink write on compliance check creation
+  (fire-and-forget with `.catch()`, never blocks the check per lesson #114).
+- Frontend: expandable "Used In" row in `KnowledgeAssetsPage`, populated lazily on expand.
+
+**Hard rules:**
+- Backlink writes are ALWAYS fire-and-forget — never `await` them in the compliance
+  check hot path. The `.catch()` logs a warning but never rethrows.
+- `context_type` values: `'COMPLIANCE_CHECK'` (currently). Add new context types as needed
+  but keep them string constants, never a DB enum (no migration needed for new types).
+
+---
+
+### Phase 7.24b — Bulk Import
+
+**What shipped:**
+- `BulkCreateKnowledgeAssetDto` (`backend/src/modules/knowledge-assets/dto/bulk-create-knowledge-asset.dto.ts`) —
+  shared metadata (title prefix, asset_type, jurisdiction, tags, project_id) applied to all files.
+- `POST /knowledge-assets/bulk` — accepts multipart up to 20 files; returns
+  `{ created: [...], duplicates: string[], failed: [...] }`.
+- Partial-success: failing or duplicate files are reported without aborting the batch.
+- `bulkCreate()` service method iterates files, calls the existing `checkDuplicate` hash
+  guard, and inserts successful rows; collects per-file errors into the `failed` array.
+- `knowledgeAssetService.bulkCreate(data)` frontend method added.
+
+**Hard rules:**
+- `POST /knowledge-assets/bulk` MUST return 200 even when some files fail — only 400 if
+  ZERO files were supplied or DTO validation fails entirely. A partial result is not an error.
+- Duplicate files are silently skipped (added to `duplicates[]`, not `failed[]`).
+
+---
+
+### Phase 7.24c — Retry OCR
+
+**What shipped:**
+- `POST /knowledge-assets/:id/retry-ocr` — re-queues OCR + embedding for a failed asset.
+- Service sets `ocr_status = PENDING`, `embedding_status = PENDING` before dispatching
+  the job so the frontend can observe the reset state.
+- Frontend: "Retry OCR" button visible on assets whose `ocr_status === 'FAILED'`.
+
+---
+
+### Phase 7.24d — Version History
+
+**What shipped:**
+- New entity `KnowledgeAssetVersion` (`backend/src/database/entities/knowledge-asset-version.entity.ts`):
+  `id`, `asset_id` (FK → `knowledge_assets` CASCADE), `version_number` (INT),
+  `changed_by` (UUID FK nullable), `changer_name`, `change_summary`, `snapshot_data` (JSONB),
+  `created_at`.
+- Migration `1751000000003-AddKnowledgeAssetVersionHistory.ts` — `knowledge_asset_versions`
+  table + unique index on `(asset_id, version_number)`.
+- Snapshot is taken BEFORE the update is applied (pre-update state); `version_number`
+  in the snapshot row = the current version before increment. Snapshot write is
+  best-effort (wrapped in try/catch — failure never blocks the update).
+- `GET /knowledge-assets/:id/versions` — returns list sorted by `version_number DESC`.
+- `GET /knowledge-assets/:id/versions/:number` — returns full `snapshot_data` for a
+  specific version.
+- Frontend (`KnowledgeAssetsPage.tsx`): tabbed expandable row with "Used In" and
+  "Version History" tabs. Tab switch to "Version History" lazy-loads the version list.
+  Clicking a version row opens a snapshot modal showing all `snapshot_data` fields
+  as a `<dl>` with `dir="auto"` on values.
+
+**Hard rules:**
+- Snapshot write MUST be wrapped in try/catch — a version save failure must NEVER
+  block the asset update. Log the error; never rethrow.
+- Snapshot captures the pre-update state. If a caller updates only `tags`, the snapshot
+  still records the full entity so rollback / audit is meaningful.
+- `version_number` starts at 1 (first version = before first edit). The entity column
+  starts at `0`; the service increments BEFORE saving the snapshot.
+
+---
+
+### Phase 7.24e — Project Scoping
+
+**What shipped:**
+- Migration `1751000000004-AddKnowledgeAssetProjectScope.ts`:
+  - `ALTER TABLE knowledge_assets ADD COLUMN IF NOT EXISTS project_id UUID REFERENCES projects(id) ON DELETE SET NULL`
+  - `CREATE INDEX IF NOT EXISTS idx_knowledge_assets_project_id ON knowledge_assets (project_id) WHERE project_id IS NOT NULL`
+- `KnowledgeAsset` entity: `project_id: string | null` column + `@ManyToOne(() => Project)` relation.
+- `KnowledgeAssetsService.findAll()`: three-tier visibility query:
+  - Platform (no org, no project): `organization_id IS NULL AND project_id IS NULL`
+  - Org-wide: `organization_id = :orgId AND project_id IS NULL`
+  - Project-scoped: `organization_id = :orgId AND project_id = :projectId`
+  - When `project_id` filter is supplied, all three tiers are returned; when absent, only platform + org-wide (backward-compatible).
+- `CreateKnowledgeAssetDto` + `BulkCreateKnowledgeAssetDto`: `@IsOptional() @IsUUID() project_id?`.
+- `ComplianceKnowledgeService.buildContext()`: accepts `projectId?: string | null`.
+  Both `queryByTags()` and `queryByJurisdictionAndTags()` propagate `projectId` into
+  their visibility filters (three-tier when `projectId` supplied; two-tier otherwise).
+- `compliance.service.ts`: passes `contract.project_id ?? null` to `buildContext()` so
+  compliance checks automatically use project-scoped KB assets.
+- `GET /knowledge-assets` controller: accepts `?project_id=<uuid>` query param.
+- Frontend (`KnowledgeAssetsPage.tsx`):
+  - Project filter dropdown in the KB page header (populated from `projectService.getAll()` on mount).
+  - New "Scope" column with badges: Platform (gray) / Org (blue) / Project (violet).
+  - Project scope selector in the upload modal (hidden when org has no projects).
+  - `knowledgeAssetService.getAll()` accepts `project_id` param.
+
+**Three-tier visibility rules — never violate:**
+1. An asset with `organization_id IS NULL AND project_id IS NULL` = platform asset — visible to everyone.
+2. An asset with `organization_id = X AND project_id IS NULL` = org-wide — visible to members of org X.
+3. An asset with `organization_id = X AND project_id = Y` = project-scoped — visible only when querying with `project_id = Y` (or higher-tier queries that include Y).
+4. Project-scoped assets are ALWAYS returned alongside platform + org-wide when a `projectId` is supplied. Never filter them exclusively.
+5. When `projectId` is NOT supplied, project-scoped assets are NEVER returned (two-tier only). This ensures the KB list page without a project filter doesn't silently mix scopes.
+
+---
+
+## Phase 7.25 — Poor Scan Quality Handling (shipped — 2026-06-01)
+
+Detects low-quality scanned PDFs (blurry, low-contrast, skewed), parks processing in a new
+`HUMAN_REVIEW_RECOMMENDED` terminal status, and shows an amber warning banner in the frontend
+with per-flag explanations and a "Continue anyway" bypass.
+
+### What shipped
+
+**AI backend (`ai-backend/app/services/tesseract_text_extractor.py`):**
+- New `_assess_quality(images: list[PIL.Image]) -> list[str]` — samples first 2 pages:
+  - **Blur:** pure-numpy Laplacian via `np.lib.stride_tricks.as_strided`; variance vs `BLUR_THRESHOLD=50.0`
+  - **Contrast:** `PIL.ImageStat.Stat(img.convert("L")).stddev[0]` vs `CONTRAST_THRESHOLD=20.0`
+  - **Rotation:** `pytesseract.image_to_osd(img, output_type=DICT)` on page 1 only; wrapped in `try/except` so OSD failures never block extraction; vs `ROTATION_THRESHOLD=10.0`
+  - Returns flag strings: `"blur:32.1"`, `"contrast:15.4"`, `"rotation:12"`
+- New `_enhance_image(image, flags) -> image` — applies `PIL.ImageOps.autocontrast(cutoff=2)` for contrast flags, `image.rotate(-degrees, expand=True, fillcolor=(255,255,255))` for rotation ≥ 5°; returns same object if no flags
+- `_ocr_pdf()` now returns `tuple[str, list[str]]`; calls `_assess_quality` after `convert_from_path`, applies `_enhance_image` per image when flags fire
+- `extract_pdf()` return type changed to `tuple[str, list[str]]`; digital PDF fast path returns `(text, [])`
+- `run_extract_text` in `tasks.py` calls `result.setdefault("quality_flags", [])` — key always present regardless of file type
+- 3 new settings in `settings.py`: `BLUR_THRESHOLD`, `CONTRAST_THRESHOLD`, `ROTATION_THRESHOLD`
+
+**Backend (NestJS):**
+- Migration `1751000000005-AddHumanReviewQualityFlags.ts` — `transaction = false` (required for `ALTER TYPE ADD VALUE`):
+  - `ALTER TYPE document_processing_status_enum ADD VALUE IF NOT EXISTS 'HUMAN_REVIEW_RECOMMENDED'`
+  - `ALTER TABLE document_uploads ADD COLUMN IF NOT EXISTS quality_flags VARCHAR[] NULL`
+- `DocumentProcessingStatus.HUMAN_REVIEW_RECOMMENDED` added to enum in `document-upload.entity.ts`
+- `quality_flags: string[] | null` column on `DocumentUpload` entity
+- `document-processing.service.ts`:
+  - `pollAndAdvance()` terminal-state guard extended to include `HUMAN_REVIEW_RECOMMENDED`
+  - After text extraction: reads `quality_flags` from AI result; if non-empty → saves flags to DB, sets status to `HUMAN_REVIEW_RECOMMENDED`, returns early (skips clause extraction)
+  - `reprocess()` resets `quality_flags = null` before re-queuing
+
+**Frontend (`apps/sign/src/components/common/ProcessingStatusCard.tsx`):**
+- `HUMAN_REVIEW_RECOMMENDED` entry in `STAGE_CONFIG` — amber `bg-amber-500`, label from i18n key
+- Stage dots: `effectiveStatusForDots()` maps `HUMAN_REVIEW_RECOMMENDED` → `EXTRACTING_TEXT` (branch state, not linear)
+- Amber border/background warning banner when status is `HUMAN_REVIEW_RECOMMENDED`
+- `parseQualityFlag(flag, t)` helper: parses `"blur:32.1"` → translated message with measured value
+- Per-flag messages with `dir="auto"` (Arabic-safe)
+- Re-upload tip and "Continue anyway" button (calls `onRetry` → `reprocess()`)
+- i18n keys added to EN / AR / FR in `apps/sign/src/i18n/locales/*/common.json`:
+  - `document.processing.humanReviewRecommended`, `reuploadTip`, `continueAnyway`
+  - `document.processing.qualityWarning.blur`, `contrast`, `rotation`
+
+**Tests (`ai-backend/tests/test_quality_detection.py` — 7 new tests):**
+- T1: clean checkerboard → no flags
+- T2: solid grey → blur flag (score < 50)
+- T3: solid pale → contrast flag (score < 20)
+- T4: contrast flag → `_enhance_image` returns PIL Image
+- T5: rotation flag ≥ 5° → `_enhance_image` applies rotate, returns PIL Image
+- T6: no flags → `_enhance_image` returns same object (`is img`)
+- T7: `run_extract_text` always includes `quality_flags` key in result dict
+
+### Migration fix documented — lesson #143
+`ALTER TYPE` in NestJS migrations must use the PostgreSQL type name `document_processing_status_enum`
+(TypeORM appends `_enum` suffix), NOT the bare TypeScript enum name. See lesson #143.
+
+### Hard rules — never violate
+1. **`quality_flags` is always present in `run_extract_text` result** — never check with `if 'quality_flags' in result`; use `result.get('quality_flags', [])` or the guaranteed `setdefault`.
+2. **`HUMAN_REVIEW_RECOMMENDED` is a terminal state** — `pollAndAdvance()` returns early on it exactly like `FAILED`. The only exit is `reprocess()`.
+3. **`reprocess()` MUST clear `quality_flags = null`** before re-queuing. Stale flags would re-trigger the amber banner on the retry attempt even if the new upload is clean.
+4. **OSD failures are silent** — `pytesseract.image_to_osd()` is wrapped in `try/except`; if the OSD language pack is absent or the page has no text, rotation check is skipped, never blocking extraction.
+5. **Partial text is preserved** — when quality flags fire, `extracted_text` is still saved to DB. `HUMAN_REVIEW_RECOMMENDED` only skips clause extraction, not text storage.
+6. **TypeORM enum type names use `_enum` suffix** — any `ALTER TYPE` migration on a TypeORM-managed enum must target `<snake_case_column_name>_enum`, not the TypeScript enum name. See lesson #143.
+
+---
+
+## Phase 7.26 — i18n Completion — Track A (shipped — 2026-06-02)
+
+Closed all missing i18n keys in the EN and AR locale files. FR was already structurally
+complete. Track B (legal page localization into FR + AR) is deferred pending legal team
+translated content.
+
+### Investigation findings (pre-implementation audit)
+
+**FR locale (`fr/common.json`):** Structurally complete — every EN key is present including
+`portal.*`, `userType.*`, all 39 `nav` keys, all Phase 7.25 `document.processing.*` keys,
+full `portfolio.*` section. FR had one key EN was missing: `language.fr = "Français"`.
+The 8 `_TODO_*` keys in `obligation.type` are internal annotation markers for legal-translator
+review (lesson #16); no component ever calls `t('obligation.type._TODO_*')`. No work needed on FR.
+
+**AR locale (`ar/common.json`):** 4 confirmed gaps:
+1. `portal` section entirely absent — `portal.client`, `portal.guest`, `portal.admin`
+2. `userType` section entirely absent — `userType.managingParty`, `userType.respondingParty`, `userType.individual`
+3. `nav` section missing 4 of 39 keys: `operationsReview`, `auditLog`, `billing`, `accountSettings`
+4. `language.fr` missing — FR option label in LanguageToggle renders raw key `"language.fr"` when UI is in Arabic
+
+**EN locale (`en/common.json`):** Missing `language.fr` — LanguageToggle reads this key to
+label the French option; silently falls back to key name.
+
+**Legal pages:** 11 pages under `apps/sign/src/pages/legal/` use hardcoded TypeScript content
+objects in `content/*.content.ts` — NOT in the i18n JSON system. English-only. FR and AR
+versions do not exist. Adding them requires Option B (per-locale content files) — see Track B.
+
+### What shipped — Track A (12 keys)
+
+**`apps/sign/src/i18n/locales/en/common.json`:**
+- Added `"fr": "French"` to `language` section
+
+**`apps/sign/src/i18n/locales/ar/common.json`:**
+- Added `"fr": "الفرنسية"` to `language` section
+- Added `portal` section: `{ client: "بوابة العميل", guest: "بوابة الضيف", admin: "لوحة الإدارة" }`
+- Added `userType` section: `{ managingParty: "الطرف المُدير", respondingParty: "الطرف المُستجيب", individual: "ممارس مستقل" }`
+- Added 4 nav keys: `operationsReview: "مراجعة العمليات"`, `auditLog: "سجل التدقيق"`, `billing: "الفواتير"`, `accountSettings: "إعدادات الحساب"`
+
+### Track B — deferred (legal page localization)
+
+Legal pages are outside the i18n system entirely. Adding FR + AR requires:
+- Option B (correct approach): 10 content files × 2 new locales = 20 new `.content.ts` files
+  + component-level locale selector in each page (`lang === 'fr' ? contentFr : lang === 'ar' ? contentAr : contentEn`)
+- The 20 content files require qualified legal translator content — do NOT machine-translate
+  Terms of Service, Privacy Policy, or compliance-related policies
+- Regulatory note: GDPR + French Loi Toubon may require French-language legal pages for EU users
+
+**Track B is gated on:** legal team providing translated content. Engineering scaffolding
+(Option B component pattern) is ~1 day; translation is the long pole.
+
+### Hard rules — never violate
+1. **Audit ALL three locales (EN/AR/FR) when any i18n task names one language.** A task
+   titled "French completion" revealed EN was missing `language.fr`. See lesson #144.
+2. **`_TODO_*` keys in `obligation.type` are internal annotations — never delete them.**
+   They mark terms awaiting legal-translator review (lesson #16). Only remove after
+   a qualified legal translator has reviewed and approved the adjacent translation.
+3. **Legal page content is outside the i18n JSON system.** Adding a new locale key to
+   `common.json` has zero effect on `/legal/*` page content. Legal pages require the
+   Option B per-locale content-file pattern; do not attempt to put 1000+ word legal
+   documents into `common.json`.
+4. **LanguageToggle requires `language.<code>` key in ALL locales.** When a new locale is
+   added (e.g. adding Spanish), add `"es": "Spanish"` / `"es": "الإسبانية"` / `"es": "Espagnol"`
+   to all three `language` sections in the same commit — otherwise the switcher label
+   degrades to the raw key string in any locale missing it.

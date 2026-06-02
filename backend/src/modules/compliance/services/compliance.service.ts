@@ -17,6 +17,7 @@ import {
   ComplianceOverallStatus,
   Contract,
   ContractClause,
+  KnowledgeAssetUsage,
   Project,
 } from '../../../database/entities';
 import { AiService } from '../../ai/ai.service';
@@ -63,6 +64,9 @@ export class ComplianceService {
     private readonly projectRepo: Repository<Project>,
     @InjectRepository(ContractClause)
     private readonly contractClauseRepo: Repository<ContractClause>,
+    // Phase 7.24b — write backlink rows (best-effort, never blocks the check).
+    @InjectRepository(KnowledgeAssetUsage)
+    private readonly usageRepo: Repository<KnowledgeAssetUsage>,
     private readonly aiService: AiService,
     private readonly knowledge: ComplianceKnowledgeService,
     private readonly obligationsLayer: ComplianceObligationService,
@@ -79,11 +83,13 @@ export class ComplianceService {
     const project = contract.project;
     const jurisdiction = this.normalizeJurisdiction(project?.country ?? null);
 
-    // Build knowledge context
+    // Build knowledge context — Phase 7.24e: pass project_id so project-scoped
+    // assets are visible to the AI compliance analysis.
     const ctx = await this.knowledge.buildContext({
       orgId: opts.orgId,
       jurisdiction,
       contractType: contract.contract_type,
+      projectId: contract.project_id ?? null,
     });
 
     // Persist the check row first
@@ -98,6 +104,21 @@ export class ComplianceService {
       created_by: opts.userId,
     });
     const saved = await this.checkRepo.save(check);
+
+    // Phase 7.24b — best-effort backlink write (fire-and-forget with catch at
+    // caller level, per lesson #114).  Never blocks the compliance check.
+    if (ctx.asset_ids.length > 0) {
+      const usageRows = ctx.asset_ids.map((assetId) => ({
+        asset_id: assetId,
+        context_type: 'COMPLIANCE_CHECK',
+        context_id: saved.id,
+      }));
+      this.usageRepo.insert(usageRows).catch((err: Error) =>
+        this.logger.warn(
+          `[KB backlinks] Failed to write ${usageRows.length} usage rows for check ${saved.id}: ${err.message}`,
+        ),
+      );
+    }
 
     // Load contract clauses
     const clauses = await this.loadClauses(contract.id);

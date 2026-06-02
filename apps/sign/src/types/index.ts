@@ -216,6 +216,9 @@ export enum DocumentProcessingStatus {
   EXTRACTING_CLAUSES = 'EXTRACTING_CLAUSES',
   CLAUSES_EXTRACTED = 'CLAUSES_EXTRACTED',
   FAILED = 'FAILED',
+  /** Phase 7.25 — OCR completed but scan quality signals were detected.
+   *  User must re-upload a higher-quality scan or explicitly continue. */
+  HUMAN_REVIEW_RECOMMENDED = 'HUMAN_REVIEW_RECOMMENDED',
 }
 
 export enum ClauseSource {
@@ -396,6 +399,8 @@ export interface DocumentUpload {
   extracted_text: string | null;
   page_count: number | null;
   error_message: string | null;
+  /** Phase 7.25 — scan quality signals, e.g. ["blur:32.1", "contrast:15.4"]. */
+  quality_flags: string[] | null;
   processing_job_id: string | null;
   uploaded_by: string;
   created_at: string;
@@ -792,6 +797,8 @@ export interface ConflictDetail {
 export interface KnowledgeAsset {
   id: string;
   organization_id: string | null;
+  /** Phase 7.24e — null means org-wide or platform-wide. */
+  project_id: string | null;
   title: string;
   description: string | null;
   asset_type: AssetType;
@@ -812,6 +819,7 @@ export interface KnowledgeAsset {
   created_at: string;
   updated_at: string;
   organization?: Organization;
+  project?: Project;
   reviewer?: User;
   creator?: User;
 }

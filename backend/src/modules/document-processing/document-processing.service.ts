@@ -150,7 +150,8 @@ export class DocumentProcessingService {
 
     if (
       doc.processing_status === DocumentProcessingStatus.CLAUSES_EXTRACTED ||
-      doc.processing_status === DocumentProcessingStatus.FAILED
+      doc.processing_status === DocumentProcessingStatus.FAILED ||
+      doc.processing_status === DocumentProcessingStatus.HUMAN_REVIEW_RECOMMENDED
     ) {
       return doc;
     }
@@ -181,9 +182,30 @@ export class DocumentProcessingService {
       const rawText = textResult?.text || '';
       doc.page_count = textResult?.page_count || 0;
 
+      // Phase 7.25 — persist quality flags from the OCR pipeline.
+      const qualityFlags: string[] = Array.isArray(textResult?.quality_flags)
+        ? (textResult.quality_flags as string[])
+        : [];
+      doc.quality_flags = qualityFlags.length > 0 ? qualityFlags : null;
+
       // Trim cover pages / TOC before saving so both the DB and
       // clause extraction receive the cleaned text.
       doc.extracted_text = this.trimCoverPages(rawText, doc.document_label);
+
+      // Phase 7.25 — if scan quality flags were detected, park the document
+      // in HUMAN_REVIEW_RECOMMENDED instead of advancing to clause extraction.
+      // The partial extracted_text is still saved (may be useful for the user
+      // to preview what was captured).
+      if (qualityFlags.length > 0) {
+        this.logger.warn(
+          `[pollAndAdvance] Poor scan quality detected for document ${doc.id}: [${qualityFlags.join(', ')}]. ` +
+          `Setting status to HUMAN_REVIEW_RECOMMENDED.`,
+        );
+        doc.processing_status = DocumentProcessingStatus.HUMAN_REVIEW_RECOMMENDED;
+        doc.processing_job_id = null;
+        await this.documentUploadRepository.save(doc);
+        return doc;
+      }
 
       doc.processing_status = DocumentProcessingStatus.TEXT_EXTRACTED;
       doc.processing_job_id = null;
@@ -538,6 +560,8 @@ export class DocumentProcessingService {
     doc.processing_status = DocumentProcessingStatus.UPLOADED;
     doc.error_message = null;
     doc.processing_job_id = null;
+    // Phase 7.25 — clear quality flags so a reprocessed document starts fresh.
+    doc.quality_flags = null;
     await this.documentUploadRepository.save(doc);
 
     await this.startTextExtraction(doc);

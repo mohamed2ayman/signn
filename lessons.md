@@ -1,7 +1,7 @@
 # lessons.md — SIGN + MANAGEX Platform
 > This file documents every bug, issue, and fix that took significant time to resolve.
 > Feed this file to Claude at the start of every session to avoid repeating mistakes.
-> Last updated: 2026-06-01 (Lessons #143–#145 — missing @RequirePermission silently disables auth + hand-applied secret-stripping doesn't scale + nest start --watch hot-reload contaminates before/after verification.)
+> Last updated: 2026-06-02 (Lessons #143–#147 — TypeORM auto-appends _enum suffix + audit ALL locales on i18n tasks + missing @RequirePermission silently disables auth + hand-applied secret-stripping doesn't scale + nest start --watch hot-reload contaminates before/after verification.)
 
 ---
 
@@ -5148,7 +5148,96 @@ small AND urgent — schedule it as the next small-PR after Phase 7.17 closes.
 user-mandated trimmed pipeline check that surfaced the bug; lesson #140
 (mock vs. real for external-library wrappers).
 
-## 143. A Missing @RequirePermission Decorator Silently Disables Authorization — "There Is A Guard Stack" Does NOT Mean "The Route Is Authorized"
+---
+
+### Lesson #143 — TypeORM Auto-Appends `_enum` Suffix to PostgreSQL Enum Type Names
+
+**Encountered:** Phase 7.25, migration `1751000000005-AddHumanReviewQualityFlags.ts`
+
+**What happened.** The migration ran `ALTER TYPE document_processing_status ADD VALUE IF NOT EXISTS 'HUMAN_REVIEW_RECOMMENDED'` and failed with:
+
+```
+error: type "document_processing_status" does not exist
+```
+
+The fix was changing the target to `document_processing_status_enum`.
+
+**Root cause.** TypeORM auto-generates the PostgreSQL enum type name by taking the column
+name in `snake_case` and appending `_enum`. So a TypeScript `@Column({ type: 'enum', enum: DocumentProcessingStatus })`
+on a column called `processing_status` produces a PostgreSQL type named
+`document_processing_status_enum` — NOT the bare TypeScript enum name
+`DocumentProcessingStatus` or its snake-cased form `document_processing_status`.
+
+**The pattern:**
+- TypeScript enum name: `DocumentProcessingStatus`
+- Column name (snake_case): `processing_status`
+- PostgreSQL type name: `document_processing_status_enum` ← this is what `ALTER TYPE` must target
+
+**The rule.** Before writing any `ALTER TYPE` migration on a TypeORM-managed enum, verify the
+actual PostgreSQL type name with:
+
+```sql
+SELECT typname FROM pg_type WHERE typname LIKE '%processing_status%';
+-- Returns: document_processing_status_enum
+```
+
+Or from inside a running container:
+```bash
+docker exec sign-postgres psql -U sign_user -d sign_db \
+  -c "SELECT typname FROM pg_type WHERE typname LIKE '%status%';"
+```
+
+**Hard rule.** `ALTER TYPE <bare_enum_name> ADD VALUE` is always wrong for TypeORM-managed
+enums. Always use `ALTER TYPE <snake_case_column_name>_enum ADD VALUE IF NOT EXISTS`.
+The `IF NOT EXISTS` keeps the migration idempotent across fresh and existing databases.
+
+**Reference:** Phase 7.25 migration fix; contrast with Phase 7.3 lesson #109 where the
+wrong enum NAME (`obligations_status_enum` vs `obligation_status`) was the bug — here the
+wrong SUFFIX (missing `_enum`) was the bug. Both are the same class: ALTER TYPE fails
+silently when the target name is wrong unless you remove the error-swallowing `EXCEPTION WHEN`
+anti-pattern (lessons #31, #103).
+
+---
+
+### Lesson #144 — Always Audit ALL Locales When an i18n Task Names One Specific Language
+
+**Encountered:** Phase 7.26, i18n completion audit.
+
+**What happened.** The task was titled "French i18n Completion" — auditing whether French
+was complete. Full investigation of all three locale files revealed:
+- FR was already structurally complete (all EN keys present)
+- EN itself was missing `language.fr` — the key the LanguageToggle reads to label the
+  French option in an English session
+- AR was missing 12 keys across 4 sections (`portal`, `userType`, 4 `nav` keys, `language.fr`)
+
+A task scoped to "French" would have naturally focused only on `fr/common.json`. The real
+bugs were in EN and AR.
+
+**The pattern.** i18n gaps are rarely isolated to the locale the task mentions. Adding a
+feature (e.g. Phase 7.25 scan quality) requires adding keys to all three locales at once.
+When a locale audit is ordered for one language, ALL locales need reading:
+1. The named locale may already be correct
+2. The reference locale (EN) may be missing keys (e.g. `language.fr`)
+3. Other locales may have gaps that context reveals
+
+**Hard rule.** When a task touches any locale file, or when an audit names one locale,
+read all three locale files before drawing any conclusions. The audit target may be the
+least-broken of the three.
+
+**Corollary — adding a new locale option (e.g. Spanish):**
+1. Add the language key to ALL existing locale files in the same commit
+2. Register in `LanguageToggle.tsx`
+3. Add the new locale file itself
+All three changes go in one commit — a partial add leaves the switcher label broken
+in all locales that are missing the new key.
+
+**Reference:** Phase 7.26 Track A investigation; lesson #83 (silent `undefined` from
+missing Vite env vars is the same class — missing config in one place silently breaks
+a different place).
+
+---
+
+### Lesson #145 — A Missing @RequirePermission Decorator Silently Disables Authorization — "There Is A Guard Stack" Does NOT Mean "The Route Is Authorized"
 
 `GET /api/v1/contracts/:id` had `@UseGuards(JwtAuthGuard, RolesGuard,
 PermissionLevelGuard)` at the controller class level but NO
@@ -5185,7 +5274,7 @@ Return 404 NotFoundException (not 403) on out-of-org, matching
 **Defense-in-depth note.** Strip sensitive fields from any nested User
 relation returned by the same query (creator/approver) using the local
 destructure-and-omit pattern from `users.service.ts:364`. The global
-ClassSerializerInterceptor + entity `@Exclude` (lesson #144) backstops this
+ClassSerializerInterceptor + entity `@Exclude` (lesson #146) backstops this
 at the serializer layer, but both fire and both produce the same output;
 the manual strip is preserved as a service-layer floor.
 
@@ -5204,7 +5293,9 @@ verification of the fix — 404 cross-tenant, 200 in-org with zero sensitive
 fields); commit `c632849` (fix(contracts): scope findById by org + strip
 sensitive fields on creator/approver).
 
-## 144. Hand-Applied "Strip Secrets Before Returning" Conventions Do Not Scale And Fail Silently — Use Structural Stripping
+---
+
+### Lesson #146 — Hand-Applied "Strip Secrets Before Returning" Conventions Do Not Scale And Fail Silently — Use Structural Stripping
 
 The codebase had a real, documented in-house convention for stripping
 sensitive User fields before returning: manual destructure-and-omit, e.g.
@@ -5288,7 +5379,9 @@ regression-diff verification); commit `ca37e15` (fix(security): global
 ClassSerializerInterceptor + @Exclude on User sensitive fields; strip
 invitation_token in sanitizeUser).
 
-## 145. `nest start --watch` Hot-Reload Silently Contaminates Before/After Verification — Prove Build Identity Before Trusting A "Before" Capture
+---
+
+### Lesson #147 — `nest start --watch` Hot-Reload Silently Contaminates Before/After Verification — Prove Build Identity Before Trusting A "Before" Capture
 
 During the audit-M verification of the global `ClassSerializerInterceptor`
 fix, the plan was to capture the CURRENTLY-RUNNING container's response

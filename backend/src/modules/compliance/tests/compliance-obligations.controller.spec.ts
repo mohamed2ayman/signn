@@ -1,6 +1,7 @@
 import {
   ConflictException,
   ExecutionContext,
+  ForbiddenException,
   INestApplication,
   NotFoundException,
   UnauthorizedException,
@@ -11,6 +12,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import * as request from 'supertest';
 
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
+import { PermissionLevelGuard } from '../../../common/guards/permission-level.guard';
 import { ComplianceObligationsController } from '../controllers/compliance-obligations.controller';
 import { ComplianceObligationService } from '../services/compliance-obligation.service';
 import { IcalExportService } from '../services/ical-export.service';
@@ -44,6 +46,9 @@ const MOCK_USER: Partial<User> = {
   first_name: 'Project',
   last_name: 'Manager',
   organization_id: ORG_ID,
+  // OWNER_ADMIN bypasses PermissionLevelGuard automatically — all
+  // existing "happy path" tests pass regardless of permission level.
+  role: 'OWNER_ADMIN' as any,
 };
 
 const MOCK_OBLIGATION: Partial<Obligation> = {
@@ -99,12 +104,12 @@ const MOCK_CALENDAR_EVENT = {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Mock guard — passes when Authorization header contains 'valid-token'
+// Mock guards
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Mirrors real JwtAuthGuard behaviour:
 //   - throws UnauthorizedException (→ 401) when token absent/invalid
-//   - populates req.user and returns true when token is valid
+//   - populates req.user (OWNER_ADMIN) and returns true when token is valid
 const mockJwtGuard = {
   canActivate: (ctx: ExecutionContext) => {
     const req = ctx.switchToHttp().getRequest();
@@ -114,6 +119,22 @@ const mockJwtGuard = {
     }
     req.user = MOCK_USER;
     return true;
+  },
+};
+
+// PermissionLevelGuard mock — always passes (OWNER_ADMIN bypasses anyway).
+// Explicitly mocking it ensures the controller wires the guard correctly and
+// the test build does not fail due to missing repo providers.
+const mockPermissionGuard = {
+  canActivate: (_ctx: ExecutionContext) => true,
+};
+
+// Low-permission guard mock — always throws 403.
+// Used in the permission-gating tests to prove that the guard is actually
+// invoked on write endpoints (PATCH, POST assign, DELETE unassign, PUT evidence).
+const mockLowPermGuard = {
+  canActivate: (_ctx: ExecutionContext): never => {
+    throw new ForbiddenException('Insufficient permission level');
   },
 };
 
@@ -166,6 +187,40 @@ async function buildApp(): Promise<INestApplication> {
   })
     .overrideGuard(JwtAuthGuard)
     .useValue(mockJwtGuard)
+    .overrideGuard(PermissionLevelGuard)
+    .useValue(mockPermissionGuard)
+    .compile();
+
+  const app = moduleRef.createNestApplication();
+  app.useGlobalPipes(
+    new ValidationPipe({ whitelist: true, transform: true }),
+  );
+  await app.init();
+  return app;
+}
+
+/**
+ * App factory used exclusively for Phase 7.15 permission-gating tests.
+ * JwtAuthGuard passes (populates req.user); PermissionLevelGuard always
+ * throws 403 — simulates a VIEWER-level project member attempting a
+ * write operation.
+ */
+async function buildLowPermApp(): Promise<INestApplication> {
+  const moduleRef = await Test.createTestingModule({
+    controllers: [ComplianceObligationsController],
+    providers: [
+      { provide: ComplianceObligationService, useValue: mockObligationSvc },
+      { provide: IcalExportService, useValue: mockIcal },
+      {
+        provide: getRepositoryToken(Obligation),
+        useValue: mockObligationRepo,
+      },
+    ],
+  })
+    .overrideGuard(JwtAuthGuard)
+    .useValue(mockJwtGuard)
+    .overrideGuard(PermissionLevelGuard)
+    .useValue(mockLowPermGuard)
     .compile();
 
   const app = moduleRef.createNestApplication();
@@ -802,5 +857,69 @@ describe('ComplianceObligationsController — Phase 7.1 HTTP', () => {
       expect(res.status).toBe(404);
       expect(mockObligationSvc.getReminderLogs).not.toHaveBeenCalled();
     });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 7.15 — PermissionLevelGuard gating tests
+// Proves that write endpoints are wired to PermissionLevelGuard so a
+// low-permission caller (VIEWER) receives 403, not 200.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('ComplianceObligationsController — Phase 7.15 permission gating', () => {
+  let lowPermApp: INestApplication;
+
+  beforeAll(async () => {
+    jest.clearAllMocks();
+    lowPermApp = await buildLowPermApp();
+  });
+
+  afterAll(async () => {
+    await lowPermApp.close();
+  });
+
+  it('PATCH update — returns 403 for insufficient permission', async () => {
+    const res = await request(lowPermApp.getHttpServer())
+      .patch(`/contracts/${CONTRACT_ID}/obligations/${OBLIGATION_ID}`)
+      .set('Authorization', 'Bearer valid-token')
+      .send({ status: 'COMPLETED' });
+
+    expect(res.status).toBe(403);
+  });
+
+  it('POST assign — returns 403 for insufficient permission', async () => {
+    const res = await request(lowPermApp.getHttpServer())
+      .post(`/contracts/${CONTRACT_ID}/obligations/${OBLIGATION_ID}/assign`)
+      .set('Authorization', 'Bearer valid-token')
+      .send({ user_id: ASSIGNEE_USER_ID });
+
+    expect(res.status).toBe(403);
+  });
+
+  it('DELETE unassign — returns 403 for insufficient permission', async () => {
+    const res = await request(lowPermApp.getHttpServer())
+      .delete(
+        `/contracts/${CONTRACT_ID}/obligations/${OBLIGATION_ID}/assign/${ASSIGNEE_USER_ID}`,
+      )
+      .set('Authorization', 'Bearer valid-token');
+
+    expect(res.status).toBe(403);
+  });
+
+  it('PUT evidence — returns 403 for insufficient permission', async () => {
+    const res = await request(lowPermApp.getHttpServer())
+      .put(`/contracts/${CONTRACT_ID}/obligations/${OBLIGATION_ID}/evidence`)
+      .set('Authorization', 'Bearer valid-token')
+      .send({ evidence_url: 'https://storage.sign.com/evidence.pdf' });
+
+    expect(res.status).toBe(403);
+  });
+
+  it('GET list — returns 403 for insufficient permission (VIEWER check)', async () => {
+    const res = await request(lowPermApp.getHttpServer())
+      .get(`/contracts/${CONTRACT_ID}/obligations`)
+      .set('Authorization', 'Bearer valid-token');
+
+    expect(res.status).toBe(403);
   });
 });

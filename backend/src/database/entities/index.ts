@@ -64,3 +64,7 @@ export { BlockedIpAttempt, BlockedIpReason } from './blocked-ip-attempt.entity';
 export { RiskCategoryPlatformDefault } from './risk-category-platform-default.entity';
 export { RiskCategoryOrgLearnedBaseline } from './risk-category-org-learned-baseline.entity';
 export { RiskAnalysisOverrideLog } from './risk-analysis-override-log.entity';
+// ─── Phase 7.24b — Knowledge Asset "Used In" backlinks ────────────────────
+export { KnowledgeAssetUsage } from './knowledge-asset-usage.entity';
+// ─── Phase 7.24d — Knowledge Asset version history ────────────────────────
+export { KnowledgeAssetVersion } from './knowledge-asset-version.entity';

@@ -13,6 +13,16 @@ import type { ObligationPortfolioItem } from '@/services/api/obligationService';
 // store, per lesson #37)
 // ─────────────────────────────────────────────────────────────────
 
+// Mock react-redux — ObligationsPage calls useSelector for currentUser.
+// Returning null is safe (all usages use optional chaining).
+// Avoids the need for a real Redux <Provider> (which pulls in axios →
+// store side-effect chain per lesson #37).
+vi.mock('react-redux', () => ({
+  useSelector: (selector: (s: any) => any) =>
+    selector({ auth: { user: null } }),
+  useDispatch: vi.fn(() => vi.fn()),
+}));
+
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (k: string, opts?: Record<string, unknown>) => {
