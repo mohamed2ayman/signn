@@ -561,6 +561,7 @@
   "language": {
     "en": "English",
     "ar": "Arabic",
+    "fr": "French",
     "toggle": "EN"
   },
   "portfolio": {
@@ -688,6 +689,27 @@
           "generic": "Could not request export. Please try again.",
           "rateLimit": "Too many export requests. Please wait a few minutes before trying again."
         }
+      }
+    }
+  },
+  "document": {
+    "processing": {
+      "queued": "Queued for processing...",
+      "readingDocument": "Reading document...",
+      "preparingClauses": "Document read. Preparing clause extraction...",
+      "extractingClauses": "Extracting clauses with AI...",
+      "complete": "Complete",
+      "failed": "Processing failed",
+      "failedMessage": "An error occurred during processing.",
+      "retry": "Retry Processing",
+      "pagesProcessed": "{{count}} pages processed successfully",
+      "humanReviewRecommended": "Review Recommended — Poor Scan Quality",
+      "reuploadTip": "Remove this document and upload a higher-quality scan for best results.",
+      "continueAnyway": "Continue anyway with partial extraction",
+      "qualityWarning": {
+        "blur": "Blurry scan detected (sharpness score: {{score}}). Text may be misread.",
+        "contrast": "Low contrast detected (contrast score: {{score}}). Text may be faint or washed out.",
+        "rotation": "Page skew detected ({{degrees}}°). Clauses may be extracted in the wrong order."
       }
     }
   }

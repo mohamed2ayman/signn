@@ -36,6 +36,14 @@ class Settings(BaseSettings):
     AWS_REGION: str = "us-east-1"
     AWS_S3_BUCKET: str = ""
 
+    # ── Scan quality detection thresholds (Phase 7.25) ──────────────────────
+    # Laplacian variance below this value signals a blurry scan.
+    BLUR_THRESHOLD: float = 50.0
+    # PIL ImageStat stddev below this value signals a low-contrast scan.
+    CONTRAST_THRESHOLD: float = 20.0
+    # Rotation (degrees) at or above this value signals a skewed scan.
+    ROTATION_THRESHOLD: float = 10.0
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

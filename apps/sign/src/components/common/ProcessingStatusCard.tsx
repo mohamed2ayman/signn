@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { DocumentProcessingStatus } from '@/types';
 import type { DocumentUpload } from '@/types';
 
@@ -6,39 +7,46 @@ interface ProcessingStatusCardProps {
   onRetry?: () => void;
 }
 
+// ─── Stage config — exhaustive Record so TypeScript enforces all statuses ───
+
 const STAGE_CONFIG: Record<
   DocumentProcessingStatus,
   { label: string; progress: number; color: string }
 > = {
   [DocumentProcessingStatus.UPLOADED]: {
-    label: 'Queued for processing...',
+    label: 'document.processing.queued',
     progress: 10,
     color: 'bg-gray-400',
   },
   [DocumentProcessingStatus.EXTRACTING_TEXT]: {
-    label: 'Reading document...',
+    label: 'document.processing.readingDocument',
     progress: 30,
     color: 'bg-blue-500',
   },
   [DocumentProcessingStatus.TEXT_EXTRACTED]: {
-    label: 'Document read. Preparing clause extraction...',
+    label: 'document.processing.preparingClauses',
     progress: 50,
     color: 'bg-blue-500',
   },
   [DocumentProcessingStatus.EXTRACTING_CLAUSES]: {
-    label: 'Extracting clauses with AI...',
+    label: 'document.processing.extractingClauses',
     progress: 70,
     color: 'bg-primary',
   },
   [DocumentProcessingStatus.CLAUSES_EXTRACTED]: {
-    label: 'Complete',
+    label: 'document.processing.complete',
     progress: 100,
     color: 'bg-green-500',
   },
   [DocumentProcessingStatus.FAILED]: {
-    label: 'Processing failed',
+    label: 'document.processing.failed',
     progress: 0,
     color: 'bg-red-500',
+  },
+  [DocumentProcessingStatus.HUMAN_REVIEW_RECOMMENDED]: {
+    label: 'document.processing.humanReviewRecommended',
+    progress: 40,
+    color: 'bg-amber-500',
   },
 };
 
@@ -48,6 +56,39 @@ const STAGES_ORDER: DocumentProcessingStatus[] = [
   DocumentProcessingStatus.EXTRACTING_CLAUSES,
   DocumentProcessingStatus.CLAUSES_EXTRACTED,
 ];
+
+// ─── Quality flag parser ───────────────────────────────────────────────────
+
+/**
+ * Parse a raw quality flag string (e.g. "blur:32.1") into a human-readable
+ * i18n key and the measured value. Returns null for unrecognised flag shapes.
+ */
+function parseQualityFlag(
+  flag: string,
+  t: (key: string, opts?: Record<string, unknown>) => string,
+): string | null {
+  const [type, value] = flag.split(':');
+  if (!type) return null;
+  const num = value !== undefined ? parseFloat(value) : null;
+  switch (type) {
+    case 'blur':
+      return t('document.processing.qualityWarning.blur', {
+        score: num !== null ? num.toFixed(1) : '?',
+      });
+    case 'contrast':
+      return t('document.processing.qualityWarning.contrast', {
+        score: num !== null ? num.toFixed(1) : '?',
+      });
+    case 'rotation':
+      return t('document.processing.qualityWarning.rotation', {
+        degrees: num !== null ? Math.round(num) : '?',
+      });
+    default:
+      return flag;
+  }
+}
+
+// ─── File type label ──────────────────────────────────────────────────────
 
 function getFileTypeLabel(mimeType: string | null): string {
   if (!mimeType) return 'FILE';
@@ -62,14 +103,25 @@ function getFileTypeLabel(mimeType: string | null): string {
   return 'FILE';
 }
 
+// ─── Component ───────────────────────────────────────────────────────────────
+
 export default function ProcessingStatusCard({
   document,
   onRetry,
 }: ProcessingStatusCardProps) {
+  const { t } = useTranslation();
   const config = STAGE_CONFIG[document.processing_status];
   const isFailed = document.processing_status === DocumentProcessingStatus.FAILED;
   const isComplete =
     document.processing_status === DocumentProcessingStatus.CLAUSES_EXTRACTED;
+  const isHumanReview =
+    document.processing_status === DocumentProcessingStatus.HUMAN_REVIEW_RECOMMENDED;
+
+  // Compute which stage dot to highlight for HUMAN_REVIEW_RECOMMENDED.
+  // It branches off during EXTRACTING_TEXT, so we show the second dot as current.
+  const effectiveStatusForDots = isHumanReview
+    ? DocumentProcessingStatus.EXTRACTING_TEXT
+    : document.processing_status;
 
   return (
     <div
@@ -78,7 +130,9 @@ export default function ProcessingStatusCard({
           ? 'border-red-200 bg-red-50'
           : isComplete
             ? 'border-green-200 bg-green-50'
-            : 'border-gray-200 bg-white'
+            : isHumanReview
+              ? 'border-amber-200 bg-amber-50'
+              : 'border-gray-200 bg-white'
       }`}
     >
       {/* Header */}
@@ -90,7 +144,9 @@ export default function ProcessingStatusCard({
                 ? 'bg-red-100 text-red-600'
                 : isComplete
                   ? 'bg-green-100 text-green-600'
-                  : 'bg-primary/10 text-primary'
+                  : isHumanReview
+                    ? 'bg-amber-100 text-amber-600'
+                    : 'bg-primary/10 text-primary'
             }`}
           >
             {getFileTypeLabel(document.mime_type)}
@@ -120,13 +176,31 @@ export default function ProcessingStatusCard({
             />
           </svg>
         )}
+
+        {isHumanReview && (
+          <svg
+            className="h-6 w-6 text-amber-500"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"
+            />
+          </svg>
+        )}
       </div>
 
-      {/* Progress Bar */}
+      {/* Progress Bar — shown while in-progress or in human-review */}
       {!isComplete && !isFailed && (
         <div className="mt-3">
           <div className="flex items-center justify-between text-xs">
-            <span className="text-gray-500">{config.label}</span>
+            <span className={isHumanReview ? 'text-amber-700' : 'text-gray-500'}>
+              {t(config.label)}
+            </span>
             <span className="font-medium text-gray-700">{config.progress}%</span>
           </div>
           <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
@@ -138,11 +212,11 @@ export default function ProcessingStatusCard({
         </div>
       )}
 
-      {/* Stages */}
+      {/* Stage dots — shown for non-failed states */}
       {!isFailed && (
         <div className="mt-3 flex items-center gap-1">
           {STAGES_ORDER.map((stage, i) => {
-            const currentIdx = STAGES_ORDER.indexOf(document.processing_status);
+            const currentIdx = STAGES_ORDER.indexOf(effectiveStatusForDots);
             const stageIdx = i;
             const isPast = stageIdx < currentIdx || isComplete;
             const isCurrent = stageIdx === currentIdx && !isComplete;
@@ -154,7 +228,9 @@ export default function ProcessingStatusCard({
                     isPast
                       ? 'bg-green-500'
                       : isCurrent
-                        ? 'animate-pulse bg-primary'
+                        ? isHumanReview
+                          ? 'bg-amber-500'
+                          : 'animate-pulse bg-primary'
                         : 'bg-gray-200'
                   }`}
                 />
@@ -173,7 +249,7 @@ export default function ProcessingStatusCard({
       {isFailed && (
         <div className="mt-3">
           <p className="text-xs text-red-600">
-            {document.error_message || 'An error occurred during processing.'}
+            {document.error_message || t('document.processing.failedMessage')}
           </p>
           {onRetry && (
             <button
@@ -181,7 +257,43 @@ export default function ProcessingStatusCard({
               onClick={onRetry}
               className="mt-2 text-xs font-medium text-primary hover:text-primary/80"
             >
-              Retry Processing
+              {t('document.processing.retry')}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Human Review Recommended State — quality flags + actions */}
+      {isHumanReview && (
+        <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+          {/* Quality signals */}
+          {document.quality_flags && document.quality_flags.length > 0 && (
+            <ul className="mb-2 space-y-1">
+              {document.quality_flags.map((flag, idx) => {
+                const msg = parseQualityFlag(flag, t);
+                return msg ? (
+                  <li key={idx} className="flex items-start gap-1.5 text-xs text-amber-800">
+                    <span className="mt-0.5 text-amber-500">•</span>
+                    <span dir="auto">{msg}</span>
+                  </li>
+                ) : null;
+              })}
+            </ul>
+          )}
+
+          {/* Re-upload tip */}
+          <p className="text-xs text-amber-700">
+            {t('document.processing.reuploadTip')}
+          </p>
+
+          {/* Continue anyway button */}
+          {onRetry && (
+            <button
+              type="button"
+              onClick={onRetry}
+              className="mt-2 text-xs font-medium text-amber-700 underline hover:text-amber-900"
+            >
+              {t('document.processing.continueAnyway')}
             </button>
           )}
         </div>
@@ -190,7 +302,7 @@ export default function ProcessingStatusCard({
       {/* Complete State */}
       {isComplete && document.page_count && (
         <p className="mt-2 text-xs text-green-700">
-          {document.page_count} pages processed successfully
+          {t('document.processing.pagesProcessed', { count: document.page_count })}
         </p>
       )}
     </div>
