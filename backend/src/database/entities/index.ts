@@ -1,5 +1,5 @@
 export { Organization } from './organization.entity';
-export { User, UserRole, JobTitle, PermissionLevel, JOB_TITLE_DEFAULT_PERMISSION } from './user.entity';
+export { User, UserRole, AccountType, JobTitle, PermissionLevel, JOB_TITLE_DEFAULT_PERMISSION } from './user.entity';
 export { SubscriptionPlan } from './subscription-plan.entity';
 export { OrganizationSubscription, SubscriptionStatus } from './organization-subscription.entity';
 export { Project } from './project.entity';
@@ -68,3 +68,7 @@ export { RiskAnalysisOverrideLog } from './risk-analysis-override-log.entity';
 export { KnowledgeAssetUsage } from './knowledge-asset-usage.entity';
 // ─── Phase 7.24d — Knowledge Asset version history ────────────────────────
 export { KnowledgeAssetVersion } from './knowledge-asset-version.entity';
+// ─── Phase 7.18 — Bucket 1a: Guest Portal authorization spine ─────────────
+export { GuestContractAccess } from './guest-contract-access.entity';
+// ─── Phase 7.18 — Bucket 1b-i: Guest invitation + pre-password viewer ─────
+export { GuestInvitation, GuestInvitationStatus } from './guest-invitation.entity';

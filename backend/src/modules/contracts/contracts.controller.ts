@@ -20,6 +20,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { OrganizationId } from '../../common/decorators/organization.decorator';
 import { UserRole, PermissionLevel } from '../../database/entities';
 import { ContractsService } from './contracts.service';
+import { ContractAccessService } from './services/contract-access.service';
 import {
   CreateContractDto,
   UpdateContractDto,
@@ -38,7 +39,10 @@ import { UpdateCommentContentDto } from './dto/update-comment-content.dto';
 @Controller('contracts')
 @UseGuards(JwtAuthGuard, RolesGuard, PermissionLevelGuard)
 export class ContractsController {
-  constructor(private readonly contractsService: ContractsService) {}
+  constructor(
+    private readonly contractsService: ContractsService,
+    private readonly contractAccess: ContractAccessService,
+  ) {}
 
   // ─── Contract CRUD ─────────────────────────────────────────
 
@@ -60,9 +64,19 @@ export class ContractsController {
   @Get(':id')
   async findById(
     @Param('id', ParseUUIDPipe) id: string,
-    @OrganizationId() orgId: string,
+    @CurrentUser() user: any,
   ) {
-    return this.contractsService.findById(id, orgId);
+    // Phase 7.18 bucket 1a — route through the shared authority so that
+    // guest callers are evaluated against the guest_contract_access table
+    // instead of the managing-user org-scope. Managing callers still get
+    // PR #42's tenancy behaviour byte-for-byte (same query, same 404
+    // semantics).
+    return this.contractAccess.findAccessibleContract(id, {
+      id: user.id,
+      organization_id: user.organization_id ?? null,
+      role: user.role,
+      account_type: user.account_type,
+    });
   }
 
   @Post()

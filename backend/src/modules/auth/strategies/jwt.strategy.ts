@@ -68,6 +68,10 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
       role: user.role,
       job_title: user.job_title,
       organization_id: user.organization_id,
+      // Phase 7.18 bucket 1a — surfaces account_type so the contract-access
+      // authority can branch on it. Defaults to MANAGING (entity default)
+      // for all existing users.
+      account_type: user.account_type,
     };
   }
 }
