@@ -90,6 +90,44 @@ export class AuthService {
     private readonly tokenBlacklist: TokenBlacklistService,
   ) {}
 
+  /**
+   * Phase 7.18 bucket 1b-ii — issue a JWT pair for a freshly-minted
+   * guest-user identity, routing through the SAME generateTokens +
+   * _finalizeLogin machinery that login / register / acceptInvitation
+   * use. The caller is responsible for having persisted the user row
+   * BEFORE this method runs (typically inside its own transaction —
+   * this call must happen AFTER commit so a session-tracking blip
+   * doesn't roll back the identity transition).
+   *
+   * Returns the standard `{ user, access_token, refresh_token }` shape.
+   * Does NOT depend on the user having an organization_id (guest users
+   * have null org — _finalizeLogin already null-coerces that field).
+   */
+  async issueGuestSession(
+    user: User,
+    ctx: { ip?: string | null; user_agent?: string | null } = {},
+  ): Promise<{
+    user: any;
+    access_token: string;
+    refresh_token: string;
+  }> {
+    const tokens = await this.generateTokens(user);
+    await this._finalizeLogin({
+      user,
+      refreshToken: tokens.refresh_token,
+      ip: ctx.ip ?? null,
+      userAgent: ctx.user_agent ?? null,
+      family_id: tokens.family_id,
+      parent_token_hash: null,
+      accessJti: tokens.jti,
+    });
+    return {
+      user: this.sanitizeUser(user),
+      access_token: tokens.access_token,
+      refresh_token: tokens.refresh_token,
+    };
+  }
+
   // ─── Phase 3.3: post-login session + suspicious detection ─────
 
   /**

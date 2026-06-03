@@ -73,6 +73,33 @@ export enum UserRole {
   CONTRACTOR_CREATOR = 'CONTRACTOR_CREATOR',
   CONTRACTOR_REVIEWER = 'CONTRACTOR_REVIEWER',
   CONTRACTOR_TENDERING = 'CONTRACTOR_TENDERING',
+  /**
+   * Phase 7.18 — Guest Portal.
+   * Restricted, lightweight role used by external counterparties invited
+   * to a SPECIFIC contract. Hard-walled at the data layer via the
+   * guest_contract_access table — see ContractAccessService.
+   */
+  GUEST = 'GUEST',
+}
+
+/**
+ * Phase 7.18 — orthogonal "what kind of account" dimension.
+ *
+ * Distinct from UserRole (which describes capabilities). A user is one of:
+ *   MANAGING — full account belonging to a paying client org (the default).
+ *   GUEST    — lightweight restricted user row created via a guest
+ *              invitation; hard-walled to the invited contract(s).
+ *   FREE     — placeholder for the planned free/freemium tier (bucket 1
+ *              of the 7.18 build does not use this; reserved so the column
+ *              is forward-compatible without another migration).
+ *
+ * Existing users are backfilled to MANAGING. New normal registrations
+ * default to MANAGING so behaviour is unchanged.
+ */
+export enum AccountType {
+  MANAGING = 'MANAGING',
+  GUEST = 'GUEST',
+  FREE = 'FREE',
 }
 
 export enum JobTitle {
@@ -156,6 +183,14 @@ export class User {
 
   @Column({ type: 'enum', enum: UserRole })
   role: UserRole;
+
+  /**
+   * Phase 7.18 — account-type dimension (separate from UserRole).
+   * Defaults to MANAGING so all existing/new normal users retain
+   * today's behaviour without any code path change.
+   */
+  @Column({ type: 'enum', enum: AccountType, default: AccountType.MANAGING })
+  account_type: AccountType;
 
   @Column({ type: 'varchar', length: 100, nullable: true })
   job_title: string | null;

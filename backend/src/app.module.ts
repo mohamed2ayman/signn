@@ -13,6 +13,7 @@ import { OrganizationsModule } from './modules/organizations/organizations.modul
 import { ProjectsModule } from './modules/projects/projects.module';
 import { ProjectPartiesModule } from './modules/project-parties/project-parties.module';
 import { ContractsModule } from './modules/contracts/contracts.module';
+import { GuestPortalModule } from './modules/guest-portal/guest-portal.module';
 import { ClausesModule } from './modules/clauses/clauses.module';
 import { KnowledgeAssetsModule } from './modules/knowledge-assets/knowledge-assets.module';
 import { RiskAnalysisModule } from './modules/risk-analysis/risk-analysis.module';
@@ -140,6 +141,27 @@ import { dataSourceOptions } from './config/data-source';
         // min(32) is the strict floor — never lower.
         PORTFOLIO_EXPORT_DOWNLOAD_SECRET: Joi.string().min(32).required(),
 
+        // ── Guest Portal (Phase 7.18 bucket 1b-i) ─────────────────
+        // HMAC secret for the LONG-LIVED guest-invitation token (emailed).
+        // The exchange endpoint (POST /public/guest-invitations/exchange)
+        // has NO JWT layer behind it — this secret is the entire security
+        // floor for that endpoint. min(32) is the strict floor.
+        GUEST_INVITE_SECRET: Joi.string().min(32).required(),
+        // HMAC secret for the SHORT-LIVED viewer credential issued at
+        // exchange time. Carried as an Authorization: Viewer <token>
+        // bearer on the recipient's contract reads — bound to ONE
+        // contract_id, NO write capability. Distinct from GUEST_INVITE_SECRET
+        // so a compromise of one does not bridge to the other.
+        GUEST_VIEWER_SECRET: Joi.string().min(32).required(),
+        // Invitation token lifetime (days) — ops-configurable per spec
+        // decision 3. Default 30 days. min 1, max 365 (defensive bounds;
+        // anything outside that range is almost certainly an error).
+        GUEST_INVITE_TTL_DAYS: Joi.number().integer().min(1).max(365).default(30),
+        // Viewer credential lifetime (minutes). Short by design — the
+        // viewer is the pre-password read credential, not a session.
+        // Default 15 minutes. min 1, max 240.
+        GUEST_VIEWER_TTL_MINUTES: Joi.number().integer().min(1).max(240).default(15),
+
         // ── Seed passwords (only required when running seed scripts, not on app start)
         SEED_ADMIN_PASSWORD_1: Joi.string().min(12).optional(),
         SEED_ADMIN_PASSWORD_2: Joi.string().min(12).optional(),
@@ -199,6 +221,14 @@ import { dataSourceOptions } from './config/data-source';
           // flaky moment doesn't hit the limit on legitimate use.
           // Abuse vector: compromised OWNER_ADMIN exfiltration / queue DoS.
           { name: 'portfolio_export', ttl: 900_000, limit: 5  },
+          // Phase 7.18 bucket 1b-i — abuse mitigation on the PUBLIC
+          // invitation-token exchange (no JWT, signed-token-only auth).
+          // Legitimate user redeems an invitation ≤ 1× per device per
+          // landing; 10/15min lets a flaky network re-try while still
+          // killing token-spray. The HMAC-before-DB ordering in
+          // InvitationTokenService.verify is the primary defense; the
+          // throttle is a secondary cap on the public surface.
+          { name: 'guest_invite_exchange', ttl: 900_000, limit: 10 },
         ],
       }),
     }),
@@ -209,6 +239,7 @@ import { dataSourceOptions } from './config/data-source';
     ProjectsModule,
     ProjectPartiesModule,
     ContractsModule,
+    GuestPortalModule,
     ClausesModule,
     KnowledgeAssetsModule,
     RiskAnalysisModule,

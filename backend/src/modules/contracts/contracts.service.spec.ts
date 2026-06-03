@@ -11,10 +11,12 @@ import {
   ContractorResponse,
   User,
   ContractApprover,
+  GuestContractAccess,
 } from '../../database/entities';
 import { CollaborationGateway } from '../collaboration/collaboration.gateway';
 import { ContractTemplatesService } from '../contract-templates/contract-templates.service';
 import { EmailService } from '../notifications/email.service';
+import { ContractAccessService } from './services/contract-access.service';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
@@ -137,6 +139,15 @@ const mockEmailService = {
   sendContractApprovalRequest: jest.fn().mockResolvedValue(undefined),
 };
 
+// Phase 7.18 bucket 1a — ContractsService now depends on ContractAccessService,
+// whose findInOrg call backs onto the contractRepository.createQueryBuilder
+// mock. Provide a real ContractAccessService instance over the same mocks
+// so existing findById assertions on mockQb.andWhere still exercise the
+// path that runs in production.
+const mockGuestContractAccessRepository = {
+  findOne: jest.fn().mockResolvedValue(null),
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Test suite
 // ─────────────────────────────────────────────────────────────────────────────
@@ -171,6 +182,11 @@ describe('ContractsService', () => {
         { provide: CollaborationGateway,                   useValue: mockCollaborationGateway },
         { provide: ContractTemplatesService,               useValue: mockContractTemplatesService },
         { provide: EmailService,                           useValue: mockEmailService },
+        { provide: getRepositoryToken(GuestContractAccess), useValue: mockGuestContractAccessRepository },
+        // Real ContractAccessService — exercises the actual extracted code
+        // path. Its dependencies (contractRepository, guestAccessRepository)
+        // come from the providers above.
+        ContractAccessService,
       ],
     }).compile();
 

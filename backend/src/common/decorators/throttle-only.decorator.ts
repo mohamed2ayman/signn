@@ -19,6 +19,8 @@ export const THROTTLER_NAMES = [
   'invitation',
   'waitlist',
   'portfolio_export',
+  // Phase 7.18 bucket 1b-i — public guest-invitation exchange endpoint.
+  'guest_invite_exchange',
 ] as const;
 
 export type ThrottlerName = (typeof THROTTLER_NAMES)[number];

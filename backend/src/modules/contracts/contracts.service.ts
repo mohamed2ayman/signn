@@ -33,6 +33,7 @@ import { assertValueCurrencyPaired } from './utils/value-currency.util';
 import { CollaborationGateway } from '../collaboration/collaboration.gateway';
 import { ContractTemplatesService, isStandardForm, getLicenseOrg } from '../contract-templates/contract-templates.service';
 import { EmailService } from '../notifications/email.service';
+import { ContractAccessService } from './services/contract-access.service';
 
 @Injectable()
 export class ContractsService {
@@ -56,6 +57,7 @@ export class ContractsService {
     private readonly collaborationGateway: CollaborationGateway,
     private readonly contractTemplatesService: ContractTemplatesService,
     private readonly emailService: EmailService,
+    private readonly contractAccess: ContractAccessService,
   ) {}
 
   // ─── Contract CRUD ─────────────────────────────────────────
@@ -94,62 +96,23 @@ export class ContractsService {
     return qb.getMany();
   }
 
+  /**
+   * Org-scoped contract read. Used by both the public @Get(':id') endpoint
+   * (for managing callers) and internal mutation paths (update, delete,
+   * etc.) where the caller has already been authorized.
+   *
+   * The actual query lives in ContractAccessService — the single authority
+   * for "can THIS caller access THIS contract?" introduced in Phase 7.18
+   * bucket 1a. PR #42's tenancy fix is preserved byte-for-byte; this
+   * method is now a thin delegation.
+   *
+   * GUEST callers MUST route through
+   * ContractAccessService.findAccessibleContract directly — they don't
+   * have an org, and this method would 404 them. The contracts controller
+   * does that branching.
+   */
   async findById(id: string, orgId: string): Promise<Contract> {
-    // Tenancy scope: contract → project → project.organization_id must match
-    // the caller's org. Mirrors the same-file pattern at line 1126 in
-    // getPendingApprovalsForUser (`.andWhere('project.organization_id = :orgId')`).
-    // Out-of-org contracts return 404 (NotFoundException) — never 403 — so
-    // existence is not leaked, matching negotiation.service.ts assertContractInOrg.
-    const contract = await this.contractRepository
-      .createQueryBuilder('contract')
-      .leftJoinAndSelect('contract.creator', 'creator')
-      .leftJoinAndSelect('contract.approver', 'approver')
-      .leftJoinAndSelect('contract.project', 'project')
-      .leftJoinAndSelect('contract.contract_clauses', 'contract_clauses')
-      .leftJoinAndSelect('contract_clauses.clause', 'clause')
-      .where('contract.id = :id', { id })
-      .andWhere('project.organization_id = :orgId', { orgId })
-      .getOne();
-
-    if (!contract) {
-      throw new NotFoundException('Contract not found');
-    }
-
-    // Sort clauses by order_index
-    if (contract.contract_clauses) {
-      contract.contract_clauses.sort((a, b) => a.order_index - b.order_index);
-    }
-
-    // Strip sensitive fields from nested User relations. Mirrors the
-    // destructure-and-omit pattern at users.service.ts:364 and
-    // admin-security/controllers/profile.controller.ts:51 — same field set
-    // (password_hash, mfa_secret, mfa_totp_secret, mfa_recovery_codes,
-    // invitation_token). There is no ClassSerializerInterceptor in the
-    // pipeline, so @Exclude() would be inert; this is the in-house convention.
-    if (contract.creator) {
-      const {
-        password_hash: _ph,
-        mfa_secret: _ms,
-        mfa_totp_secret: _mt,
-        mfa_recovery_codes: _mr,
-        invitation_token: _it,
-        ...safe
-      } = contract.creator as any;
-      contract.creator = safe;
-    }
-    if (contract.approver) {
-      const {
-        password_hash: _ph,
-        mfa_secret: _ms,
-        mfa_totp_secret: _mt,
-        mfa_recovery_codes: _mr,
-        invitation_token: _it,
-        ...safe
-      } = contract.approver as any;
-      contract.approver = safe;
-    }
-
-    return contract;
+    return this.contractAccess.findInOrg(id, orgId);
   }
 
   async create(
