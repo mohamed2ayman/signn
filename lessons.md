@@ -1,7 +1,7 @@
 # lessons.md — SIGN + MANAGEX Platform
 > This file documents every bug, issue, and fix that took significant time to resolve.
 > Feed this file to Claude at the start of every session to avoid repeating mistakes.
-> Last updated: 2026-06-02 (Lessons #143–#147 — TypeORM auto-appends _enum suffix + audit ALL locales on i18n tasks + missing @RequirePermission silently disables auth + hand-applied secret-stripping doesn't scale + nest start --watch hot-reload contaminates before/after verification.)
+> Last updated: 2026-06-04 (Lessons #148–#150 — engine-earned by the Phase 7.18 metering primitive (commit `dc31bb6`): TypeORM 0.3 `manager.query()` returns `[rows, rowCount]` for UPDATE+RETURNING and the affected-count read must route through a normalising helper (NEVER hand-index `result[1]`); read-then-write status transitions double-refund under concurrent commit/release on the same row; existence-check-then-insert is racy for idempotency and the insert-first / ON CONFLICT DO NOTHING shape is the fix. Real-Postgres race tests in `backend/src/modules/metering/tests/`. Prior #143–#147 (2026-06-02) — TypeORM auto-appends _enum suffix + audit ALL locales on i18n tasks + missing @RequirePermission silently disables auth + hand-applied secret-stripping doesn't scale + nest start --watch hot-reload contaminates before/after verification.)
 
 ---
 
@@ -5441,3 +5441,312 @@ historical-baseline substitution); docker logs `File change detected`
 trail at 18:38:50–18:40:21 PM matching the four source-edit mtimes; the
 historical pre-fix response body at the section-K tool-results path;
 lesson #138 (`nest start --watch` can silently STOP hot-restarting).
+
+---
+
+### Lesson #148 — TypeORM 0.3 `manager.query()` for UPDATE/DELETE with RETURNING returns `[rows, rowCount]` — route every affected-count read through a normalising helper, NEVER hand-index `result[1]`
+
+**Encountered:** Phase 7.18, metering engine reserve() under the first
+concurrent-race test (`metering-race.spec.ts` "enforces capacity under N=20
+concurrent reserves with M=5 (no oversell)").
+
+**Observed (failing test).** The first run of the N=20 / M=5 race test under
+the original reserve() code returned `fulfilled.length === 20` (expected 5) —
+every reservation went through, `consumed` reached 20, no oversell rejection
+ever fired. The capacity gate was a dead branch. This is the real,
+reproduced bug that motivated the lesson.
+
+**What happened.** The metering reserve path was guarding capacity via
+
+```ts
+const updateResult = await manager.query(
+  `UPDATE metering_balance SET consumed = consumed + $1
+   WHERE ... AND consumed + $1 <= $5
+   RETURNING consumed`, [...]);
+
+if (!Array.isArray(updateResult) || updateResult.length === 0) {
+  throw new MeterLimitExceededError(...);
+}
+```
+
+The check `updateResult.length === 0` was reading the OUTER tuple length —
+always 2 regardless of how many rows were affected.
+
+**Root cause.** TypeORM 0.3 with the Postgres driver returns UPDATE/DELETE
+with RETURNING as a **two-tuple `[rows, rowCount]`** — NOT a flat rows
+array. Verified empirically:
+
+```
+UPDATE ... RETURNING (affected=1):  [[{"n":1}], 1]   isArr=true len=2
+UPDATE ... RETURNING (affected=0):  [[],         0]   isArr=true len=2
+```
+
+Engine-empirical extension (probed 2026-06-04 against TypeORM 0.3.19 + pg):
+UPDATE WITHOUT RETURNING in the same driver path **also** returns
+`[[], rowCount]` — confirmed under affected=2 and affected=0. So in this
+project's pinned TypeORM 0.3.19 the shape is consistent between
+with-RETURNING and without-RETURNING. **But that consistency is not a
+contract we should hand-couple to** — see the hard rule below.
+
+**Fix.** Read the count through a private helper on `MeteringService`,
+extracted exactly so the result-shape wart is centralised:
+
+```ts
+private readAffectedCount(raw: unknown): number {
+  if (Array.isArray(raw) && typeof raw[1] === 'number') {
+    return raw[1];                       // [rows, rowCount] tuple
+  }
+  if (Array.isArray(raw)) {
+    return raw.length;                   // defensive fallback
+  }
+  if (typeof raw === 'number') return raw; // bare-number fallback
+  return 0;
+}
+```
+
+Engine uses `this.readAffectedCount(updateRaw)` everywhere a gate decision
+depends on affected rows. The companion `readReturningRows()` normalises
+the rows-shape for callers that need both pieces (release()'s refund needs
+the row data from the same UPDATE).
+
+**Hard rule — never violate.** NEVER hand-index `updateResult[1]` or
+`updateResult.length` at the call site. Route every affected-count read
+through `readAffectedCount()` (or an equivalent helper that handles the
+same variants). The `result.length === 0` pattern on TypeORM 0.3 UPDATE/DELETE
+results is ALWAYS wrong — it reads the OUTER tuple length, never the
+inner count. The "always read `result[1]`" pattern is ALSO wrong as a
+general rule: it works for the empirically-confirmed shape today, but
+locks the call site to TypeORM 0.3.x's pg-driver behaviour at every site
+rather than at one. A future TypeORM bump or a switch to a different
+driver path can change the shape; a single helper localises the change.
+SELECT statements return a flat rows array and SELECT result handling is
+unaffected (and the helper is not for SELECT-result-count anyway —
+different semantics).
+
+**How it was caught.** The very first run of the Phase 7.18 race test
+failed loudly. The bug was invisible to unit tests of `reserve()` (every
+individual reserve looked correct) and only surfaced under real-Postgres
+concurrent contention with a non-trivial expected count. This is why
+lessons #134/#135's "real-data, real-concurrency" posture applies to
+the engine layer too — mock tests would have shipped this bug.
+
+**Follow-up note (NOT a Part 1 fix — flag only).** The in-code comment
+inside `readAffectedCount()` says "Without RETURNING, some TypeORM paths
+return just the rows array." The 2026-06-04 probe found that in this
+project's pinned 0.3.19 + pg, both with-RETURNING and without-RETURNING
+return the same `[rows, rowCount]` tuple — the comment slightly overstates
+the variability. The helper's Branch 2 (the `raw.length` fallback) is
+therefore dead code for UPDATE/DELETE/INSERT in this version; it stays as
+paranoia. Engine behaviour is correct. The comment can be tightened in a
+future doc-only pass.
+
+**Reference:** `backend/src/modules/metering/services/metering.service.ts`
+`readAffectedCount()` / `readReturningRows()` helpers; engine commit
+`dc31bb6` ships with the fix. Test that locks the gate:
+`metering-race.spec.ts` — "enforces capacity under N=50 concurrent reserves
+with M=5 (no oversell)".
+
+---
+
+### Lesson #149 — Read-then-write status transitions are racy under concurrent peers on the same row; use a single status-guarded conditional UPDATE with the side effect gated on `affected = 1`
+
+**Encountered:** Phase 7.18 metering engine, hardening pass for
+commit/release/sweeper concurrency (Part 1.5).
+
+**Observed (failing tests).** The hardening-pass tests
+`metering-race.spec.ts` — "concurrent commit + release on the same
+reservation: exactly one applies, state consistent" and "concurrent
+double-release on the same reservation: refund happens exactly once" —
+were written to lock the FIXED behaviour. They were authored together
+with the fix in Part 1.5; they were NOT first run against the unfixed
+read-then-write code. The fix and the proof landed in the same pass.
+
+**Reasoned worst cases (not separately reproduced by a failing test
+against the unfixed code).** The original read-then-write code shape was
+
+```ts
+const row = await manager.getRepository(MeteringLedger).findOne({...});
+if (row.status === RELEASED) return;
+if (row.status === COMMITTED) throw ...;
+// ... mutate row.status, run balance refund, save(row)
+```
+
+By reading the code's structure: under `Promise.all([release(X), release(X)])`
+against the same reservation, both transactions would:
+1. `findOne` returns `status = 'reserved'` (each transaction's snapshot
+   was taken before the other committed).
+2. Both pass the in-TypeScript `if (RELEASED) return` early-out.
+3. Both run the balance refund — capacity refunded TWICE for a single
+   reserve.
+4. Both run `save(row)` setting `status = 'released'`. Last write wins;
+   the row ends `released`. But `consumed` is now under-counted by
+   `amount`.
+
+The `GREATEST(consumed - amount, 0)` clamp at the DDL layer would have hid
+the symptom — the balance never goes negative — making the failure mode
+silent under-counting, not a CHECK violation. Same shape failed under
+`Promise.all([commit(X), release(X)])` — both reads see `'reserved'`,
+both decide their transition is legitimate, the row ends in the
+last-writer's status while the refund has ALREADY run; a row could end
+`committed` with capacity ALSO refunded — **capacity sold twice**.
+
+The double-refund and the capacity-sold-twice modes are RECONSTRUCTED
+worst cases from reading the race-prone code, not reproduced by a failing
+pre-fix test. The fix is still correct; the lesson exists because the
+class of bug is real and the discipline below prevents it.
+
+**Root cause (reasoned).** The status check and the status flip were two
+separate statements with no transactional barrier between them — the
+`save(row)` was an unconditional `UPDATE metering_ledger SET status=...
+WHERE id=...` with NO `AND status = 'reserved'` predicate. Postgres
+row-level locking serialised the SAVE itself, but did NOT gate the BRANCH
+DECISION that preceded it. Each transaction's in-TypeScript branch
+decision was made against a stale snapshot.
+
+**Fix.** Replace the three-step (read → branch in TS → write) shape with
+a single status-guarded conditional UPDATE:
+
+```sql
+UPDATE metering_ledger
+SET    status = 'released', released_at = NOW()
+WHERE  reservation_id = $1 AND status = 'reserved'
+RETURNING amount, subject_ref, meter_key, window_key;
+```
+
+The affected-row count is the gate. Affected = 1 → THIS call won the
+race; run the refund using values from `RETURNING`. Affected = 0 → a peer
+(release, commit, or sweeper) got there first; return
+`{applied: false, status: <current>}` reporting the row's current state,
+do NOT refund. Refund is at-most-once across any number of concurrent
+commit / release / sweeper callers on the same reservation.
+
+The return type changed from `Promise<void>` to `Promise<TransitionResult>`
+(`{applied: boolean, status: MeterLedgerStatus | 'missing'}`) so callers
+can audit-log "someone else got there first" without it being thrown as
+an exception (the swept-then-late-commit case is routine under realistic
+concurrency, not a fatal).
+
+**Hard rule — never violate.** Status-transition methods on a row that
+can be touched concurrently MUST use a single conditional UPDATE keyed on
+the current status, with the side effect (refund / charge / external call)
+gated on `affected = 1` from `RETURNING`. The "read row → branch on
+`row.status` in TypeScript → save(row)" pattern is RACY by construction
+even inside `dataSource.transaction()` — the transaction wraps both
+statements but does NOT gate the branch decision. Promoted to a hard rule
+after the metering hardening pass: the worst cases are reasoned, but the
+class of bug is general and the discipline is cheap.
+
+**Reference:** `backend/src/modules/metering/services/metering.service.ts`
+`commit()` / `release()` / `releaseByLedgerId()`; engine commit `dc31bb6`.
+Tests that lock the fixed shape:
+`metering-race.spec.ts` — "concurrent commit + release on the same
+reservation: exactly one applies, state consistent" and "concurrent
+double-release on the same reservation: refund happens exactly once" and
+"sweeper-then-late-commit: commit is a no-op, ledger consistent, no
+double-count".
+
+---
+
+### Lesson #150 — Existence-check-then-insert is racy for idempotency under any non-serializable isolation; INSERT-FIRST with ON CONFLICT DO NOTHING is the canonical fix
+
+**Encountered:** Phase 7.18 metering engine, hardening pass for same-key
+reserve() under concurrency (Part 1.6).
+
+**Observed (failing tests).** The hardening-pass tests
+`metering-race.spec.ts` — "N=20 concurrent same-key reserves with limit=1:
+all dedup to one reservation, charge once, no raw errors" and "same-key
+reserve after commit returns the committed reservation, no extra charge"
+and "two different idempotency_keys at limit=1 concurrent: exactly one
+wins, one throws MeterLimitExceeded" — were written to lock the FIXED
+behaviour. They were authored together with the fix in Part 1.6; they
+were NOT first run against the unfixed existence-check-then-insert code.
+The fix and the proof landed in the same pass.
+
+**Reasoned worst cases (not separately reproduced by a failing test
+against the unfixed code).** The original reserve() did existence-check-
+then-insert:
+
+```ts
+const existing = await ledgerRepo.findOne({where: {subject_ref, meter_key, idempotency_key}});
+if (existing) return {... reused: true};
+// ... do balance ensure + conditional decrement ...
+await ledgerRepo.save(ledgerEntity);  // ← insert
+```
+
+By reading the code's structure: under `Promise.all` of N reserves with
+the SAME `idempotency_key`, all N `findOne` calls would return `null`
+(each transaction's snapshot was taken before any peer committed). All N
+would proceed past the dedup. All N would reach the conditional decrement.
+With a generous limit, all N decrements would succeed transiently. Only
+T1's `save()` would survive; T2-TN would hit the unique constraint
+`uq_metering_ledger_subject_meter_idem` and throw raw
+`QueryFailedError (23505)` — the rest of their transaction would roll
+back (so no capacity leak survives commit), but **N-1 callers would
+receive a raw Postgres error instead of the Pattern-C `{reused:true}`
+they were contractually owed**.
+
+Under a saturated limit (e.g. N=20 same key, limit=1), T1 would win the
+capacity gate and commit. T2-T20 would see the post-commit `consumed=1`
+via EvalPlanQual, evaluate `1+1<=1` false, and throw
+`MeterLimitExceededError` instead of dedup-returning T1's reservation.
+The wrong error class entirely — 19 callers told "limit reached" when
+the truthful answer was "you already have this reservation."
+
+Both modes are RECONSTRUCTED worst cases from reading the race-prone
+code, not reproduced by a failing pre-fix test. The fix is still
+correct; the lesson exists because the class of bug is general and the
+correct shape (insert-first / ON CONFLICT) is canonical for any
+at-most-once side effect.
+
+**Root cause (reasoned).** The dedup was a two-step pattern (`findOne` →
+`save`) with the unique-constraint check as the only true serialisation
+point. By the time the unique constraint fires, the application has
+already committed to either a raw-error or a wrong-class-error response.
+The idempotency check happened at the WRONG layer — application snapshot
+instead of DB constraint.
+
+**Fix.** Reorder so the unique-constraint check IS the dedup, using
+`INSERT ... ON CONFLICT DO NOTHING RETURNING ...` as the first statement
+of the transaction:
+
+```ts
+const insertRaw = await manager.query(
+  `INSERT INTO metering_ledger (...) VALUES (...)
+   ON CONFLICT (subject_ref, meter_key, idempotency_key) DO NOTHING
+   RETURNING id, reservation_id, ...`, [...]);
+if (insertedRows.length === 0) {
+  // We lost the race; SELECT the winner's row, return reused:true.
+}
+// We won; run capacity gate. If it fails, txn rolls back the INSERT.
+```
+
+ON CONFLICT DO NOTHING block-waits on the peer's index lock under READ
+COMMITTED, so the loser's SELECT-after-conflict sees the peer's committed
+row. If the winner's capacity gate fails (limit reached), the
+transaction's rollback drops the just-inserted ledger row WITH the
+decrement, so the idempotency claim does NOT persist when capacity was
+denied — a later retry of the same key (after capacity frees up) starts
+clean.
+
+**Hard rule — never violate.** For any operation that MUST be at-most-once
+across concurrent retries with the same key, the dedup gate MUST be a
+database unique constraint, and the dedup CHECK must be
+`INSERT ... ON CONFLICT DO NOTHING` (or equivalent), NOT a
+`SELECT existence ? return : INSERT` pattern. Existence-check-then-insert
+is racy under any non-serializable isolation — Postgres READ COMMITTED
+(this project's default and the metering engine's required isolation, see
+CLAUDE.md "Metering Engine Invariants" §6) does NOT prevent two
+transactions from both seeing the row as missing. The ON CONFLICT path
+block-waits and delivers the correct branch automatically;
+application-layer existence checks cannot.
+
+**Reference:** `backend/src/modules/metering/services/metering.service.ts`
+`reserve()` insert-first path; the unique constraint
+`uq_metering_ledger_subject_meter_idem` from migration
+`1753000000001-AddMeteringPrimitive.ts`; engine commit `dc31bb6`.
+Tests that lock the fixed shape:
+`metering-race.spec.ts` — "N=20 concurrent same-key reserves with
+limit=1: all dedup to one reservation, charge once, no raw errors" +
+"same-key reserve after commit returns the committed reservation, no
+extra charge" + "two different idempotency_keys at limit=1 concurrent:
+exactly one wins, one throws MeterLimitExceeded".
