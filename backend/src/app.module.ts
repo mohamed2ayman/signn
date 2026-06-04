@@ -14,6 +14,7 @@ import { ProjectsModule } from './modules/projects/projects.module';
 import { ProjectPartiesModule } from './modules/project-parties/project-parties.module';
 import { ContractsModule } from './modules/contracts/contracts.module';
 import { GuestPortalModule } from './modules/guest-portal/guest-portal.module';
+import { MeteringModule } from './modules/metering/metering.module';
 import { ClausesModule } from './modules/clauses/clauses.module';
 import { KnowledgeAssetsModule } from './modules/knowledge-assets/knowledge-assets.module';
 import { RiskAnalysisModule } from './modules/risk-analysis/risk-analysis.module';
@@ -240,6 +241,7 @@ import { dataSourceOptions } from './config/data-source';
     ProjectPartiesModule,
     ContractsModule,
     GuestPortalModule,
+    MeteringModule,
     ClausesModule,
     KnowledgeAssetsModule,
     RiskAnalysisModule,
