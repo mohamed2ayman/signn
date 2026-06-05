@@ -233,36 +233,6 @@ export class NotificationDispatchService {
   }
 
   /**
-   * 5. Contract shared
-   */
-  async sendContractShared(params: {
-    recipientEmail: string;
-    recipientName?: string;
-    contractName: string;
-    sharedByName: string;
-    permission: string;
-    expiresAt?: string;
-    shareToken: string;
-    frontendUrl: string;
-  }): Promise<void> {
-    const shareLink = `${params.frontendUrl}/shared/${params.shareToken}`;
-
-    await this.enqueueEmail({
-      to: params.recipientEmail,
-      subject: `Sign — "${params.contractName}" shared with you`,
-      html: templates.contractSharedEmail({
-        recipientName: params.recipientName,
-        contractName: params.contractName,
-        sharedByName: params.sharedByName,
-        permission: params.permission,
-        expiresAt: params.expiresAt,
-        shareLink,
-      }),
-      templateName: 'contract-shared',
-    });
-  }
-
-  /**
    * 6. Obligation reminder
    */
   async sendObligationReminder(params: {

@@ -600,6 +600,10 @@ export default function ContractDetailPage() {
         const results = await contractSharingService.searchOrgMembers(value);
         setShareSuggestions(results);
         setShowSuggestions(results.length > 0);
+        // No suggestions = the email doesn't belong to anyone in this org (external)
+        if (results.length === 0) {
+          setShareIsInternal(false);
+        }
       } catch {
         setShareSuggestions([]);
       } finally {
@@ -629,7 +633,7 @@ export default function ContractDetailPage() {
       setShowSuggestions(false);
       const successMsg = result.isInternal
         ? `Access granted to ${result.recipientName || result.shared_with_email} — they've been notified.`
-        : `Share link sent to ${result.shared_with_email}.`;
+        : `Access recorded for ${result.shared_with_email}.`;
       setShareSuccess(successMsg);
       setTimeout(() => setShareSuccess(''), 4000);
       loadShares();
@@ -2003,6 +2007,18 @@ export default function ContractDetailPage() {
                   </div>
                 )}
               </div>
+              {/* External sharing notice — shown when the typed email is not in this org */}
+              {shareIsInternal === false && !suggestionsLoading && shareEmail.length >= 2 && (
+                <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-sm text-amber-700">
+                  <svg className="mt-0.5 h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+                  </svg>
+                  <span>
+                    <strong>External sharing coming soon.</strong> This email is not in your organisation.
+                    External counterparties are invited via the Guest Portal — available in the next release.
+                  </span>
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -2035,13 +2051,13 @@ export default function ContractDetailPage() {
 
               <button
                 onClick={handleShareContract}
-                disabled={!shareEmail.trim()}
+                disabled={!shareEmail.trim() || shareIsInternal === false || suggestionsLoading}
                 className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-primary-600 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
                 </svg>
-                Send Share Link
+                {shareIsInternal === false ? 'External sharing coming soon' : 'Grant Access'}
               </button>
             </div>
 

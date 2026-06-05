@@ -59,16 +59,9 @@ export class ContractSharingController {
   @UseGuards(JwtAuthGuard)
   async getSharesByContract(
     @Param('contractId', ParseUUIDPipe) contractId: string,
+    @OrganizationId() orgId: string,
   ) {
-    return this.sharingService.getSharesByContract(contractId);
-  }
-
-  /**
-   * Access a shared contract via token (public — no auth)
-   */
-  @Get('shared/:token')
-  async accessSharedContract(@Param('token') token: string) {
-    return this.sharingService.getContractByShareToken(token);
+    return this.sharingService.getSharesByContract(contractId, orgId);
   }
 
   /**

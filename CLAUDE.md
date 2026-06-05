@@ -1,7 +1,7 @@
 # CLAUDE.md — Project Intelligence File
 > Read this entire file at the start of every Claude Code session before touching any code.
 > This file is the single source of truth for all architectural decisions, rules, and context.
-> Last updated: 2026-06-04 (Phase 7.18 metering engine primitive shipped — commit `dc31bb6` on `feat/metering-primitive-7.18`. Schema + allowance resolver + MeteringService authority (reserve/commit/release) + dangling-reserve sweeper + READ COMMITTED startup invariant. 20 real-Postgres concurrency + precedence tests; full backend suite 430/430. ENGINE ONLY — no consumer wiring (Part 2). See "Metering Engine Invariants — Phase 7.18 (shipped 2026-06-04)" section at the bottom; new ARCHITECTURE RULES Rule 9 is the spine pointer. Lessons #148–#150 capture the engine-earned discipline (TypeORM 0.3 `[rows, rowCount]` shape, read-then-write transitions, existence-check-then-insert idempotency race). Phase 7.26 shipped — Track A complete. 12 missing i18n keys added across EN and AR locales; FR was already structurally complete. Track B (legal page localization) deferred pending legal team translated content. Phase 7.25 fully documented (PR #41). **CRITICAL** — Phase 3.4 compliance PDF reports + Phase 4 ExportService contract PDFs are CURRENTLY BROKEN by the same pdfmake v0.1 require pattern 2c just fixed; see Critical Known Bugs + lesson #142, HIGH priority. Internal Contract Sharing fix shipped (PR #44) — cross-tenant bug in `createShare()` fixed + ProjectMember creation + notification dispatch + org-member autocomplete.)
+> Last updated: 2026-06-05 (ContractShare Step 1 deprecation shipped — dead public token endpoint removed, broken external email path removed, cross-tenant info disclosure in `getSharesByContract()` fixed, frontend external sharing gated with "coming soon" message. Lesson #152. Phase 7.18 metering engine primitive shipped — commit `dc31bb6` on `feat/metering-primitive-7.18`. Schema + allowance resolver + MeteringService authority (reserve/commit/release) + dangling-reserve sweeper + READ COMMITTED startup invariant. 20 real-Postgres concurrency + precedence tests; full backend suite 430/430. ENGINE ONLY — no consumer wiring (Part 2). See "Metering Engine Invariants — Phase 7.18 (shipped 2026-06-04)" section at the bottom; new ARCHITECTURE RULES Rule 9 is the spine pointer. Lessons #148–#150 capture the engine-earned discipline (TypeORM 0.3 `[rows, rowCount]` shape, read-then-write transitions, existence-check-then-insert idempotency race). Phase 7.26 shipped — Track A complete. 12 missing i18n keys added across EN and AR locales; FR was already structurally complete. Track B (legal page localization) deferred pending legal team translated content. Phase 7.25 fully documented (PR #41). **CRITICAL** — Phase 3.4 compliance PDF reports + Phase 4 ExportService contract PDFs are CURRENTLY BROKEN by the same pdfmake v0.1 require pattern 2c just fixed; see Critical Known Bugs + lesson #142, HIGH priority. Internal Contract Sharing fix shipped (PR #44) — cross-tenant bug in `createShare()` fixed + ProjectMember creation + notification dispatch + org-member autocomplete.)
 
 ---
 
@@ -3490,6 +3490,85 @@ above; the primary seam is `guest-invitation.service.ts:445-451`'s
 `RESERVATION_TTL_SECONDS` (currently a module const, 1h) needs to be
 promoted to env-driven — paired with its Joi entry + `.env.example` line
 in the same commit per Phase 1.5 hard rule.
+
+---
+
+## ContractShare Deprecation — Step 1 (shipped — 2026-06-05)
+
+Security hardening and dead-code removal from the `contract-sharing` module. First step
+in a planned phased deprecation of `ContractShare` in favour of `GuestInvitation`
+(Phase 7.18 bucket 7) for external counterparty access.
+
+### What shipped
+
+- **Removed unauthenticated `GET /contract-sharing/shared/:token` endpoint.** The route
+  returned full contract data (including all clauses and risk analyses) to any caller with
+  a share token — no JWT required, no rate limit, no audit log. The route was dead: the
+  corresponding frontend page (`/shared/:token`) never existed in `App.tsx`, so no real
+  user flow ever hit it. Deleted from controller + `getContractByShareToken()` deleted from
+  service. `BadRequestException` import removed (was only used by the deleted method).
+
+- **Removed broken external email path from `createShare()`.** The `else` branch sent a
+  `contractSharedEmail` containing `${frontendUrl}/shared/${token}` — a link to the same
+  nonexistent `/shared/:token` route. External recipients received an email with a 404
+  link. Replaced with a `logger.warn()` noting that external sharing is pending
+  GuestInvitation wiring (bucket-7 TODO preserved). Share row is still created; no broken
+  email is sent.
+
+- **Deleted `sendContractShared()` from `NotificationDispatchService`** and
+  **`contractSharedEmail()` from `templates/index.ts`** — both were only called by the
+  removed external branch. Zero remaining callers.
+
+- **Fixed `getSharesByContract()` cross-tenant info disclosure.** The method previously
+  queried `{ contract_id: contractId, is_active: true }` with no organisation filter —
+  any authenticated user could list active shares for any contract in the platform.
+  Added `orgId: string` param; method now verifies `contract.project.organization_id ===
+  orgId` (same pattern as `createShare()`) before returning shares. Controller passes
+  `@OrganizationId() orgId` from the JWT. Lesson #151 grep pattern applied.
+
+- **Frontend: external sharing disabled with "coming soon" messaging.**
+  - `handleShareEmailChange` now sets `shareIsInternal(false)` when debounced search returns
+    empty (email not found in this org).
+  - Amber warning banner below the email field: "External sharing coming soon. External
+    counterparties are invited via the Guest Portal — available in the next release."
+  - Share button disabled and label changes to "External sharing coming soon" when
+    `shareIsInternal === false`.
+  - Internal sharing (org-member suggestions → ProjectMember + in-app notification)
+    completely unchanged.
+
+- **Removed dead `accessShared()` from `contractSharingService.ts`** (frontend). Called
+  the deleted `GET /contract-sharing/shared/:token` endpoint; no component ever imported
+  or called it.
+
+### What remains intact (working pieces, do NOT touch)
+
+- `POST /contract-sharing` — create share (JWT, org-scoped) ✅
+- `GET /contract-sharing/org-members?q=` — autocomplete search ✅
+- `GET /contract-sharing/contract/:contractId` — list shares (JWT, now org-scoped) ✅
+- `DELETE /contract-sharing/:id` — revoke share (JWT, user-scoped) ✅
+- Internal share notification (ProjectMember upsert + in-app + email) ✅
+
+### What's deferred (ContractShare Step 2)
+
+Remove the entire `ContractShare` module once `GuestInvitation` email delivery
+(Phase 7.18 bucket 7) ships. At that point:
+- Wire external `createShare()` to create a `GuestInvitation` row instead of a
+  `ContractShare` row.
+- Migrate `searchOrgMembers` to `contracts.controller.ts` or a dedicated autocomplete
+  endpoint.
+- Hard-delete the `contract_shares` table in a migration.
+
+### Hard rules — never violate
+
+1. **`GET /contract-sharing/shared/:token` is permanently gone.** Do not re-add a
+   public unauthenticated contract-read endpoint. External access is via GuestInvitation
+   with HMAC-signed tokens + progressive identity (Phase 7.18 bucket 1b-i). See lesson
+   #141 (bare-HTTP threat model).
+2. **`getSharesByContract()` MUST keep the org-scope check.** Removing it re-opens the
+   cross-tenant info disclosure. The fix is the same pattern as `createShare()` —
+   contract → project → organization_id.
+3. **Never ship an email that links to a frontend route before verifying the route exists**
+   in `App.tsx`. See lesson #152.
 
 ---
 

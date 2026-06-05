@@ -5786,3 +5786,57 @@ CRUD services.
 **Reference:** `ContractSharingService.createShare()` fixed in PR #47 (same pattern as PR #42
 `ContractsService.findOne()` fix). Audit grep: `grep -rn "findOne" backend/src/modules/contract-sharing`.
 See also lesson #145 (missing @RequirePermission silently disabling authorization).
+
+---
+
+### Lesson #152 — Never Ship an Email Notification That Links to a Frontend Route Before Verifying the Route Exists in `App.tsx`
+
+**Encountered:** ContractShare Step 1 deprecation (2026-06-05), cleaning up
+`ContractSharingService.createShare()` external branch.
+
+**What happened.** `sendContractShared()` in `NotificationDispatchService` assembled
+a share link as `${frontendUrl}/shared/${shareToken}` and sent it to external recipients.
+The route `/shared/:token` was never registered in `apps/sign/src/App.tsx`. Every
+external share email sent by this code path delivered a 404 link — the recipient landed
+on the React fallback (or browser 404) instead of the contract.
+
+The broken email and its dead frontend route co-existed undetected for the full lifetime
+of the `ContractShare` module. No integration test covered the "click the link in the
+email" flow end-to-end.
+
+**Root cause.** The backend email template was written at the same time as the feature,
+but the matching frontend route was never implemented. Because the email path was only
+exercised when an EXTERNAL (non-org) email was entered in the share modal — a flow with
+no automated tests — the bug was invisible during development.
+
+**The rule.** Before shipping any backend email function that constructs a `${frontendUrl}/path`
+link, explicitly verify:
+1. Open `apps/sign/src/App.tsx` and confirm the route path is registered.
+2. If the route does not exist yet, either: (a) implement the frontend page in the same PR,
+   or (b) add a `// TODO: route not yet implemented` comment blocking the email function
+   and DO NOT send broken links.
+3. Write an integration test that resolves the URL to a non-404 (even a shallow render)
+   to keep this verified as routes evolve.
+
+**Applied fix.** External `createShare()` branch now logs `logger.warn()` with a
+`TODO(bucket-7)` marker and returns `isInternal: false` without sending any email.
+Frontend shows an amber "External sharing coming soon" banner and disables the Share
+button for non-org emails. Share row is still created for record-keeping; no 404 link
+is sent.
+
+**How to audit for existing violations:**
+
+```bash
+# Find all email template functions that build frontend URLs
+grep -rn "frontendUrl\|FRONTEND_URL\|BASE_URL" \
+  backend/src/modules/notifications/templates/index.ts \
+  backend/src/modules/notifications/notification-dispatch.service.ts
+
+# Then verify each path appears in the frontend router
+grep -n "path=" apps/sign/src/App.tsx
+```
+
+**Reference:** `ContractSharingService` external branch + `sendContractShared()` +
+`contractSharedEmail()` removed in ContractShare Step 1 PR (feat/contractshare-step1-deprecation).
+See also lesson #140 (mocking the external call path hides total failure of that path —
+an email with a dead link is the runtime equivalent of a mocked renderer).
