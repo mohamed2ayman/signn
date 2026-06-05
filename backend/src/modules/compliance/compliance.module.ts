@@ -35,6 +35,7 @@ import { ComplianceReportProcessor } from './processors/compliance-report.proces
 import { AiModule } from '../ai/ai.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { ContractsModule } from '../contracts/contracts.module';
+import { MeteringModule } from '../metering/metering.module';
 import { PermissionLevelGuard } from '../../common/guards/permission-level.guard';
 import { ResolveObligationProjectMiddleware } from '../../common/middleware/resolve-obligation-project.middleware';
 
@@ -67,6 +68,10 @@ import { ResolveObligationProjectMiddleware } from '../../common/middleware/reso
     // every compliance endpoint (this fix — PR #42 class). ContractsModule
     // exports it; we don't depend on anything else from there.
     ContractsModule,
+    // Phase 7.18 Part 2 — first consumer wiring. MeteringModule exports
+    // MeteringService (the engine authority). The compliance run is the
+    // first surface to call reserve / commit / release.
+    MeteringModule,
   ],
   controllers: [
     ComplianceController,
