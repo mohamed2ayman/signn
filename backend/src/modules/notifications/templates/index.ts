@@ -172,36 +172,6 @@ export function approvalDecisionEmail(data: {
   return baseEmailLayout(content, { preheader: `${contractName} — ${d.label} by ${reviewerName}` });
 }
 
-// ─── 5. Contract Shared ─────────────────────────────────
-
-export function contractSharedEmail(data: {
-  recipientName?: string;
-  contractName: string;
-  sharedByName: string;
-  permission: string;
-  expiresAt?: string;
-  shareLink: string;
-}): string {
-  const recipientName = escapeHtml(data.recipientName);
-  const contractName = escapeHtml(data.contractName);
-  const sharedByName = escapeHtml(data.sharedByName);
-  const permission = escapeHtml(data.permission);
-  const expiresAt = escapeHtml(data.expiresAt);
-  const content = `
-    ${heading('Contract Shared With You')}
-    ${paragraph(`${recipientName ? `Hi ${recipientName}, ` : ''}<strong>${sharedByName}</strong> has shared a contract with you.`)}
-    ${infoBlock([
-      ['Contract', contractName],
-      ['Shared By', sharedByName],
-      ['Permission', permission],
-      ...(expiresAt ? [['Expires', expiresAt] as [string, string]] : []),
-    ])}
-    ${ctaButton('View Contract', data.shareLink)}
-    ${smallNote('This is a secure link. Do not forward this email if you want to keep the contract private.')}
-  `;
-  return baseEmailLayout(content, { preheader: `${sharedByName} shared "${contractName}" with you` });
-}
-
 // ─── 6. Obligation Reminder ─────────────────────────────
 
 export function obligationReminderEmail(data: {

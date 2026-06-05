@@ -1,7 +1,6 @@
 import {
   Injectable,
   NotFoundException,
-  BadRequestException,
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -115,21 +114,13 @@ export class ContractSharingService {
         token,
       });
     } else {
-      // External recipient — email only
-      const frontendUrl = this.config.get<string>('FRONTEND_URL', 'http://localhost:5173');
-      const sharerName = sharer
-        ? `${sharer.first_name} ${sharer.last_name}`.trim()
-        : 'A colleague';
-
-      await this.dispatch.sendContractShared({
-        recipientEmail: params.sharedWithEmail,
-        contractName: contract.name,
-        sharedByName: sharerName,
-        permission: params.permission,
-        expiresAt: expiresAt ? expiresAt.toISOString().split('T')[0] : undefined,
-        shareToken: token,
-        frontendUrl,
-      });
+      // External recipient — external sharing via GuestInvitation (bucket-7).
+      // The old sendContractShared() email pointed to a /shared/:token route
+      // that never existed in the frontend. Do NOT send a broken link.
+      // TODO(bucket-7): wire GuestInvitation flow here once email delivery is ready.
+      this.logger.warn(
+        `Contract ${params.contractId} shared with external recipient ${params.sharedWithEmail} — email delivery pending GuestInvitation wiring`,
+      );
     }
 
     return Object.assign(saved, { isInternal, recipientName: recipient
@@ -166,47 +157,23 @@ export class ContractSharingService {
 
   // ─── Existing read methods (unchanged) ───────────────────────────────────
 
-  async getSharesByContract(contractId: string): Promise<ContractShare[]> {
+  async getSharesByContract(contractId: string, orgId: string): Promise<ContractShare[]> {
+    // Org-scope: verify the contract belongs to the caller's org before returning shares.
+    // Same pattern as createShare() — traverses contract → project → organization_id.
+    const contract = await this.contractRepository.findOne({
+      where: { id: contractId },
+      relations: ['project'],
+    });
+
+    if (!contract || contract.project.organization_id !== orgId) {
+      throw new NotFoundException('Contract not found');
+    }
+
     return this.shareRepository.find({
       where: { contract_id: contractId, is_active: true },
       relations: ['sharer'],
       order: { created_at: 'DESC' },
     });
-  }
-
-  async getContractByShareToken(
-    token: string,
-  ): Promise<{ share: ContractShare; contract: Contract }> {
-    const share = await this.shareRepository.findOne({
-      where: { token, is_active: true },
-    });
-
-    if (!share) {
-      throw new NotFoundException('Share link not found or has been revoked');
-    }
-
-    if (share.expires_at && new Date(share.expires_at) < new Date()) {
-      throw new BadRequestException('This share link has expired');
-    }
-
-    const contract = await this.contractRepository.findOne({
-      where: { id: share.contract_id },
-      relations: [
-        'project',
-        'contract_clauses',
-        'contract_clauses.clause',
-        'risk_analyses',
-      ],
-    });
-
-    if (!contract) {
-      throw new NotFoundException('Contract not found');
-    }
-
-    // Update accessed_at
-    await this.shareRepository.update(share.id, { accessed_at: new Date() });
-
-    return { share, contract };
   }
 
   async revokeShare(shareId: string, userId: string): Promise<void> {

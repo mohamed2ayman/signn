@@ -1181,6 +1181,7 @@ No new env vars required for existing local dev deployments.
 | 7.26 | i18n Completion (Track A) | ✅ Complete (Track A, PR #42) | A+Y | 2026-06-02 |
 | — | Internal Contract Sharing Fix | ✅ Complete (PR #44) | A | 2026-06-04 |
 | — | CONTRACTOR_* Audit | ✅ Audited — removal blocked until 7.18 | A | 2026-06-04 |
+| — | ContractShare Step 1 — dead endpoint + broken email + org-scope fix | ✅ Complete | A | 2026-06-05 |
 | 7.27 | Official Gazette | ❌ Not started | Y | |
 | 7.28 | ERP Integration | ❌ Not started | A+Y | |
 | 7.29 | Settlement Checkbox | ❌ Not started | Y | |
@@ -1221,9 +1222,13 @@ No new env vars required for existing local dev deployments.
 5. ~~7.26 — i18n Completion (Track A)~~ ✅ Done (PR #42)
 6. ~~Internal Contract Sharing Fix~~ ✅ Done (PR #44) — cross-tenant bug + ProjectMember + notification + autocomplete
 7. ~~CONTRACTOR_* Role Audit~~ ✅ Done — all 4 roles active in 13 places; removal BLOCKED until 7.18 ships
-8. 7.21 — RFP & Specification Document Analysis (AI — competitive priority)
-9. ~~7.9 — Audit Silent Migrations~~ ✅ Done (PR #34)
-10. ~~7.10 — In-app Dispatch~~ ✅ Already implemented
+8. ~~ContractShare Step 1~~ ✅ Done — dead endpoint + broken email + org-scope fix + frontend "coming soon" gate
+9. **PR #42 follow-up fix A (🟠 HIGH):** `negotiation_events.performed_by` nullability — this column is declared NOT NULL in the migration but the FK is `ON DELETE SET NULL`, creating a deferred integrity violation that blocks GDPR delete for any user who has performed a negotiation event. Fix: `ALTER TABLE negotiation_events ALTER COLUMN performed_by DROP NOT NULL`. Own small migration + test.
+10. **PR #42 follow-up fix B (🟡 MEDIUM):** `GET /me/profile` leaks `invitation_token` — the endpoint calls a code path that returns the raw user row (pre-`@Exclude`). Even with the global `ClassSerializerInterceptor`, this path returns a plain object, bypassing the interceptor. 2-line fix: add `invitation_token` to the existing destructure-and-omit in the profile response builder.
+11. **ContractShare Step 2 (⏳ BLOCKED — depends on 7.18 bucket-7 email delivery):** Remove entire `ContractShare` module once GuestInvitation external email delivery ships. Steps: (1) wire `createShare()` external path to create a `GuestInvitation` row; (2) migrate `searchOrgMembers` to `contracts.controller.ts` or a dedicated autocomplete controller; (3) hard-delete `contract_shares` table in a migration; (4) remove `ContractShare` entity, service, controller, module, and all imports.
+12. 7.21 — RFP & Specification Document Analysis (AI — competitive priority)
+13. ~~7.9 — Audit Silent Migrations~~ ✅ Done (PR #34)
+14. ~~7.10 — In-app Dispatch~~ ✅ Already implemented
 
 **Youssef:**
 1. 7.7 — Wire Reminder History in Detail Drawer (quick, endpoint ready)

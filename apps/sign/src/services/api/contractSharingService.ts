@@ -39,11 +39,6 @@ export const contractSharingService = {
     return response.data;
   },
 
-  accessShared: async (token: string) => {
-    const response = await api.get(`/contract-sharing/shared/${token}`);
-    return response.data;
-  },
-
   revokeShare: async (shareId: string) => {
     const response = await api.delete(`/contract-sharing/${shareId}`);
     return response.data;
