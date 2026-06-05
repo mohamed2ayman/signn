@@ -5,7 +5,23 @@ import { ConfigModule } from '@nestjs/config';
 import { DataSource } from 'typeorm';
 import { randomUUID } from 'crypto';
 
-import { dataSourceOptions } from '../../../config/data-source';
+// ─── CI-skip guard (LOUD) ─────────────────────────────────────────────────
+// See metering-race.spec.ts for the full rationale. Short form: CI has no
+// DATABASE_URL (CLAUDE.md "CI is unit-test ONLY" hard rule), so this guard
+// skips the suite there. The console.warn ensures the skip is impossible
+// to miss — silent skip would let a misconfigured staging env that SHOULD
+// have Postgres drop these tests invisibly and read green.
+const SKIP_REAL_PG = !process.env.DATABASE_URL;
+if (SKIP_REAL_PG) {
+  // eslint-disable-next-line no-console
+  console.warn(
+    '[metering] SKIPPING real-Postgres specs (metering-resolver.spec.ts): ' +
+      'DATABASE_URL unset — these MUST run in an environment with Postgres ' +
+      '(dev/staging). CI green here does NOT prove the metering engine is ' +
+      'verified; see docs/metering-doc-deltas.md staging-gate.',
+  );
+}
+const describeReal = SKIP_REAL_PG ? describe.skip : describe;
 
 import { MeteringModule } from '../metering.module';
 import { MeteringResolver } from '../services/metering-resolver.service';
@@ -31,7 +47,7 @@ import { MeterKey } from '../enums/meter-key.enum';
  * for cleanup (these tables are otherwise unused in dev).
  */
 
-describe('MeteringResolver.resolveLimit precedence (real Postgres)', () => {
+describeReal('MeteringResolver.resolveLimit precedence (real Postgres)', () => {
   let moduleRef: TestingModule;
   let dataSource: DataSource;
   let resolver: MeteringResolver;
@@ -51,6 +67,11 @@ describe('MeteringResolver.resolveLimit precedence (real Postgres)', () => {
   const DEFAULT_LIMIT_FOR_TESTS = 23;
 
   beforeAll(async () => {
+    // Lazy require — data-source.ts throws at module load when DATABASE_URL
+    // is unset. See metering-race.spec.ts for the full rationale.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { dataSourceOptions } = require('../../../config/data-source');
+
     moduleRef = await Test.createTestingModule({
       imports: [
         ConfigModule.forRoot({ isGlobal: true }),

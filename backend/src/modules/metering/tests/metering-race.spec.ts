@@ -5,7 +5,33 @@ import { ConfigModule } from '@nestjs/config';
 import { DataSource } from 'typeorm';
 import { randomUUID } from 'crypto';
 
-import { dataSourceOptions } from '../../../config/data-source';
+// ─── CI-skip guard (LOUD) ─────────────────────────────────────────────────
+// This spec needs a real Postgres connection (DATABASE_URL set) for the
+// engine's correctness guarantees to be exercised at all. CI is unit-test
+// ONLY per CLAUDE.md ("CI is unit-test ONLY — never start Docker containers,
+// never use real database, never use real Redis"), so this guard skips the
+// suite when DATABASE_URL is unset.
+//
+// CRITICAL: the skip MUST BE LOUD. A silent describe.skip means a
+// misconfigured environment that SHOULD have Postgres would drop these
+// tests invisibly and read green. The console.warn below makes it
+// impossible to overlook the skip.
+//
+// Also: `data-source.ts` throws at module load if DATABASE_URL is unset,
+// so the import below is a lazy require inside `beforeAll`. A top-level
+// import would explode in CI before describe.skip could take effect.
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const SKIP_REAL_PG = !process.env.DATABASE_URL;
+if (SKIP_REAL_PG) {
+  // eslint-disable-next-line no-console
+  console.warn(
+    '[metering] SKIPPING real-Postgres specs (metering-race.spec.ts): DATABASE_URL ' +
+      'unset — these MUST run in an environment with Postgres (dev/staging). ' +
+      'CI green here does NOT prove the metering engine is verified; see ' +
+      'docs/metering-doc-deltas.md staging-gate.',
+  );
+}
+const describeReal = SKIP_REAL_PG ? describe.skip : describe;
 
 import { MeteringModule } from '../metering.module';
 import { MeteringService } from '../services/metering.service';
@@ -42,7 +68,7 @@ import {
  * beforeAll, then delete every metering row keyed to it in beforeEach.
  */
 
-describe('MeteringService (real Postgres concurrent-race test)', () => {
+describeReal('MeteringService (real Postgres concurrent-race test)', () => {
   let moduleRef: TestingModule;
   let dataSource: DataSource;
   let metering: MeteringService;
@@ -61,6 +87,12 @@ describe('MeteringService (real Postgres concurrent-race test)', () => {
   const N = 50;
 
   beforeAll(async () => {
+    // Lazy require — data-source.ts throws at module load when DATABASE_URL
+    // is unset. By requiring here we only evaluate when this suite is
+    // actually running (i.e. when DATABASE_URL IS set + describeReal !== skip).
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { dataSourceOptions } = require('../../../config/data-source');
+
     moduleRef = await Test.createTestingModule({
       imports: [
         ConfigModule.forRoot({ isGlobal: true }),
