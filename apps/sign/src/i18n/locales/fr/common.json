@@ -719,5 +719,16 @@
         "rotation": "Inclinaison de page détectée ({{degrees}}°). Les clauses pourraient être extraites dans le mauvais ordre."
       }
     }
+  },
+  "sharing": {
+    "emailLabel": "Adresse e-mail",
+    "internal": "Interne",
+    "external": "Externe",
+    "sendButton": "Envoyer le lien de partage",
+    "activeShares": "Partages actifs",
+    "successInternal": "Accès accordé à {{name}} — une notification lui a été envoyée.",
+    "successExternal": "Lien de partage envoyé à {{email}}.",
+    "searching": "Recherche en cours…",
+    "placeholder": "collègue@entreprise.com"
   }
 }

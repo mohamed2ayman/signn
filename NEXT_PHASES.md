@@ -1,5 +1,5 @@
 # SIGN Platform — Development Roadmap
-> Last updated: 2026-06-01
+> Last updated: 2026-06-04
 > Next review: When 7.5-7.8 are cleared; 9.2 AWS setup planning starts
 > Maintained by: Ayman & Youssef
 > Market: Arabic, English, French (Middle East + Global)
@@ -1179,6 +1179,8 @@ No new env vars required for existing local dev deployments.
 | 7.24 | Knowledge Base | ✅ Complete (PR #40) | A | 2026-06-01 |
 | 7.25 | Poor Scan Quality | ✅ Complete (PR #41) | A+Y | 2026-06-01 |
 | 7.26 | i18n Completion (Track A) | ✅ Complete (Track A, PR #42) | A+Y | 2026-06-02 |
+| — | Internal Contract Sharing Fix | ✅ Complete (PR #44) | A | 2026-06-04 |
+| — | CONTRACTOR_* Audit | ✅ Audited — removal blocked until 7.18 | A | 2026-06-04 |
 | 7.27 | Official Gazette | ❌ Not started | Y | |
 | 7.28 | ERP Integration | ❌ Not started | A+Y | |
 | 7.29 | Settlement Checkbox | ❌ Not started | Y | |
@@ -1217,9 +1219,11 @@ No new env vars required for existing local dev deployments.
 3. ~~7.24 — Knowledge Base Enhancements (all 5 sub-phases)~~ ✅ Done (PR #40)
 4. ~~7.25 — Poor Scan Quality Handling~~ ✅ Done (PR #41)
 5. ~~7.26 — i18n Completion (Track A)~~ ✅ Done (PR #42)
-6. 7.21 — RFP & Specification Document Analysis (AI — competitive priority)
-7. ~~7.9 — Audit Silent Migrations~~ ✅ Done (PR #34)
-8. ~~7.10 — In-app Dispatch~~ ✅ Already implemented
+6. ~~Internal Contract Sharing Fix~~ ✅ Done (PR #44) — cross-tenant bug + ProjectMember + notification + autocomplete
+7. ~~CONTRACTOR_* Role Audit~~ ✅ Done — all 4 roles active in 13 places; removal BLOCKED until 7.18 ships
+8. 7.21 — RFP & Specification Document Analysis (AI — competitive priority)
+9. ~~7.9 — Audit Silent Migrations~~ ✅ Done (PR #34)
+10. ~~7.10 — In-app Dispatch~~ ✅ Already implemented
 
 **Youssef:**
 1. 7.7 — Wire Reminder History in Detail Drawer (quick, endpoint ready)
@@ -1246,5 +1250,5 @@ No new env vars required for existing local dev deployments.
 
 ---
 
-*Last updated: 2026-06-02*
+*Last updated: 2026-06-04*
 *Next review: When 7.5-7.8 are cleared; 9.2 AWS setup planning starts*

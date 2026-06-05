@@ -718,5 +718,16 @@
         "rotation": "تم اكتشاف ميل في الصفحة ({{degrees}}°). قد تُستخرج البنود بترتيب خاطئ."
       }
     }
+  },
+  "sharing": {
+    "emailLabel": "البريد الإلكتروني",
+    "internal": "داخلي",
+    "external": "خارجي",
+    "sendButton": "إرسال رابط المشاركة",
+    "activeShares": "المشاركات النشطة",
+    "successInternal": "تم منح الوصول لـ {{name}} — تم إشعاره.",
+    "successExternal": "تم إرسال رابط المشاركة إلى {{email}}.",
+    "searching": "جارٍ البحث…",
+    "placeholder": "زميل@شركة.com"
   }
 }
