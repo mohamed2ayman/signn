@@ -225,6 +225,26 @@ export class ComplianceService {
     });
   }
 
+  /**
+   * Resolve a ComplianceCheck's `contract_id` from its `id`. Used by the
+   * controller-level access wall on `:checkId` routes — the URL's
+   * `:contractId` param is convention; the TRUTH is `check.contract_id`,
+   * and the wall must walk that to call `ContractAccessService.findInOrg`.
+   *
+   * Throws `NotFoundException` if the check doesn't exist (same shape as
+   * `ContractAccessService.findInOrg` so a cross-tenant probe sees a
+   * uniform 404 either way — no existence leak between "check absent" and
+   * "check exists in another org".
+   */
+  async getContractIdForCheck(checkId: string): Promise<string> {
+    const row = await this.checkRepo.findOne({
+      where: { id: checkId },
+      select: ['id', 'contract_id'],
+    });
+    if (!row) throw new NotFoundException('Compliance check not found');
+    return row.contract_id;
+  }
+
   async getDetail(
     checkId: string,
   ): Promise<ComplianceCheck & { findings: ComplianceFinding[] }> {

@@ -24,6 +24,31 @@ export class ComplianceFindingService {
     });
   }
 
+  /**
+   * Resolve a finding's owning `contract_id` via its parent
+   * ComplianceCheck. Used by the controller-level access wall on
+   * `:findingId` routes — the URL's `:contractId` param is convention;
+   * the TRUTH is `finding → check.contract_id`.
+   *
+   * Throws `NotFoundException` (same shape as ContractAccessService.findInOrg
+   * — no existence leak between "finding absent" and "finding exists in
+   * another org").
+   */
+  async getContractIdForFinding(findingId: string): Promise<string> {
+    const row = await this.repo
+      .createQueryBuilder('f')
+      .innerJoin(
+        'compliance_checks',
+        'check',
+        'check.id = f.compliance_check_id',
+      )
+      .where('f.id = :id', { id: findingId })
+      .select('check.contract_id', 'contract_id')
+      .getRawOne<{ contract_id: string }>();
+    if (!row?.contract_id) throw new NotFoundException('Finding not found');
+    return row.contract_id;
+  }
+
   async updateStatus(
     findingId: string,
     nextStatus: ComplianceFindingStatus,
