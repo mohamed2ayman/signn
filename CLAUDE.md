@@ -1,7 +1,7 @@
 # CLAUDE.md — Project Intelligence File
 > Read this entire file at the start of every Claude Code session before touching any code.
 > This file is the single source of truth for all architectural decisions, rules, and context.
-> Last updated: 2026-06-02 (Phase 7.26 shipped — Track A complete. 12 missing i18n keys added across EN and AR locales; FR was already structurally complete. Track B (legal page localization) deferred pending legal team translated content. Phase 7.25 fully documented (PR #41). **CRITICAL** — Phase 3.4 compliance PDF reports + Phase 4 ExportService contract PDFs are CURRENTLY BROKEN by the same pdfmake v0.1 require pattern 2c just fixed; see Critical Known Bugs + lesson #142, HIGH priority.)
+> Last updated: 2026-06-04 (Phase 7.18 metering engine primitive shipped — commit `dc31bb6` on `feat/metering-primitive-7.18`. Schema + allowance resolver + MeteringService authority (reserve/commit/release) + dangling-reserve sweeper + READ COMMITTED startup invariant. 20 real-Postgres concurrency + precedence tests; full backend suite 430/430. ENGINE ONLY — no consumer wiring (Part 2). See "Metering Engine Invariants — Phase 7.18 (shipped 2026-06-04)" section at the bottom; new ARCHITECTURE RULES Rule 9 is the spine pointer. Lessons #148–#150 capture the engine-earned discipline (TypeORM 0.3 `[rows, rowCount]` shape, read-then-write transitions, existence-check-then-insert idempotency race). Phase 7.26 shipped — Track A complete. 12 missing i18n keys added across EN and AR locales; FR was already structurally complete. Track B (legal page localization) deferred pending legal team translated content. Phase 7.25 fully documented (PR #41). **CRITICAL** — Phase 3.4 compliance PDF reports + Phase 4 ExportService contract PDFs are CURRENTLY BROKEN by the same pdfmake v0.1 require pattern 2c just fixed; see Critical Known Bugs + lesson #142, HIGH priority.)
 
 ---
 
@@ -185,6 +185,18 @@ The priority system is used for conflict detection between contract documents.
 - Priority 2+ document = OVERRIDDEN (its conflicting clauses are subordinate)
 - User CAN manually override conflict resolution per clause
 - Never reverse this logic — Priority 1 must always be the most authoritative
+
+### 9. Metering Engine — Phase 7.18 Invariants (engine commit `dc31bb6`)
+Spine pointer; full details in the "Metering Engine Invariants — Phase 7.18 (shipped 2026-06-04)" section at the bottom of this file. Engine only as of `dc31bb6`; consumer wiring is Part 2 (do NOT call `MeteringService.reserve()` from any controller yet). The seven invariants in shorthand:
+- (1) Subject is **always** derived `contract → project → project.organization_id`. A guest's `User.organization_id` is **never** trusted as the metering subject. Managing-user JWT org is a defense-in-depth cross-check only.
+- (2) `reserve()` uses an **atomic conditional UPDATE**, a DELIBERATE exception to Bucket 1's `setLock('pessimistic_write')` idiom. Future single-hot-row counters follow this, not setLock. Do NOT "fix" the inconsistency.
+- (3) Idempotency = **INSERT-FIRST + ON CONFLICT DO NOTHING + return-existing** (Pattern C). NEVER existence-check-then-insert (lesson #150).
+- (4) `commit()` / `release()` / sweeper are **status-guarded conditional UPDATEs**; refund happens at-most-once across any number of concurrent callers (lesson #149).
+- (5) Allowance precedence: `subject_allowance → plan_allowance → meter_definition.default_limit`. Branches on **row presence**. `limit = 0` is **BINDING** — meter disabled, NEVER coalesced.
+- (6) **READ COMMITTED is required and startup-enforced.** `MeteringService.onModuleInit()` refuses to boot otherwise. The gates rely on EvalPlanQual + per-statement snapshots.
+- (7) Meter limits are **Ops-set** at runtime. `default_limit = 1000` for compliance is a PLACEHOLDER. NEVER hardcode limits in app code.
+
+Engine-earned lessons: #148 (TypeORM 0.3 `[rows, rowCount]` shape), #149 (read-then-write status transitions double-refund), #150 (existence-check-then-insert idempotency race).
 
 ---
 
@@ -3298,3 +3310,165 @@ Legal pages are outside the i18n system entirely. Adding FR + AR requires:
    added (e.g. adding Spanish), add `"es": "Spanish"` / `"es": "الإسبانية"` / `"es": "Espagnol"`
    to all three `language` sections in the same commit — otherwise the switcher label
    degrades to the raw key string in any locale missing it.
+
+---
+
+## Metering Engine Invariants — Phase 7.18 (shipped 2026-06-04)
+
+The metering engine is the shared primitive every metered surface in the platform
+(compliance, risk, AI assistant, upload-extraction; Part 2 wiring) gates through.
+Engine-only on commit `dc31bb6`; consumer wiring is Part 2. These invariants are
+proven by 20 real-Postgres tests (`backend/src/modules/metering/tests/`) and MUST
+hold for any future change to the engine OR any future consumer that calls it.
+ARCHITECTURE RULES Rule 9 is the spine pointer back to this section.
+
+### 1. Metering subject is ALWAYS derived `contract → project → project.organization_id`
+
+`MeteringResolver.resolveMeteringSubject()` walks the contract row to its project
+to the project's `organization_id`. This works UNIFORMLY for all three Bucket-1
+caller shapes (managing user, guest user row, viewer credential). A guest's
+`User.organization_id` is **never** trusted as the metering subject — it is
+attribution metadata only.
+
+For managing-user callers, the JWT `organization_id` is used **only as a
+defense-in-depth cross-check** against the derived org; on mismatch, the
+resolver throws + logs `metering.resolveSubject: cross-tenant signal`. Never
+silently proceed. This is the same class of security regression PR #42 closed
+at the contract-read layer.
+
+Implementation: `backend/src/modules/metering/services/metering-resolver.service.ts`.
+
+### 2. `reserve()` uses an ATOMIC CONDITIONAL UPDATE — DELIBERATE exception to the pessimistic_write idiom
+
+Bucket 1's `establishIdentity` is the canonical transaction shape:
+`dataSource.transaction()` + `setLock('pessimistic_write')` + defensive re-check.
+It is correct for "load row → branch in app code → write back" flows.
+
+The metering reserve path replaces `setLock` with a single conditional UPDATE:
+
+```sql
+UPDATE metering_balance
+SET    consumed = consumed + :amount, updated_at = NOW()
+WHERE  subject_ref = :s AND meter_key = :k AND window_key = :w
+  AND  consumed + :amount <= :limit
+RETURNING consumed;
+```
+
+The affected-row count IS the gate. Postgres holds the row lock only for the
+statement's duration (not across an app round-trip). Under READ COMMITTED,
+concurrent writers serialise via EvalPlanQual and re-evaluate the predicate.
+Proven by N=50 / M=5 race tests with zero oversell.
+
+**This inconsistency with `establishIdentity`'s `setLock` shape is INTENTIONAL.**
+Future single-hot-row counters should follow this pattern, NOT `pessimistic_write`.
+Do not "fix" the inconsistency.
+
+### 3. Idempotency = INSERT-FIRST + ON CONFLICT DO NOTHING + return-existing (Pattern C)
+
+The reserve path's FIRST action inside the transaction is an INSERT against the
+ledger's unique index `uq_metering_ledger_subject_meter_idem` on
+`(subject_ref, meter_key, idempotency_key)`. ON CONFLICT DO NOTHING is the gate:
+RETURNING yields one row → the winner runs the capacity decrement; RETURNING
+yields zero rows → the loser SELECTs the existing row and returns it as
+`{reused:true}`.
+
+- Concurrent retries with the same key NEVER surface a raw 23505 to the caller.
+- The capacity decrement runs ONLY on the winner; losers never decrement.
+- If the capacity decrement fails (limit reached), the txn rolls back AND the
+  just-inserted ledger row rolls back with it — the idempotency claim does not
+  persist when capacity was denied. A retry-after-capacity-frees is clean.
+- Pattern C lookup covers the row's whole lifetime (reserved / committed /
+  released) — a same-key retry after `commit()` returns the committed
+  reservation; no double-charge.
+
+New at-most-once side effects in the codebase should align to this shape rather
+than invent a new idempotency contract. The closest precedents are
+`guest_invitations` revoke/exchange (Phase 7.18 Bucket 1) and obligation-token
+single-use-via-nonce (Phase 3.4); use Pattern C here over either of those.
+See lesson #150 for why existence-check-then-insert is racy and insert-first
+is the fix.
+
+### 4. `commit()` and `release()` are status-guarded with AT-MOST-ONCE refund
+
+Both transitions use a single conditional UPDATE keyed on the current status:
+
+```sql
+UPDATE metering_ledger SET status='committed', committed_at=NOW()
+WHERE  reservation_id = $1 AND status = 'reserved';
+```
+
+The affected-row count is the gate. The refund (`UPDATE metering_balance
+SET consumed = consumed - :amount`) runs ONLY when the status UPDATE actually
+flipped a row — gated on `affected = 1` from `RETURNING`. Re-release, commit-
+after-sweeper, and release-of-committed are NO-OPs that return
+`{applied:false, status:<current>}` rather than throwing. Refund is at-most-
+once across any number of concurrent commit / release / sweeper callers.
+
+The dangling-reserve sweeper (`releaseByLedgerId`) follows the same shape with
+an additional `AND expires_at < NOW()` guard.
+
+`release()` does NOT clamp with `GREATEST(consumed - amount, 0)`. The DDL
+`CHECK (consumed >= 0)` is the drift-detector — a CHECK violation rolls back
+the status flip and refund together, surfacing inconsistency rather than
+silently underflowing. See lesson #149 for the read-then-write pattern this
+replaced and why.
+
+### 5. Allowance precedence: `subject_allowance → plan_allowance → meter_definition.default_limit`. `limit = 0` is BINDING.
+
+`MeteringResolver.resolveLimit()` branches on **row presence**, never on the
+`limit` field's value. A row with `limit = 0` propagates as binding — meter
+disabled, deny anything ≥ 1. The 0 is NEVER coalesced away to a lower tier.
+
+**Do NOT refactor to `subject?.limit ?? plan?.limit ?? default_limit`.** That
+chain is almost right but subtly wrong if a later edit downgrades `??` to `||`
+— a `limit = 0` would then be coalesced away. The explicit
+`if (row) return row.limit` shape is the canonical form; keep it.
+
+`getOrgSubscription()` from the existing `SubscriptionsService` is the SINGLE
+source for the org-plan lookup. Do not invent a second org→plan resolver.
+
+### 6. READ COMMITTED is a STARTUP-ENFORCED invariant
+
+`MeteringService.onModuleInit()` runs `SHOW transaction_isolation` once at
+boot and refuses to start if the result is not `'read committed'`. The
+reserve / commit / release gates rely on Postgres READ COMMITTED semantics
+(EvalPlanQual under concurrent UPDATEs; per-statement snapshots under
+ON CONFLICT + same-txn SELECT). REPEATABLE READ or SERIALIZABLE would
+require a different gate design (`40001 serialization failure` retry
+loops); the engine does NOT handle that today.
+
+An ops change to `default_transaction_isolation` MUST be paired with a
+deliberate redesign of the gates — the startup assertion forces the
+conversation rather than letting silent corruption ship.
+
+**Open caveat (Part 2 staging-gate):** the startup assertion only validates
+the connection the boot process happens to take from the pool. It does NOT
+prove that every pooled connection runs READ COMMITTED under load (e.g. a
+PgBouncer transaction-mode pooler can rewrite session state). The first
+consumer wiring must add a per-connection or per-transaction probe under
+representative load before this invariant can be considered closed at scale.
+
+### 7. Meter limits are Ops-configured. `default_limit` is a PLACEHOLDER.
+
+The migration seeds `meter_definitions.compliance` with `default_limit = 1000`
+as a generous placeholder. Real per-plan caps live in `plan_allowances`; per-
+org overrides in `subject_allowances`. NEVER hardcode a limit value in
+application code, and NEVER treat the seeded `1000` as authoritative — the
+real numbers come from Youssef + Ayman with cost data, set via the admin
+portal at wiring time.
+
+Only the `compliance` meter_definition row is seeded in Part 1. The other
+three meter_keys (`risk`, `ai_assistant_message`, `upload_extraction`) are
+DEFINED in the closed enum but intentionally NOT seeded — their rows land
+when each consumer is wired in Part 2 (with windows + fail_modes decided
+then).
+
+### Consumer wiring is Part 2 — DO NOT call `MeteringService.reserve()` from any controller yet
+
+The engine is shipped; consumer wiring lives in Part 2 and is the next
+well-scoped unit of work. The eventual wire points are the four meter_keys
+above; the primary seam is `guest-invitation.service.ts:445-451`'s
+`TODO(upload-bucket, depends: metering)`. Part 2 will also decide whether
+`RESERVATION_TTL_SECONDS` (currently a module const, 1h) needs to be
+promoted to env-driven — paired with its Joi entry + `.env.example` line
+in the same commit per Phase 1.5 hard rule.
