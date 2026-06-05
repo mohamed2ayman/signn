@@ -712,5 +712,16 @@
         "rotation": "Page skew detected ({{degrees}}°). Clauses may be extracted in the wrong order."
       }
     }
+  },
+  "sharing": {
+    "emailLabel": "Email address",
+    "internal": "Internal",
+    "external": "External",
+    "sendButton": "Send Share Link",
+    "activeShares": "Active Shares",
+    "successInternal": "Access granted to {{name}} — they've been notified.",
+    "successExternal": "Share link sent to {{email}}.",
+    "searching": "Searching…",
+    "placeholder": "colleague@company.com"
   }
 }

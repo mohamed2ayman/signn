@@ -1,7 +1,7 @@
 # CLAUDE.md — Project Intelligence File
 > Read this entire file at the start of every Claude Code session before touching any code.
 > This file is the single source of truth for all architectural decisions, rules, and context.
-> Last updated: 2026-06-04 (Phase 7.18 metering engine primitive shipped — commit `dc31bb6` on `feat/metering-primitive-7.18`. Schema + allowance resolver + MeteringService authority (reserve/commit/release) + dangling-reserve sweeper + READ COMMITTED startup invariant. 20 real-Postgres concurrency + precedence tests; full backend suite 430/430. ENGINE ONLY — no consumer wiring (Part 2). See "Metering Engine Invariants — Phase 7.18 (shipped 2026-06-04)" section at the bottom; new ARCHITECTURE RULES Rule 9 is the spine pointer. Lessons #148–#150 capture the engine-earned discipline (TypeORM 0.3 `[rows, rowCount]` shape, read-then-write transitions, existence-check-then-insert idempotency race). Phase 7.26 shipped — Track A complete. 12 missing i18n keys added across EN and AR locales; FR was already structurally complete. Track B (legal page localization) deferred pending legal team translated content. Phase 7.25 fully documented (PR #41). **CRITICAL** — Phase 3.4 compliance PDF reports + Phase 4 ExportService contract PDFs are CURRENTLY BROKEN by the same pdfmake v0.1 require pattern 2c just fixed; see Critical Known Bugs + lesson #142, HIGH priority.)
+> Last updated: 2026-06-04 (Phase 7.18 metering engine primitive shipped — commit `dc31bb6` on `feat/metering-primitive-7.18`. Schema + allowance resolver + MeteringService authority (reserve/commit/release) + dangling-reserve sweeper + READ COMMITTED startup invariant. 20 real-Postgres concurrency + precedence tests; full backend suite 430/430. ENGINE ONLY — no consumer wiring (Part 2). See "Metering Engine Invariants — Phase 7.18 (shipped 2026-06-04)" section at the bottom; new ARCHITECTURE RULES Rule 9 is the spine pointer. Lessons #148–#150 capture the engine-earned discipline (TypeORM 0.3 `[rows, rowCount]` shape, read-then-write transitions, existence-check-then-insert idempotency race). Phase 7.26 shipped — Track A complete. 12 missing i18n keys added across EN and AR locales; FR was already structurally complete. Track B (legal page localization) deferred pending legal team translated content. Phase 7.25 fully documented (PR #41). **CRITICAL** — Phase 3.4 compliance PDF reports + Phase 4 ExportService contract PDFs are CURRENTLY BROKEN by the same pdfmake v0.1 require pattern 2c just fixed; see Critical Known Bugs + lesson #142, HIGH priority. Internal Contract Sharing fix shipped (PR #44) — cross-tenant bug in `createShare()` fixed + ProjectMember creation + notification dispatch + org-member autocomplete.)
 
 ---
 
@@ -197,6 +197,24 @@ Spine pointer; full details in the "Metering Engine Invariants — Phase 7.18 (s
 - (7) Meter limits are **Ops-set** at runtime. `default_limit = 1000` for compliance is a PLACEHOLDER. NEVER hardcode limits in app code.
 
 Engine-earned lessons: #148 (TypeORM 0.3 `[rows, rowCount]` shape), #149 (read-then-write status transitions double-refund), #150 (existence-check-then-insert idempotency race).
+
+### 10. PostgreSQL Enum Type Names — Always Use the `_enum`-Suffixed Name
+TypeORM auto-appends `_enum` to enum type names in PostgreSQL. The mapping is:
+`<snake_case_column_name>_enum` — NOT the TypeScript enum name.
+
+Example: a `@Column({ type: 'enum', enum: DocumentProcessingStatus })` on a column
+named `processing_status` produces the PostgreSQL type `document_processing_status_enum`.
+
+**Any `ALTER TYPE` migration MUST use the actual PostgreSQL type name.** Always verify first:
+```sql
+SELECT typname FROM pg_type WHERE typname LIKE '%your_enum%';
+```
+Or from a running container:
+```bash
+docker exec sign-postgres psql -U sign_user -d sign_db \
+  -c "SELECT typname FROM pg_type WHERE typname LIKE '%your_enum%';"
+```
+Targeting the wrong name fails silently if wrapped in `EXCEPTION WHEN` (the lesson #31/#103 anti-pattern) and loudly if not. See lesson #143.
 
 ---
 
@@ -3472,3 +3490,42 @@ above; the primary seam is `guest-invitation.service.ts:445-451`'s
 `RESERVATION_TTL_SECONDS` (currently a module const, 1h) needs to be
 promoted to env-driven — paired with its Joi entry + `.env.example` line
 in the same commit per Phase 1.5 hard rule.
+
+---
+
+## Internal Contract Sharing Fix (shipped — 2026-06-04, PR #47)
+
+Closed a cross-tenant data access bug in `ContractSharingService.createShare()` (same class as PR #42), added internal-user enrichment (ProjectMember creation + in-app + email notification), and org-member autocomplete for the share modal.
+
+### What shipped
+
+**Backend (`backend/src/modules/contract-sharing/`):**
+- **`dto/create-share.dto.ts`** (new) — `@IsUUID contract_id`, `@IsEmail @MaxLength(255) shared_with_email`, `@IsIn(['view','comment','edit']) permission`, `@IsInt @Min(1) @Max(365) expires_in_days`. Replaces raw `@Body()` inline object (Phase 3.3 rule).
+- **`contract-sharing.module.ts`** — added `TypeOrmModule.forFeature([User, ProjectMember])`, `NotificationsModule`, `ConfigModule`.
+- **`contract-sharing.service.ts`** changes:
+  - `createShare()` now verifies `contract.project.organization_id === orgId` — returns 404 if the contract doesn't belong to the caller's org (lesson #145 pattern, same as PR #42).
+  - After save: looks up recipient by `{ email, organization_id: orgId }`.
+  - **Internal path** (recipient found): upserts a `ProjectMember` row (`permission_level` mapped from share permission: `view→VIEWER`, `comment→COMMENTER`, `edit→EDITOR`); fires `NotificationDispatchService.dispatch()` with `NotificationType.BOTH` (in-app + email).
+  - **External path** (no org match): calls existing `sendContractShared()` (email only, no ProjectMember).
+  - New `searchOrgMembers(orgId, q)` — ILIKE search on email/first_name/last_name within org, `escapeLikeParam()` applied, max 10 results.
+- **`contract-sharing.controller.ts`** — `@OrganizationId()` injected on `createShare()`; new `GET /contract-sharing/org-members?q=` endpoint (JWT-guarded).
+
+**Frontend:**
+- **`contractSharingService.ts`** — `ShareResult` type with `isInternal: boolean` + `recipientName?: string`; `searchOrgMembers(q)` method.
+- **`ContractDetailPage.tsx`** — debounced autocomplete on the email input (300 ms), dropdown showing org member suggestions with "Internal" badge; success message distinguishes internal ("Access granted to X — they've been notified") vs external ("Share link sent to Y").
+
+**i18n** — `sharing.*` section (9 keys: `emailLabel`, `internal`, `external`, `sendButton`, `activeShares`, `successInternal`, `successExternal`, `searching`, `placeholder`) added to EN/AR/FR with exact parity.
+
+### CONTRACTOR_* Role Audit — No Code Changes
+
+Full audit of `CONTRACTOR_ADMIN`, `CONTRACTOR_TENDERING`, `CONTRACTOR_USER`, `CONTRACTOR_VIEWER` roles:
+- All 4 values are active in 13 locations: route guards, redirect logic, permission checks.
+- `ContractStatus.CONTRACTOR_REVIEWING` and `ObligationType.CONTRACTOR_OBLIGATION` share the `CONTRACTOR_` prefix but are in DIFFERENT enums — must never be removed with user-role cleanup.
+- **Removal is BLOCKED until Phase 7.18 (Guest Portal) ships.** Safe removal sequence: (1) Add new guest/restricted-user roles; (2) migrate all 13 call sites; (3) run with dual values; (4) `DROP` old enum values from PostgreSQL in a separate migration after old values confirm zero rows.
+
+### Hard rules — never violate
+1. **`createShare()` MUST verify `contract.project.organization_id === orgId`** before creating any share row. This is the org-scope gate — removing it re-opens the cross-tenant vulnerability.
+2. **`ProjectMember` upsert is best-effort** — the `catch` in `upsertProjectMember()` logs and silently continues (race conditions produce a duplicate key; that's fine). Never rethrow from this helper.
+3. **`notifyInternal()` is best-effort** — wrapped in try/catch, never throws. A notification failure must never roll back the share creation.
+4. **`searchOrgMembers()` MUST use `escapeLikeParam()`** on the query before wrapping in `%`. Same rule as all 8 ILIKE sites hardened in Phase 3.1.
+5. **Do NOT remove `CONTRACTOR_*` UserRole values until Phase 7.18 ships** and the 13 call sites are migrated. Removing them early causes silent runtime errors on every route that uses those roles.

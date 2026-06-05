@@ -183,7 +183,24 @@
       "Bash(git checkout *)",
       "Bash(perl -pe 's/^## \\(\\\\d+\\)\\\\./\"## \".\\($1+5\\).\".\"/e; s/#110\\\\b/#115/g; s/#111\\\\b/#116/g; s/#119\\\\b/#124/g;' /tmp/mynew.md)",
       "Bash(git add *)",
-      "Bash(GIT_EDITOR=true git rebase --continue)"
+      "Bash(GIT_EDITOR=true git rebase --continue)",
+      "Bash(git stash *)",
+      "Bash(git push *)",
+      "Bash(npx jest *)",
+      "Bash(sed -n '108,125p' apps/sign/src/App.tsx)",
+      "Bash(sed -n '290,310p' apps/sign/src/App.tsx)",
+      "Bash(sed -n '40,50p' apps/sign/src/pages/auth/LoginPage.tsx)",
+      "Bash(sed -n '88,102p' apps/sign/src/pages/auth/AcceptInvitationPage.tsx)",
+      "Bash(sed -n '690,700p' apps/sign/src/pages/app/ContractDetailPage.tsx)",
+      "Bash(sed -n '54,62p' apps/sign/src/pages/app/ObligationsPage.tsx)",
+      "Bash(sed -n '78,88p' apps/sign/src/components/contracts/ObligationsTab.tsx)",
+      "Bash(xargs grep -l \"CONTRACTOR\")",
+      "Bash(grep \"\\\\.ts$\")",
+      "Bash(xargs grep -l \"contract\\\\|Contract\")",
+      "Bash(xargs grep -l \"getContracts\\\\|contractService.get\\\\|project.*contracts\\\\|contract.*list\")",
+      "Bash(xargs grep -l \"refetchInterval\\\\|getContracts\\\\|contract.*refetch\")",
+      "Bash(npx --prefix backend tsc --noEmit)",
+      "Bash(npm test *)"
     ]
   }
 }

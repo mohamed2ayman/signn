@@ -5750,3 +5750,39 @@ limit=1: all dedup to one reservation, charge once, no raw errors" +
 "same-key reserve after commit returns the committed reservation, no
 extra charge" + "two different idempotency_keys at limit=1 concurrent:
 exactly one wins, one throws MeterLimitExceeded".
+
+---
+
+### Lesson #151 — After Fixing a Cross-Tenant Bug in One Endpoint, Always Grep for the Same Pattern Across the Whole Module
+
+PR #42 fixed a cross-tenant contract read in `ContractsService.findOne()` — the service
+fetched by `id` only, with no `organization_id` filter, letting any authenticated user
+read any contract. After the fix landed, `ContractSharingService.createShare()` was later
+audited and found to have the **identical bug**: it called
+`contractRepository.findOne({ where: { id: contractId } })` with no org-scope, meaning any
+authenticated user could create a share link for any contract in the platform regardless
+of organisation.
+
+**Root cause of spread:** the original `findOne({ where: { id } })` pattern was
+copy-pasted across services during early development. One fix does not propagate.
+
+**Rule — apply immediately after fixing any cross-tenant `findById` pattern:**
+
+```bash
+# Grep for every findOne/findBy that receives an ID from user input
+grep -rn "findOne\|findByIds\|findBy\b" backend/src --include="*.service.ts" \
+  | grep -v "organization_id\|org_id\|orgId\|user_id\|userId\|project_id" \
+  | grep "where.*id\b"
+```
+
+Review every hit: ask "does this query scope to the caller's organisation / user?" If not,
+it is a potential cross-tenant read/write. Fix before moving on.
+
+**Applies to:** any service that accepts a resource ID from a controller parameter or
+request body. The most common miss is shared-access services (sharing, invitations,
+public tokens) which are wired up quickly without the org-scope habit from the primary
+CRUD services.
+
+**Reference:** `ContractSharingService.createShare()` fixed in PR #47 (same pattern as PR #42
+`ContractsService.findOne()` fix). Audit grep: `grep -rn "findOne" backend/src/modules/contract-sharing`.
+See also lesson #145 (missing @RequirePermission silently disabling authorization).

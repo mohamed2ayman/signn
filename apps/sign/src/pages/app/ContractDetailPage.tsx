@@ -7,6 +7,7 @@ import { clauseService } from '@/services/api/clauseService';
 import { riskAnalysisService } from '@/services/api/riskAnalysisService';
 import { exportService } from '@/services/api/exportService';
 import { contractSharingService } from '@/services/api/contractSharingService';
+import type { OrgMemberSuggestion } from '@/services/api/contractSharingService';
 import { projectService } from '@/services/api/projectService';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
 import ChatPanel from '@/components/chat/ChatPanel';
@@ -285,6 +286,10 @@ export default function ContractDetailPage() {
   const [loadingShares, setLoadingShares] = useState(false);
   const [exporting, setExporting] = useState<string | null>(null);
   const [shareSuccess, setShareSuccess] = useState('');
+  const [shareIsInternal, setShareIsInternal] = useState<boolean | null>(null);
+  const [shareSuggestions, setShareSuggestions] = useState<OrgMemberSuggestion[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
 
   // Signature state
@@ -579,18 +584,54 @@ export default function ContractDetailPage() {
     }
   };
 
+  // Debounced org-member autocomplete
+  const handleShareEmailChange = (value: string) => {
+    setShareEmail(value);
+    setShareIsInternal(null);
+    if (value.length < 2) {
+      setShareSuggestions([]);
+      setShowSuggestions(false);
+      return;
+    }
+    setSuggestionsLoading(true);
+    clearTimeout((handleShareEmailChange as any)._timer);
+    (handleShareEmailChange as any)._timer = setTimeout(async () => {
+      try {
+        const results = await contractSharingService.searchOrgMembers(value);
+        setShareSuggestions(results);
+        setShowSuggestions(results.length > 0);
+      } catch {
+        setShareSuggestions([]);
+      } finally {
+        setSuggestionsLoading(false);
+      }
+    }, 300);
+  };
+
+  const selectShareSuggestion = (member: OrgMemberSuggestion) => {
+    setShareEmail(member.email);
+    setShareIsInternal(true);
+    setShowSuggestions(false);
+    setShareSuggestions([]);
+  };
+
   const handleShareContract = async () => {
     if (!id || !shareEmail.trim()) return;
     try {
-      await contractSharingService.createShare({
+      const result = await contractSharingService.createShare({
         contract_id: id,
         shared_with_email: shareEmail.trim(),
         permission: sharePermission,
         expires_in_days: shareExpiry ? parseInt(shareExpiry) : undefined,
       });
       setShareEmail('');
-      setShareSuccess('Share link sent successfully!');
-      setTimeout(() => setShareSuccess(''), 3000);
+      setShareIsInternal(null);
+      setShowSuggestions(false);
+      const successMsg = result.isInternal
+        ? `Access granted to ${result.recipientName || result.shared_with_email} — they've been notified.`
+        : `Share link sent to ${result.shared_with_email}.`;
+      setShareSuccess(successMsg);
+      setTimeout(() => setShareSuccess(''), 4000);
       loadShares();
     } catch (err) {
       console.error('Failed to share:', err);
@@ -1910,15 +1951,57 @@ export default function ContractDetailPage() {
                 </div>
               )}
 
-              <div>
-                <label className="mb-1.5 block text-sm font-medium text-gray-700">Email address</label>
+              <div className="relative">
+                <label className="mb-1.5 block text-sm font-medium text-gray-700">
+                  Email address
+                  {shareIsInternal === true && (
+                    <span className="ml-2 inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+                      Internal
+                    </span>
+                  )}
+                  {shareIsInternal === false && (
+                    <span className="ml-2 inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-500">
+                      External
+                    </span>
+                  )}
+                </label>
                 <input
                   type="email"
                   value={shareEmail}
-                  onChange={(e) => setShareEmail(e.target.value)}
+                  onChange={(e) => handleShareEmailChange(e.target.value)}
+                  onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
                   placeholder="colleague@company.com"
                   className="w-full rounded-lg border border-gray-200 px-3.5 py-2.5 text-sm transition-colors placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  autoComplete="off"
                 />
+                {/* Org member suggestions dropdown */}
+                {showSuggestions && shareSuggestions.length > 0 && (
+                  <div className="absolute z-10 mt-1 w-full rounded-lg border border-gray-200 bg-white shadow-lg">
+                    {suggestionsLoading ? (
+                      <div className="px-4 py-3 text-sm text-gray-400">Searching…</div>
+                    ) : (
+                      shareSuggestions.map((member) => (
+                        <button
+                          key={member.id}
+                          type="button"
+                          onMouseDown={() => selectShareSuggestion(member)}
+                          className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm transition-colors hover:bg-gray-50"
+                        >
+                          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
+                            {member.name.charAt(0).toUpperCase()}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate font-medium text-gray-800">{member.name}</p>
+                            <p className="truncate text-xs text-gray-400">{member.email}</p>
+                          </div>
+                          <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+                            Internal
+                          </span>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-3">
