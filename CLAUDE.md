@@ -1,7 +1,7 @@
 # CLAUDE.md — Project Intelligence File
 > Read this entire file at the start of every Claude Code session before touching any code.
 > This file is the single source of truth for all architectural decisions, rules, and context.
-> Last updated: 2026-06-05 (ContractShare Step 1 deprecation shipped — dead public token endpoint removed, broken external email path removed, cross-tenant info disclosure in `getSharesByContract()` fixed, frontend external sharing gated with "coming soon" message. Lesson #152. Phase 7.18 metering engine primitive shipped — commit `dc31bb6` on `feat/metering-primitive-7.18`. Schema + allowance resolver + MeteringService authority (reserve/commit/release) + dangling-reserve sweeper + READ COMMITTED startup invariant. 20 real-Postgres concurrency + precedence tests; full backend suite 430/430. ENGINE ONLY — no consumer wiring (Part 2). See "Metering Engine Invariants — Phase 7.18 (shipped 2026-06-04)" section at the bottom; new ARCHITECTURE RULES Rule 9 is the spine pointer. Lessons #148–#150 capture the engine-earned discipline (TypeORM 0.3 `[rows, rowCount]` shape, read-then-write transitions, existence-check-then-insert idempotency race). Phase 7.26 shipped — Track A complete. 12 missing i18n keys added across EN and AR locales; FR was already structurally complete. Track B (legal page localization) deferred pending legal team translated content. Phase 7.25 fully documented (PR #41). **CRITICAL** — Phase 3.4 compliance PDF reports + Phase 4 ExportService contract PDFs are CURRENTLY BROKEN by the same pdfmake v0.1 require pattern 2c just fixed; see Critical Known Bugs + lesson #142, HIGH priority. Internal Contract Sharing fix shipped (PR #44) — cross-tenant bug in `createShare()` fixed + ProjectMember creation + notification dispatch + org-member autocomplete.)
+> Last updated: 2026-06-06 (Phase 7.18 Part 2 shipped — managing-user compliance run is the FIRST wired metering consumer. PR #49 squash-merged at `49f785f` on top of engine PR #46 (`9200f38`). Async reconcile shape: reserve in-request behind the #45 access wall, commit/release in `refreshFromAi` + both synchronous fail paths, sweeper backstop for never-polled runs; `reservation_id` on `compliance_checks` via additive migration `1754000000001`; four ops-search log signals (`metering.compliance.{committed_after_release|released_after_terminal|commit_error|release_error}`); engine code UNTOUCHED. Rule 9 parenthetical updated. New bottom-of-file "Phase 7.18 Part 2 — Compliance metering consumer" section. Staging gate (G.1–G.7) reframed as a **Phase 9 release-gate, NOT a merge-gate** — runbook stays in `docs/metering-part2-staging-gate.md`. NO new lessons added — substantive Part 2 lessons (TTL-vs-p99, sweeper-at-scale) need real load, deferred to Phase 9. ContractShare Step 1 deprecation shipped — dead public token endpoint removed, broken external email path removed, cross-tenant info disclosure in `getSharesByContract()` fixed, frontend external sharing gated with "coming soon" message. Lesson #152. Phase 7.18 metering engine primitive shipped — commit `dc31bb6` on `feat/metering-primitive-7.18`. Schema + allowance resolver + MeteringService authority (reserve/commit/release) + dangling-reserve sweeper + READ COMMITTED startup invariant. 20 real-Postgres concurrency + precedence tests; full backend suite 430/430. ENGINE ONLY — no consumer wiring (Part 2). See "Metering Engine Invariants — Phase 7.18 (shipped 2026-06-04)" section at the bottom; new ARCHITECTURE RULES Rule 9 is the spine pointer. Lessons #148–#150 capture the engine-earned discipline (TypeORM 0.3 `[rows, rowCount]` shape, read-then-write transitions, existence-check-then-insert idempotency race). Phase 7.26 shipped — Track A complete. 12 missing i18n keys added across EN and AR locales; FR was already structurally complete. Track B (legal page localization) deferred pending legal team translated content. Phase 7.25 fully documented (PR #41). **CRITICAL** — Phase 3.4 compliance PDF reports + Phase 4 ExportService contract PDFs are CURRENTLY BROKEN by the same pdfmake v0.1 require pattern 2c just fixed; see Critical Known Bugs + lesson #142, HIGH priority. Internal Contract Sharing fix shipped (PR #44) — cross-tenant bug in `createShare()` fixed + ProjectMember creation + notification dispatch + org-member autocomplete.)
 
 ---
 
@@ -187,7 +187,7 @@ The priority system is used for conflict detection between contract documents.
 - Never reverse this logic — Priority 1 must always be the most authoritative
 
 ### 9. Metering Engine — Phase 7.18 Invariants (engine commit `dc31bb6`)
-Spine pointer; full details in the "Metering Engine Invariants — Phase 7.18 (shipped 2026-06-04)" section at the bottom of this file. Engine only as of `dc31bb6`; consumer wiring is Part 2 (do NOT call `MeteringService.reserve()` from any controller yet). The seven invariants in shorthand:
+Spine pointer; full details in the "Metering Engine Invariants — Phase 7.18 (shipped 2026-06-04)" section at the bottom of this file. **First wired consumer: managing-user compliance run (Phase 7.18 Part 2 — squash `49f785f`, PR #49) — see the "Phase 7.18 Part 2 — Compliance metering consumer" section at the bottom of this file.** Future consumers (risk on upload, AI assistant chat, guest upload-extraction) follow the same shape: reserve in-request behind the contract-access wall, commit/release across the async boundary, sweeper backstop. The seven invariants in shorthand:
 - (1) Subject is **always** derived `contract → project → project.organization_id`. A guest's `User.organization_id` is **never** trusted as the metering subject. Managing-user JWT org is a defense-in-depth cross-check only.
 - (2) `reserve()` uses an **atomic conditional UPDATE**, a DELIBERATE exception to Bucket 1's `setLock('pessimistic_write')` idiom. Future single-hot-row counters follow this, not setLock. Do NOT "fix" the inconsistency.
 - (3) Idempotency = **INSERT-FIRST + ON CONFLICT DO NOTHING + return-existing** (Pattern C). NEVER existence-check-then-insert (lesson #150).
@@ -3608,3 +3608,134 @@ Full audit of `CONTRACTOR_ADMIN`, `CONTRACTOR_TENDERING`, `CONTRACTOR_USER`, `CO
 3. **`notifyInternal()` is best-effort** — wrapped in try/catch, never throws. A notification failure must never roll back the share creation.
 4. **`searchOrgMembers()` MUST use `escapeLikeParam()`** on the query before wrapping in `%`. Same rule as all 8 ILIKE sites hardened in Phase 3.1.
 5. **Do NOT remove `CONTRACTOR_*` UserRole values until Phase 7.18 ships** and the 13 call sites are migrated. Removing them early causes silent runtime errors on every route that uses those roles.
+
+---
+
+## Phase 7.18 Part 2 — Compliance metering consumer (shipped 2026-06-06)
+
+First wired consumer of the metering engine. Squash commit `49f785f` (PR #49). Sits
+on top of the engine PR #46 (`9200f38`) and the compliance access-wall PR #45
+(`63a9ed6`).
+
+**Scope of this section:** the consumer's wiring + the observable signals + the
+deferred staging-gate posture. The engine's seven invariants live in ARCHITECTURE
+RULES Rule 9 and the "Metering Engine Invariants — Phase 7.18 (shipped 2026-06-04)"
+section earlier in this file; this section does NOT restate them — it documents
+the FIRST consumer pattern, which future consumers (risk, AI assistant chat,
+guest upload-extraction) must follow.
+
+### Consumer surface
+- Route: `POST /api/v1/contracts/:contractId/compliance-checks` (managing-user
+  compliance run; `runCheck`).
+- Reconciled lazily via `GET /api/v1/contracts/:contractId/compliance-checks/:checkId`
+  which calls `refreshFromAi(checkId)`.
+
+### Async reconcile shape
+HTTP request flow (synchronous, inside `runCheck`):
+1. `JwtAuthGuard` (controller level).
+2. **`assertContractInCallerOrg(contractId, user)`** (the PR #45 access wall) —
+   the wall runs BEFORE reserve. Reserve trusts `contractId` only because the
+   wall already authorized it.
+3. **`MeteringService.reserve({caller, meterKey: COMPLIANCE, amount: 1,
+   idempotencyKey: randomUUID(), contractId, actorRef: userId, …})`** —
+   capacity-failure throws `MeterLimitExceededError` (envelope:
+   `{statusCode: 403, error: 'METER_LIMIT_COMPLIANCE', message:
+   'Meter limit reached for compliance: <current>/<limit> already consumed
+   in the current window.'}`). No check row, no AI dispatch on cap failure.
+4. Load contract + project + clauses; create `ComplianceCheck` row with
+   `reservation_id` set.
+5. **Sync fail path #1 (no clauses):** release reservation; throw 400.
+6. **Sync fail path #2 (AI dispatch threw):** release reservation; re-throw.
+7. Return `ComplianceCheck` (PENDING).
+
+Reconcile flow (lazy, user-driven via GET):
+1. PR #45 wall walks `check.contract_id` and asserts org match.
+2. `refreshFromAi(checkId)` polls the AI job.
+3. On **terminal SUCCESS** (`persistFindings` + `startObligationExtraction`):
+   **`commitReservationOnSuccess`** is called. `{applied: false}` from the
+   engine means a peer (almost always the sweeper because the run outlived
+   `RESERVATION_TTL_SECONDS = 3600`) released first; an OBSERVABLE warn fires
+   (signal name below).
+4. On **terminal FAILURE** (AI job reported failed): **`releaseReservationOnFailure`**
+   is called. `{applied: false}` from a peer (sweeper / double-poll) gets the same
+   observable treatment.
+5. Never-polled runs rely on the engine's sweeper (every 5 min, dangling reserves
+   with `expires_at < NOW()`). Fail-safe direction: over-deny, never oversell.
+
+The internal `startObligationExtraction` (after `persistFindings` in the success
+branch) is an **AUDIT POINT, NOT a second reserve.** It rides inside the compliance
+intent today. **When obligations becomes its own meter dimension later**
+(`meter_key = 'obligations'`), this is the §2.3 bypass point that needs its own
+reserve.
+
+### Reservation linkage (the only schema touch outside the engine)
+Migration `1754000000001-AddReservationIdToComplianceChecks.ts`:
+- `ALTER TABLE compliance_checks ADD COLUMN IF NOT EXISTS reservation_id UUID NULL`
+- Partial index `(reservation_id) WHERE reservation_id IS NOT NULL` for ops
+  "show me the reservation behind this check" queries.
+- **NO foreign key to `metering_ledger.reservation_id`** — attribution, not
+  ownership. Mirrors the engine's own choice on `ledger.actor_ref` / `contract_ref`
+  (a future ledger-retention prune MUST NOT cascade into compliance).
+- NULLABLE because pre-existing rows pre-date metering and synchronous-failure
+  runs never persist a check row.
+
+### Four ops-search log signal names
+Wire these to log search / alerting:
+
+| Signal | Site | Means |
+|---|---|---|
+| `metering.compliance.committed_after_release` | `commitReservationOnSuccess` warn path | Run succeeded but reservation was already released (sweeper / peer). Run was NOT charged. |
+| `metering.compliance.released_after_terminal` | `releaseReservationOnFailure` warn path | Failure release found a peer won the race. Idempotent; refund already applied. |
+| `metering.compliance.commit_error` | `commitReservationOnSuccess` catch | Engine `commit()` threw. Vanishingly rare; loud if it fires. |
+| `metering.compliance.release_error` | `releaseReservationOnFailure` + the sync-failure release catch | Engine `release()` threw. Original failure error still rules; metering is best-effort here. |
+
+### Idempotency v1 limitation (locked posture)
+Compliance is intentionally **non-idempotent across distinct user clicks**
+(matches existing behaviour pre-metering). The engine's `idempotency_key` is
+a fresh `randomUUID()` per call — it dedupes only an in-flight retry of the
+SAME reserve, NOT a user clicking "Run check" twice.
+
+Two distinct clicks = two distinct reservations = two distinct charges. Until
+a client-supplied `Idempotency-Key` HTTP header convention lands (audit §9.2
+deferred), the **frontend must own the click-disable / double-submit guard**.
+
+### Hard rules for future consumers — never violate
+1. **Reserve sits DOWNSTREAM of the contract-access wall.** Never reserve before
+   the access gate has authorized the contract_id. The engine's JWT cross-check
+   in `resolveMeteringSubject` is defense-in-depth at the metering layer; it is
+   NOT the access gate.
+2. **The reserve idempotency_key is a fresh `randomUUID()` per call** unless and
+   until a client `Idempotency-Key` header convention lands. Do not reuse it
+   across distinct user intents.
+3. **Every consumer MUST inspect `TransitionResult` from `commit()` and `release()`**
+   and emit an OBSERVABLE log + metric on `{applied: false}`. Never swallow it.
+   Use the `metering.<surface>.{committed_after_release|released_after_terminal|commit_error|release_error}`
+   naming convention so a single search across all consumers finds every
+   applied:false occurrence.
+4. **Persist the `reservation_id` on the consumer's domain row** so the lazy
+   reconcile path (poll, webhook, scheduled job — whatever the consumer uses)
+   can find it. Use a nullable column, no FK to `metering_ledger`.
+5. **Both synchronous and asynchronous failure paths MUST release.** Synchronous
+   failure releases in-request before re-throwing; asynchronous failure releases
+   in the terminal handler. Never-polled / never-reconciled runs rely on the
+   engine sweeper — that's the v1 backstop, fail-safe toward over-denial.
+6. **Internal sub-calls (like compliance's `startObligationExtraction`) that
+   dispatch a SECOND AI agent ride inside the FIRST intent's reservation and
+   are NOT separately metered** — UNTIL that sub-call gets its own `meter_key`,
+   at which point it becomes a bypass point and needs its own reserve.
+
+### Staging gate is a Phase 9 release-gate, NOT a merge-gate
+The runbook `docs/metering-part2-staging-gate.md` (committed to main as part of
+the PR #49 squash) contains 7 items (G.1–G.7) that exercise the engine + consumer
+under representative load: pooled-connection READ COMMITTED probe, p99 reserve→
+commit vs `RESERVATION_TTL_SECONDS`, the scheduled sweeper actually releasing an
+expired reserve (NOT hand-run SQL), capacity gate under realistic concurrent
+volume, the migration in the deploy pipeline, the metering specs running against
+real Postgres on staging (CI skips them per #46), and the frontend double-submit
+guard.
+
+**These attach to the Phase 9 production cut, not to the consumer PR.** The
+substantive Part 2 lessons (TTL-vs-p99 tuning, sweeper-at-scale behaviour,
+applied:false alert cadence) are deliberately deferred to that pass — same
+discipline as engine lessons #148–#150 which were earned by failing tests, not
+written ahead of evidence.
