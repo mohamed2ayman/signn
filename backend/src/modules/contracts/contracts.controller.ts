@@ -157,8 +157,11 @@ export class ContractsController {
     @Param('clauseId', ParseUUIDPipe) clauseId: string,
     @Body() dto: UpdateClauseOrderDto,
     @CurrentUser() user: any,
+    @OrganizationId() orgId: string,
   ) {
-    return this.contractsService.updateContractClause(id, clauseId, dto, user.id);
+    // Tenant-isolation Tier 1 — service now requires orgId for the
+    // contract-access wall before mutating any contract_clause row.
+    return this.contractsService.updateContractClause(id, clauseId, dto, user.id, orgId);
   }
 
   @Delete(':id/clauses/:clauseId')
@@ -167,8 +170,9 @@ export class ContractsController {
     @Param('id', ParseUUIDPipe) id: string,
     @Param('clauseId', ParseUUIDPipe) clauseId: string,
     @CurrentUser() user: any,
+    @OrganizationId() orgId: string,
   ) {
-    await this.contractsService.removeClause(id, clauseId, user.id);
+    await this.contractsService.removeClause(id, clauseId, user.id, orgId);
     return { message: 'Clause removed from contract' };
   }
 
@@ -177,8 +181,9 @@ export class ContractsController {
   async reorderClauses(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: ReorderClausesDto,
+    @OrganizationId() orgId: string,
   ) {
-    await this.contractsService.reorderClauses(id, dto.clauses);
+    await this.contractsService.reorderClauses(id, dto.clauses, orgId);
     return { message: 'Clauses reordered successfully' };
   }
 
@@ -217,11 +222,13 @@ export class ContractsController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: UpdateChangeSummaryDto,
     @CurrentUser() user: any,
+    @OrganizationId() orgId: string,
   ) {
     return this.contractsService.saveNewVersion(
       id,
       user.id,
       body.change_summary,
+      orgId,
     );
   }
 
@@ -251,8 +258,9 @@ export class ContractsController {
   async resolveComment(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('commentId', ParseUUIDPipe) commentId: string,
+    @OrganizationId() orgId: string,
   ) {
-    return this.contractsService.resolveComment(id, commentId);
+    return this.contractsService.resolveComment(id, commentId, orgId);
   }
 
   @Patch(':id/comments/:commentId')
@@ -270,8 +278,9 @@ export class ContractsController {
     @Param('id', ParseUUIDPipe) id: string,
     @Param('commentId', ParseUUIDPipe) commentId: string,
     @CurrentUser() user: any,
+    @OrganizationId() orgId: string,
   ) {
-    await this.contractsService.deleteComment(id, commentId, user.id, user.role);
+    await this.contractsService.deleteComment(id, commentId, user.id, user.role, orgId);
     return { message: 'Comment deleted successfully' };
   }
 

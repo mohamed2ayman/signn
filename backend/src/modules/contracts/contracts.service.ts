@@ -349,8 +349,12 @@ export class ContractsService {
     contractId: string,
     contractClauseId: string,
     dto: UpdateClauseOrderDto,
-    userId?: string,
+    userId: string | undefined,
+    orgId: string,
   ): Promise<ContractClause> {
+    // Tenant-isolation Tier 1 — wall the contract BEFORE mutating any
+    // contract_clause row. Cross-tenant probe → 404 from findInOrg.
+    await this.contractAccess.findInOrg(contractId, orgId);
     const cc = await this.contractClauseRepository.findOne({
       where: { id: contractClauseId, contract_id: contractId },
     });
@@ -388,8 +392,12 @@ export class ContractsService {
   async removeClause(
     contractId: string,
     contractClauseId: string,
-    userId?: string,
+    userId: string | undefined,
+    orgId: string,
   ): Promise<void> {
+    // Tenant-isolation Tier 1 — wall the contract BEFORE deleting any
+    // contract_clause row. Cross-tenant probe → 404 from findInOrg.
+    await this.contractAccess.findInOrg(contractId, orgId);
     const cc = await this.contractClauseRepository.findOne({
       where: { id: contractClauseId, contract_id: contractId },
     });
@@ -421,7 +429,11 @@ export class ContractsService {
   async reorderClauses(
     contractId: string,
     clauseOrder: { id: string; order_index: number }[],
+    orgId: string,
   ): Promise<void> {
+    // Tenant-isolation Tier 1 — wall the contract BEFORE issuing the
+    // batch order_index updates. Cross-tenant probe → 404 from findInOrg.
+    await this.contractAccess.findInOrg(contractId, orgId);
     for (const item of clauseOrder) {
       await this.contractClauseRepository.update(
         { id: item.id, contract_id: contractId },
@@ -776,7 +788,13 @@ export class ContractsService {
     contractId: string,
     userId: string,
     changeSummary: string,
+    orgId: string,
   ): Promise<ContractVersion> {
+    // Tenant-isolation Tier 1 — wall the contract BEFORE a new version
+    // snapshot is written. `createVersionSnapshot` itself does a bare
+    // findOne; walling at the entry point catches the cross-tenant probe
+    // BEFORE any DB mutation.
+    await this.contractAccess.findInOrg(contractId, orgId);
     return this.createVersionSnapshot(contractId, userId, changeSummary, {
       eventType: ContractVersionEventType.EDITED,
     });
@@ -836,7 +854,12 @@ export class ContractsService {
   async resolveComment(
     contractId: string,
     commentId: string,
+    orgId: string,
   ): Promise<ContractComment> {
+    // Tenant-isolation Tier 1 — wall the contract BEFORE flipping the
+    // comment's `is_resolved` flag. resolveComment has no author check;
+    // pre-fix a cross-tenant caller could resolve any comment.
+    await this.contractAccess.findInOrg(contractId, orgId);
     const comment = await this.contractCommentRepository.findOne({
       where: { id: commentId, contract_id: contractId },
     });
@@ -884,7 +907,13 @@ export class ContractsService {
     commentId: string,
     userId: string,
     userRole: string,
+    orgId: string,
   ): Promise<void> {
+    // Tenant-isolation Tier 1 — wall the contract BEFORE the existing
+    // author-or-admin check. Without this wall, an admin (OWNER_ADMIN /
+    // SYSTEM_ADMIN / CONTRACTOR_ADMIN) from ANY org could delete a
+    // comment on ANY other org's contract via the `isAdmin` bypass.
+    await this.contractAccess.findInOrg(contractId, orgId);
     const comment = await this.contractCommentRepository.findOne({
       where: { id: commentId, contract_id: contractId },
     });

@@ -26,6 +26,9 @@ import {
   mapScoreToRiskLevel,
   mapSeverityToLikelihoodImpact,
 } from '../risk-analysis/utils/severity-mapping';
+// Tenant-isolation Tier 1 — service-level wall on uploadAndProcess +
+// reprocess + finalizeReview. Same `findInOrg` shape as PR #45.
+import { ContractAccessService } from '../contracts/services/contract-access.service';
 
 @Injectable()
 export class DocumentProcessingService {
@@ -58,6 +61,10 @@ export class DocumentProcessingService {
     // the 4-step priority chain (KB ref → org learned → platform default →
     // fallback). The resolver's 5-min cache makes per-finding calls cheap.
     private readonly riskResolver: RiskMethodologyResolverService,
+    // Tenant-isolation Tier 1 — `findInOrg(contractId, orgId)` throws
+    // NotFoundException (404) on cross-tenant probe; no existence leak.
+    // Same shape as PR #42 / #45.
+    private readonly contractAccess: ContractAccessService,
   ) {}
 
   /**
@@ -70,13 +77,12 @@ export class DocumentProcessingService {
     orgId: string,
     options?: { document_label?: string; document_priority?: number },
   ): Promise<DocumentUpload> {
-    // Verify contract exists
-    const contract = await this.contractRepository.findOne({
-      where: { id: contractId },
-    });
-    if (!contract) {
-      throw new NotFoundException('Contract not found');
-    }
+    // Tenant-isolation Tier 1 — replace the bare `findOne({ id: contractId })`
+    // with `contractAccess.findInOrg(contractId, orgId)`. Cross-tenant
+    // probe → 404 (NOT 403 — no existence leak). In-org behaviour
+    // unchanged: contract existence is still verified, the org-mismatch
+    // case is the new defense.
+    await this.contractAccess.findInOrg(contractId, orgId);
 
     // Upload file to storage
     const uploadResult = await this.storageService.uploadFile(file, 'contracts');
@@ -526,14 +532,22 @@ export class DocumentProcessingService {
 
   /**
    * Reprocess a failed document.
+   *
+   * Tenant-isolation Tier 1 — `orgId` is now required (was missing).
+   * After loading the doc by id, walk to its `contract_id` and verify
+   * the contract is in the caller's org via `findInOrg`. Cross-tenant
+   * probe → 404; in-org reprocess unchanged.
    */
-  async reprocess(docId: string): Promise<DocumentUpload> {
+  async reprocess(docId: string, orgId: string): Promise<DocumentUpload> {
     const doc = await this.documentUploadRepository.findOne({
       where: { id: docId },
     });
     if (!doc) {
       throw new NotFoundException('Document not found');
     }
+    // Tenant wall — walk doc → contract → org. Throws 404 if the doc's
+    // contract belongs to another org.
+    await this.contractAccess.findInOrg(doc.contract_id, orgId);
 
     // ── Cleanup: remove clauses from any previous extraction of this document ──
     // Find all clause IDs that were extracted from this document upload.
@@ -636,6 +650,11 @@ export class DocumentProcessingService {
   /**
    * Finalize the review process for a contract.
    * Triggers risk analysis and obligation extraction on approved clauses.
+   *
+   * Tenant-isolation Tier 1 — HIGHEST blast in this module: a single
+   * unguarded call dispatches risk + obligations + conflict AI under
+   * the CALLER's `orgId` against a cross-tenant contract. Wall fires
+   * BEFORE any qb runs or AI is touched.
    */
   async finalizeReview(
     contractId: string,
@@ -645,6 +664,10 @@ export class DocumentProcessingService {
     obligations_job_id: string;
     conflict_job_id: string | null;
   }> {
+    // Tenant wall — throws 404 on cross-tenant probe; AI dispatch never
+    // fires under the attacker's org.
+    await this.contractAccess.findInOrg(contractId, orgId);
+
     // Get all approved clauses with their source document metadata
     const contractClauses = await this.contractClauseRepository
       .createQueryBuilder('cc')
