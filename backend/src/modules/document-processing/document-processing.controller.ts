@@ -74,8 +74,11 @@ export class DocumentProcessingController {
   @Post('documents/:docId/reprocess')
   async reprocessDocument(
     @Param('docId', ParseUUIDPipe) docId: string,
+    @OrganizationId() orgId: string,
   ) {
-    return this.documentProcessingService.reprocess(docId);
+    // Tenant-isolation Tier 1 — orgId is now required so the service
+    // can wall the doc's contract via ContractAccessService.findInOrg.
+    return this.documentProcessingService.reprocess(docId, orgId);
   }
 
   @Put('documents/:docId/extracted-text')

@@ -6,6 +6,7 @@ import {
   Param,
   Query,
   UseGuards,
+  NotFoundException,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -14,11 +15,33 @@ import { OrganizationId } from '../../common/decorators/organization.decorator';
 import { ChatService } from './chat.service';
 import { CreateSessionDto } from './dto/create-session.dto';
 import { SendMessageDto } from './dto/send-message.dto';
+import { ContractAccessService } from '../contracts/services/contract-access.service';
 
 @Controller('chat')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class ChatController {
-  constructor(private readonly chatService: ChatService) {}
+  constructor(
+    private readonly chatService: ChatService,
+    // Tenant-isolation Tier 1 — wall on dto.contract_id at session create.
+    // sendMessage inherits the session's contract_id, so closing the
+    // upstream entry point is sufficient (a session can never reach the
+    // store carrying a cross-tenant contract_id).
+    private readonly contractAccess: ContractAccessService,
+  ) {}
+
+  /**
+   * Managing-user access wall — same shape as ai.controller.ts.
+   * Throws NotFoundException (404, NOT 403) on cross-tenant probe.
+   */
+  private async assertContractInCallerOrg(
+    contractId: string,
+    orgId: string | null | undefined,
+  ): Promise<void> {
+    if (!orgId) {
+      throw new NotFoundException('Contract not found');
+    }
+    await this.contractAccess.findInOrg(contractId, orgId);
+  }
 
   @Post('sessions')
   async createSession(
@@ -26,6 +49,11 @@ export class ChatController {
     @CurrentUser() user: any,
     @OrganizationId() orgId: string,
   ) {
+    // contract_id is OPTIONAL — only gate when provided. An unscoped
+    // chat session (no contract context) is allowed.
+    if (dto.contract_id) {
+      await this.assertContractInCallerOrg(dto.contract_id, orgId);
+    }
     return this.chatService.createSession(user.id, orgId, dto.contract_id);
   }
 
@@ -56,6 +84,9 @@ export class ChatController {
     @CurrentUser() user: any,
     @OrganizationId() orgId: string,
   ) {
+    // sendMessage is downstream of createSession — a session can only
+    // carry a contract_id that already passed the createSession wall.
+    // Tenant isolation here is inherited; no additional check needed.
     return this.chatService.sendMessage(
       sessionId,
       user.id,

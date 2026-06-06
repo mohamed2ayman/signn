@@ -16,6 +16,9 @@ import { ParseDocxService } from './parse-docx.service';
 import { StorageModule } from '../storage/storage.module';
 import { AiModule } from '../ai/ai.module';
 import { RiskAnalysisModule } from '../risk-analysis/risk-analysis.module';
+// Tenant-isolation Tier 1 — service-level wall on uploadAndProcess +
+// reprocess + finalizeReview. ContractsModule exports ContractAccessService.
+import { ContractsModule } from '../contracts/contracts.module';
 
 @Module({
   imports: [
@@ -38,6 +41,7 @@ import { RiskAnalysisModule } from '../risk-analysis/risk-analysis.module';
     // Phase 7.17 — Prompt 1, A.1: exports RiskMethodologyResolverService
     // which the AI risk writer injects to resolve default L/I per finding.
     RiskAnalysisModule,
+    ContractsModule,
   ],
   controllers: [DocumentProcessingController, ParseDocxController],
   providers: [DocumentProcessingService, ParseDocxService],

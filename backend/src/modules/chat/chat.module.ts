@@ -4,11 +4,16 @@ import { ChatSession, ChatMessage } from '../../database/entities';
 import { AiModule } from '../ai/ai.module';
 import { ChatController } from './chat.controller';
 import { ChatService } from './chat.service';
+// Tenant-isolation Tier 1 — controller-level wall on dto.contract_id at
+// the createSession entry point so a cross-tenant contract_id never gets
+// stored on a ChatSession (the upstream gap that sendMessage inherits).
+import { ContractsModule } from '../contracts/contracts.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([ChatSession, ChatMessage]),
     AiModule,
+    ContractsModule,
   ],
   controllers: [ChatController],
   providers: [ChatService],

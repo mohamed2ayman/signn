@@ -36,6 +36,12 @@ import {
   ResolveDefaultsResult,
 } from '../risk-methodology-resolver.service';
 import { RiskSourceType } from '../../enums/risk-source-type.enum';
+// Tenant-isolation Tier 1 — DocumentProcessingService now injects
+// ContractAccessService for uploadAndProcess/reprocess/finalizeReview.
+// This integration spec exercises pollAndSaveRisks (background risk-write
+// after finalizeReview), so the wall has already fired in the real call
+// path; a no-op stub is sufficient here.
+import { ContractAccessService } from '../../../contracts/services/contract-access.service';
 
 // ─────────────────────────────────────────────────────────────────────────
 // Fixtures
@@ -154,6 +160,11 @@ describe('AI risk writer — pollAndSaveRisks / saveAiRiskAsRow', () => {
         { provide: StorageService, useValue: mockStorageService },
         { provide: AiService, useValue: mockAiService },
         { provide: RiskMethodologyResolverService, useValue: mockResolver },
+        // Tenant-isolation Tier 1 — see import comment above.
+        {
+          provide: ContractAccessService,
+          useValue: { findInOrg: jest.fn().mockResolvedValue({}) },
+        },
       ],
     }).compile();
 
