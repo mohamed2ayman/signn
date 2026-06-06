@@ -85,6 +85,25 @@ export class ComplianceCheck {
   @Column({ type: 'varchar', length: 64, nullable: true })
   obligation_job_id: string | null;
 
+  /**
+   * Phase 7.18 Part 2 — metering linkage.
+   *
+   * UUID minted by `MeteringService.reserve()` at runCheck (after the
+   * access wall, before this check row is persisted). Used by the
+   * lazy poll-driven reconcile in `refreshFromAi` to call
+   * `commit(reservation_id)` on terminal success / `release(reservation_id)`
+   * on terminal failure.
+   *
+   * NULLABLE because pre-existing rows pre-date metering, and rows that
+   * fail synchronously inside runCheck don't get persisted (release fires
+   * in-request via the wiring; no row to carry).
+   *
+   * NO TypeORM relation to MeteringLedger — attribution, not ownership.
+   * Mirrors the engine's own choice on ledger.actor_ref / contract_ref.
+   */
+  @Column({ type: 'uuid', nullable: true })
+  reservation_id: string | null;
+
   @Column({ type: 'uuid', nullable: true })
   created_by: string | null;
 

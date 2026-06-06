@@ -80,6 +80,11 @@ export class ComplianceController {
       contractId,
       userId: user.id,
       orgId: user.organization_id ?? null,
+      // Phase 7.18 Part 2 — managing-user account_type for the metering
+      // engine's defense-in-depth JWT cross-check (Invariant 1). The
+      // access wall above already proved the contract is in the user's
+      // org; this just lets the engine ALSO cross-check.
+      accountType: user.account_type ?? 'MANAGING',
     });
   }
 

@@ -134,6 +134,9 @@ describe('ComplianceController — cross-tenant access wall (PR #42 class)', () 
         contractId: 'contract-in-a',
         userId: userInOrgA.id,
         orgId: ORG_A,
+        // Phase 7.18 Part 2 — accountType is now threaded through so
+        // MeteringResolver can do its defense-in-depth JWT cross-check.
+        accountType: AccountType.MANAGING,
       });
       expect(result).toEqual({ id: 'check-1' });
     });
