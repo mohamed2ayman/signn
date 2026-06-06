@@ -144,8 +144,14 @@ export class DocumentProcessingService {
 
   /**
    * Poll the current job and advance the pipeline if complete.
+   *
+   * Tenant-isolation Tier 2 — CHILD-KEYED route
+   * (`GET /contracts/:contractId/documents/:docId/status`). The URL
+   * `:contractId` is decorative; the service only uses `:docId`. Per the
+   * PR #45 lesson, do NOT trust the URL contractId — load the doc by
+   * id, then walk `doc.contract_id → findInOrg(_, orgId)`.
    */
-  async pollAndAdvance(docId: string): Promise<DocumentUpload> {
+  async pollAndAdvance(docId: string, orgId: string): Promise<DocumentUpload> {
     const doc = await this.documentUploadRepository.findOne({
       where: { id: docId },
     });
@@ -153,6 +159,10 @@ export class DocumentProcessingService {
     if (!doc) {
       throw new NotFoundException('Document not found');
     }
+    // Tenant wall — walk doc → contract → org. Throws 404 if the doc's
+    // contract belongs to another org. Mirrors the reprocess pattern
+    // shipped in Tier 1.
+    await this.contractAccess.findInOrg(doc.contract_id, orgId);
 
     if (
       doc.processing_status === DocumentProcessingStatus.CLAUSES_EXTRACTED ||
@@ -491,8 +501,12 @@ export class DocumentProcessingService {
 
   /**
    * Get all documents for a contract.
+   *
+   * Tenant-isolation Tier 2 — `orgId` required so the bare `find` is
+   * walled by `findInOrg(contractId, orgId)` first. Cross-tenant → 404.
    */
-  async getDocuments(contractId: string): Promise<DocumentUpload[]> {
+  async getDocuments(contractId: string, orgId: string): Promise<DocumentUpload[]> {
+    await this.contractAccess.findInOrg(contractId, orgId);
     return this.documentUploadRepository.find({
       where: { contract_id: contractId },
       order: { document_priority: 'ASC', created_at: 'ASC' },
@@ -501,14 +515,22 @@ export class DocumentProcessingService {
 
   /**
    * Get a single document with status info.
+   *
+   * Tenant-isolation Tier 2 — CHILD-KEYED route. The URL carries a
+   * `:contractId` segment but the service only uses `:docId`. Per the
+   * PR #45 lesson, do NOT trust the URL contractId — load the doc by
+   * id, then walk `doc.contract_id → findInOrg(_, orgId)`.
    */
-  async getDocumentStatus(docId: string): Promise<DocumentUpload> {
+  async getDocumentStatus(docId: string, orgId: string): Promise<DocumentUpload> {
     const doc = await this.documentUploadRepository.findOne({
       where: { id: docId },
     });
     if (!doc) {
       throw new NotFoundException('Document not found');
     }
+    // Tenant wall — walk doc → contract → org. Throws 404 if the doc's
+    // contract belongs to another org.
+    await this.contractAccess.findInOrg(doc.contract_id, orgId);
     return doc;
   }
 
@@ -584,8 +606,11 @@ export class DocumentProcessingService {
 
   /**
    * Get clauses pending review for a contract.
+   *
+   * Tenant-isolation Tier 2 — wall on URL contractId before the qb runs.
    */
-  async getClausesForReview(contractId: string) {
+  async getClausesForReview(contractId: string, orgId: string) {
+    await this.contractAccess.findInOrg(contractId, orgId);
     return this.contractClauseRepository
       .createQueryBuilder('cc')
       .leftJoinAndSelect('cc.clause', 'clause')

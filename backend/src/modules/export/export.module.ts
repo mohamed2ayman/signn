@@ -9,6 +9,10 @@ import {
 } from '../../database/entities';
 import { ExportController } from './export.controller';
 import { ExportService } from './export.service';
+// Tenant-isolation Tier 2 — wall every /export/contracts/:id/* read
+// (pdf / risk-report / summary) via ContractAccessService.findInOrg.
+// ContractsModule exports ContractAccessService.
+import { ContractsModule } from '../contracts/contracts.module';
 
 @Module({
   imports: [
@@ -19,6 +23,7 @@ import { ExportService } from './export.service';
       RiskAnalysis,
       Obligation,
     ]),
+    ContractsModule,
   ],
   controllers: [ExportController],
   providers: [ExportService],

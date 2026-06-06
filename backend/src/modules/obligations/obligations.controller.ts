@@ -15,6 +15,7 @@ import { RolesGuard } from '../../common/guards/roles.guard';
 import { PermissionLevelGuard } from '../../common/guards/permission-level.guard';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { OrganizationId } from '../../common/decorators/organization.decorator';
 import { PermissionLevel } from '../../database/entities';
 import { ObligationsService } from './obligations.service';
 import { CreateObligationDto, UpdateObligationDto } from './dto';
@@ -48,8 +49,14 @@ export class ObligationsController {
   }
 
   @Get('dashboard')
-  async getDashboard(@Query('contract_id') contractId?: string) {
-    return this.obligationsService.getDashboard(contractId);
+  async getDashboard(
+    @OrganizationId() orgId: string,
+    @Query('contract_id') contractId?: string,
+  ) {
+    // Tenant-isolation Tier 2 — service walls `contract_id` against the
+    // caller's org when supplied. Org-wide dashboard (no contract_id) is
+    // unchanged.
+    return this.obligationsService.getDashboard(orgId, contractId);
   }
 
   // UUID regex constraint prevents static segments like "portfolio" and "calendar"

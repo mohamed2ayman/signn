@@ -20,6 +20,9 @@ import { NotificationsModule } from '../notifications/notifications.module';
 import { ComplianceModule } from '../compliance/compliance.module';
 import { PermissionLevelGuard } from '../../common/guards/permission-level.guard';
 import { ResolveObligationProjectMiddleware } from '../../common/middleware/resolve-obligation-project.middleware';
+// Tenant-isolation Tier 2 — ObligationsService now injects
+// ContractAccessService for the dashboard's optional contract_id filter.
+import { ContractsModule } from '../contracts/contracts.module';
 
 @Module({
   imports: [
@@ -36,6 +39,7 @@ import { ResolveObligationProjectMiddleware } from '../../common/middleware/reso
     BullModule.registerQueue({ name: 'obligation-reminders' }),
     NotificationsModule,
     forwardRef(() => ComplianceModule),
+    ContractsModule,
   ],
   controllers: [ObligationsController],
   providers: [

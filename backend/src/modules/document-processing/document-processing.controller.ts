@@ -59,16 +59,22 @@ export class DocumentProcessingController {
   @Get('documents')
   async getDocuments(
     @Param('contractId', ParseUUIDPipe) contractId: string,
+    @OrganizationId() orgId: string,
   ) {
-    return this.documentProcessingService.getDocuments(contractId);
+    // Tenant-isolation Tier 2 — service walls the URL contractId
+    // against the caller's org before any read.
+    return this.documentProcessingService.getDocuments(contractId, orgId);
   }
 
   @Get('documents/:docId/status')
   async getDocumentStatus(
     @Param('docId', ParseUUIDPipe) docId: string,
+    @OrganizationId() orgId: string,
   ) {
-    // Poll and advance pipeline, then return status
-    return this.documentProcessingService.pollAndAdvance(docId);
+    // Tenant-isolation Tier 2 — CHILD-KEYED. The service walks
+    // doc → contract → org via ContractAccessService.findInOrg.
+    // Poll and advance pipeline, then return status.
+    return this.documentProcessingService.pollAndAdvance(docId, orgId);
   }
 
   @Post('documents/:docId/reprocess')
@@ -95,8 +101,9 @@ export class DocumentProcessingController {
   @Get('review/clauses')
   async getClausesForReview(
     @Param('contractId', ParseUUIDPipe) contractId: string,
+    @OrganizationId() orgId: string,
   ) {
-    return this.documentProcessingService.getClausesForReview(contractId);
+    return this.documentProcessingService.getClausesForReview(contractId, orgId);
   }
 
   @Put('review/clauses/:clauseId')

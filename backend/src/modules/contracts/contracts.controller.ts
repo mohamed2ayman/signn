@@ -135,8 +135,12 @@ export class ContractsController {
   // ─── Clause Management ─────────────────────────────────────
 
   @Get(':id/clauses')
-  async getClauses(@Param('id', ParseUUIDPipe) id: string) {
-    return this.contractsService.getContractClauses(id);
+  async getClauses(
+    @Param('id', ParseUUIDPipe) id: string,
+    @OrganizationId() orgId: string,
+  ) {
+    // Tenant-isolation Tier 2 — service walls URL contractId.
+    return this.contractsService.getContractClauses(id, orgId);
   }
 
   @Post(':id/clauses')
@@ -190,13 +194,19 @@ export class ContractsController {
   // ─── Version Management ────────────────────────────────────
 
   @Get(':id/versions')
-  async getVersions(@Param('id', ParseUUIDPipe) id: string) {
-    return this.contractsService.getVersions(id);
+  async getVersions(
+    @Param('id', ParseUUIDPipe) id: string,
+    @OrganizationId() orgId: string,
+  ) {
+    return this.contractsService.getVersions(id, orgId);
   }
 
   @Get(':id/versions/milestones')
-  async getMilestoneVersions(@Param('id', ParseUUIDPipe) id: string) {
-    return this.contractsService.getMilestoneVersions(id);
+  async getMilestoneVersions(
+    @Param('id', ParseUUIDPipe) id: string,
+    @OrganizationId() orgId: string,
+  ) {
+    return this.contractsService.getMilestoneVersions(id, orgId);
   }
 
   @Get(':id/versions/:versionA/compare/:versionB')
@@ -204,16 +214,18 @@ export class ContractsController {
     @Param('id', ParseUUIDPipe) id: string,
     @Param('versionA', ParseUUIDPipe) versionA: string,
     @Param('versionB', ParseUUIDPipe) versionB: string,
+    @OrganizationId() orgId: string,
   ) {
-    return this.contractsService.compareVersions(id, versionA, versionB);
+    return this.contractsService.compareVersions(id, versionA, versionB, orgId);
   }
 
   @Get(':id/versions/:versionId')
   async getVersion(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('versionId', ParseUUIDPipe) versionId: string,
+    @OrganizationId() orgId: string,
   ) {
-    return this.contractsService.getVersion(id, versionId);
+    return this.contractsService.getVersion(id, versionId, orgId);
   }
 
   @Post(':id/versions')
@@ -237,9 +249,10 @@ export class ContractsController {
   @Get(':id/comments')
   async getComments(
     @Param('id', ParseUUIDPipe) id: string,
+    @OrganizationId() orgId: string,
     @Query('clause_id') clauseId?: string,
   ) {
-    return this.contractsService.getComments(id, clauseId);
+    return this.contractsService.getComments(id, orgId, clauseId);
   }
 
   @Post(':id/comments')
@@ -287,8 +300,11 @@ export class ContractsController {
   // ─── Contractor Responses ──────────────────────────────────
 
   @Get(':id/responses')
-  async getContractorResponses(@Param('id', ParseUUIDPipe) id: string) {
-    return this.contractsService.getContractorResponses(id);
+  async getContractorResponses(
+    @Param('id', ParseUUIDPipe) id: string,
+    @OrganizationId() orgId: string,
+  ) {
+    return this.contractsService.getContractorResponses(id, orgId);
   }
 
   // ─── Approval Workflow ─────────────────────────────────────
@@ -298,8 +314,11 @@ export class ContractsController {
    * Returns all approver records with user details for a contract.
    */
   @Get(':id/approvers')
-  async getApprovers(@Param('id', ParseUUIDPipe) id: string) {
-    return this.contractsService.getApprovers(id);
+  async getApprovers(
+    @Param('id', ParseUUIDPipe) id: string,
+    @OrganizationId() orgId: string,
+  ) {
+    return this.contractsService.getApprovers(id, orgId);
   }
 
   /**
