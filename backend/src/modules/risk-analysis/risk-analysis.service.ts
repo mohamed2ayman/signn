@@ -8,6 +8,9 @@ import { Repository } from 'typeorm';
 import { RiskAnalysis, RiskRule, RiskCategory } from '../../database/entities';
 import { CreateRiskRuleDto, UpdateRiskStatusDto } from './dto';
 import { CollaborationGateway } from '../collaboration/collaboration.gateway';
+// Tenant-isolation Tier 2 — wall the two contractId-keyed reads
+// (getByContract + getRiskSummary) via ContractAccessService.findInOrg.
+import { ContractAccessService } from '../contracts/services/contract-access.service';
 
 @Injectable()
 export class RiskAnalysisService {
@@ -21,11 +24,16 @@ export class RiskAnalysisService {
     @InjectRepository(RiskCategory)
     private readonly riskCategoryRepository: Repository<RiskCategory>,
     private readonly collaborationGateway: CollaborationGateway,
+    // Tenant-isolation Tier 2 — cross-tenant probe → 404 from findInOrg.
+    private readonly contractAccess: ContractAccessService,
   ) {}
 
   // ─── Risk Analyses ────────────────────────────────────────
 
-  async getByContract(contractId: string): Promise<RiskAnalysis[]> {
+  async getByContract(contractId: string, orgId: string): Promise<RiskAnalysis[]> {
+    // Tenant-isolation Tier 2 — wall the URL contractId BEFORE the bare
+    // find runs. Cross-tenant probe → 404.
+    await this.contractAccess.findInOrg(contractId, orgId);
     return this.riskAnalysisRepository.find({
       where: { contract_id: contractId },
       relations: ['contract_clause', 'contract_clause.clause', 'handler'],
@@ -71,12 +79,14 @@ export class RiskAnalysisService {
     return saved;
   }
 
-  async getRiskSummary(contractId: string): Promise<{
+  async getRiskSummary(contractId: string, orgId: string): Promise<{
     total: number;
     by_level: Record<string, number>;
     by_status: Record<string, number>;
     by_category: Record<string, number>;
   }> {
+    // Tenant-isolation Tier 2 — wall on URL contractId.
+    await this.contractAccess.findInOrg(contractId, orgId);
     const risks = await this.riskAnalysisRepository.find({
       where: { contract_id: contractId },
     });

@@ -20,6 +20,10 @@ import { DriftReportService } from './services/drift-report.service';
 import { RiskExplanationService } from './services/risk-explanation.service';
 import { RiskMethodologyResolverService } from './services/risk-methodology-resolver.service';
 import { RiskOverrideService } from './services/risk-override.service';
+// Tenant-isolation Tier 2 — wall GET /risk-analysis/contract/:contractId
+// and `.../summary` reads at the service layer via
+// ContractAccessService.findInOrg.
+import { ContractsModule } from '../contracts/contracts.module';
 
 @Module({
   imports: [
@@ -50,6 +54,7 @@ import { RiskOverrideService } from './services/risk-override.service';
     // 'obligation-reminders' queue and notifications module's
     // 'email-queue'.
     BullModule.registerQueue({ name: 'learned-baseline' }),
+    ContractsModule,
   ],
   controllers: [
     RiskAnalysisController,

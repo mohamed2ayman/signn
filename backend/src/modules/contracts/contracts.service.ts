@@ -442,7 +442,12 @@ export class ContractsService {
     }
   }
 
-  async getContractClauses(contractId: string): Promise<ContractClause[]> {
+  async getContractClauses(
+    contractId: string,
+    orgId: string,
+  ): Promise<ContractClause[]> {
+    // Tenant-isolation Tier 2 — wall on URL contractId.
+    await this.contractAccess.findInOrg(contractId, orgId);
     return this.contractClauseRepository.find({
       where: { contract_id: contractId },
       relations: ['clause', 'clause.creator'],
@@ -630,7 +635,12 @@ export class ContractsService {
     return this.contractVersionRepository.save(version);
   }
 
-  async getVersions(contractId: string): Promise<ContractVersion[]> {
+  async getVersions(
+    contractId: string,
+    orgId: string,
+  ): Promise<ContractVersion[]> {
+    // Tenant-isolation Tier 2 — wall on URL contractId.
+    await this.contractAccess.findInOrg(contractId, orgId);
     return this.contractVersionRepository.find({
       where: { contract_id: contractId },
       relations: ['creator', 'triggered_by_user'],
@@ -638,7 +648,12 @@ export class ContractsService {
     });
   }
 
-  async getMilestoneVersions(contractId: string): Promise<ContractVersion[]> {
+  async getMilestoneVersions(
+    contractId: string,
+    orgId: string,
+  ): Promise<ContractVersion[]> {
+    // Tenant-isolation Tier 2 — wall on URL contractId.
+    await this.contractAccess.findInOrg(contractId, orgId);
     return this.contractVersionRepository.find({
       where: { contract_id: contractId, is_milestone: true },
       relations: ['creator', 'triggered_by_user'],
@@ -649,7 +664,12 @@ export class ContractsService {
   async getVersion(
     contractId: string,
     versionId: string,
+    orgId: string,
   ): Promise<ContractVersion> {
+    // Tenant-isolation Tier 2 — wall on URL contractId. The existing
+    // `contract_id` join below guarantees the version-belongs-to-contract
+    // half; this wall closes the cross-tenant-contract half.
+    await this.contractAccess.findInOrg(contractId, orgId);
     const version = await this.contractVersionRepository.findOne({
       where: { id: versionId, contract_id: contractId },
       relations: ['creator', 'triggered_by_user'],
@@ -670,6 +690,7 @@ export class ContractsService {
     contractId: string,
     versionAId: string,
     versionBId: string,
+    orgId: string,
   ): Promise<{
     versionA: ContractVersion;
     versionB: ContractVersion;
@@ -686,8 +707,12 @@ export class ContractsService {
         | null;
     }>;
   }> {
-    const versionA = await this.getVersion(contractId, versionAId);
-    const versionB = await this.getVersion(contractId, versionBId);
+    // Tenant-isolation Tier 2 — both inner getVersion calls re-wall the
+    // contractId, but checking up front fails fast and keeps the error
+    // surface consistent with the other side-paths.
+    await this.contractAccess.findInOrg(contractId, orgId);
+    const versionA = await this.getVersion(contractId, versionAId, orgId);
+    const versionB = await this.getVersion(contractId, versionBId, orgId);
 
     type SnapClause = {
       contract_clause_id?: string;
@@ -831,8 +856,11 @@ export class ContractsService {
 
   async getComments(
     contractId: string,
+    orgId: string,
     clauseId?: string,
   ): Promise<ContractComment[]> {
+    // Tenant-isolation Tier 2 — wall on URL contractId.
+    await this.contractAccess.findInOrg(contractId, orgId);
     const qb = this.contractCommentRepository
       .createQueryBuilder('comment')
       .leftJoinAndSelect('comment.user', 'user')
@@ -935,7 +963,12 @@ export class ContractsService {
 
   // ─── Contractor Responses ──────────────────────────────────
 
-  async getContractorResponses(contractId: string): Promise<ContractorResponse[]> {
+  async getContractorResponses(
+    contractId: string,
+    orgId: string,
+  ): Promise<ContractorResponse[]> {
+    // Tenant-isolation Tier 2 — wall on URL contractId.
+    await this.contractAccess.findInOrg(contractId, orgId);
     return this.contractorResponseRepository.find({
       where: { contract_id: contractId },
       relations: ['party'],
@@ -1033,7 +1066,7 @@ export class ContractsService {
       );
     }
 
-    return this.getApprovers(contractId);
+    return this.getApprovers(contractId, orgId);
   }
 
   /**
@@ -1125,13 +1158,19 @@ export class ContractsService {
       });
     }
 
-    return this.getApprovers(contractId);
+    return this.getApprovers(contractId, orgId);
   }
 
   /**
    * Get all approver records for a contract, with user details.
+   *
+   * Tenant-isolation Tier 2 — wall on URL contractId.
    */
-  async getApprovers(contractId: string): Promise<ContractApprover[]> {
+  async getApprovers(
+    contractId: string,
+    orgId: string,
+  ): Promise<ContractApprover[]> {
+    await this.contractAccess.findInOrg(contractId, orgId);
     return this.contractApproverRepository.find({
       where: { contract_id: contractId },
       relations: ['user'],

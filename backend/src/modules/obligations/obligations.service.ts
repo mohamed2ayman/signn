@@ -7,6 +7,12 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, LessThanOrEqual, In } from 'typeorm';
 import { Obligation, ObligationStatus } from '../../database/entities';
 import { CreateObligationDto, UpdateObligationDto } from './dto';
+// Tenant-isolation Tier 2 — wall the dashboard's optional contract_id
+// filter via ContractAccessService.findInOrg. The other contract-keyed
+// route on this controller (`GET /obligations/contract/:contractId`) is
+// PLG-entangled (Class-C) and moves to Option B — see
+// docs/tenant-isolation-tier2.md.
+import { ContractAccessService } from '../contracts/services/contract-access.service';
 
 @Injectable()
 export class ObligationsService {
@@ -15,6 +21,8 @@ export class ObligationsService {
   constructor(
     @InjectRepository(Obligation)
     private readonly obligationRepository: Repository<Obligation>,
+    // Tenant-isolation Tier 2 — cross-tenant probe → 404 from findInOrg.
+    private readonly contractAccess: ContractAccessService,
   ) {}
 
   async findByContract(contractId: string): Promise<Obligation[]> {
@@ -105,12 +113,22 @@ export class ObligationsService {
     return qb.getMany();
   }
 
-  async getDashboard(contractId?: string): Promise<{
+  async getDashboard(
+    orgId: string,
+    contractId?: string,
+  ): Promise<{
     total: number;
     by_status: Record<string, number>;
     overdue_count: number;
     upcoming_7_days: number;
   }> {
+    // Tenant-isolation Tier 2 — when contract_id is supplied, wall it.
+    // Without it the dashboard remains org-wide (no contract context, so
+    // tenant scoping doesn't apply at this layer — same posture as the
+    // sibling /upcoming and /overdue endpoints).
+    if (contractId) {
+      await this.contractAccess.findInOrg(contractId, orgId);
+    }
     const qb = this.obligationRepository.createQueryBuilder('obligation');
     if (contractId) {
       qb.where('obligation.contract_id = :contractId', { contractId });

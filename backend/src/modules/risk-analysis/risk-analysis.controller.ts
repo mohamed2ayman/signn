@@ -35,15 +35,19 @@ export class RiskAnalysisController {
   @Get('contract/:contractId')
   async getByContract(
     @Param('contractId', ParseUUIDPipe) contractId: string,
+    @CurrentUser() user: User,
   ) {
-    return this.riskAnalysisService.getByContract(contractId);
+    // Tenant-isolation Tier 2 — service walls URL contractId against
+    // caller's org.
+    return this.riskAnalysisService.getByContract(contractId, user.organization_id);
   }
 
   @Get('contract/:contractId/summary')
   async getRiskSummary(
     @Param('contractId', ParseUUIDPipe) contractId: string,
+    @CurrentUser() user: User,
   ) {
-    return this.riskAnalysisService.getRiskSummary(contractId);
+    return this.riskAnalysisService.getRiskSummary(contractId, user.organization_id);
   }
 
   @Get('clause/:clauseId')
