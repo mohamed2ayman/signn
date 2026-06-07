@@ -48,6 +48,9 @@ describe('DocumentProcessingService — Tier 2 READ access wall', () => {
       noop,
       noop,
       contractAccess,
+      // Phase 7.18 Part 3 — MeteringService dep. These read-side specs
+      // don't exercise reserve/commit/release; no-op stub is sufficient.
+      { reserve: jest.fn(), commit: jest.fn(), release: jest.fn() } as any,
     );
   }
 

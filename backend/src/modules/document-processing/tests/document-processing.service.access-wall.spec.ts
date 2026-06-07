@@ -49,6 +49,28 @@ describe('DocumentProcessingService — cross-tenant access wall (Tier 1)', () =
       aiService ?? noop,
       noop,
       contractAccess,
+      // Phase 7.18 Part 3 — MeteringService dep. These access-wall specs
+      // assert the wall fires BEFORE any downstream work — including
+      // reserve. A no-op stub suffices for the cross-tenant tests (the
+      // wall rejects before reserve runs). For the happy-path tests, we
+      // return a synthetic reservation handle so the code that reads
+      // `reservation.reservation_id` to stamp the doc row doesn't crash.
+      // The metering call is not under test in these specs (covered by
+      // the engine spec); these specs are about the access wall.
+      {
+        reserve: jest.fn().mockResolvedValue({
+          reservation_id: '00000000-0000-0000-0000-deadbeefcafe',
+          ledger_id: '00000000-0000-0000-0000-feedfacecafe',
+          subject_ref: 'test-subject',
+          meter_key: 'upload_extraction',
+          window_key: 'test-window',
+          amount: 1,
+          expires_at: new Date(Date.now() + 3600_000),
+          reused: false,
+        }),
+        commit: jest.fn().mockResolvedValue({ applied: true, status: 'committed' }),
+        release: jest.fn().mockResolvedValue({ applied: true, status: 'released' }),
+      } as any,
     );
   }
 
@@ -178,6 +200,8 @@ describe('DocumentProcessingService — cross-tenant access wall (Tier 1)', () =
         noop,
         noop,
         contractAccess as any,
+        // Phase 7.18 Part 3 — MeteringService dep (no-op stub).
+        { reserve: jest.fn(), commit: jest.fn(), release: jest.fn() } as any,
       );
 
       await expect(svc.reprocess(DOC_IN_B, ORG_A)).rejects.toBeInstanceOf(
@@ -212,12 +236,114 @@ describe('DocumentProcessingService — cross-tenant access wall (Tier 1)', () =
         noop,
         noop,
         contractAccess as any,
+        // Phase 7.18 Part 3 — MeteringService dep (no-op stub).
+        { reserve: jest.fn(), commit: jest.fn(), release: jest.fn() } as any,
       );
 
       await expect(svc.reprocess('does-not-exist', ORG_A)).rejects.toBeInstanceOf(
         NotFoundException,
       );
       expect(contractAccess.findInOrg).not.toHaveBeenCalled();
+    });
+
+    // ──────────────────────────────────────────────────────────────────
+    // Phase 7.18 Part 3 — reprocess with a STILL-RESERVED prior:
+    //
+    // The bypassed-frontend / racing-double-click case where reprocess
+    // lands on a doc whose prior reservation is still in `reserved`
+    // state (work in flight). The defense-in-depth fix releases the
+    // prior BEFORE issuing the new reserve so the per_contract window
+    // doesn't temporally double-count.
+    //
+    // This test pins the CALL CONTRACT (which is what the consumer is
+    // responsible for):
+    //   1. release(prior_id) is called BEFORE reserve()
+    //   2. release receives the OLD reservation_id, NOT the new one
+    //   3. reserve takes a new reservation
+    //   4. save persists the NEW reservation_id (overwriting the old)
+    // The engine's actual "consumed refunded then incremented" balance
+    // semantics are covered by the engine race-spec + the STEP 2 live
+    // verification on this consumer (PR body, scenario (2)+(4)) — this
+    // unit test isolates the consumer-side ordering invariant.
+    // ──────────────────────────────────────────────────────────────────
+    it('release-prior fix: still-reserved prior is released BEFORE the new reserve, with the old id', async () => {
+      const OLD_RES = 'old-reservation-uuid';
+      const NEW_RES = 'new-reservation-uuid';
+
+      const documentUploadRepository = {
+        findOne: jest.fn().mockResolvedValue({
+          id: 'doc-in-flight',
+          contract_id: 'contract-in-a',
+          uploaded_by: USER_IN_A,
+          processing_status: 'EXTRACTING_TEXT', // bypassed-frontend: in-progress
+          reservation_id: OLD_RES,              // prior is still reserved
+        }),
+        save: jest.fn(async (entity: any) => entity),
+      };
+      const clauseRepository = { find: jest.fn().mockResolvedValue([]) };
+      const contractClauseRepository = { delete: jest.fn() };
+      const contractAccess = {
+        findInOrg: jest.fn().mockResolvedValue({ id: 'contract-in-a' }),
+      };
+
+      // Track invocation order across the two metering methods.
+      const calls: Array<{ method: 'release' | 'reserve'; arg?: string }> = [];
+      const metering = {
+        release: jest.fn(async (id: string) => {
+          calls.push({ method: 'release', arg: id });
+          // Engine returns applied:true for a real release of a still-
+          // reserved prior. The consumer reads but does NOT branch on
+          // applied — the contract is just "release was called".
+          return { applied: true, status: 'released' };
+        }),
+        reserve: jest.fn(async () => {
+          calls.push({ method: 'reserve' });
+          return {
+            reservation_id: NEW_RES,
+            ledger_id: 'new-ledger-id',
+            subject_ref: 'org-a',
+            meter_key: 'upload_extraction',
+            window_key: 'contract-in-a',
+            amount: 1,
+            expires_at: new Date(Date.now() + 3600_000),
+            reused: false,
+          };
+        }),
+        commit: jest.fn(),
+      };
+
+      const svc = new DocumentProcessingService(
+        documentUploadRepository as any,
+        clauseRepository as any,
+        contractClauseRepository as any,
+        noop,
+        noop,
+        noop,
+        noop,
+        noop,
+        noop,
+        noop,
+        contractAccess as any,
+        metering as any,
+      );
+      // Stub startTextExtraction so the test doesn't dispatch.
+      (svc as any).startTextExtraction = jest.fn().mockResolvedValue(undefined);
+
+      await svc.reprocess('doc-in-flight', ORG_A);
+
+      // ── 1. release was called BEFORE reserve ──
+      expect(calls.map((c) => c.method)).toEqual(['release', 'reserve']);
+
+      // ── 2. release received the OLD reservation_id, NOT the new one ──
+      expect(metering.release).toHaveBeenCalledWith(OLD_RES);
+      expect(metering.release).toHaveBeenCalledTimes(1);
+
+      // ── 3. reserve was called exactly once (the NEW intent) ──
+      expect(metering.reserve).toHaveBeenCalledTimes(1);
+
+      // ── 4. The persisted doc carries the NEW reservation_id ──
+      const savedDoc = documentUploadRepository.save.mock.calls[0][0];
+      expect(savedDoc.reservation_id).toBe(NEW_RES);
     });
   });
 

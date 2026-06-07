@@ -42,6 +42,8 @@ import { RiskSourceType } from '../../enums/risk-source-type.enum';
 // after finalizeReview), so the wall has already fired in the real call
 // path; a no-op stub is sufficient here.
 import { ContractAccessService } from '../../../contracts/services/contract-access.service';
+// Phase 7.18 Part 3 — DocumentProcessingService injects MeteringService.
+import { MeteringService } from '../../../metering/services/metering.service';
 
 // ─────────────────────────────────────────────────────────────────────────
 // Fixtures
@@ -164,6 +166,17 @@ describe('AI risk writer — pollAndSaveRisks / saveAiRiskAsRow', () => {
         {
           provide: ContractAccessService,
           useValue: { findInOrg: jest.fn().mockResolvedValue({}) },
+        },
+        // Phase 7.18 Part 3 — DocumentProcessingService now injects
+        // MeteringService. This spec exercises pollAndSaveRisks (which
+        // does NOT touch metering), so a no-op stub is sufficient.
+        {
+          provide: MeteringService,
+          useValue: {
+            reserve: jest.fn(),
+            commit: jest.fn(),
+            release: jest.fn(),
+          },
         },
       ],
     }).compile();

@@ -91,6 +91,34 @@ export class DocumentUpload {
   @Column({ type: 'varchar', length: 255, nullable: true })
   processing_job_id: string | null;
 
+  /**
+   * Phase 7.18 — second metered consumer wiring (`upload_extraction`).
+   *
+   * UUID minted by MeteringService.reserve() at the top of
+   * DocumentProcessingService.uploadAndProcess (and reprocess) AFTER the
+   * Tier 1 access wall and BEFORE storage upload + Celery dispatch.
+   * Persisted on the row so the lazy poll-driven reconcile in
+   * pollAndAdvance can:
+   *   - commit(reservation_id) on terminal SUCCESS  (CLAUSES_EXTRACTED)
+   *   - release(reservation_id) on terminal FAILURE (FAILED via async
+   *     job-failed) AND on the two sync-dispatch failure paths
+   *     (startTextExtraction catch + startClauseExtraction catch) AND
+   *     on the Phase 7.25 HUMAN_REVIEW_RECOMMENDED parked-terminal state
+   *     (no clauses extracted → refund; reprocess takes a fresh reserve).
+   *
+   * NULLABLE because:
+   *   - Pre-existing rows pre-date metering.
+   *   - Sync failures BEFORE the row is persisted never carry one — release
+   *     fires in-request from local state.
+   *
+   * NO foreign key to metering_ledger — attribution, not ownership
+   * (mirrors compliance_checks.reservation_id and the engine's own choice
+   * not to FK ledger.actor_ref / contract_ref). See migration
+   * 1755000000002.
+   */
+  @Column({ type: 'uuid', nullable: true })
+  reservation_id: string | null;
+
   @Column({ type: 'uuid' })
   uploaded_by: string;
 
