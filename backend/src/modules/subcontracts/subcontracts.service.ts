@@ -4,6 +4,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { SubContract, SubContractStatusLog } from '../../database/entities/sub-contract.entity';
 import { Contract, ContractStatus } from '../../database/entities/contract.entity';
+import { ContractAccessService } from '../contracts/services/contract-access.service';
 
 @Injectable()
 export class SubContractsService {
@@ -14,6 +15,7 @@ export class SubContractsService {
     private readonly statusLogRepo: Repository<SubContractStatusLog>,
     @InjectRepository(Contract)
     private readonly contractRepo: Repository<Contract>,
+    private readonly contractAccess: ContractAccessService,
   ) {}
 
   async create(
@@ -21,13 +23,13 @@ export class SubContractsService {
     userId: string,
     orgId: string,
   ): Promise<SubContract> {
-    const mainContract = await this.contractRepo.findOne({
-      where: { id: dto.main_contract_id },
-    });
-
-    if (!mainContract) {
-      throw new NotFoundException('Main contract not found');
-    }
+    // Tenant-isolation Tier 3 wall — main_contract_id IS a contract id
+    // (sub_contract.main_contract_id → contracts.id). Cross-org caller
+    // gets 404 (NOT 403) before any DB write or status gate runs.
+    const mainContract = await this.contractAccess.findInOrg(
+      dto.main_contract_id,
+      orgId,
+    );
 
     if (mainContract.status !== ContractStatus.ACTIVE) {
       throw new BadRequestException('Main contract must be ACTIVE to create subcontracts');
@@ -54,14 +56,13 @@ export class SubContractsService {
     return saved;
   }
 
-  async findAllByMainContract(mainContractId: string): Promise<SubContract[]> {
-    const mainContract = await this.contractRepo.findOne({
-      where: { id: mainContractId },
-    });
-
-    if (!mainContract) {
-      throw new NotFoundException('Main contract not found');
-    }
+  async findAllByMainContract(
+    mainContractId: string,
+    orgId: string,
+  ): Promise<SubContract[]> {
+    // Tenant-isolation Tier 3 wall — cross-org caller gets 404 before
+    // the status gate runs.
+    const mainContract = await this.contractAccess.findInOrg(mainContractId, orgId);
 
     if (mainContract.status !== ContractStatus.ACTIVE) {
       throw new BadRequestException('Main contract must be ACTIVE to list subcontracts');

@@ -43,8 +43,9 @@ export class ClaimsController {
   @RequirePermission(PermissionLevel.VIEWER)
   async findAllByContract(
     @Query('contract_id', ParseUUIDPipe) contractId: string,
+    @OrganizationId() orgId: string,
   ) {
-    return this.claimsService.findAllByContract(contractId);
+    return this.claimsService.findAllByContract(contractId, orgId);
   }
 
   @Get(':id')

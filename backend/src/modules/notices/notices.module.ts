@@ -10,6 +10,7 @@ import { Contract, ProjectMember, PermissionDefault } from '../../database/entit
 import { NoticesController } from './notices.controller';
 import { NoticesService } from './notices.service';
 import { PermissionLevelGuard } from '../../common/guards/permission-level.guard';
+import { ContractsModule } from '../contracts/contracts.module';
 
 @Module({
   imports: [
@@ -22,6 +23,9 @@ import { PermissionLevelGuard } from '../../common/guards/permission-level.guard
       ProjectMember,
       PermissionDefault,
     ]),
+    // Tenant-isolation Tier 3 — ContractAccessService is the wall for
+    // POST /notices + GET /notices?contract_id=.
+    ContractsModule,
   ],
   controllers: [NoticesController],
   providers: [NoticesService, PermissionLevelGuard],
