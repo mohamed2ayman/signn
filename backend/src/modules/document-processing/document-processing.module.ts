@@ -19,6 +19,10 @@ import { RiskAnalysisModule } from '../risk-analysis/risk-analysis.module';
 // Tenant-isolation Tier 1 — service-level wall on uploadAndProcess +
 // reprocess + finalizeReview. ContractsModule exports ContractAccessService.
 import { ContractsModule } from '../contracts/contracts.module';
+// Phase 7.18 Part 3 — second consumer wiring (upload_extraction).
+// MeteringModule exports MeteringService (the engine authority — call
+// only; engine code MUST NOT be modified).
+import { MeteringModule } from '../metering/metering.module';
 
 @Module({
   imports: [
@@ -42,6 +46,7 @@ import { ContractsModule } from '../contracts/contracts.module';
     // which the AI risk writer injects to resolve default L/I per finding.
     RiskAnalysisModule,
     ContractsModule,
+    MeteringModule,
   ],
   controllers: [DocumentProcessingController, ParseDocxController],
   providers: [DocumentProcessingService, ParseDocxService],

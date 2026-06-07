@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
+import { randomUUID } from 'crypto';
 import {
   AuditLog,
   DocumentUpload,
@@ -29,6 +30,12 @@ import {
 // Tenant-isolation Tier 1 — service-level wall on uploadAndProcess +
 // reprocess + finalizeReview. Same `findInOrg` shape as PR #45.
 import { ContractAccessService } from '../contracts/services/contract-access.service';
+// Phase 7.18 Part 3 — second metered consumer. MeteringService is the
+// engine authority; reserve sits DOWNSTREAM of the Tier 1 wall, before
+// storage/dispatch. Engine code MUST NOT be modified — call only.
+import { MeteringService } from '../metering/services/metering.service';
+import { MeterKey, MeterLedgerStatus } from '../metering/enums/meter-key.enum';
+import { MeteringCaller } from '../metering/services/metering-resolver.service';
 
 @Injectable()
 export class DocumentProcessingService {
@@ -65,6 +72,11 @@ export class DocumentProcessingService {
     // NotFoundException (404) on cross-tenant probe; no existence leak.
     // Same shape as PR #42 / #45.
     private readonly contractAccess: ContractAccessService,
+    // Phase 7.18 Part 3 — second metered consumer wiring
+    // (`upload_extraction`). reserve / commit / release lifecycle mirrors
+    // the proven compliance Part 2 shape verbatim. Engine code MUST NOT
+    // be modified — call only.
+    private readonly metering: MeteringService,
   ) {}
 
   /**
@@ -75,7 +87,22 @@ export class DocumentProcessingService {
     file: UploadedFile,
     userId: string,
     orgId: string,
-    options?: { document_label?: string; document_priority?: number },
+    options?: {
+      document_label?: string;
+      document_priority?: number;
+      /**
+       * Phase 7.18 Part 3 — caller account_type for the metering engine's
+       * defense-in-depth JWT cross-check (Invariant 1). The access wall
+       * above already proved the contract is in the user's org; this just
+       * lets the engine ALSO cross-check. Defaults to MANAGING because
+       * this entry point is reachable only via the JWT-guarded
+       * `POST /contracts/:contractId/documents` controller route — the
+       * guest portal does NOT call this method today (audit STEP 0a /
+       * recon: guest upload is a captured-intent stub at
+       * guest-invitation.service.ts:445).
+       */
+      account_type?: MeteringCaller['account_type'];
+    },
   ): Promise<DocumentUpload> {
     // Tenant-isolation Tier 1 — replace the bare `findOne({ id: contractId })`
     // with `contractAccess.findInOrg(contractId, orgId)`. Cross-tenant
@@ -84,32 +111,90 @@ export class DocumentProcessingService {
     // case is the new defense.
     await this.contractAccess.findInOrg(contractId, orgId);
 
-    // Upload file to storage
-    const uploadResult = await this.storageService.uploadFile(file, 'contracts');
-
-    // Multer delivers originalname as Latin-1 encoded bytes.
-    // Decode to UTF-8 so non-ASCII characters (e.g. Arabic) display correctly.
-    const decodedName = Buffer.from(file.originalname, 'latin1').toString('utf-8');
-
-    // Create document record
-    const doc = this.documentUploadRepository.create({
-      contract_id: contractId,
-      organization_id: orgId,
-      file_url: uploadResult.file_url,
-      file_name: uploadResult.file_name,
-      original_name: decodedName,
-      file_size: file.size,
-      mime_type: file.mimetype,
-      document_label: options?.document_label || null,
-      document_priority: options?.document_priority ?? 0,
-      processing_status: DocumentProcessingStatus.UPLOADED,
-      uploaded_by: userId,
+    // ─────────────────────────────────────────────────────────────────────
+    // Phase 7.18 Part 3 — METERING reserve.
+    //
+    // Sits DOWNSTREAM of the Tier 1 access wall (which has already
+    // authorized this contract_id for this user's org). BEFORE storage
+    // upload + Celery dispatch — the work we're metering hasn't happened
+    // yet on a capacity-exhausted call.
+    //
+    // Throws MeterLimitExceededError on capacity exhaustion → 403
+    // METER_LIMIT_UPLOAD_EXTRACTION envelope (no doc row, no storage
+    // write, no dispatch). Throws something 5xx-class on a meter SYSTEM
+    // error (fail closed per meter_definition.fail_mode='closed').
+    //
+    // Fresh UUID per upload: managing-user upload is intentionally
+    // non-idempotent across distinct user runs — the engine's
+    // idempotency_key only dedupes an in-flight retry of the SAME
+    // reserve. Client-supplied Idempotency-Key header convention is the
+    // deferred audit §9.2 future item.
+    // ─────────────────────────────────────────────────────────────────────
+    const reservation = await this.metering.reserve({
+      caller: {
+        user_id: userId,
+        jwt_organization_id: orgId,
+        account_type: options?.account_type ?? 'MANAGING',
+      },
+      meterKey: MeterKey.UPLOAD_EXTRACTION,
+      amount: 1,
+      idempotencyKey: randomUUID(),
+      contractId,
+      actorRef: userId,
+      metadata: { route: 'POST /contracts/:contractId/documents' },
     });
 
-    const saved = await this.documentUploadRepository.save(doc);
-    this.logger.log(`Document uploaded: ${saved.id} for contract ${contractId}`);
+    // From this point on, any throw BEFORE the doc row is persisted with
+    // reservation_id set MUST release the reservation in-request — the
+    // local `reservation` handle is the only carrier. After the doc row
+    // is saved, the row IS the carrier and the lazy poll-driven
+    // reconcile in pollAndAdvance owns terminal commit/release.
+    let saved: DocumentUpload;
+    try {
+      // Upload file to storage
+      const uploadResult = await this.storageService.uploadFile(file, 'contracts');
 
-    // Start text extraction
+      // Multer delivers originalname as Latin-1 encoded bytes.
+      // Decode to UTF-8 so non-ASCII characters (e.g. Arabic) display correctly.
+      const decodedName = Buffer.from(file.originalname, 'latin1').toString('utf-8');
+
+      // Create document record — carrying reservation_id so the lazy
+      // poll-driven reconcile in pollAndAdvance can find it.
+      const doc = this.documentUploadRepository.create({
+        contract_id: contractId,
+        organization_id: orgId,
+        file_url: uploadResult.file_url,
+        file_name: uploadResult.file_name,
+        original_name: decodedName,
+        file_size: file.size,
+        mime_type: file.mimetype,
+        document_label: options?.document_label || null,
+        document_priority: options?.document_priority ?? 0,
+        processing_status: DocumentProcessingStatus.UPLOADED,
+        uploaded_by: userId,
+        reservation_id: reservation.reservation_id,
+      });
+
+      saved = await this.documentUploadRepository.save(doc);
+      this.logger.log(
+        `Document uploaded: ${saved.id} for contract ${contractId} ` +
+          `(reservation=${reservation.reservation_id})`,
+      );
+    } catch (err) {
+      // Sync failure between reserve() and the doc-row save. The local
+      // `reservation` handle is the only carrier of reservation_id; release
+      // in-request before re-throwing.
+      await this.releaseReservationInFlight(
+        reservation.reservation_id,
+        err as Error,
+      );
+      throw err;
+    }
+
+    // Start text extraction. The helper handles its own sync-dispatch
+    // failure internally (sets FAILED + calls releaseReservationOnFailure).
+    // pollAndAdvance owns the async terminal SUCCESS / async terminal
+    // FAILURE commit/release.
     await this.startTextExtraction(saved);
 
     return saved;
@@ -117,6 +202,14 @@ export class DocumentProcessingService {
 
   /**
    * Trigger text extraction for a document.
+   *
+   * Phase 7.18 Part 3 — first SYNC-DISPATCH terminal failure path. The
+   * catch block sets status=FAILED and swallows the error (so callers
+   * like uploadAndProcess + reprocess still return cleanly). Because
+   * FAILED here is a TERMINAL state — pollAndAdvance's terminal-status
+   * guard at the top short-circuits on it — this is also where we
+   * release the metering reservation. No race with pollAndAdvance
+   * because pollAndAdvance has not been called yet on this row.
    */
   private async startTextExtraction(doc: DocumentUpload): Promise<void> {
     try {
@@ -139,6 +232,8 @@ export class DocumentProcessingService {
       doc.processing_status = DocumentProcessingStatus.FAILED;
       doc.error_message = `Text extraction failed to start: ${error.message}`;
       await this.documentUploadRepository.save(doc);
+      // SYNC-DISPATCH FAILURE TERMINAL — refund the reservation.
+      await this.releaseReservationOnFailure(doc);
     }
   }
 
@@ -183,6 +278,11 @@ export class DocumentProcessingService {
       doc.error_message = jobStatus.error || 'Processing failed';
       doc.processing_job_id = null;
       await this.documentUploadRepository.save(doc);
+      // Phase 7.18 Part 3 — ASYNC TERMINAL FAILURE. The AI job reported
+      // failed (text-extraction OR clause-extraction; both flow through
+      // here). Refund the reservation. Inspect TransitionResult inside
+      // the helper; emit observable signal on {applied:false}.
+      await this.releaseReservationOnFailure(doc);
       return doc;
     }
 
@@ -220,6 +320,13 @@ export class DocumentProcessingService {
         doc.processing_status = DocumentProcessingStatus.HUMAN_REVIEW_RECOMMENDED;
         doc.processing_job_id = null;
         await this.documentUploadRepository.save(doc);
+        // Phase 7.18 Part 3 — PARKED-TERMINAL state. No clauses were
+        // extracted from this upload; the metered unit ("extraction") did
+        // not produce its deliverable. Refund the reservation. If the
+        // user clicks "Reprocess" / "Continue anyway", that path takes a
+        // FRESH reservation (see reprocess() below). NOT a double-charge
+        // — it IS a new intent (new user click; new dispatch).
+        await this.releaseReservationOnFailure(doc);
         return doc;
       }
 
@@ -277,6 +384,13 @@ export class DocumentProcessingService {
       doc.processing_status = DocumentProcessingStatus.CLAUSES_EXTRACTED;
       doc.processing_job_id = null;
       await this.documentUploadRepository.save(doc);
+
+      // Phase 7.18 Part 3 — ASYNC TERMINAL SUCCESS. Clauses are now in
+      // the DB; the metered unit ("extraction") produced its
+      // deliverable. Commit the reservation. Inspect TransitionResult
+      // inside the helper; emit observable signal on {applied:false}
+      // (the swept-then-uncharged hazard — TTL < end-to-end duration).
+      await this.commitReservationOnSuccess(doc);
     }
 
     return doc;
@@ -417,6 +531,9 @@ export class DocumentProcessingService {
 
   /**
    * Trigger clause extraction for a document with extracted text.
+   *
+   * Phase 7.18 Part 3 — second SYNC-DISPATCH terminal failure path. Same
+   * shape as startTextExtraction: FAILED is terminal, refund the meter.
    */
   private async startClauseExtraction(doc: DocumentUpload): Promise<void> {
     try {
@@ -444,6 +561,8 @@ export class DocumentProcessingService {
       doc.processing_status = DocumentProcessingStatus.FAILED;
       doc.error_message = `Clause extraction failed to start: ${error.message}`;
       await this.documentUploadRepository.save(doc);
+      // SYNC-DISPATCH FAILURE TERMINAL — refund the reservation.
+      await this.releaseReservationOnFailure(doc);
     }
   }
 
@@ -559,8 +678,27 @@ export class DocumentProcessingService {
    * After loading the doc by id, walk to its `contract_id` and verify
    * the contract is in the caller's org via `findInOrg`. Cross-tenant
    * probe → 404; in-org reprocess unchanged.
+   *
+   * Phase 7.18 Part 3 — METERED as a NEW INTENT.
+   *   Each user-initiated reprocess is a distinct user click that
+   *   triggers fresh Celery dispatch + Anthropic token cost. Per the
+   *   intent-level principle (Rule 9 invariant; CLAUDE.md Phase 7.18
+   *   Part 2 hard rule 2), each new intent = one new reserve. The
+   *   previous reservation_id is already in a terminal state (the doc's
+   *   previous FAILED / HUMAN_REVIEW_RECOMMENDED status was terminal
+   *   and pollAndAdvance + the sync-dispatch helpers already released
+   *   it). The new reservation_id OVERWRITES the column, mirroring
+   *   compliance's re-run-as-new-reserve treatment.
+   *
+   *   The internal 4× Anthropic API retries on the Celery side still
+   *   live inside this new unit (lesson #150-class invariant: retries
+   *   reuse the same idempotency_key inside Celery, never re-reserve).
    */
-  async reprocess(docId: string, orgId: string): Promise<DocumentUpload> {
+  async reprocess(
+    docId: string,
+    orgId: string,
+    options?: { account_type?: MeteringCaller['account_type'] },
+  ): Promise<DocumentUpload> {
     const doc = await this.documentUploadRepository.findOne({
       where: { id: docId },
     });
@@ -571,35 +709,103 @@ export class DocumentProcessingService {
     // contract belongs to another org.
     await this.contractAccess.findInOrg(doc.contract_id, orgId);
 
-    // ── Cleanup: remove clauses from any previous extraction of this document ──
-    // Find all clause IDs that were extracted from this document upload.
-    const previousClauses = await this.clauseRepository.find({
-      where: { source_document_id: docId },
-      select: ['id'],
+    // ─────────────────────────────────────────────────────────────────────
+    // Phase 7.18 Part 3 — DEFENSE-IN-DEPTH: release any prior reservation
+    // BEFORE issuing the new one.
+    //
+    // Why: reprocess is NOT gated by status at this layer (the frontend
+    // gates "Retry OCR" to FAILED / HUMAN_REVIEW_RECOMMENDED rows, but the
+    // backend doesn't enforce that convention). On the happy path the
+    // prior reservation is already in a terminal state (committed when
+    // the prior poll cycle hit CLAUSES_EXTRACTED; released when it hit
+    // FAILED or HUMAN_REVIEW_RECOMMENDED) and this call is a no-op
+    // (engine returns {applied:false, status:<terminal>}). On a bypassed-
+    // frontend / racing-double-click / in-progress reprocess, the prior
+    // is still `reserved` — this release refunds it so the new reserve
+    // doesn't temporally double-count against the per_contract window
+    // until the sweeper backstop fires at TTL.
+    //
+    // Idempotent by construction: engine `release()` uses an atomic
+    // status-guarded UPDATE (WHERE status='reserved'); terminal priors
+    // affect 0 rows; refund branch unreachable. No double-refund.
+    //
+    // ORDER (matters): (1) release prior → (2) reserve new → (3) overwrite
+    // doc.reservation_id with the new id. Releasing AFTER overwriting
+    // would strand the prior with no carrier; reserving BEFORE releasing
+    // would briefly over-count even on the happy path under realistic
+    // poller cadence.
+    // ─────────────────────────────────────────────────────────────────────
+    if (doc.reservation_id) {
+      await this.releaseReservationOnFailure(doc);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Phase 7.18 Part 3 — METERING reserve. Same shape as uploadAndProcess:
+    // downstream of the access wall, upstream of cleanup + dispatch.
+    // ─────────────────────────────────────────────────────────────────────
+    const reservation = await this.metering.reserve({
+      caller: {
+        user_id: doc.uploaded_by,
+        jwt_organization_id: orgId,
+        account_type: options?.account_type ?? 'MANAGING',
+      },
+      meterKey: MeterKey.UPLOAD_EXTRACTION,
+      amount: 1,
+      idempotencyKey: randomUUID(),
+      contractId: doc.contract_id,
+      actorRef: doc.uploaded_by,
+      metadata: {
+        route: 'POST /contracts/:contractId/documents/:docId/reprocess',
+        previous_reservation_id: doc.reservation_id ?? null,
+      },
     });
 
-    if (previousClauses.length > 0) {
-      const clauseIds = previousClauses.map((c) => c.id);
+    try {
+      // ── Cleanup: remove clauses from any previous extraction of this document ──
+      // Find all clause IDs that were extracted from this document upload.
+      const previousClauses = await this.clauseRepository.find({
+        where: { source_document_id: docId },
+        select: ['id'],
+      });
 
-      // Delete contract_clauses join records first (FK references clauses.id).
-      await this.contractClauseRepository.delete({ clause_id: In(clauseIds) });
+      if (previousClauses.length > 0) {
+        const clauseIds = previousClauses.map((c) => c.id);
 
-      // Then delete the clause records themselves.
-      await this.clauseRepository.delete({ source_document_id: docId });
+        // Delete contract_clauses join records first (FK references clauses.id).
+        await this.contractClauseRepository.delete({ clause_id: In(clauseIds) });
 
-      this.logger.log(
-        `reprocess: cleaned up ${previousClauses.length} old clauses for document ${docId}`,
+        // Then delete the clause records themselves.
+        await this.clauseRepository.delete({ source_document_id: docId });
+
+        this.logger.log(
+          `reprocess: cleaned up ${previousClauses.length} old clauses for document ${docId}`,
+        );
+      }
+      // ─────────────────────────────────────────────────────────────────────────
+
+      doc.processing_status = DocumentProcessingStatus.UPLOADED;
+      doc.error_message = null;
+      doc.processing_job_id = null;
+      // Phase 7.25 — clear quality flags so a reprocessed document starts fresh.
+      doc.quality_flags = null;
+      // Phase 7.18 Part 3 — OVERWRITE reservation_id with the new one so
+      // pollAndAdvance's commit/release acts on the NEW reservation.
+      doc.reservation_id = reservation.reservation_id;
+      await this.documentUploadRepository.save(doc);
+    } catch (err) {
+      // Sync failure during cleanup or doc-row reset (before dispatch).
+      // The new reservation hasn't been wired into the saved doc yet —
+      // release in-request from local state and re-throw.
+      await this.releaseReservationInFlight(
+        reservation.reservation_id,
+        err as Error,
       );
+      throw err;
     }
-    // ─────────────────────────────────────────────────────────────────────────
 
-    doc.processing_status = DocumentProcessingStatus.UPLOADED;
-    doc.error_message = null;
-    doc.processing_job_id = null;
-    // Phase 7.25 — clear quality flags so a reprocessed document starts fresh.
-    doc.quality_flags = null;
-    await this.documentUploadRepository.save(doc);
-
+    // Sync-dispatch failure inside startTextExtraction will set FAILED
+    // and release via releaseReservationOnFailure (the doc now carries
+    // the new reservation_id).
     await this.startTextExtraction(doc);
     return doc;
   }
@@ -1148,5 +1354,139 @@ export class DocumentProcessingService {
       return '.' + fileUrl.substring(uploadsIndex);
     }
     return fileUrl;
+  }
+
+  // ─── Metering reconcile helpers (Phase 7.18 Part 3) ──────────────────
+  //
+  // Mirror the compliance Part 2 helper shape verbatim. All three
+  // inspect TransitionResult and emit OBSERVABLE log signals on
+  // {applied:false} so an Ops search by `metering.upload_extraction.*`
+  // surfaces every applied:false occurrence across the lifecycle.
+  //
+  // The signal names align with the four canonical compliance signals
+  // (CLAUDE.md "Phase 7.18 Part 2 — Compliance metering consumer"
+  // section, table of four ops-search log signal names):
+  //   - metering.upload_extraction.committed_after_release
+  //   - metering.upload_extraction.released_after_terminal
+  //   - metering.upload_extraction.commit_error
+  //   - metering.upload_extraction.release_error
+
+  /**
+   * Called when a sync failure happens BETWEEN reserve() and the doc
+   * row's save() — the local `reservation_id` is the only carrier (no
+   * DB row to update). Used by uploadAndProcess + reprocess.
+   *
+   * Wraps release in try/catch. Re-throws of the inner error are owned
+   * by the caller (we just log + signal); the original error remains
+   * the one that gets surfaced to the HTTP layer.
+   */
+  private async releaseReservationInFlight(
+    reservationId: string,
+    originalErr: Error,
+  ): Promise<void> {
+    try {
+      const result = await this.metering.release(reservationId);
+      if (!result.applied) {
+        this.logger.warn(
+          `[metering] release after synchronous in-flight upload failure was a no-op ` +
+            `(reservation=${reservationId}, status=${result.status}) — peer ` +
+            `(sweeper / double-release) won the race. ` +
+            `metering.upload_extraction.released_after_terminal`,
+        );
+      }
+    } catch (releaseErr) {
+      this.logger.error(
+        `[metering] release threw during in-flight upload failure path ` +
+          `(reservation=${reservationId}, original=${originalErr.message}): ` +
+          `${(releaseErr as Error).message}. ` +
+          `metering.upload_extraction.release_error`,
+      );
+    }
+  }
+
+  /**
+   * Called from any TERMINAL FAILURE path:
+   *   - pollAndAdvance async-job-failed terminal (line ~284 in this file)
+   *   - pollAndAdvance HUMAN_REVIEW_RECOMMENDED parked terminal (line ~320)
+   *   - startTextExtraction sync-dispatch catch (line ~229)
+   *   - startClauseExtraction sync-dispatch catch (line ~559)
+   *
+   * No-op when `doc.reservation_id` is NULL — either it's a pre-metering
+   * doc (legacy) or the reserve never ran (cannot happen on the wired
+   * paths, but defense-in-depth so accidentally-NULL rows don't crash
+   * the failure path).
+   *
+   * {applied:false} on failure release means a peer (the sweeper or a
+   * second-poll release) already released first — log explicitly; don't
+   * swallow.
+   */
+  private async releaseReservationOnFailure(
+    doc: DocumentUpload,
+  ): Promise<void> {
+    if (!doc.reservation_id) return;
+    try {
+      const result = await this.metering.release(doc.reservation_id);
+      if (!result.applied) {
+        this.logger.warn(
+          `[metering] release on terminal upload failure was a no-op ` +
+            `(doc=${doc.id}, reservation=${doc.reservation_id}, ` +
+            `status=${result.status}) — peer (sweeper / double-release) ` +
+            `won the race. metering.upload_extraction.released_after_terminal`,
+        );
+      } else if (result.status !== MeterLedgerStatus.RELEASED) {
+        // Defensive — release() only ever sets RELEASED. If we see
+        // anything else, surface it loudly.
+        this.logger.error(
+          `[metering] release returned applied:true but unexpected status ` +
+            `(doc=${doc.id}, reservation=${doc.reservation_id}, ` +
+            `status=${result.status}). metering.upload_extraction.release_unexpected_status`,
+        );
+      }
+    } catch (err) {
+      this.logger.error(
+        `[metering] release threw on terminal upload failure ` +
+          `(doc=${doc.id}, reservation=${doc.reservation_id}): ` +
+          `${(err as Error).message}. metering.upload_extraction.release_error`,
+      );
+    }
+  }
+
+  /**
+   * Called from pollAndAdvance's CLAUSES_EXTRACTED terminal-success
+   * branch after createClausesFromExtraction has persisted the clauses.
+   *
+   * Success commit doesn't change `consumed` (capacity was taken at
+   * reserve). The only state change is the ledger row flipping
+   * reserved → committed.
+   *
+   * {applied:false} on success means the reservation was already
+   * released, almost always by the engine sweeper because the run
+   * outlived RESERVATION_TTL_SECONDS (the swept-then-uncharged hazard).
+   * The upload SUCCEEDED but was NOT charged. Emit
+   * `metering.upload_extraction.committed_after_release` so Ops can see
+   * TTL < end-to-end duration on representative load.
+   */
+  private async commitReservationOnSuccess(
+    doc: DocumentUpload,
+  ): Promise<void> {
+    if (!doc.reservation_id) return;
+    try {
+      const result = await this.metering.commit(doc.reservation_id);
+      if (!result.applied) {
+        this.logger.warn(
+          `[metering] commit on terminal upload success was a no-op ` +
+            `(doc=${doc.id}, reservation=${doc.reservation_id}, ` +
+            `status=${result.status}) — upload succeeded but is recorded ` +
+            `as ${result.status}; capacity was reclaimed (sweeper or peer ` +
+            `release). metering.upload_extraction.committed_after_release`,
+        );
+      }
+    } catch (err) {
+      this.logger.error(
+        `[metering] commit threw on terminal upload success ` +
+          `(doc=${doc.id}, reservation=${doc.reservation_id}): ` +
+          `${(err as Error).message}. metering.upload_extraction.commit_error`,
+      );
+    }
   }
 }
