@@ -19,6 +19,7 @@ import {
   UpdateNoticeStatusDto,
   CreateNoticeResponseDto,
 } from './dto';
+import { ContractAccessService } from '../contracts/services/contract-access.service';
 
 @Injectable()
 export class NoticesService {
@@ -37,6 +38,8 @@ export class NoticesService {
 
     @InjectRepository(Contract)
     private readonly contractRepo: Repository<Contract>,
+
+    private readonly contractAccess: ContractAccessService,
   ) {}
 
   async create(
@@ -44,13 +47,9 @@ export class NoticesService {
     userId: string,
     orgId: string,
   ): Promise<Notice> {
-    const contract = await this.contractRepo.findOne({
-      where: { id: dto.contract_id },
-    });
-
-    if (!contract) {
-      throw new NotFoundException('Contract not found');
-    }
+    // Tenant-isolation Tier 3 wall — cross-org caller gets 404 (NOT
+    // 403) before any DB write or status gate runs.
+    const contract = await this.contractAccess.findInOrg(dto.contract_id, orgId);
 
     if (contract.status !== ContractStatus.ACTIVE) {
       throw new ForbiddenException(
@@ -85,14 +84,10 @@ export class NoticesService {
     return this.noticeRepo.save(notice);
   }
 
-  async findAllByContract(contractId: string): Promise<Notice[]> {
-    const contract = await this.contractRepo.findOne({
-      where: { id: contractId },
-    });
-
-    if (!contract) {
-      throw new NotFoundException('Contract not found');
-    }
+  async findAllByContract(contractId: string, orgId: string): Promise<Notice[]> {
+    // Tenant-isolation Tier 3 wall — cross-org caller gets 404 before
+    // the status gate or overdue scan runs.
+    const contract = await this.contractAccess.findInOrg(contractId, orgId);
 
     if (contract.status !== ContractStatus.ACTIVE) {
       throw new ForbiddenException(

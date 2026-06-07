@@ -20,6 +20,7 @@ import {
   CreateClaimResponseDto,
   UploadClaimDocumentDto,
 } from './dto';
+import { ContractAccessService } from '../contracts/services/contract-access.service';
 
 @Injectable()
 export class ClaimsService {
@@ -38,6 +39,8 @@ export class ClaimsService {
 
     @InjectRepository(Contract)
     private readonly contractRepo: Repository<Contract>,
+
+    private readonly contractAccess: ContractAccessService,
   ) {}
 
   async create(
@@ -45,13 +48,9 @@ export class ClaimsService {
     userId: string,
     orgId: string,
   ): Promise<Claim> {
-    const contract = await this.contractRepo.findOne({
-      where: { id: dto.contract_id },
-    });
-
-    if (!contract) {
-      throw new NotFoundException('Contract not found');
-    }
+    // Tenant-isolation Tier 3 wall — fires BEFORE any DB write or status
+    // gate. Cross-org caller gets 404 (NOT 403) — no existence leak.
+    const contract = await this.contractAccess.findInOrg(dto.contract_id, orgId);
 
     if (contract.status !== ContractStatus.ACTIVE) {
       throw new ForbiddenException(
@@ -84,14 +83,10 @@ export class ClaimsService {
     return this.claimRepo.save(claim);
   }
 
-  async findAllByContract(contractId: string): Promise<Claim[]> {
-    const contract = await this.contractRepo.findOne({
-      where: { id: contractId },
-    });
-
-    if (!contract) {
-      throw new NotFoundException('Contract not found');
-    }
+  async findAllByContract(contractId: string, orgId: string): Promise<Claim[]> {
+    // Tenant-isolation Tier 3 wall — cross-org caller gets 404 before
+    // the status gate runs.
+    const contract = await this.contractAccess.findInOrg(contractId, orgId);
 
     if (contract.status !== ContractStatus.ACTIVE) {
       throw new ForbiddenException(

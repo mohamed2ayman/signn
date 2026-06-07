@@ -34,8 +34,9 @@ export class SubContractsController {
   @Get()
   async findAllByMainContract(
     @Query('main_contract_id') mainContractId: string,
+    @OrganizationId() orgId: string,
   ) {
-    return this.subContractsService.findAllByMainContract(mainContractId);
+    return this.subContractsService.findAllByMainContract(mainContractId, orgId);
   }
 
   @Get(':id')

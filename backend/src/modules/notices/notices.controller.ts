@@ -42,8 +42,9 @@ export class NoticesController {
   @RequirePermission(PermissionLevel.VIEWER)
   async findAllByContract(
     @Query('contract_id', ParseUUIDPipe) contractId: string,
+    @OrganizationId() orgId: string,
   ) {
-    return this.noticesService.findAllByContract(contractId);
+    return this.noticesService.findAllByContract(contractId, orgId);
   }
 
   @Get(':id')
