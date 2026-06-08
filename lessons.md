@@ -1,7 +1,7 @@
 # lessons.md — SIGN + MANAGEX Platform
 > This file documents every bug, issue, and fix that took significant time to resolve.
 > Feed this file to Claude at the start of every session to avoid repeating mistakes.
-> Last updated: 2026-06-06 (Phase 7.18 Part 2 shipped — first metering consumer wired (compliance run, squash `49f785f`, PR #49). **NO new lessons added by Part 2** — the substantive consumer-side lessons (TTL-vs-p99 tuning observed under real load, sweeper-at-scale behaviour, applied:false alert cadence, never-polled-run rates) need representative load to be earned honestly. They are explicitly **deferred to the Phase 9 release-gate verification** when staging infrastructure exists. This matches the same discipline as engine lessons #148–#150 which were earned by failing tests, not authored ahead of evidence. See `docs/metering-part2-staging-gate.md` for the gate items; new "Phase 7.18 Part 2 — Compliance metering consumer" section in CLAUDE.md for the consumer pattern. Prior lessons unchanged: #148–#150 (2026-06-04) — engine-earned by the Phase 7.18 metering primitive (commit `dc31bb6`): TypeORM 0.3 `manager.query()` returns `[rows, rowCount]` for UPDATE+RETURNING and the affected-count read must route through a normalising helper (NEVER hand-index `result[1]`); read-then-write status transitions double-refund under concurrent commit/release on the same row; existence-check-then-insert is racy for idempotency and the insert-first / ON CONFLICT DO NOTHING shape is the fix. Real-Postgres race tests in `backend/src/modules/metering/tests/`. Prior #143–#147 (2026-06-02) — TypeORM auto-appends _enum suffix + audit ALL locales on i18n tasks + missing @RequirePermission silently disables auth + hand-applied secret-stripping doesn't scale + nest start --watch hot-reload contaminates before/after verification.)
+> Last updated: 2026-06-08 (Phase 7.27 legal-corpus foundation — added lessons #153–#164 from the OCR-ingestion build: docker-compose restart doesn't reload env vars (#153); `nest start --watch` silent boot hang + cold-compile window (#154–#155, extend #138/#147); audit `ensureDirsExist` for new storage folders (#156); TypeORM can't own pgvector columns — Python writes them (#157); patch Python mocks at the source module for local imports (#158); UTF-8-safe JSON in test harnesses — bash `curl -d` mangles Arabic and contaminated every prior retrieval verdict (#159); `pdf2image` renders all pages into RAM → page-by-page or OOM (#160); Celery `base=` task class for a status-guarded `on_failure` backstop (#161); broken-ToUnicode PDF corruption is lossy/non-invertible → OCR only (#162); Arabic embeddings need logical word order, gate bidi on a per-source flag (#163); investigation prompts must grep to verify a referenced artifact exists (#164). lessons.md only — CLAUDE.md/NEXT_PHASES deferred to Phase E completion. Work committed local-only on `feature/7-27-legal-corpus`, unpushed. Prior: Phase 7.18 Part 2 shipped — first metering consumer wired (compliance run, squash `49f785f`, PR #49). **NO new lessons added by Part 2** — the substantive consumer-side lessons (TTL-vs-p99 tuning observed under real load, sweeper-at-scale behaviour, applied:false alert cadence, never-polled-run rates) need representative load to be earned honestly. They are explicitly **deferred to the Phase 9 release-gate verification** when staging infrastructure exists. This matches the same discipline as engine lessons #148–#150 which were earned by failing tests, not authored ahead of evidence. See `docs/metering-part2-staging-gate.md` for the gate items; new "Phase 7.18 Part 2 — Compliance metering consumer" section in CLAUDE.md for the consumer pattern. Prior lessons unchanged: #148–#150 (2026-06-04) — engine-earned by the Phase 7.18 metering primitive (commit `dc31bb6`): TypeORM 0.3 `manager.query()` returns `[rows, rowCount]` for UPDATE+RETURNING and the affected-count read must route through a normalising helper (NEVER hand-index `result[1]`); read-then-write status transitions double-refund under concurrent commit/release on the same row; existence-check-then-insert is racy for idempotency and the insert-first / ON CONFLICT DO NOTHING shape is the fix. Real-Postgres race tests in `backend/src/modules/metering/tests/`. Prior #143–#147 (2026-06-02) — TypeORM auto-appends _enum suffix + audit ALL locales on i18n tasks + missing @RequirePermission silently disables auth + hand-applied secret-stripping doesn't scale + nest start --watch hot-reload contaminates before/after verification.)
 
 ---
 
@@ -5840,3 +5840,53 @@ grep -n "path=" apps/sign/src/App.tsx
 `contractSharedEmail()` removed in ContractShare Step 1 PR (feat/contractshare-step1-deprecation).
 See also lesson #140 (mocking the external call path hides total failure of that path —
 an email with a dead link is the runtime equivalent of a mocked renderer).
+
+---
+
+### Lesson #153 — `docker-compose restart` does NOT reload env vars; use `up -d --force-recreate`
+**Problem:** Added `OPENAI_API_KEY` to `ai-backend/.env`, ran `docker-compose restart ai-backend celery-worker`, key still empty inside the containers.
+**Root cause / Fix:** `restart` reuses the existing container; `env_file` only injects at container *creation*. After editing `.env`, run `docker-compose up -d --force-recreate <service>` to pick up new values.
+
+### Lesson #154 — `nest start --watch` can finish compile cleanly yet never bootstrap the app (silent boot hang)
+**Problem:** After a force-recreate, `tsc` logged "Found 0 errors. Watching for file changes." but port 3000 never bound, zero Nest bootstrap logs, `OOMKilled=false` — just hung.
+**Fix:** Plain `docker restart sign-backend` re-runs the entrypoint and boots cleanly. Extends/refines #138 and #147 (watch-mode flakiness): "compile succeeded" ≠ "app started" — verify the health endpoint, not just the compile line.
+
+### Lesson #155 — After force-recreating a `nest start --watch` backend, expect 2–3 min unhealthy during cold compile+boot — do NOT issue a second restart in that window
+**Problem:** Backend showed `unhealthy` for ~3 min post-recreate; a second `docker restart` issued mid-boot SIGTERM'd the almost-ready process and triggered a *fresh* full recompile, doubling the wait.
+**Fix:** Wait out the cold-compile window (poll the health endpoint); only restart if it's still down after ~4–5 min with no "successfully started" log.
+
+### Lesson #156 — New content type using StorageService? Audit `LocalStorageAdapter.ensureDirsExist()`'s hardcoded folder allowlist
+**Problem:** Legal-document uploads 500'd — `/app/uploads/legal-documents/` didn't exist; the adapter only pre-creates a fixed list of folders.
+**Fix:** A new storage folder name = silent `ENOENT` at write time. Add the new folder to the `dirs` array in `ensureDirsExist()` (or create-on-write).
+
+### Lesson #157 — TypeORM cannot reliably read/write pgvector `vector` columns — let Python own them
+**Problem:** No working TypeORM mapping for `vector(1536)`; the npm pgvector adapter wasn't installed.
+**Fix:** Omit the `embedding` column from the TypeORM entity entirely. The Python Celery task (psycopg2 + pgvector) owns all writes; NestJS reads use raw parameterized SQL (`$1::vector`) only when needed.
+
+### Lesson #158 — Patch Python mocks at the SOURCE module when the target uses local (inside-function) imports
+**Problem:** `mocker.patch("app.tasks.chunk_legal_document")` never fired — `run_ingest_legal_document` does `from app.services.legal_document_chunker import chunk_legal_document` *inside* the function body.
+**Fix:** Patch at the source path (`app.services.legal_document_chunker.chunk_legal_document`, `psycopg2.connect`), not the caller module. Module-top imports patch at the caller; local imports patch at the source.
+
+### Lesson #159 — Test harnesses must use a UTF-8-safe JSON encoder for non-ASCII payloads — never raw `bash curl -d "{...$var...}"`
+**Problem:** Arabic retrieval looked completely broken (target article ranked #415, distance 0.94) — but the production pipeline was correct. The bash/`curl -d` JSON body mangled the multi-byte Arabic query before it reached the API.
+**Fix:** Use Node `fetch`+`JSON.stringify`, Python `requests.post(json=...)`, or Postman. Symptom to recognize: prod looks broken (garbage semantic search) while a same-text self-similarity test returns distance 0.0 — the bug is in the harness, not the product. Contaminated *every* prior Phase D retrieval verdict.
+
+### Lesson #160 — `pdf2image.convert_from_path` renders ALL pages into RAM before returning — OOM on long PDFs
+**Problem:** Force-OCR of a 100-page PDF @ 300dpi was SIGKILL'd (`OOMKilled=true`) ~41 s in — ~2.6 GB of page images held at once against a 3 GB limit, before OCR even started.
+**Fix:** Render one page at a time with `first_page`/`last_page` bounds; peak stays flat (~30 MB/page). Confirmed: 330 MiB peak afterward.
+
+### Lesson #161 — `@app.task(base=CustomTaskClass)` is the minimal Celery `on_failure` backstop — keep it status-guarded
+**Problem:** An OOM/SIGKILL killed the worker before the task's own FAILED-marking ran, leaving documents stuck `PENDING` with no error and no job.
+**Fix:** Add a custom task base class with `on_failure` (no class-based-task rewrite). Make the UPDATE status-guarded (`WHERE embedding_status IN ('PENDING','PROCESSING')`) so a late backstop never overwrites a terminal (INDEXED/FAILED) state.
+
+### Lesson #162 — Broken-ToUnicode PDF text corruption is lossy/non-invertible — OCR is the only fix, not character normalization
+**Problem:** ETA Civil Code PDFs render `ك` as `آ` (~72% of chunks). The substitution looked deterministic (آ→ك) — but the font's broken ToUnicode CMap collapses TWO real codepoints (`ك` and legitimate `آ`) into U+0622, so any global remap corrupts every genuine `آ` word (آخر, القرآن, آلات).
+**Fix:** Render to pixels and OCR (Tesseract `ara`) — bypasses the text layer entirely. Diagnose the class via 4+ extractors returning *byte-identical* corruption (proves it's in the PDF, not the extractor).
+
+### Lesson #163 — Arabic embeddings (text-embedding-3-small) need LOGICAL word order — gate bidi reversal on a per-source flag, never apply unconditionally
+**Problem:** Visual-order (RTL-reversed) Arabic embeds as semantically different text, wrecking retrieval. Per-line word reversal fixes visual-order PDFs but CORRUPTS already-logical PDFs (the common case).
+**Fix:** Make direction a per-source property (`legal_sources.is_visual_order`); apply reversal only when set. (And when `force_ocr` is on, suppress reversal — OCR is logical-order natively.)
+
+### Lesson #164 — Investigation prompts referencing an existing method/file must include a grep/find verification step
+**Problem:** Twice in 7.27, prompts/specs assumed a method existed ("the findings doc mentioned X") and code called methods that weren't actually present.
+**Fix:** "A doc/prompt mentioned X" is not proof X exists. Always `grep`/`find` the artifact before building on it.
