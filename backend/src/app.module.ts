@@ -50,6 +50,7 @@ import { NegotiationModule } from './modules/negotiation/negotiation.module';
 import { AdminSecurityModule } from './modules/admin-security/admin-security.module';
 import { ComplianceModule } from './modules/compliance/compliance.module';
 import { WaitlistModule } from './modules/waitlist/waitlist.module';
+import { LegalDocumentsModule } from './modules/legal-documents/legal-documents.module';
 import { TokenBlacklistModule } from './common/services/token-blacklist.module';
 import { dataSourceOptions } from './config/data-source';
 
@@ -277,6 +278,7 @@ import { dataSourceOptions } from './config/data-source';
     AdminSecurityModule,
     ComplianceModule,
     WaitlistModule,
+    LegalDocumentsModule,
   ],
   providers: [
     // Global response serializer. Triggers class-transformer `instanceToPlain`
