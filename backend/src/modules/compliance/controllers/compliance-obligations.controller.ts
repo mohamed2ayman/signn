@@ -26,6 +26,7 @@ import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { Obligation, ObligationStatus, PermissionLevel, User } from '../../../database/entities';
 import { IcalExportService } from '../services/ical-export.service';
 import { ComplianceObligationService } from '../services/compliance-obligation.service';
+import { ContractAccessService } from '../../contracts/services/contract-access.service';
 import { ObligationFiltersDto } from '../dto/obligation-filters.dto';
 import { UpdateObligationInlineDto } from '../dto/update-obligation-inline.dto';
 import { AssignObligationDto } from '../dto/assign-obligation.dto';
@@ -44,7 +45,25 @@ export class ComplianceObligationsController {
     private readonly obligationRepo: Repository<Obligation>,
     private readonly ical: IcalExportService,
     private readonly obligationSvc: ComplianceObligationService,
+    // INTERIM (S0): Class-C bypass-role wall for listForContract.
+    private readonly contractAccess: ContractAccessService,
   ) {}
+
+  /**
+   * INTERIM (S0): Class-C bypass-role wall. Option B will absorb this via the
+   *  scoped repository chokepoint — this findInOrg is the stop-gap until then.
+   * 404 (not 403) on cross-tenant or no-org callers — no existence leak,
+   * matching the findInOrg convention used by the sibling ComplianceController.
+   */
+  private async assertContractInCallerOrg(
+    contractId: string,
+    user: User,
+  ): Promise<void> {
+    if (!user.organization_id) {
+      throw new NotFoundException('Contract not found');
+    }
+    await this.contractAccess.findInOrg(contractId, user.organization_id);
+  }
 
   // ─── Existing Phase 3.4 endpoints ────────────────────────────────────────
 
@@ -53,7 +72,11 @@ export class ComplianceObligationsController {
   async listForContract(
     @Param('contractId') contractId: string,
     @Query() filters: ObligationFiltersDto,
+    @CurrentUser() user: User,
   ): Promise<Obligation[]> {
+    // INTERIM (S0): Class-C bypass-role wall. Option B will absorb this via the
+    //  scoped repository chokepoint — this findInOrg is the stop-gap until then.
+    await this.assertContractInCallerOrg(contractId, user);
     return this.applyFilters(
       this.obligationRepo
         .createQueryBuilder('o')

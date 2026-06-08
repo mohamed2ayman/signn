@@ -16,6 +16,7 @@ import {
 import { ExportService } from '../export/export.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { EmailService } from '../notifications/email.service';
+import { ContractAccessService } from '../contracts/services/contract-access.service';
 
 // DocuSign SDK — no types available
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -47,6 +48,8 @@ export class DocuSignService {
     private readonly exportService: ExportService,
     private readonly notificationsService: NotificationsService,
     private readonly emailService: EmailService,
+    // INTERIM (S0): Class-C bypass-role wall for initiate-signature.
+    private readonly contractAccess: ContractAccessService,
   ) {
     this.accountId = this.configService.get<string>('DOCUSIGN_ACCOUNT_ID', '');
     this.integrationKey = this.configService.get<string>(
@@ -510,7 +513,19 @@ export class DocuSignService {
     initiatorEmail: string,
     initiatorName: string,
     returnUrl: string,
+    orgId: string | null,
   ): Promise<{ envelopeId: string; signingUrl: string }> {
+    // INTERIM (S0): Class-C bypass-role wall. Option B will absorb this via the
+    //  scoped repository chokepoint — this findInOrg is the stop-gap until then.
+    // PLG bypass-roles (OWNER_ADMIN/SYSTEM_ADMIN/OPERATIONS) skip the project-
+    // membership check, and createEnvelope loaded the contract unscoped — so a
+    // bypass-role caller could forge a signature envelope on ANY org's contract.
+    // findInOrg applies the org gate before any envelope work; cross-tenant → 404.
+    if (!orgId) {
+      throw new NotFoundException('Contract not found');
+    }
+    await this.contractAccess.findInOrg(contractId, orgId);
+
     const envelopeId = await this.createEnvelope(contractId, signers);
 
     // Generate embedded signing URL for the initiator

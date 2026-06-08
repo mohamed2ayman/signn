@@ -7,6 +7,7 @@ import {
   ContractVersion,
   ContractComment,
   ContractorResponse,
+  Project,
   ProjectMember,
   PermissionDefault,
   User,
@@ -29,6 +30,9 @@ import { GuestPortalSchemaCheckService } from './services/guest-portal-schema-ch
       ContractVersion,
       ContractComment,
       ContractorResponse,
+      // S0 — POST /contracts project→org ownership check (createContract walls
+      // dto.project_id against the caller's org before insert).
+      Project,
       ProjectMember,
       PermissionDefault,
       User,

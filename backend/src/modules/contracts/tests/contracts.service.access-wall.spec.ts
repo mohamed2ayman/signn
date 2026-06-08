@@ -47,6 +47,7 @@ describe('ContractsService — cross-tenant access wall (Tier 1 WRITEs)', () => 
       opts.contractVersionRepository ?? noop,
       opts.contractCommentRepository ?? noop,
       noop, // contractorResponseRepository
+      noop, // projectRepository (S0)
       opts.userRepository ?? noop,
       opts.contractApproverRepository ?? noop,
       opts.collaborationGateway ?? { emitClauseAdded: jest.fn(), emitClauseUpdated: jest.fn(), emitClauseRemoved: jest.fn(), emitCommentResolved: jest.fn() },
