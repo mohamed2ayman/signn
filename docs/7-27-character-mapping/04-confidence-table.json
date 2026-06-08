@@ -1,0 +1,37 @@
+{
+  "آ→ك": {
+    "sub_count": 53,
+    "legit_in_clean": 8,
+    "confidence": 0.8689
+  },
+  "،→ء": {
+    "sub_count": 2,
+    "legit_in_clean": 0,
+    "confidence": 1.0
+  },
+  "ي→ى": {
+    "sub_count": 2,
+    "legit_in_clean": 571,
+    "confidence": 0.0035
+  },
+  "،→؛": {
+    "sub_count": 1,
+    "legit_in_clean": 0,
+    "confidence": 1.0
+  },
+  "ت→ن": {
+    "sub_count": 1,
+    "legit_in_clean": 394,
+    "confidence": 0.0025
+  },
+  "آ→ا": {
+    "sub_count": 1,
+    "legit_in_clean": 8,
+    "confidence": 0.1111
+  },
+  "أ→ج": {
+    "sub_count": 1,
+    "legit_in_clean": 223,
+    "confidence": 0.0045
+  }
+}
