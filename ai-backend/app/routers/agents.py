@@ -25,6 +25,10 @@ from app.models.schemas import (
     ConflictDetectionResponse,
     DiffRequest,
     DiffResponse,
+    EmbedLegalChunksRequest,
+    EmbedQueryRequest,
+    EmbedQueryResponse,
+    IngestLegalDocumentRequest,
     ObligationsRequest,
     ObligationsResponse,
     ResearchRequest,
@@ -265,3 +269,85 @@ async def compliance_check(request: ComplianceCheckRequest) -> AsyncJobResponse:
         task_id=job_id,
     )
     return AsyncJobResponse(job_id=job_id, status="queued")
+
+
+# ---------------------------------------------------------------------------
+# Legal Corpus — Phase 7.27
+# ---------------------------------------------------------------------------
+
+@router.post(
+    "/ingest-legal-document",
+    response_model=AsyncJobResponse,
+    summary="Full legal-document ingestion: extract + normalize + chunk + embed (async)",
+)
+async def ingest_legal_document(request: IngestLegalDocumentRequest) -> AsyncJobResponse:
+    """Dispatch the full legal-document ingestion pipeline to the Celery worker.
+
+    The worker extracts text from the document's file, NFKC-normalizes it,
+    chunks it with the hybrid article-boundary chunker (tiktoken-capped),
+    bulk-inserts the chunks, embeds them via text-embedding-3-small, and writes
+    the vectors back — updating embedding_status PENDING → PROCESSING → INDEXED
+    (or FAILED).  Poll progress via GET /agents/jobs/{job_id} or the document's
+    embedding_status column.
+    """
+    job_id = str(uuid.uuid4())
+    celery_app.send_task(
+        "tasks.run_ingest_legal_document",
+        args=[request.model_dump()],
+        task_id=job_id,
+    )
+    return AsyncJobResponse(job_id=job_id, status="queued")
+
+
+@router.post(
+    "/embed-legal-chunks",
+    response_model=AsyncJobResponse,
+    summary="Embed PENDING chunks for a legal document (async)",
+)
+async def embed_legal_chunks(request: EmbedLegalChunksRequest) -> AsyncJobResponse:
+    """Dispatch a Celery task that embeds all PENDING legal_document_chunks for
+    the given document_id.  The worker reads chunks from PostgreSQL, batches
+    them through OpenAI text-embedding-3-small, and writes the vectors back via
+    a bulk parameterized UPDATE.
+
+    Returns a job_id for polling via GET /agents/jobs/{job_id}.
+    """
+    job_id = str(uuid.uuid4())
+    celery_app.send_task(
+        "tasks.run_embed_legal_chunks",
+        args=[request.model_dump()],
+        task_id=job_id,
+    )
+    return AsyncJobResponse(job_id=job_id, status="queued")
+
+
+@router.post(
+    "/embed-query",
+    response_model=EmbedQueryResponse,
+    summary="Embed a query string for pgvector similarity search (synchronous)",
+)
+async def embed_query(request: EmbedQueryRequest) -> EmbedQueryResponse:
+    """Synchronously embed a natural-language query string using
+    text-embedding-3-small and return the 1536-dimensional vector.
+
+    This endpoint is called by NestJS's LegalDocumentsService.retrieveRelevantChunks()
+    immediately before the pgvector cosine-similarity search.  It must be
+    synchronous because the NestJS caller awaits the vector before issuing the
+    SQL query.
+    """
+    from openai import OpenAI  # lazy import — avoids top-level error when key absent
+
+    _settings = get_settings()
+    if not _settings.OPENAI_API_KEY:
+        from fastapi import HTTPException
+        raise HTTPException(
+            status_code=503,
+            detail="OPENAI_API_KEY is not configured on the AI backend.",
+        )
+
+    client = OpenAI(api_key=_settings.OPENAI_API_KEY)
+    response = client.embeddings.create(
+        model="text-embedding-3-small",
+        input=request.text,
+    )
+    return EmbedQueryResponse(embedding=response.data[0].embedding)

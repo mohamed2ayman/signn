@@ -435,3 +435,76 @@ class ComplianceCheckResponse(BaseModel):
 
     findings: list[ComplianceFindingItem] = Field(default_factory=list)
     summary: dict[str, Any] = Field(default_factory=dict)
+
+
+# ---------------------------------------------------------------------------
+# Legal Corpus — Phase 7.27
+# ---------------------------------------------------------------------------
+
+class EmbedLegalChunksRequest(BaseModel):
+    """Request body for the legal-chunk embedding task.
+
+    The Celery worker reads all PENDING chunks for *document_id* from
+    PostgreSQL, generates OpenAI text-embedding-3-small vectors, and writes
+    them back via a bulk parameterized UPDATE.
+    """
+
+    document_id: str = Field(
+        ...,
+        description="UUID of the legal_documents row whose chunks need embedding.",
+    )
+
+
+class IngestLegalDocumentRequest(BaseModel):
+    """Request body for the full legal-document ingestion task (Phase 7.27).
+
+    The Celery worker resolves the document's file, extracts text, NFKC-
+    normalizes it, chunks it (tiktoken-capped), bulk-inserts chunks, embeds
+    them through OpenAI, and writes the vectors back — all in one task.
+    """
+
+    document_id: str = Field(
+        ...,
+        description="UUID of the legal_documents row to ingest end-to-end.",
+    )
+    is_visual_order: bool = Field(
+        default=False,
+        description=(
+            "True when the document's source stores Arabic in visual "
+            "(RTL word-reversed) order; the chunker reverses word order back "
+            "to logical order. Default False preserves logical-order behavior. "
+            "Ignored when force_ocr=True (OCR is logical-order natively)."
+        ),
+    )
+    force_ocr: bool = Field(
+        default=False,
+        description=(
+            "True to render pages to images and OCR them @ 300dpi instead of "
+            "reading the PDF text layer. Used for sources whose embedded fonts "
+            "have a broken ToUnicode CMap (e.g. ETA kaf→آ corruption). OCR "
+            "emits logical-order Arabic, so is_visual_order reversal is "
+            "suppressed when this is True. Default False = text-layer fast path."
+        ),
+    )
+
+
+class EmbedQueryRequest(BaseModel):
+    """Request body for the synchronous query-embedding endpoint.
+
+    Called by the NestJS retrieval path (LegalDocumentsService.retrieveRelevantChunks)
+    just before the pgvector similarity search.
+    """
+
+    text: str = Field(..., description="Natural-language query text to embed.")
+
+
+class EmbedQueryResponse(BaseModel):
+    """Response carrying the raw embedding vector for a query string.
+
+    The vector is 1536-dimensional (text-embedding-3-small).
+    """
+
+    embedding: list[float] = Field(
+        ...,
+        description="1536-dimensional OpenAI embedding vector.",
+    )

@@ -26,6 +26,10 @@ from app.services.base_text_extractor import BaseTextExtractor
 
 _logger = logging.getLogger(__name__)
 
+# DPI for the force-OCR path.  300 produced clean Arabic in the Phase 7.27
+# investigation; lower DPI tested poorly.  Single edit point for future tuning.
+FORCE_OCR_DPI = 300
+
 
 class TesseractTextExtractor(BaseTextExtractor):
     """Text extractor using Tesseract OCR as the PDF fallback.
@@ -40,8 +44,22 @@ class TesseractTextExtractor(BaseTextExtractor):
     # Public entry point
     # ------------------------------------------------------------------
 
-    def extract(self, file_path: str, mime_type: str) -> dict[str, Any]:
+    def extract(
+        self,
+        file_path: str,
+        mime_type: str,
+        force_ocr: bool = False,
+    ) -> dict[str, Any]:
         """Extract text from *file_path* according to *mime_type*.
+
+        Parameters
+        ----------
+        force_ocr:
+            When True and the file is a PDF, bypass the digital text-layer fast
+            path entirely and OCR rendered page images @ ``FORCE_OCR_DPI``.
+            Used for sources whose embedded fonts have a broken ToUnicode CMap
+            (e.g. ETA's kaf→آ corruption), where the text layer is unusable but
+            non-empty.  Ignored for non-PDF formats.
 
         Returns
         -------
@@ -49,11 +67,14 @@ class TesseractTextExtractor(BaseTextExtractor):
           - ``text`` (str)
           - ``page_count`` (int)
           - ``quality_flags`` (list[str]) — scan quality signals; always empty
-            for non-PDF formats (no OCR involved).
+            for non-PDF formats (no OCR involved).  Contains ``'ocr_forced'``
+            when the force-OCR path was taken.
         """
         mime = mime_type.lower()
 
         if mime == "application/pdf":
+            if force_ocr:
+                return self._extract_pdf_force_ocr(file_path)
             return self._extract_pdf(file_path)
 
         # Non-PDF formats go through dedicated extractors.  No OCR is involved
@@ -100,6 +121,71 @@ class TesseractTextExtractor(BaseTextExtractor):
         page_count = len(reader.pages)
         text, quality_flags = self.extract_pdf(path, page_count)
         return {"text": text, "page_count": page_count, "quality_flags": quality_flags}
+
+    # ------------------------------------------------------------------
+    # PDF — forced OCR path (broken-text-layer sources)
+    # ------------------------------------------------------------------
+
+    def _extract_pdf_force_ocr(self, path: str) -> dict[str, Any]:
+        """Render and OCR the PDF **one page at a time** @ FORCE_OCR_DPI (Arabic).
+
+        Bypasses the PDF text layer entirely — the correct strategy for PDFs
+        whose embedded fonts carry a broken ToUnicode CMap (the text layer is
+        present but corrupt, so the normal fast path would silently return
+        garbage).  Tesseract reads the rendered pixels and produces clean,
+        logical-order Arabic.
+
+        MEMORY: pages are rendered individually via pdf2image's
+        ``first_page``/``last_page`` so peak RAM stays flat (~30 MB/iteration)
+        regardless of page count.  Rendering all pages at once previously held
+        ~2.6 GB for a 100-page doc and OOM-killed the 3 GB worker.
+
+        RESILIENCE: a single page's OCR failure is logged, flagged
+        (``ocr_page_<n>_failed``) and skipped (empty text for that page) rather
+        than failing the whole document — one missing page is far better than a
+        lost corpus document.
+
+        Returns the same dict shape as the text-layer path, with an extra
+        ``'ocr_forced'`` quality flag so downstream code can see the path taken.
+        """
+        from pdf2image import convert_from_path, pdfinfo_from_path
+        import pytesseract
+
+        # Page count via pdfinfo_from_path (ships with pdf2image; uses poppler's
+        # pdfinfo — no new dependency, no full render just to count).
+        total_pages = int(pdfinfo_from_path(path)["Pages"])
+
+        pages_text: list[str] = []
+        quality_flags: list[str] = ["ocr_forced"]
+
+        for page_num in range(1, total_pages + 1):
+            if page_num % 10 == 1 or page_num == total_pages:
+                _logger.info("OCR page %d/%d", page_num, total_pages)
+            try:
+                images = convert_from_path(
+                    path,
+                    dpi=FORCE_OCR_DPI,
+                    first_page=page_num,
+                    last_page=page_num,
+                )
+                try:
+                    pages_text.append(
+                        pytesseract.image_to_string(images[0], lang="ara")
+                    )
+                finally:
+                    for img in images:
+                        img.close()
+            except Exception as exc:  # noqa: BLE001 — one bad page must not kill the doc
+                _logger.warning("OCR failed on page %d: %s", page_num, exc)
+                quality_flags.append(f"ocr_page_{page_num}_failed")
+                pages_text.append("")  # keep page alignment; gap, not failure
+
+        text = "\n\n".join(pages_text)
+        return {
+            "text": text,
+            "page_count": total_pages,
+            "quality_flags": quality_flags,
+        }
 
     # ------------------------------------------------------------------
     # PDF — BaseTextExtractor implementation
