@@ -72,3 +72,12 @@ export { KnowledgeAssetVersion } from './knowledge-asset-version.entity';
 export { GuestContractAccess } from './guest-contract-access.entity';
 // ─── Phase 7.18 — Bucket 1b-i: Guest invitation + pre-password viewer ─────
 export { GuestInvitation, GuestInvitationStatus } from './guest-invitation.entity';
+// ─── Phase 7.27 — Legal Corpus Foundation ─────────────────────────────────
+export {
+  LegalDocument,
+  LegalDocumentSourceType,
+  LegalDocumentStatus,
+  LegalDocumentEmbeddingStatus,
+} from './legal-document.entity';
+export { LegalDocumentChunk } from './legal-document-chunk.entity';
+export { LegalSource } from './legal-source.entity';
