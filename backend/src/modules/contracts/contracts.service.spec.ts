@@ -9,6 +9,7 @@ import {
   ContractVersion,
   ContractComment,
   ContractorResponse,
+  Project,
   User,
   ContractApprover,
   GuestContractAccess,
@@ -98,6 +99,12 @@ const mockContractorResponseRepository = {
   find: jest.fn().mockResolvedValue([]),
 };
 
+// S0 — create() now walls dto.project_id against the caller's org. Default to
+// returning a project so the existing create() happy-path tests still pass.
+const mockProjectRepository = {
+  findOne: jest.fn().mockResolvedValue({ id: 'project-uuid' }),
+};
+
 // resolveUserRole() calls userRepository.findOne — returning null gives null job_title
 const mockUserRepository = {
   findOne: jest.fn().mockResolvedValue(null),
@@ -177,6 +184,7 @@ describe('ContractsService', () => {
         { provide: getRepositoryToken(ContractVersion),    useValue: mockContractVersionRepository },
         { provide: getRepositoryToken(ContractComment),    useValue: mockContractCommentRepository },
         { provide: getRepositoryToken(ContractorResponse), useValue: mockContractorResponseRepository },
+        { provide: getRepositoryToken(Project),            useValue: mockProjectRepository },
         { provide: getRepositoryToken(User),               useValue: mockUserRepository },
         { provide: getRepositoryToken(ContractApprover),   useValue: mockContractApproverRepository },
         { provide: CollaborationGateway,                   useValue: mockCollaborationGateway },

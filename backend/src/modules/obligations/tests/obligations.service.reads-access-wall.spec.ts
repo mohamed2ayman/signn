@@ -6,10 +6,11 @@ import { ObligationsService } from '../obligations.service';
  * Tenant-isolation Tier 2 — access-wall spec for the `?contract_id=`
  * conditional filter on `GET /obligations/dashboard`.
  *
- * The sibling route `GET /obligations/contract/:contractId` is
- * PLG-entangled (Class-C bypass-role leak; see
- * docs/tenant-isolation-tier2.md) and intentionally NOT walled here —
- * it folds into the Option B guard-architecture decision.
+ * The sibling route `GET /obligations/contract/:contractId` (Class-C
+ * bypass-role leak) was interim-walled in S0 with the same findInOrg
+ * pattern — see obligations.service.find-by-contract-wall.spec.ts and
+ * docs/s0-pre-option-b-fixes.md. Option B will later absorb both via the
+ * scoped repository chokepoint.
  */
 describe('ObligationsService — Tier 2 dashboard access wall', () => {
   const ORG_A = '00000000-0000-0000-0000-00000000000a';

@@ -3037,19 +3037,35 @@ deployment checklist.
 
 ## Phase 7.15 — Obligation Permission Model (shipped — 2026-06-01, PR #40)
 
-**Scope:** Backend-only. Adds proper role-based access control and project ownership
-verification to obligation mutation endpoints.
+**Scope:** Backend-only. Adds proper role-based access control to obligation mutation
+endpoints, plus a middleware that resolves the route's `project_id` for the permission
+guard. (NOTE: this phase does NOT add org-ownership verification — see the correction
+below; that gap is closed in S0 + Option B.)
 
 ### What shipped
 
 **`ResolveObligationProjectMiddleware`**
 (`backend/src/common/middleware/resolve-obligation-project.middleware.ts`):
 - Applied to all `/contracts/:contractId/obligations/*` routes
-- Validates that the contract belongs to the requesting user's organization
-- Extracts the `projectId` from the contract and attaches it to the request
-  so downstream guards can use it without an extra DB query
-- Returns 403 if the contract is not org-scoped to the requester's org
+- **Resolves a `project_id`** for the request — looks up the contract (or obligation,
+  for `/obligations/:id`) by id and attaches its `project_id` to `req.params` so the
+  downstream `PermissionLevelGuard` can resolve project membership without an extra
+  DB query
+- **Does NOT verify org ownership.** It loads the contract/obligation by id with **no
+  org filter**, never compares the contract's org to the caller's org, and **never
+  throws** — the whole `use()` body is wrapped in a best-effort `try/catch` that always
+  calls `next()`. A failed lookup silently falls through.
 - Wired into `ObligationsModule` via `NestModule.configure()`
+
+> **⚠️ CORRECTION (S0, 2026-06-08): a prior version of this section claimed the
+> middleware "validates that the contract belongs to the requesting user's organization"
+> and "returns 403 if the contract is not org-scoped to the requester's org." That was a
+> FALSE security claim — the middleware does neither (see the two bullets above for what
+> it actually does). The org-ownership gap on the obligation contract routes is closed by
+> the route-level `ContractAccessService.findInOrg` wall added in S0 (see
+> `docs/s0-pre-option-b-fixes.md`) and, ultimately, by the Option B scoped-repository
+> chokepoint (see `docs/option-b-scoped-repository-audit.md`). Do NOT rely on this
+> middleware as a tenancy boundary.**
 
 **Role guards on mutation endpoints (`ComplianceObligationsController`):**
 - `POST /contracts/:id/obligations/:oblId/assign` — `PROJECT_MANAGER+`

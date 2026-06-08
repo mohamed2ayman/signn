@@ -25,7 +25,21 @@ export class ObligationsService {
     private readonly contractAccess: ContractAccessService,
   ) {}
 
-  async findByContract(contractId: string): Promise<Obligation[]> {
+  async findByContract(
+    contractId: string,
+    orgId: string,
+  ): Promise<Obligation[]> {
+    // INTERIM (S0): Class-C bypass-role wall. Option B will absorb this via the
+    //  scoped repository chokepoint — this findInOrg is the stop-gap until then.
+    // PLG bypass-roles (OWNER_ADMIN/SYSTEM_ADMIN/OPERATIONS) skip the project-
+    // membership check, and this load was unscoped — so a foreign contract's
+    // obligations leaked regardless of role. findInOrg applies the org gate at
+    // the data load; cross-tenant → 404.
+    if (!orgId) {
+      // No-org caller cannot own contracts. 404 (not 403) — no existence leak.
+      throw new NotFoundException('Contract not found');
+    }
+    await this.contractAccess.findInOrg(contractId, orgId);
     return this.obligationRepository.find({
       where: { contract_id: contractId },
       relations: ['contract_clause', 'contract_clause.clause', 'completer'],

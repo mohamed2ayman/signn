@@ -47,6 +47,7 @@ describe('ContractsService — Tier 2 READ access wall', () => {
       opts.contractVersionRepository ?? noop,
       opts.contractCommentRepository ?? noop,
       opts.contractorResponseRepository ?? noop,
+      noop, // projectRepository (S0)
       noop, // userRepository
       opts.contractApproverRepository ?? noop,
       noop, // collaborationGateway

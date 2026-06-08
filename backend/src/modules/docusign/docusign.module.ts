@@ -13,6 +13,9 @@ import { DocuSignController } from './docusign.controller';
 import { DocuSignWebhookController } from './docusign-webhook.controller';
 import { PermissionLevelGuard } from '../../common/guards/permission-level.guard';
 import { NotificationsModule } from '../notifications/notifications.module';
+// INTERIM (S0): Class-C bypass-role wall — DocuSignService injects
+// ContractAccessService for the initiate-signature org gate.
+import { ContractsModule } from '../contracts/contracts.module';
 
 @Module({
   imports: [
@@ -25,6 +28,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
     ]),
     ExportModule,
     NotificationsModule,
+    ContractsModule,
   ],
   controllers: [DocuSignController, DocuSignWebhookController],
   providers: [DocuSignService, PermissionLevelGuard],

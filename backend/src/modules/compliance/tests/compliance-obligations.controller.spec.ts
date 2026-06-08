@@ -16,6 +16,7 @@ import { PermissionLevelGuard } from '../../../common/guards/permission-level.gu
 import { ComplianceObligationsController } from '../controllers/compliance-obligations.controller';
 import { ComplianceObligationService } from '../services/compliance-obligation.service';
 import { IcalExportService } from '../services/ical-export.service';
+import { ContractAccessService } from '../../contracts/services/contract-access.service';
 import {
   Obligation,
   ObligationAssignee,
@@ -169,6 +170,10 @@ const mockObligationRepo = {
 
 const mockIcal = { build: jest.fn().mockReturnValue('BEGIN:VCALENDAR\nEND:VCALENDAR') };
 
+// S0 — listForContract now walls contractId via ContractAccessService.findInOrg.
+// Default to resolving so the existing happy-path tests pass (MOCK_USER is in ORG_ID).
+const mockContractAccess = { findInOrg: jest.fn().mockResolvedValue({}) };
+
 // ─────────────────────────────────────────────────────────────────────────────
 // App factory
 // ─────────────────────────────────────────────────────────────────────────────
@@ -179,6 +184,7 @@ async function buildApp(): Promise<INestApplication> {
     providers: [
       { provide: ComplianceObligationService, useValue: mockObligationSvc },
       { provide: IcalExportService, useValue: mockIcal },
+      { provide: ContractAccessService, useValue: mockContractAccess },
       {
         provide: getRepositoryToken(Obligation),
         useValue: mockObligationRepo,
@@ -211,6 +217,7 @@ async function buildLowPermApp(): Promise<INestApplication> {
     providers: [
       { provide: ComplianceObligationService, useValue: mockObligationSvc },
       { provide: IcalExportService, useValue: mockIcal },
+      { provide: ContractAccessService, useValue: mockContractAccess },
       {
         provide: getRepositoryToken(Obligation),
         useValue: mockObligationRepo,

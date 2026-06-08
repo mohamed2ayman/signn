@@ -29,8 +29,11 @@ export class ObligationsController {
   @RequirePermission(PermissionLevel.VIEWER)
   async findByContract(
     @Param('contractId', ParseUUIDPipe) contractId: string,
+    // INTERIM (S0): Class-C bypass-role wall — thread the caller's org so the
+    // service can findInOrg the contract before loading its obligations.
+    @OrganizationId() orgId: string,
   ) {
-    return this.obligationsService.findByContract(contractId);
+    return this.obligationsService.findByContract(contractId, orgId);
   }
 
   // Org-wide reads — no project scope → guard falls through (return true).

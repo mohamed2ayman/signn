@@ -15,6 +15,7 @@ import {
   ContractVersionEventType,
   ContractComment,
   ContractorResponse,
+  Project,
   User,
   ContractApprover,
   ApproverStatus,
@@ -50,6 +51,9 @@ export class ContractsService {
     private readonly contractCommentRepository: Repository<ContractComment>,
     @InjectRepository(ContractorResponse)
     private readonly contractorResponseRepository: Repository<ContractorResponse>,
+    // S0 — project→org ownership check on the create path.
+    @InjectRepository(Project)
+    private readonly projectRepository: Repository<Project>,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
     @InjectRepository(ContractApprover)
@@ -120,6 +124,18 @@ export class ContractsService {
     userId: string,
     orgId: string,
   ): Promise<Contract> {
+    // S0 — project→org ownership wall. The create path trusted dto.project_id
+    // with no check, so a caller could create a contract under ANOTHER org's
+    // project. Verify the project belongs to the caller's org BEFORE insert.
+    // Cross-tenant → 404 (no existence leak), matching the findInOrg convention.
+    const project = await this.projectRepository.findOne({
+      where: { id: dto.project_id, organization_id: orgId },
+      select: ['id'],
+    });
+    if (!project) {
+      throw new NotFoundException('Project not found');
+    }
+
     // Enforce license acknowledgment for standard forms
     if (isStandardForm(dto.contract_type)) {
       if (!dto.license_acknowledged) {

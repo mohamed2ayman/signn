@@ -15,6 +15,7 @@ import { RolesGuard } from '../../common/guards/roles.guard';
 import { PermissionLevelGuard } from '../../common/guards/permission-level.guard';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { OrganizationId } from '../../common/decorators/organization.decorator';
 import { PermissionLevel } from '../../database/entities';
 import { DocuSignService } from './docusign.service';
 import { InitiateSignatureDto } from './dto/initiate-signature.dto';
@@ -35,6 +36,9 @@ export class DocuSignController {
     @Param('id', ParseUUIDPipe) contractId: string,
     @Body() dto: InitiateSignatureDto,
     @CurrentUser() user: any,
+    // INTERIM (S0): Class-C bypass-role wall — thread the caller's org so the
+    // service can findInOrg the contract before creating any signature envelope.
+    @OrganizationId() orgId: string,
     @Query('return_url') returnUrl?: string,
   ) {
     const frontendUrl =
@@ -46,6 +50,7 @@ export class DocuSignController {
       user.email,
       `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.email,
       frontendUrl,
+      orgId ?? null,
     );
   }
 
