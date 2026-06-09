@@ -40,6 +40,7 @@ describe('ContractsService.create — project→org ownership wall (S0)', () => 
       { instantiateTemplate: jest.fn() } as any, // contractTemplatesService
       noop, // emailService
       opts.contractAccess ?? { findInOrg: jest.fn() }, // contractAccess
+      noop, // contractScoped (Option B — unused by create())
     );
   }
 

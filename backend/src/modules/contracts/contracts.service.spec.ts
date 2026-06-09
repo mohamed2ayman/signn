@@ -1,7 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
+import { NotFoundException } from '@nestjs/common';
 
 import { ContractsService } from './contracts.service';
+import { ContractScopedRepository } from '../scoped-repository/contract-scoped.repository';
 import {
   Contract,
   ContractStatus,
@@ -155,6 +157,21 @@ const mockGuestContractAccessRepository = {
   findOne: jest.fn().mockResolvedValue(null),
 };
 
+// Option B — S1: the mutation methods (update / updateStatus / updateParties /
+// delete) now load their target through the scoped repo AFTER the findInOrg
+// wall. The mock delegates to the same `mockQb.getOne` the wall reads, so the
+// existing update() value↔currency setups drive BOTH layers with one fixture.
+const mockContractScopedRepository = {
+  scopedFindById: jest.fn(() => mockQb.getOne()),
+  scopedFindByIdOrThrow: jest.fn(async () => {
+    const contract = await mockQb.getOne();
+    if (!contract) throw new NotFoundException('Contract not found');
+    return contract;
+  }),
+  scopedFindByIdViaContract: jest.fn(() => mockQb.getOne()),
+  findAcrossAllOrgs: jest.fn().mockResolvedValue([]),
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Test suite
 // ─────────────────────────────────────────────────────────────────────────────
@@ -195,6 +212,9 @@ describe('ContractsService', () => {
         // path. Its dependencies (contractRepository, guestAccessRepository)
         // come from the providers above.
         ContractAccessService,
+        // Option B — S1: data-layer tenancy chokepoint (mock delegates to the
+        // same getOne the wall reads).
+        { provide: ContractScopedRepository,               useValue: mockContractScopedRepository },
       ],
     }).compile();
 

@@ -54,6 +54,7 @@ describe('ContractsService — Tier 2 READ access wall', () => {
       noop, // contractTemplatesService
       noop, // emailService
       opts.contractAccess,
+      noop, // contractScoped (Option B — unused by these Tier 2 READ paths)
     );
   }
 
