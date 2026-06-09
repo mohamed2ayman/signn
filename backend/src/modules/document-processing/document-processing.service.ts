@@ -890,47 +890,137 @@ export class DocumentProcessingService {
   async finalizeReview(
     contractId: string,
     orgId: string,
+    options?: {
+      /**
+       * Phase 7.18 — the acting user's id, threaded from the controller's
+       * @CurrentUser(). Used as the metering caller.user_id (cross-check
+       * log) AND as the ledger actor_ref (NOT NULL UUID — "who did the
+       * work"). The controller route is JWT-guarded, so this is always set
+       * in production; left optional so existing direct unit-test callers
+       * (which stub pollAndSaveRisks) don't have to thread it.
+       */
+      user_id?: string;
+      /**
+       * Caller account_type for the engine's defense-in-depth JWT
+       * cross-check (Invariant 1). Defaults to MANAGING — this route is
+       * reachable only via the JWT-guarded managing-user controller; the
+       * guest portal does NOT call finalizeReview today.
+       */
+      account_type?: MeteringCaller['account_type'];
+    },
   ): Promise<{
     risk_job_id: string;
     obligations_job_id: string;
     conflict_job_id: string | null;
   }> {
     // Tenant wall — throws 404 on cross-tenant probe; AI dispatch never
-    // fires under the attacker's org.
+    // fires under the attacker's org. Reserve sits DOWNSTREAM of this wall.
     await this.contractAccess.findInOrg(contractId, orgId);
 
-    // Get all approved clauses with their source document metadata
-    const contractClauses = await this.contractClauseRepository
-      .createQueryBuilder('cc')
-      .leftJoinAndSelect('cc.clause', 'clause')
-      .leftJoinAndSelect('clause.source_document', 'source_doc')
-      .where('cc.contract_id = :contractId', { contractId })
-      .andWhere('clause.review_status IN (:...statuses)', {
-        statuses: [ClauseReviewStatus.APPROVED, ClauseReviewStatus.EDITED],
-      })
-      .getMany();
-
-    // Include document metadata so AI can detect cross-document conflicts
-    const clausesForAi = contractClauses.map((cc) => ({
-      id: cc.clause.id,
-      text: cc.clause.content,
-      document_id: cc.clause.source_document?.id || null,
-      document_label: cc.clause.source_document?.document_label || null,
-      document_priority: cc.clause.source_document?.document_priority ?? 0,
-    }));
-
-    // Trigger risk analysis (with document priority for conflict detection)
-    const riskResult = await this.aiService.triggerRiskAnalysis({
-      contract_id: contractId,
-      clauses: clausesForAi,
-      org_id: orgId,
+    // ─────────────────────────────────────────────────────────────────────
+    // Phase 7.18 — METERING reserve (meter_key=finalize_review).
+    //
+    // ONE reserve covers the WHOLE 3-agent finalize burst (risk +
+    // obligations + conflict) — Ayman's decision: one finalize click = ONE
+    // charge, NOT per-agent. Sits DOWNSTREAM of the access wall (already
+    // authorized this contract for this org), BEFORE any AI dispatch — so a
+    // capacity-exhausted finalize dispatches nothing.
+    //
+    // Throws MeterLimitExceededError on capacity exhaustion → 403
+    // METER_LIMIT_FINALIZE_REVIEW envelope. Throws 5xx-class on a meter
+    // SYSTEM error (fail closed per meter_definition.fail_mode='closed').
+    //
+    // Fresh UUID per finalize: re-finalize is intentionally a NEW intent
+    // (no backend cap beyond the per_contract window). The engine's
+    // idempotency_key only dedupes an in-flight retry of the SAME reserve.
+    //
+    // CARRIER DIVERGENCE (vs compliance / upload_extraction): a finalize
+    // run writes MANY per-clause risk_analyses rows — there is NO single
+    // domain row to hang reservation_id on. So reservation_id is threaded
+    // IN-MEMORY into pollAndSaveRisks (the risk poller is the terminal
+    // owner of commit/release for the whole burst). No carrier column, no
+    // migration. If the process dies mid-finalize, the engine SWEEPER is
+    // the SOLE backstop (releases at TTL) — documented in
+    // docs/metering-finalize-review.md.
+    // ─────────────────────────────────────────────────────────────────────
+    const reservation = await this.metering.reserve({
+      caller: {
+        user_id: options?.user_id ?? null,
+        jwt_organization_id: orgId,
+        account_type: options?.account_type ?? 'MANAGING',
+      },
+      meterKey: MeterKey.FINALIZE_REVIEW,
+      amount: 1,
+      idempotencyKey: randomUUID(),
+      contractId,
+      actorRef: options?.user_id ?? contractId,
+      metadata: { route: 'POST /contracts/:contractId/review/finalize' },
     });
 
+    // From reserve() until the poller is launched with reservation_id, the
+    // local `reservation` handle is the ONLY carrier — any throw here MUST
+    // release in-request. Once pollAndSaveRisks holds the reservation_id,
+    // the poller owns terminal commit (risk completed) / release (risk
+    // failed or timed out).
+    let clausesForAi: Array<{
+      id: string;
+      text: string;
+      document_id: string | null;
+      document_label: string | null;
+      document_priority: number;
+    }>;
+    let riskResult: { job_id: string; status: string };
+    try {
+      // Get all approved clauses with their source document metadata
+      const contractClauses = await this.contractClauseRepository
+        .createQueryBuilder('cc')
+        .leftJoinAndSelect('cc.clause', 'clause')
+        .leftJoinAndSelect('clause.source_document', 'source_doc')
+        .where('cc.contract_id = :contractId', { contractId })
+        .andWhere('clause.review_status IN (:...statuses)', {
+          statuses: [ClauseReviewStatus.APPROVED, ClauseReviewStatus.EDITED],
+        })
+        .getMany();
+
+      // Include document metadata so AI can detect cross-document conflicts
+      clausesForAi = contractClauses.map((cc) => ({
+        id: cc.clause.id,
+        text: cc.clause.content,
+        document_id: cc.clause.source_document?.id || null,
+        document_label: cc.clause.source_document?.document_label || null,
+        document_priority: cc.clause.source_document?.document_priority ?? 0,
+      }));
+
+      // Trigger risk analysis (with document priority for conflict detection)
+      riskResult = await this.aiService.triggerRiskAnalysis({
+        contract_id: contractId,
+        clauses: clausesForAi,
+        org_id: orgId,
+      });
+    } catch (err) {
+      // SYNCHRONOUS dispatch failure (clause load or risk dispatch) BEFORE
+      // the poller exists to own the reservation — release in-request, then
+      // re-throw. No charge for a finalize that never dispatched.
+      await this.releaseFinalizeReservationInFlight(
+        reservation.reservation_id,
+        err as Error,
+      );
+      throw err;
+    }
+
     // Phase 7.17 — Prompt 1, A.1: poll the risk job in the background and
-    // save per-clause risks. Before this hook, the risk_job_id was returned
-    // to the caller but never consumed — per-clause risks were silently
-    // dropped. Mirror of the pollAndSaveConflicts pattern below.
-    this.pollAndSaveRisks(contractId, riskResult.job_id, orgId).catch((err) => {
+    // save per-clause risks. Phase 7.18: this poller is ALSO the terminal
+    // owner of the finalize_review reservation — it commits on risk
+    // completion (~the completed branch) and releases on risk failure /
+    // timeout. The obligations + conflict dispatches below run alongside;
+    // if one of them throws, the poller (already launched) still owns the
+    // reservation and reconciles via the risk outcome — do NOT release here.
+    this.pollAndSaveRisks(
+      contractId,
+      riskResult.job_id,
+      orgId,
+      reservation.reservation_id,
+    ).catch((err) => {
       this.logger.error(
         `Risk analysis background task failed for contract ${contractId}: ${err.message}`,
       );
@@ -1127,6 +1217,13 @@ export class DocumentProcessingService {
     contractId: string,
     jobId: string,
     orgId: string,
+    // Phase 7.18 — the finalize_review reservation this poller OWNS. When
+    // set, the poller commits on risk completion and releases on risk
+    // failure / timeout (the in-memory carrier — no DB column; see
+    // finalizeReview's carrier-divergence note). Undefined for legacy /
+    // direct callers (e.g. the ai-risk-writer integration spec) — the
+    // commit/release helpers no-op on a missing id.
+    reservationId?: string | null,
   ): Promise<void> {
     const MAX_POLLS = 60;
     const POLL_INTERVAL_MS = 3000;
@@ -1139,10 +1236,22 @@ export class DocumentProcessingService {
         this.logger.warn(
           `Risk analysis job ${jobId} failed: ${jobStatus.error}`,
         );
+        // TERMINAL FAILURE for the finalize burst — refund the reservation.
+        await this.releaseFinalizeReservationOnFailure(
+          reservationId,
+          contractId,
+          `risk job ${jobId} failed`,
+        );
         return;
       }
 
       if (jobStatus.status === 'completed') {
+        // TERMINAL SUCCESS for the finalize burst — the AI risk job
+        // completed (whether or not any per-clause risks came back). Commit
+        // the ONE finalize_review charge here. The obligations + conflict
+        // agents ride inside this same charge (Ayman's one-charge model).
+        await this.commitFinalizeReservationOnSuccess(reservationId, contractId);
+
         const result = jobStatus.result?.result || jobStatus.result;
         const risks: any[] = result?.risks || [];
 
@@ -1170,6 +1279,14 @@ export class DocumentProcessingService {
 
     this.logger.warn(
       `Risk analysis job ${jobId} timed out after ${MAX_POLLS} polls`,
+    );
+    // TERMINAL TIMEOUT — the poller gives up; refund the reservation. (The
+    // engine sweeper would also catch it at TTL, but releasing here returns
+    // capacity promptly rather than waiting out RESERVATION_TTL_SECONDS.)
+    await this.releaseFinalizeReservationOnFailure(
+      reservationId,
+      contractId,
+      `risk job ${jobId} timed out after ${MAX_POLLS} polls`,
     );
   }
 
@@ -1486,6 +1603,121 @@ export class DocumentProcessingService {
         `[metering] commit threw on terminal upload success ` +
           `(doc=${doc.id}, reservation=${doc.reservation_id}): ` +
           `${(err as Error).message}. metering.upload_extraction.commit_error`,
+      );
+    }
+  }
+
+  // ─── Metering reconcile helpers — finalize_review (Phase 7.18) ───────
+  //
+  // SAME shape as the upload_extraction helpers above, but keyed on a bare
+  // reservation_id threaded in-memory through pollAndSaveRisks (NO doc
+  // carrier row — the finalize burst writes many per-clause risk_analyses
+  // rows, none of which is a natural single carrier; see finalizeReview's
+  // carrier-divergence note). All three inspect TransitionResult and emit
+  // OBSERVABLE log signals on {applied:false}, named `metering.finalize_review.*`
+  // so an Ops search surfaces every applied:false occurrence:
+  //   - metering.finalize_review.committed_after_release
+  //   - metering.finalize_review.released_after_terminal
+  //   - metering.finalize_review.commit_error
+  //   - metering.finalize_review.release_error
+  //
+  // Each no-ops on a missing reservation_id (legacy / direct-test callers
+  // of pollAndSaveRisks that don't thread one).
+
+  /**
+   * SYNCHRONOUS in-flight failure (clause load / risk dispatch threw BEFORE
+   * the poller took ownership). The local reservation_id is the only
+   * carrier — release in-request. The original error is re-thrown by the
+   * caller; we only log + signal.
+   */
+  private async releaseFinalizeReservationInFlight(
+    reservationId: string | null | undefined,
+    originalErr: Error,
+  ): Promise<void> {
+    if (!reservationId) return;
+    try {
+      const result = await this.metering.release(reservationId);
+      if (!result.applied) {
+        this.logger.warn(
+          `[metering] release after synchronous in-flight finalize failure ` +
+            `was a no-op (reservation=${reservationId}, status=${result.status}) ` +
+            `— peer (sweeper / double-release) won the race. ` +
+            `metering.finalize_review.released_after_terminal`,
+        );
+      }
+    } catch (releaseErr) {
+      this.logger.error(
+        `[metering] release threw during in-flight finalize failure path ` +
+          `(reservation=${reservationId}, original=${originalErr.message}): ` +
+          `${(releaseErr as Error).message}. metering.finalize_review.release_error`,
+      );
+    }
+  }
+
+  /**
+   * TERMINAL FAILURE of the finalize burst — risk job failed (~the failed
+   * branch) or the poller timed out (~the timeout tail). Refund the
+   * reservation. {applied:false} means a peer (the sweeper, almost always
+   * because the run outlived RESERVATION_TTL_SECONDS) released first.
+   */
+  private async releaseFinalizeReservationOnFailure(
+    reservationId: string | null | undefined,
+    contractId: string,
+    reason: string,
+  ): Promise<void> {
+    if (!reservationId) return;
+    try {
+      const result = await this.metering.release(reservationId);
+      if (!result.applied) {
+        this.logger.warn(
+          `[metering] release on terminal finalize failure was a no-op ` +
+            `(contract=${contractId}, reservation=${reservationId}, ` +
+            `status=${result.status}, reason="${reason}") — peer (sweeper / ` +
+            `double-release) won the race. ` +
+            `metering.finalize_review.released_after_terminal`,
+        );
+      }
+    } catch (err) {
+      this.logger.error(
+        `[metering] release threw on terminal finalize failure ` +
+          `(contract=${contractId}, reservation=${reservationId}, ` +
+          `reason="${reason}"): ${(err as Error).message}. ` +
+          `metering.finalize_review.release_error`,
+      );
+    }
+  }
+
+  /**
+   * TERMINAL SUCCESS of the finalize burst — the AI risk job completed.
+   * Commit the ONE finalize_review charge. No balance change (capacity was
+   * taken at reserve). {applied:false} means the reservation was already
+   * released, almost always by the sweeper because the run outlived
+   * RESERVATION_TTL_SECONDS (the swept-then-uncharged hazard) — the
+   * finalize SUCCEEDED but was NOT charged. Emit
+   * `metering.finalize_review.committed_after_release` so Ops can see
+   * TTL < end-to-end finalize duration on representative load.
+   */
+  private async commitFinalizeReservationOnSuccess(
+    reservationId: string | null | undefined,
+    contractId: string,
+  ): Promise<void> {
+    if (!reservationId) return;
+    try {
+      const result = await this.metering.commit(reservationId);
+      if (!result.applied) {
+        this.logger.warn(
+          `[metering] commit on terminal finalize success was a no-op ` +
+            `(contract=${contractId}, reservation=${reservationId}, ` +
+            `status=${result.status}) — finalize succeeded but is recorded ` +
+            `as ${result.status}; capacity was reclaimed (sweeper or peer ` +
+            `release). metering.finalize_review.committed_after_release`,
+        );
+      }
+    } catch (err) {
+      this.logger.error(
+        `[metering] commit threw on terminal finalize success ` +
+          `(contract=${contractId}, reservation=${reservationId}): ` +
+          `${(err as Error).message}. metering.finalize_review.commit_error`,
       );
     }
   }

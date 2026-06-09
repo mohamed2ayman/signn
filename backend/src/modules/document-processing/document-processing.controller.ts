@@ -140,8 +140,15 @@ export class DocumentProcessingController {
   @Post('review/finalize')
   async finalizeReview(
     @Param('contractId', ParseUUIDPipe) contractId: string,
+    @CurrentUser() user: any,
     @OrganizationId() orgId: string,
   ) {
-    return this.documentProcessingService.finalizeReview(contractId, orgId);
+    // Phase 7.18 — thread the acting user's id so the finalize_review
+    // metering reserve can attribute the ledger actor_ref (NOT NULL UUID)
+    // and run the engine's MANAGING JWT cross-check. account_type defaults
+    // to MANAGING inside the service (this route is managing-only).
+    return this.documentProcessingService.finalizeReview(contractId, orgId, {
+      user_id: user.id,
+    });
   }
 }
