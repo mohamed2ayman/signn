@@ -19,6 +19,7 @@ import { ContractsService } from './contracts.service';
 import { PermissionLevelGuard } from '../../common/guards/permission-level.guard';
 import { ContractTemplatesModule } from '../contract-templates/contract-templates.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { ScopedRepositoryModule } from '../scoped-repository/scoped-repository.module';
 import { ContractAccessService } from './services/contract-access.service';
 import { GuestPortalSchemaCheckService } from './services/guest-portal-schema-check.service';
 
@@ -42,6 +43,9 @@ import { GuestPortalSchemaCheckService } from './services/guest-portal-schema-ch
     ]),
     ContractTemplatesModule,
     NotificationsModule,
+    // Option B — S1: the data-layer tenancy chokepoint (Contract ROOT).
+    // Wired alongside — NOT in place of — ContractAccessService (the wall).
+    ScopedRepositoryModule,
   ],
   controllers: [ContractsController],
   providers: [

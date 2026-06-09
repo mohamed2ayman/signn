@@ -35,6 +35,7 @@ import { CollaborationGateway } from '../collaboration/collaboration.gateway';
 import { ContractTemplatesService, isStandardForm, getLicenseOrg } from '../contract-templates/contract-templates.service';
 import { EmailService } from '../notifications/email.service';
 import { ContractAccessService } from './services/contract-access.service';
+import { ContractScopedRepository } from '../scoped-repository/contract-scoped.repository';
 
 @Injectable()
 export class ContractsService {
@@ -62,6 +63,9 @@ export class ContractsService {
     private readonly contractTemplatesService: ContractTemplatesService,
     private readonly emailService: EmailService,
     private readonly contractAccess: ContractAccessService,
+    // Option B — S1: data-layer tenancy chokepoint for the Contract ROOT.
+    // Independent of `contractAccess` (the wall) — both fire on every mutation.
+    private readonly contractScoped: ContractScopedRepository,
   ) {}
 
   // ─── Contract CRUD ─────────────────────────────────────────
@@ -199,7 +203,20 @@ export class ContractsService {
     dto: UpdateContractDto,
     orgId: string,
   ): Promise<Contract> {
-    const contract = await this.findById(id, orgId);
+    // ── WALL (persona authz at route entry) ───────────────────────────────
+    // findInOrg — the existing Tier 1-3 / S0 wall. Independent & unchanged:
+    // it authorizes "this org may touch this contract" and 404s cross-tenant
+    // with no existence leak.
+    await this.findById(id, orgId);
+
+    // ── SCOPED LOAD (tenancy at data load — Option B chokepoint) ───────────
+    // The row we mutate is loaded through the scoped repository, which
+    // independently re-applies the contract→project→org filter. Two separate
+    // checks, two layers: even if the wall above were ever weakened, no
+    // cross-org row can be loaded here. (Collapsing the wall and this load into
+    // one chokepoint — audit §3.4 — is deferred to a later B bucket; in S1 the
+    // intentional redundancy IS the "both layers fire" proof.)
+    const contract = await this.contractScoped.scopedFindByIdOrThrow(id, orgId);
 
     if (dto.name !== undefined) contract.name = dto.name;
     if (dto.party_type !== undefined) contract.party_type = dto.party_type;
@@ -221,7 +238,11 @@ export class ContractsService {
     userId: string,
     orgId: string,
   ): Promise<Contract> {
-    const contract = await this.findById(id, orgId);
+    // WALL (persona) — findInOrg, unchanged & independent.
+    await this.findById(id, orgId);
+    // SCOPED LOAD (tenancy — Option B chokepoint) — mutation target loaded
+    // through the scoped repo. Both layers fire; see update() for the rationale.
+    const contract = await this.contractScoped.scopedFindByIdOrThrow(id, orgId);
     const oldStatus = contract.status;
     const newStatus = dto.status;
 
@@ -281,7 +302,11 @@ export class ContractsService {
   }
 
   async delete(id: string, orgId: string): Promise<void> {
-    const contract = await this.findById(id, orgId);
+    // WALL (persona) — findInOrg, unchanged & independent.
+    await this.findById(id, orgId);
+    // SCOPED LOAD (tenancy — Option B chokepoint) — the row to remove is loaded
+    // through the scoped repo. Both layers fire; see update() for the rationale.
+    const contract = await this.contractScoped.scopedFindByIdOrThrow(id, orgId);
 
     if (contract.status !== ContractStatus.DRAFT) {
       throw new BadRequestException('Only draft contracts can be deleted');
@@ -297,7 +322,11 @@ export class ContractsService {
     data: { party_first_name?: string | null; party_second_name?: string | null },
     orgId: string,
   ): Promise<Contract> {
-    const contract = await this.findById(id, orgId);
+    // WALL (persona) — findInOrg, unchanged & independent.
+    await this.findById(id, orgId);
+    // SCOPED LOAD (tenancy — Option B chokepoint) — mutation target loaded
+    // through the scoped repo. Both layers fire; see update() for the rationale.
+    const contract = await this.contractScoped.scopedFindByIdOrThrow(id, orgId);
 
     if (data.party_first_name !== undefined) {
       contract.party_first_name = data.party_first_name || null;

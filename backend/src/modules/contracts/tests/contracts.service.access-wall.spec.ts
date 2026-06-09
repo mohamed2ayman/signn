@@ -54,6 +54,7 @@ describe('ContractsService — cross-tenant access wall (Tier 1 WRITEs)', () => 
       opts.contractTemplatesService ?? noop,
       opts.emailService ?? noop,
       opts.contractAccess,
+      noop, // contractScoped (Option B — unused by these Tier 1 WRITE paths)
     );
   }
 
