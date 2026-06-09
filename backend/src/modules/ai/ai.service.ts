@@ -112,6 +112,7 @@ export class AiService {
     org_id?: string;
     history?: Array<{ role: string; content: string }>;
     system_context?: string;
+    knowledge_context?: string;
   }): Promise<{ job_id: string; status: string }> {
     const response = await firstValueFrom(
       this.httpService.post(`${this.aiBackendUrl}/agents/chat`, data),
