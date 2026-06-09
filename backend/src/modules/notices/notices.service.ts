@@ -104,7 +104,7 @@ export class NoticesService {
     });
   }
 
-  async findById(id: string): Promise<Notice> {
+  async findById(id: string, orgId: string): Promise<Notice> {
     const notice = await this.noticeRepo.findOne({
       where: { id },
       relations: [
@@ -123,11 +123,18 @@ export class NoticesService {
       throw new NotFoundException('Notice not found');
     }
 
+    // INTERIM (S0-part-2): child-id cross-tenant wall. Option B S2e absorbs this
+    //  via the scoped repository (scopedFindByIdViaContract). findInOrg stop-gap
+    //  until then. Resolves via the notice's OWN parent contract_id (never a
+    //  URL-supplied contractId) → cross-tenant 404, no existence leak. This is
+    //  the shared loader, so acknowledge/respond/updateStatus inherit the wall.
+    await this.contractAccess.findInOrg(notice.contract_id, orgId);
+
     return notice;
   }
 
-  async acknowledge(id: string, userId: string): Promise<Notice> {
-    const notice = await this.findById(id);
+  async acknowledge(id: string, userId: string, orgId: string): Promise<Notice> {
+    const notice = await this.findById(id, orgId);
     const previousStatus = notice.status;
 
     notice.status = NoticeStatus.ACKNOWLEDGED;
@@ -149,8 +156,9 @@ export class NoticesService {
     id: string,
     dto: CreateNoticeResponseDto,
     userId: string,
+    orgId: string,
   ): Promise<NoticeResponse> {
-    const notice = await this.findById(id);
+    const notice = await this.findById(id, orgId);
     const previousStatus = notice.status;
 
     const response = this.noticeResponseRepo.create({
@@ -179,8 +187,9 @@ export class NoticesService {
     id: string,
     dto: UpdateNoticeStatusDto,
     userId: string,
+    orgId: string,
   ): Promise<Notice> {
-    const notice = await this.findById(id);
+    const notice = await this.findById(id, orgId);
     const previousStatus = notice.status;
 
     if (notice.status === NoticeStatus.CLOSED) {

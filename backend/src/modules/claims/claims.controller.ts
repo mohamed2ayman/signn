@@ -49,8 +49,11 @@ export class ClaimsController {
   }
 
   @Get(':id')
-  async findById(@Param('id', ParseUUIDPipe) id: string) {
-    return this.claimsService.findById(id);
+  async findById(
+    @Param('id', ParseUUIDPipe) id: string,
+    @OrganizationId() orgId: string,
+  ) {
+    return this.claimsService.findById(id, orgId);
   }
 
   @Put(':id/acknowledge')
@@ -58,8 +61,9 @@ export class ClaimsController {
   async acknowledge(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: any,
+    @OrganizationId() orgId: string,
   ) {
-    return this.claimsService.acknowledge(id, user.id);
+    return this.claimsService.acknowledge(id, user.id, orgId);
   }
 
   @Post(':id/respond')
@@ -68,8 +72,9 @@ export class ClaimsController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: CreateClaimResponseDto,
     @CurrentUser() user: any,
+    @OrganizationId() orgId: string,
   ) {
-    return this.claimsService.respond(id, dto, user.id);
+    return this.claimsService.respond(id, dto, user.id, orgId);
   }
 
   @Put(':id/status')
@@ -78,8 +83,9 @@ export class ClaimsController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateClaimStatusDto,
     @CurrentUser() user: any,
+    @OrganizationId() orgId: string,
   ) {
-    return this.claimsService.updateStatus(id, dto, user.id);
+    return this.claimsService.updateStatus(id, dto, user.id, orgId);
   }
 
   @Post(':id/documents')
@@ -88,7 +94,8 @@ export class ClaimsController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UploadClaimDocumentDto,
     @CurrentUser() user: any,
+    @OrganizationId() orgId: string,
   ) {
-    return this.claimsService.uploadDocument(id, dto, user.id);
+    return this.claimsService.uploadDocument(id, dto, user.id, orgId);
   }
 }

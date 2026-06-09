@@ -40,8 +40,11 @@ export class SubContractsController {
   }
 
   @Get(':id')
-  async findById(@Param('id') id: string) {
-    return this.subContractsService.findById(id);
+  async findById(
+    @Param('id') id: string,
+    @OrganizationId() orgId: string,
+  ) {
+    return this.subContractsService.findById(id, orgId);
   }
 
   @Put(':id')
@@ -49,8 +52,9 @@ export class SubContractsController {
     @Param('id') id: string,
     @Body() dto: UpdateSubContractDto,
     @CurrentUser() user: User,
+    @OrganizationId() orgId: string,
   ) {
-    return this.subContractsService.update(id, dto, user.id);
+    return this.subContractsService.update(id, dto, user.id, orgId);
   }
 
   @Put(':id/status')
@@ -58,15 +62,17 @@ export class SubContractsController {
     @Param('id') id: string,
     @Body() dto: UpdateSubContractStatusDto,
     @CurrentUser() user: User,
+    @OrganizationId() orgId: string,
   ) {
-    return this.subContractsService.updateStatus(id, dto, user.id);
+    return this.subContractsService.updateStatus(id, dto, user.id, orgId);
   }
 
   @Post(':id/share')
   async share(
     @Param('id') id: string,
     @CurrentUser() user: User,
+    @OrganizationId() orgId: string,
   ) {
-    return this.subContractsService.share(id, user.id);
+    return this.subContractsService.share(id, user.id, orgId);
   }
 }

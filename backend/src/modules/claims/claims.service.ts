@@ -101,7 +101,7 @@ export class ClaimsService {
     });
   }
 
-  async findById(id: string): Promise<Claim> {
+  async findById(id: string, orgId: string): Promise<Claim> {
     const claim = await this.claimRepo.findOne({
       where: { id },
       relations: [
@@ -120,11 +120,18 @@ export class ClaimsService {
       throw new NotFoundException('Claim not found');
     }
 
+    // INTERIM (S0-part-2): child-id cross-tenant wall. Option B S2e absorbs this
+    //  via the scoped repository (scopedFindByIdViaContract). findInOrg stop-gap
+    //  until then. Resolves via the claim's OWN parent contract_id (never a
+    //  URL-supplied contractId) → cross-tenant 404, no existence leak. This is
+    //  the shared loader, so acknowledge/respond/updateStatus inherit the wall.
+    await this.contractAccess.findInOrg(claim.contract_id, orgId);
+
     return claim;
   }
 
-  async acknowledge(id: string, userId: string): Promise<Claim> {
-    const claim = await this.findById(id);
+  async acknowledge(id: string, userId: string, orgId: string): Promise<Claim> {
+    const claim = await this.findById(id, orgId);
     const previousStatus = claim.status;
 
     claim.status = ClaimStatus.ACKNOWLEDGED;
@@ -146,8 +153,9 @@ export class ClaimsService {
     id: string,
     dto: CreateClaimResponseDto,
     userId: string,
+    orgId: string,
   ): Promise<ClaimResponse> {
-    const claim = await this.findById(id);
+    const claim = await this.findById(id, orgId);
     const previousStatus = claim.status;
 
     const response = this.claimResponseRepo.create({
@@ -179,8 +187,9 @@ export class ClaimsService {
     id: string,
     dto: UpdateClaimStatusDto,
     userId: string,
+    orgId: string,
   ): Promise<Claim> {
-    const claim = await this.findById(id);
+    const claim = await this.findById(id, orgId);
     const previousStatus = claim.status;
 
     const terminalStatuses: ClaimStatus[] = [
@@ -211,11 +220,19 @@ export class ClaimsService {
     id: string,
     dto: UploadClaimDocumentDto,
     userId: string,
+    orgId: string,
   ): Promise<ClaimDocument> {
     const claim = await this.claimRepo.findOne({ where: { id } });
     if (!claim) {
       throw new NotFoundException('Claim not found');
     }
+
+    // INTERIM (S0-part-2): child-id cross-tenant wall. Option B S2e absorbs this
+    //  via the scoped repository (scopedFindByIdViaContract). findInOrg stop-gap
+    //  until then. Resolves via the claim's OWN parent contract_id (never a
+    //  URL-supplied contractId) → cross-tenant 404, no existence leak. This path
+    //  loads the claim directly (not via findById), so it carries its own wall.
+    await this.contractAccess.findInOrg(claim.contract_id, orgId);
 
     const document = this.claimDocumentRepo.create({
       claim_id: id,

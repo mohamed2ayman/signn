@@ -48,8 +48,11 @@ export class NoticesController {
   }
 
   @Get(':id')
-  async findById(@Param('id', ParseUUIDPipe) id: string) {
-    return this.noticesService.findById(id);
+  async findById(
+    @Param('id', ParseUUIDPipe) id: string,
+    @OrganizationId() orgId: string,
+  ) {
+    return this.noticesService.findById(id, orgId);
   }
 
   @Put(':id/acknowledge')
@@ -57,8 +60,9 @@ export class NoticesController {
   async acknowledge(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: any,
+    @OrganizationId() orgId: string,
   ) {
-    return this.noticesService.acknowledge(id, user.id);
+    return this.noticesService.acknowledge(id, user.id, orgId);
   }
 
   @Post(':id/respond')
@@ -67,8 +71,9 @@ export class NoticesController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: CreateNoticeResponseDto,
     @CurrentUser() user: any,
+    @OrganizationId() orgId: string,
   ) {
-    return this.noticesService.respond(id, dto, user.id);
+    return this.noticesService.respond(id, dto, user.id, orgId);
   }
 
   @Put(':id/status')
@@ -77,7 +82,8 @@ export class NoticesController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateNoticeStatusDto,
     @CurrentUser() user: any,
+    @OrganizationId() orgId: string,
   ) {
-    return this.noticesService.updateStatus(id, dto, user.id);
+    return this.noticesService.updateStatus(id, dto, user.id, orgId);
   }
 }
