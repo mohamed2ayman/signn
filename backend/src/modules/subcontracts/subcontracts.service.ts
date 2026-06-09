@@ -75,7 +75,7 @@ export class SubContractsService {
     });
   }
 
-  async findById(id: string): Promise<SubContract> {
+  async findById(id: string, orgId: string): Promise<SubContract> {
     const subContract = await this.subContractRepo.findOne({
       where: { id },
       relations: ['creator', 'mainContract', 'status_logs', 'status_logs.changer'],
@@ -85,6 +85,12 @@ export class SubContractsService {
       throw new NotFoundException('Subcontract not found');
     }
 
+    // INTERIM (S0-part-2): child-id cross-tenant wall. Option B S2e absorbs this
+    //  via the scoped repository (scopedFindByIdViaContract). findInOrg stop-gap
+    //  until then. Resolves via the sub-contract's OWN main_contract_id (a real
+    //  contract id; never a URL-supplied one) → cross-tenant 404, no existence leak.
+    await this.contractAccess.findInOrg(subContract.main_contract_id, orgId);
+
     return subContract;
   }
 
@@ -92,12 +98,18 @@ export class SubContractsService {
     id: string,
     dto: Record<string, any>,
     userId: string,
+    orgId: string,
   ): Promise<SubContract> {
     const subContract = await this.subContractRepo.findOne({ where: { id } });
 
     if (!subContract) {
       throw new NotFoundException('Subcontract not found');
     }
+
+    // INTERIM (S0-part-2): child-id cross-tenant wall. Option B S2e absorbs this
+    //  via the scoped repository (scopedFindByIdViaContract). findInOrg stop-gap
+    //  until then. Resolves via the sub-contract's OWN main_contract_id → 404 cross-tenant.
+    await this.contractAccess.findInOrg(subContract.main_contract_id, orgId);
 
     Object.assign(subContract, dto);
     return this.subContractRepo.save(subContract);
@@ -107,12 +119,18 @@ export class SubContractsService {
     id: string,
     dto: { status: string; note?: string },
     userId: string,
+    orgId: string,
   ): Promise<SubContract> {
     const subContract = await this.subContractRepo.findOne({ where: { id } });
 
     if (!subContract) {
       throw new NotFoundException('Subcontract not found');
     }
+
+    // INTERIM (S0-part-2): child-id cross-tenant wall. Option B S2e absorbs this
+    //  via the scoped repository (scopedFindByIdViaContract). findInOrg stop-gap
+    //  until then. Resolves via the sub-contract's OWN main_contract_id → 404 cross-tenant.
+    await this.contractAccess.findInOrg(subContract.main_contract_id, orgId);
 
     const previousStatus = subContract.status;
     subContract.status = dto.status as ContractStatus;
@@ -127,12 +145,18 @@ export class SubContractsService {
   async share(
     id: string,
     userId: string,
+    orgId: string,
   ): Promise<{ shareUrl: string; token: string }> {
     const subContract = await this.subContractRepo.findOne({ where: { id } });
 
     if (!subContract) {
       throw new NotFoundException('Subcontract not found');
     }
+
+    // INTERIM (S0-part-2): child-id cross-tenant wall. Option B S2e absorbs this
+    //  via the scoped repository (scopedFindByIdViaContract). findInOrg stop-gap
+    //  until then. Resolves via the sub-contract's OWN main_contract_id → 404 cross-tenant.
+    await this.contractAccess.findInOrg(subContract.main_contract_id, orgId);
 
     const token = crypto.randomBytes(32).toString('hex');
 
