@@ -37,6 +37,10 @@ describe('ContractsService — Tier 2 READ access wall', () => {
     contractCommentRepository?: any;
     contractorResponseRepository?: any;
     contractApproverRepository?: any;
+    // Option B S2a — the rewired LIST reads now load through these scoped repos.
+    contractVersionScoped?: any;
+    contractorResponseScoped?: any;
+    contractApproverScoped?: any;
     contractAccess: any;
   };
 
@@ -55,6 +59,9 @@ describe('ContractsService — Tier 2 READ access wall', () => {
       noop, // emailService
       opts.contractAccess,
       noop, // contractScoped (Option B — unused by these Tier 2 READ paths)
+      opts.contractVersionScoped ?? noop, // Option B S2a
+      opts.contractorResponseScoped ?? noop, // Option B S2a
+      opts.contractApproverScoped ?? noop, // Option B S2a
     );
   }
 
@@ -107,16 +114,17 @@ describe('ContractsService — Tier 2 READ access wall', () => {
         svc.getMilestoneVersions(contractId, orgId),
     ],
   ])('%s', (_label, invoke) => {
-    it('cross-tenant: 404 BEFORE the find runs', async () => {
-      const contractVersionRepository = { find: jest.fn() };
+    it('cross-tenant: 404 BEFORE the scoped load runs', async () => {
+      const contractVersionScoped = { scopedFind: jest.fn() };
       const contractAccess = { findInOrg: reject() };
 
-      const svc = build({ contractVersionRepository, contractAccess });
+      const svc = build({ contractVersionScoped, contractAccess });
 
       await expect(
         invoke(svc, CONTRACT_IN_B, ORG_A),
       ).rejects.toBeInstanceOf(NotFoundException);
-      expect(contractVersionRepository.find).not.toHaveBeenCalled();
+      // WALL fires first; the Option B scoped LIST load is never reached.
+      expect(contractVersionScoped.scopedFind).not.toHaveBeenCalled();
     });
   });
 
@@ -215,16 +223,16 @@ describe('ContractsService — Tier 2 READ access wall', () => {
   // getContractorResponses
   // ────────────────────────────────────────────────────────────────────
   describe('getContractorResponses', () => {
-    it('cross-tenant: 404 BEFORE the find runs', async () => {
-      const contractorResponseRepository = { find: jest.fn() };
+    it('cross-tenant: 404 BEFORE the scoped load runs', async () => {
+      const contractorResponseScoped = { scopedFind: jest.fn() };
       const contractAccess = { findInOrg: reject() };
 
-      const svc = build({ contractorResponseRepository, contractAccess });
+      const svc = build({ contractorResponseScoped, contractAccess });
 
       await expect(
         svc.getContractorResponses(CONTRACT_IN_B, ORG_A),
       ).rejects.toBeInstanceOf(NotFoundException);
-      expect(contractorResponseRepository.find).not.toHaveBeenCalled();
+      expect(contractorResponseScoped.scopedFind).not.toHaveBeenCalled();
     });
   });
 
@@ -232,28 +240,35 @@ describe('ContractsService — Tier 2 READ access wall', () => {
   // getApprovers
   // ────────────────────────────────────────────────────────────────────
   describe('getApprovers', () => {
-    it('cross-tenant: 404 BEFORE the find runs', async () => {
-      const contractApproverRepository = { find: jest.fn() };
+    it('cross-tenant: 404 BEFORE the scoped load runs', async () => {
+      const contractApproverScoped = { scopedFind: jest.fn() };
       const contractAccess = { findInOrg: reject() };
 
-      const svc = build({ contractApproverRepository, contractAccess });
+      const svc = build({ contractApproverScoped, contractAccess });
 
       await expect(
         svc.getApprovers(CONTRACT_IN_B, ORG_A),
       ).rejects.toBeInstanceOf(NotFoundException);
-      expect(contractApproverRepository.find).not.toHaveBeenCalled();
+      expect(contractApproverScoped.scopedFind).not.toHaveBeenCalled();
     });
 
-    it('happy path: in-org caller, approvers returned', async () => {
+    it('happy path: WALL fires AND the scoped LIST load returns the rows', async () => {
       const rows = [{ id: 'app-1' }];
-      const contractApproverRepository = {
-        find: jest.fn().mockResolvedValue(rows),
+      const contractApproverScoped = {
+        scopedFind: jest.fn().mockResolvedValue(rows),
       };
       const contractAccess = { findInOrg: resolve() };
 
-      const svc = build({ contractApproverRepository, contractAccess });
+      const svc = build({ contractApproverScoped, contractAccess });
 
       const result = await svc.getApprovers('contract-in-a', ORG_A);
+      // Both layers fire: the wall, then the scoped child LIST load.
+      expect(contractAccess.findInOrg).toHaveBeenCalledWith('contract-in-a', ORG_A);
+      expect(contractApproverScoped.scopedFind).toHaveBeenCalledWith(
+        { contract_id: 'contract-in-a' },
+        ORG_A,
+        { relations: ['user'], order: { assigned_at: 'ASC' } },
+      );
       expect(result).toEqual(rows);
     });
   });

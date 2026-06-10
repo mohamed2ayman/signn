@@ -1,5 +1,10 @@
 import { NotFoundException } from '@nestjs/common';
-import { ObjectLiteral, Repository, SelectQueryBuilder } from 'typeorm';
+import {
+  FindOptionsWhere,
+  ObjectLiteral,
+  Repository,
+  SelectQueryBuilder,
+} from 'typeorm';
 
 /**
  * Option B — S1: the scoped-repository BASE CLASS.
@@ -156,6 +161,68 @@ export abstract class ScopedContractRepository<T extends ObjectLiteral> {
       throw new NotFoundException(this.notFoundMessage);
     }
     return entity;
+  }
+
+  // ── SCOPED LIST (Ayman B spec Q3 — add a scoped list method) ────────────
+
+  /**
+   * The query alias the entity uses in {@link buildScopedListQuery}. The base's
+   * {@link scopedFind} appends `filter` / `order` predicates against this alias.
+   */
+  protected abstract readonly entityAlias: string;
+
+  /**
+   * Build the org-scoped LIST query base: a fresh query builder aliased
+   * {@link entityAlias}, with the child→parent-contract→project join and the
+   * org filter ALWAYS applied — the SAME join hops as {@link buildScopedQuery},
+   * minus the by-id predicate.
+   *
+   * IRON RULE (identical to the by-id path): ALWAYS apply
+   * `project.organization_id = :orgId`. This is the structural tenancy gate for
+   * {@link scopedFind}; there is no orgId-override anywhere — the org is
+   * whatever the caller passed. Canonical-only: resolve org via
+   * `contract → project → organization_id`; NEVER read a denormalized `org_id`
+   * column (Ayman B spec Q1 — the drift columns are non-authoritative).
+   */
+  protected abstract buildScopedListQuery(orgId: string): SelectQueryBuilder<T>;
+
+  /**
+   * List the contract-scoped rows matching `filter`, with
+   * `project.organization_id = :orgId` ALWAYS applied. Optional single-level
+   * `relations` and `order` mirror the `repo.find({ where, relations, order })`
+   * options the wired call sites use, so this is a behavior-preserving drop-in
+   * PLUS the tenancy gate.
+   *
+   * STRUCTURAL ORG-SAFETY (mirrors the by-id methods): there is NO
+   * orgId-override parameter. `filter` predicates are applied on the ENTITY
+   * alias only ({@link entityAlias}) — they can never touch, relax, or replace
+   * the `project.organization_id = :orgId` gate baked into
+   * {@link buildScopedListQuery}. A caller cannot pass or change which org the
+   * rows are scoped to; the org is always the `orgId` argument (the caller's
+   * real org). Filter values are bound as parameters.
+   */
+  async scopedFind(
+    filter: FindOptionsWhere<T>,
+    orgId: string,
+    options?: { relations?: string[]; order?: Record<string, 'ASC' | 'DESC'> },
+  ): Promise<T[]> {
+    const qb = this.buildScopedListQuery(orgId);
+
+    for (const [key, value] of Object.entries(filter)) {
+      // Column ref on the entity alias; value bound as a parameter. The org
+      // gate lives on the `project` alias and is untouched by these predicates.
+      qb.andWhere(`${this.entityAlias}.${key} = :flt_${key}`, {
+        [`flt_${key}`]: value,
+      });
+    }
+    for (const relation of options?.relations ?? []) {
+      qb.leftJoinAndSelect(`${this.entityAlias}.${relation}`, relation);
+    }
+    for (const [column, direction] of Object.entries(options?.order ?? {})) {
+      qb.addOrderBy(`${this.entityAlias}.${column}`, direction);
+    }
+
+    return qb.getMany();
   }
 
   // ── SYSTEM-LEVEL TENANCY BYPASS — read this before using ────────────────

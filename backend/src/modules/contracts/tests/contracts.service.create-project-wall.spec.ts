@@ -41,6 +41,9 @@ describe('ContractsService.create — project→org ownership wall (S0)', () => 
       noop, // emailService
       opts.contractAccess ?? { findInOrg: jest.fn() }, // contractAccess
       noop, // contractScoped (Option B — unused by create())
+      noop, // contractVersionScoped (Option B S2a — unused here)
+      noop, // contractorResponseScoped (Option B S2a — unused here)
+      noop, // contractApproverScoped (Option B S2a — unused here)
     );
   }
 

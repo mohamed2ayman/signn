@@ -4,6 +4,9 @@ import { NotFoundException } from '@nestjs/common';
 
 import { ContractsService } from './contracts.service';
 import { ContractScopedRepository } from '../scoped-repository/contract-scoped.repository';
+import { ContractVersionScopedRepository } from '../scoped-repository/contract-version-scoped.repository';
+import { ContractorResponseScopedRepository } from '../scoped-repository/contractor-response-scoped.repository';
+import { ContractApproverScopedRepository } from '../scoped-repository/contract-approver-scoped.repository';
 import {
   Contract,
   ContractStatus,
@@ -172,6 +175,19 @@ const mockContractScopedRepository = {
   findAcrossAllOrgs: jest.fn().mockResolvedValue([]),
 };
 
+// Option B — S2a: scoped CHILD repos (ContractVersion / ContractorResponse /
+// ContractApprover). The wired LIST reads route through scopedFind; default to
+// empty so the existing create/findAll/findById/update tests are unaffected.
+const mockChildScopedRepository = () => ({
+  scopedFind: jest.fn().mockResolvedValue([]),
+  scopedFindById: jest.fn().mockResolvedValue(null),
+  scopedFindByIdViaContract: jest.fn().mockResolvedValue(null),
+  findAcrossAllOrgs: jest.fn().mockResolvedValue([]),
+});
+const mockContractVersionScopedRepository = mockChildScopedRepository();
+const mockContractorResponseScopedRepository = mockChildScopedRepository();
+const mockContractApproverScopedRepository = mockChildScopedRepository();
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Test suite
 // ─────────────────────────────────────────────────────────────────────────────
@@ -215,6 +231,10 @@ describe('ContractsService', () => {
         // Option B — S1: data-layer tenancy chokepoint (mock delegates to the
         // same getOne the wall reads).
         { provide: ContractScopedRepository,               useValue: mockContractScopedRepository },
+        // Option B — S2a: clean child scoped repos.
+        { provide: ContractVersionScopedRepository,        useValue: mockContractVersionScopedRepository },
+        { provide: ContractorResponseScopedRepository,     useValue: mockContractorResponseScopedRepository },
+        { provide: ContractApproverScopedRepository,       useValue: mockContractApproverScopedRepository },
       ],
     }).compile();
 

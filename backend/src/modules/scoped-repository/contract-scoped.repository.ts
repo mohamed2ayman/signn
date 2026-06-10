@@ -25,6 +25,9 @@ export class ContractScopedRepository extends ScopedContractRepository<Contract>
   /** Matches the wall's 404 message — existence is never leaked. */
   protected readonly notFoundMessage = 'Contract not found';
 
+  /** Alias used by {@link buildScopedQuery} and {@link buildScopedListQuery}. */
+  protected readonly entityAlias = 'contract';
+
   constructor(
     @InjectRepository(Contract)
     contractRepository: Repository<Contract>,
@@ -67,5 +70,18 @@ export class ContractScopedRepository extends ScopedContractRepository<Contract>
     }
 
     return qb;
+  }
+
+  /**
+   * The org-scoped LIST base for the ROOT — same `contract → project`
+   * resolution as {@link buildScopedQuery}, minus the by-id predicate. The
+   * `project.organization_id = :orgId` gate is ALWAYS applied (structural).
+   */
+  protected buildScopedListQuery(orgId: string): SelectQueryBuilder<Contract> {
+    return this.repo
+      .createQueryBuilder('contract')
+      .innerJoin('contract.project', 'project')
+      // TENANCY GATE — always the caller's real org. Non-negotiable.
+      .andWhere('project.organization_id = :orgId', { orgId });
   }
 }
