@@ -5,7 +5,13 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 vi.mock('./axios', () => ({
   default: {
     post: vi.fn().mockResolvedValue({
-      data: { userMessage: {}, assistantMessage: {} },
+      data: {
+        userMessage: { id: 'u1', role: 'USER', status: 'COMPLETED' },
+        assistantMessage: { id: 'a1', role: 'ASSISTANT', status: 'PENDING' },
+      },
+    }),
+    get: vi.fn().mockResolvedValue({
+      data: { id: 'a1', role: 'ASSISTANT', status: 'COMPLETED', content: 'hi' },
     }),
   },
 }));
@@ -13,18 +19,26 @@ vi.mock('./axios', () => ({
 import api from './axios';
 import { chatService } from './chatService';
 
-describe('chatService.sendMessage — timeout override', () => {
+describe('chatService — async chat', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('sends with a 60s per-request timeout to absorb legal-grounded latency', async () => {
-    await chatService.sendMessage('sess-1', 'force majeure?');
+  it('sendMessage returns { userMessage, assistantMessage } and keeps the 60s timeout', async () => {
+    const res = await chatService.sendMessage('sess-1', 'force majeure?');
 
     expect(api.post).toHaveBeenCalledWith(
       '/chat/sessions/sess-1/messages',
       { message: 'force majeure?' },
       { timeout: 60000 },
     );
+    expect(res.assistantMessage.status).toBe('PENDING');
+  });
+
+  it('getMessageStatus polls the message-status endpoint', async () => {
+    const res = await chatService.getMessageStatus('a1');
+
+    expect(api.get).toHaveBeenCalledWith('/chat/messages/a1/status');
+    expect(res.status).toBe('COMPLETED');
   });
 });

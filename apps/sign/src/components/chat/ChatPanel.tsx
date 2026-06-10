@@ -173,24 +173,8 @@ function CitationChip({ citation }: { citation: ChatMessageCitation }) {
   );
 }
 
-/* ── Typing Indicator ───────────────────────────────────────── */
-function TypingIndicator() {
-  return (
-    <div className="flex items-start gap-3 px-4 py-3">
-      <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-primary/10">
-        <BloomIcon size={16} />
-      </div>
-      <div className="flex items-center gap-1 pt-2">
-        <span className="h-2 w-2 animate-bounce rounded-full bg-gray-400 [animation-delay:0ms]" />
-        <span className="h-2 w-2 animate-bounce rounded-full bg-gray-400 [animation-delay:150ms]" />
-        <span className="h-2 w-2 animate-bounce rounded-full bg-gray-400 [animation-delay:300ms]" />
-      </div>
-    </div>
-  );
-}
-
 /* ── Message Bubble ─────────────────────────────────────────── */
-function MessageBubble({ msg }: { msg: ChatMessage }) {
+function MessageBubble({ msg, capped }: { msg: ChatMessage; capped?: boolean }) {
   const isUser = msg.role === 'USER';
   const time = new Date(msg.created_at).toLocaleTimeString([], {
     hour: '2-digit',
@@ -208,21 +192,46 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
     );
   }
 
+  // Async assistant states (Phase 7.27).
+  const inFlight = msg.status === 'PENDING' || msg.status === 'PROCESSING';
+  const failed = msg.status === 'FAILED';
+
   return (
     <div className="flex items-start gap-3 px-4 py-2">
       <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-primary/10">
         <BloomIcon size={16} />
       </div>
       <div className="max-w-[85%]">
-        <div className="text-sm leading-relaxed text-gray-700">
-          {renderMarkdown(msg.content)}
-        </div>
-        {msg.citations && msg.citations.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {msg.citations.map((c, i) => (
-              <CitationChip key={i} citation={c} />
-            ))}
+        {inFlight && !msg.content ? (
+          capped ? (
+            <div className="text-xs italic text-gray-400">
+              Still working on your answer — refresh to check.
+            </div>
+          ) : (
+            <div className="flex items-center gap-1 pt-1">
+              <span className="h-2 w-2 animate-bounce rounded-full bg-gray-400 [animation-delay:0ms]" />
+              <span className="h-2 w-2 animate-bounce rounded-full bg-gray-400 [animation-delay:150ms]" />
+              <span className="h-2 w-2 animate-bounce rounded-full bg-gray-400 [animation-delay:300ms]" />
+            </div>
+          )
+        ) : failed ? (
+          <div className="text-sm leading-relaxed text-red-600">
+            {msg.error_message ||
+              'Something went wrong generating this response. Please try again.'}
           </div>
+        ) : (
+          <>
+            <div className="text-sm leading-relaxed text-gray-700">
+              {renderMarkdown(msg.content || '')}
+            </div>
+            {msg.citations && msg.citations.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {msg.citations.map((c, i) => (
+                  <CitationChip key={i} citation={c} />
+                ))}
+              </div>
+            )}
+          </>
         )}
         <span className="mt-1 block text-[10px] text-gray-400">{time}</span>
       </div>
@@ -247,6 +256,10 @@ export default function ChatPanel({
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  // Async chat (Phase 7.27): the id of the assistant message we're polling,
+  // and the id whose polling was capped at 90s (renders a "refresh" hint).
+  const [pollMessageId, setPollMessageId] = useState<string | null>(null);
+  const [cappedId, setCappedId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -272,7 +285,19 @@ export default function ChatPanel({
           if (existing) {
             setSessionId(existing.id);
             const msgs = await chatService.getMessages(existing.id);
-            if (!cancelled) setMessages(msgs);
+            if (!cancelled) {
+              setMessages(msgs);
+              // Resume polling if a prior turn is still in-flight (e.g. the
+              // user refreshed mid-generation).
+              const inFlight = [...msgs]
+                .reverse()
+                .find(
+                  (m) =>
+                    m.role === 'ASSISTANT' &&
+                    (m.status === 'PENDING' || m.status === 'PROCESSING'),
+                );
+              if (inFlight) setPollMessageId(inFlight.id);
+            }
           } else {
             setSessionId(null);
             setMessages([]);
@@ -298,6 +323,44 @@ export default function ChatPanel({
   useEffect(() => {
     scrollToBottom();
   }, [messages, sending, scrollToBottom]);
+
+  // Async chat (Phase 7.27): poll the in-flight assistant message every 1.5s
+  // until it reaches COMPLETED/FAILED. Cap at 90s (safety net — real calls
+  // finish in 20-30s); the data is never lost (a refresh re-fetches the
+  // conversation with the message already COMPLETED/FAILED by then).
+  useEffect(() => {
+    if (!pollMessageId) return;
+    const startedAt = Date.now();
+    let stopped = false;
+
+    const tick = async () => {
+      if (stopped) return;
+      if (Date.now() - startedAt > 90_000) {
+        setCappedId(pollMessageId);
+        setPollMessageId(null);
+        return;
+      }
+      try {
+        const updated = await chatService.getMessageStatus(pollMessageId);
+        if (stopped) return;
+        setMessages((prev) =>
+          prev.map((m) => (m.id === updated.id ? updated : m)),
+        );
+        if (updated.status === 'COMPLETED' || updated.status === 'FAILED') {
+          setPollMessageId(null);
+        }
+      } catch {
+        // Transient poll error — keep trying until the 90s cap.
+      }
+    };
+
+    void tick(); // immediate first poll
+    const interval = setInterval(tick, 1500);
+    return () => {
+      stopped = true;
+      clearInterval(interval);
+    };
+  }, [pollMessageId]);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -332,23 +395,31 @@ export default function ChatPanel({
       role: 'USER',
       content: message,
       citations: null,
+      status: 'COMPLETED',
       created_at: new Date().toISOString(),
     };
     setMessages((prev) => [...prev, optimisticMsg]);
 
     try {
       const sid = await ensureSession();
+      // Async (Phase 7.27): returns immediately with a PENDING assistant
+      // placeholder. We render it (typing dots) and poll it to completion.
       const { userMessage, assistantMessage } =
         await chatService.sendMessage(sid, message);
 
-      // Replace optimistic message with real ones
       setMessages((prev) => [
         ...prev.filter((m) => m.id !== optimisticMsg.id),
         userMessage,
         assistantMessage,
       ]);
+
+      // Begin polling unless the dispatch already failed server-side.
+      if (assistantMessage.status !== 'FAILED') {
+        setCappedId(null);
+        setPollMessageId(assistantMessage.id);
+      }
     } catch {
-      // Remove optimistic message on error
+      // Remove optimistic message on dispatch error
       setMessages((prev) =>
         prev.filter((m) => m.id !== optimisticMsg.id),
       );
@@ -361,6 +432,8 @@ export default function ChatPanel({
     const session = await chatService.createSession(contractId);
     setSessionId(session.id);
     setMessages([]);
+    setPollMessageId(null);
+    setCappedId(null);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -456,9 +529,14 @@ export default function ChatPanel({
           ) : (
             <div className="py-3">
               {messages.map((msg) => (
-                <MessageBubble key={msg.id} msg={msg} />
+                <MessageBubble
+                  key={msg.id}
+                  msg={msg}
+                  capped={msg.id === cappedId}
+                />
               ))}
-              {sending && <TypingIndicator />}
+              {/* The assistant placeholder bubble renders its own typing dots
+                  while in-flight, so no separate global indicator is needed. */}
               <div ref={messagesEndRef} />
             </div>
           )}
