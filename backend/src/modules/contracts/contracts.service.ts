@@ -39,6 +39,7 @@ import { ContractScopedRepository } from '../scoped-repository/contract-scoped.r
 import { ContractVersionScopedRepository } from '../scoped-repository/contract-version-scoped.repository';
 import { ContractorResponseScopedRepository } from '../scoped-repository/contractor-response-scoped.repository';
 import { ContractApproverScopedRepository } from '../scoped-repository/contract-approver-scoped.repository';
+import { ContractCommentScopedRepository } from '../scoped-repository/contract-comment-scoped.repository';
 
 @Injectable()
 export class ContractsService {
@@ -74,6 +75,10 @@ export class ContractsService {
     private readonly contractVersionScoped: ContractVersionScopedRepository,
     private readonly contractorResponseScoped: ContractorResponseScopedRepository,
     private readonly contractApproverScoped: ContractApproverScopedRepository,
+    // Option B — S2b: scoped ContractComment repo. The by-id MUTATION-path
+    // loads (resolve/update/delete) route through its scoped by-id surface;
+    // the comment LIST read stays a raw QB → lint bucket (Q3).
+    private readonly contractCommentScoped: ContractCommentScopedRepository,
   ) {}
 
   // ─── Contract CRUD ─────────────────────────────────────────
@@ -941,17 +946,21 @@ export class ContractsService {
     commentId: string,
     orgId: string,
   ): Promise<ContractComment> {
-    // Tenant-isolation Tier 1 — wall the contract BEFORE flipping the
-    // comment's `is_resolved` flag. resolveComment has no author check;
-    // pre-fix a cross-tenant caller could resolve any comment.
+    // ── WALL (persona) — findInOrg, unchanged & independent. ───────────────
+    // Tier 1 wall on the URL contract BEFORE flipping `is_resolved`; 404s
+    // cross-tenant with no existence leak. (resolveComment has no author check.)
     await this.contractAccess.findInOrg(contractId, orgId);
-    const comment = await this.contractCommentRepository.findOne({
-      where: { id: commentId, contract_id: contractId },
-    });
-
-    if (!comment) {
-      throw new NotFoundException('Comment not found');
-    }
+    // ── SCOPED LOAD (tenancy — Option B S2b chokepoint) ────────────────────
+    // The comment is loaded through the scoped repo, which independently
+    // re-applies comment→contract→project→org. The contractIdOverride pins the
+    // parent contract to the URL contract, preserving the prior
+    // `contract_id = contractId` constraint; the org gate is non-negotiable.
+    // Both layers fire — see update() for the defense-in-depth rationale.
+    const comment = await this.contractCommentScoped.scopedFindByIdViaContractOrThrow(
+      commentId,
+      orgId,
+      { contractIdOverride: contractId },
+    );
 
     comment.is_resolved = true;
     const saved = await this.contractCommentRepository.save(comment);
@@ -970,15 +979,25 @@ export class ContractsService {
     commentId: string,
     userId: string,
     content: string,
+    orgId: string,
   ): Promise<ContractComment> {
-    const comment = await this.contractCommentRepository.findOne({
-      where: { id: commentId, contract_id: contractId },
-    });
+    // ── WALL (persona) — findInOrg. S2b brings updateComment to PARITY with
+    // resolve/deleteComment: a Tier 1 wall on the URL contract BEFORE the
+    // author check. This route previously had NO tenancy gate at all (no wall,
+    // no orgId) — only the author check incidentally limited cross-tenant edits.
+    await this.contractAccess.findInOrg(contractId, orgId);
+    // ── SCOPED LOAD (tenancy — Option B S2b chokepoint) ── BEFORE the author
+    // check, so a cross-tenant caller gets a 404 (no existence leak) rather than
+    // a 403. The override pins the parent contract (preserving the prior
+    // `contract_id = contractId` constraint); the org gate is non-negotiable.
+    const comment = await this.contractCommentScoped.scopedFindByIdViaContractOrThrow(
+      commentId,
+      orgId,
+      { contractIdOverride: contractId },
+    );
 
-    if (!comment) {
-      throw new NotFoundException('Comment not found');
-    }
-
+    // ── AUTHOR CHECK — unchanged; fires AFTER the tenancy layer. An in-org
+    // non-author gets 403; a foreigner already got 404 above (no existence leak).
     if (comment.user_id !== userId) {
       throw new ForbiddenException('Only the comment author can edit this comment');
     }
@@ -994,18 +1013,21 @@ export class ContractsService {
     userRole: string,
     orgId: string,
   ): Promise<void> {
-    // Tenant-isolation Tier 1 — wall the contract BEFORE the existing
-    // author-or-admin check. Without this wall, an admin (OWNER_ADMIN /
-    // SYSTEM_ADMIN / CONTRACTOR_ADMIN) from ANY org could delete a
-    // comment on ANY other org's contract via the `isAdmin` bypass.
+    // ── WALL (persona) — findInOrg, unchanged. Tier 1 wall on the URL contract
+    // BEFORE the author-or-admin check: without it, an admin (OWNER_ADMIN /
+    // SYSTEM_ADMIN / CONTRACTOR_ADMIN) from ANY org could delete a comment on
+    // ANY other org's contract via the `isAdmin` bypass.
     await this.contractAccess.findInOrg(contractId, orgId);
-    const comment = await this.contractCommentRepository.findOne({
-      where: { id: commentId, contract_id: contractId },
-    });
-
-    if (!comment) {
-      throw new NotFoundException('Comment not found');
-    }
+    // ── SCOPED LOAD (tenancy — Option B S2b chokepoint) ── independent second
+    // layer, also BEFORE the author/admin check: the admin bypass can never skip
+    // the org gate (a foreigner — admin or not — gets 404, never reaches isAdmin).
+    // Override pins the parent contract (preserving the prior `contract_id`
+    // constraint); the org gate is non-negotiable.
+    const comment = await this.contractCommentScoped.scopedFindByIdViaContractOrThrow(
+      commentId,
+      orgId,
+      { contractIdOverride: contractId },
+    );
 
     const adminRoles = ['SYSTEM_ADMIN', 'OWNER_ADMIN', 'CONTRACTOR_ADMIN'];
     const isAdmin = adminRoles.includes(userRole);

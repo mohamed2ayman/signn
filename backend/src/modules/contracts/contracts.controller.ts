@@ -282,8 +282,9 @@ export class ContractsController {
     @Param('commentId', ParseUUIDPipe) commentId: string,
     @Body() body: UpdateCommentContentDto,
     @CurrentUser() user: any,
+    @OrganizationId() orgId: string,
   ) {
-    return this.contractsService.updateComment(id, commentId, user.id, body.content);
+    return this.contractsService.updateComment(id, commentId, user.id, body.content, orgId);
   }
 
   @Delete(':id/comments/:commentId')
