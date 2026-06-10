@@ -10,8 +10,13 @@ import { ContractsService } from '../contracts.service';
  *   - removeClause           (bare findOne on cc; cross-org WRITE)
  *   - reorderClauses         (bare update; cross-org WRITE)
  *   - saveNewVersion         (createVersionSnapshot bare findOne; cross-org WRITE)
- *   - resolveComment         (bare findOne; no author check; cross-org WRITE)
- *   - deleteComment          (bare findOne; admin bypass leaks cross-org)
+ *   - resolveComment         (no author check; cross-org WRITE)
+ *   - deleteComment          (admin bypass leaks cross-org)
+ *
+ * resolve/deleteComment also gained the Option B S2b scoped-repo load AFTER the
+ * wall; these tests prove the WALL fires FIRST (the scoped load is never reached
+ * cross-tenant). The full wall→scoped→author→mutate ordering is proven in
+ * contracts.service.comment-scoped-wiring.spec.ts.
  *
  * Pattern: assemble ContractsService manually with stubbed deps. Only the
  * repos/services each method touches need real shape; everything else is
@@ -38,6 +43,10 @@ describe('ContractsService — cross-tenant access wall (Tier 1 WRITEs)', () => 
     contractTemplatesService?: any;
     emailService?: any;
     contractAccess: any;
+    // Option B S2b — resolve/deleteComment now load the comment through this
+    // scoped repo AFTER the wall. The cross-tenant tests assert it is never
+    // reached (wall fires first); the happy paths supply the comment via it.
+    contractCommentScoped?: any;
   };
 
   function build(opts: Builder): ContractsService {
@@ -58,6 +67,7 @@ describe('ContractsService — cross-tenant access wall (Tier 1 WRITEs)', () => 
       noop, // contractVersionScoped (Option B S2a — unused here)
       noop, // contractorResponseScoped (Option B S2a — unused here)
       noop, // contractApproverScoped (Option B S2a — unused here)
+      opts.contractCommentScoped ?? noop, // contractCommentScoped (Option B S2b)
     );
   }
 
@@ -254,20 +264,19 @@ describe('ContractsService — cross-tenant access wall (Tier 1 WRITEs)', () => 
   // resolveComment
   // ────────────────────────────────────────────────────────────────────
   describe('resolveComment', () => {
-    it('cross-tenant: 404 BEFORE the comment is flipped', async () => {
-      const contractCommentRepository = {
-        findOne: jest.fn(),
-        save: jest.fn(),
-      };
+    it('cross-tenant: 404 BEFORE the scoped load / flip', async () => {
+      const contractCommentScoped = { scopedFindByIdViaContractOrThrow: jest.fn() };
+      const contractCommentRepository = { save: jest.fn() };
       const contractAccess = { findInOrg: reject() };
 
-      const svc = build({ contractCommentRepository, contractAccess });
+      const svc = build({ contractCommentScoped, contractCommentRepository, contractAccess });
 
       await expect(
         svc.resolveComment(CONTRACT_IN_B, COMMENT_ID, ORG_A),
       ).rejects.toBeInstanceOf(NotFoundException);
 
-      expect(contractCommentRepository.findOne).not.toHaveBeenCalled();
+      // Wall fired first — the scoped chokepoint and the write are never reached.
+      expect(contractCommentScoped.scopedFindByIdViaContractOrThrow).not.toHaveBeenCalled();
       expect(contractCommentRepository.save).not.toHaveBeenCalled();
     });
 
@@ -277,13 +286,15 @@ describe('ContractsService — cross-tenant access wall (Tier 1 WRITEs)', () => 
         contract_id: 'contract-in-a',
         is_resolved: false,
       };
+      const contractCommentScoped = {
+        scopedFindByIdViaContractOrThrow: jest.fn().mockResolvedValue(comment),
+      };
       const contractCommentRepository = {
-        findOne: jest.fn().mockResolvedValue(comment),
         save: jest.fn(async (entity: any) => entity),
       };
       const contractAccess = { findInOrg: resolve() };
 
-      const svc = build({ contractCommentRepository, contractAccess });
+      const svc = build({ contractCommentScoped, contractCommentRepository, contractAccess });
       const result = await svc.resolveComment(
         'contract-in-a',
         COMMENT_ID,
@@ -294,6 +305,12 @@ describe('ContractsService — cross-tenant access wall (Tier 1 WRITEs)', () => 
         'contract-in-a',
         ORG_A,
       );
+      // Scoped load resolves the parent contract via the override (URL contract).
+      expect(contractCommentScoped.scopedFindByIdViaContractOrThrow).toHaveBeenCalledWith(
+        COMMENT_ID,
+        ORG_A,
+        { contractIdOverride: 'contract-in-a' },
+      );
       expect(result.is_resolved).toBe(true);
     });
   });
@@ -303,14 +320,12 @@ describe('ContractsService — cross-tenant access wall (Tier 1 WRITEs)', () => 
   // a comment on any other org's contract via the `isAdmin` bypass.
   // ────────────────────────────────────────────────────────────────────
   describe('deleteComment (cross-org admin bypass — pre-fix exploit)', () => {
-    it('cross-tenant SYSTEM_ADMIN: 404 BEFORE the comment lookup', async () => {
-      const contractCommentRepository = {
-        findOne: jest.fn(),
-        remove: jest.fn(),
-      };
+    it('cross-tenant SYSTEM_ADMIN: 404 BEFORE the scoped load', async () => {
+      const contractCommentScoped = { scopedFindByIdViaContractOrThrow: jest.fn() };
+      const contractCommentRepository = { remove: jest.fn() };
       const contractAccess = { findInOrg: reject() };
 
-      const svc = build({ contractCommentRepository, contractAccess });
+      const svc = build({ contractCommentScoped, contractCommentRepository, contractAccess });
 
       await expect(
         svc.deleteComment(
@@ -322,9 +337,10 @@ describe('ContractsService — cross-tenant access wall (Tier 1 WRITEs)', () => 
         ),
       ).rejects.toBeInstanceOf(NotFoundException);
 
-      // CRITICAL: pre-fix, the isAdmin bypass let this go through. With
-      // the wall, the admin's authority is correctly org-scoped.
-      expect(contractCommentRepository.findOne).not.toHaveBeenCalled();
+      // CRITICAL: pre-fix, the isAdmin bypass let this go through. With the wall
+      // (and now the scoped load), the admin's authority is correctly org-scoped —
+      // neither the scoped load nor the remove is reached.
+      expect(contractCommentScoped.scopedFindByIdViaContractOrThrow).not.toHaveBeenCalled();
       expect(contractCommentRepository.remove).not.toHaveBeenCalled();
     });
 
@@ -334,13 +350,15 @@ describe('ContractsService — cross-tenant access wall (Tier 1 WRITEs)', () => 
         contract_id: 'contract-in-a',
         user_id: 'other-user',
       };
+      const contractCommentScoped = {
+        scopedFindByIdViaContractOrThrow: jest.fn().mockResolvedValue(comment),
+      };
       const contractCommentRepository = {
-        findOne: jest.fn().mockResolvedValue(comment),
         remove: jest.fn().mockResolvedValue(undefined),
       };
       const contractAccess = { findInOrg: resolve() };
 
-      const svc = build({ contractCommentRepository, contractAccess });
+      const svc = build({ contractCommentScoped, contractCommentRepository, contractAccess });
       await svc.deleteComment(
         'contract-in-a',
         COMMENT_ID,

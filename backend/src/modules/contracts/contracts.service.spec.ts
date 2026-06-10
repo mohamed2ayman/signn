@@ -7,6 +7,7 @@ import { ContractScopedRepository } from '../scoped-repository/contract-scoped.r
 import { ContractVersionScopedRepository } from '../scoped-repository/contract-version-scoped.repository';
 import { ContractorResponseScopedRepository } from '../scoped-repository/contractor-response-scoped.repository';
 import { ContractApproverScopedRepository } from '../scoped-repository/contract-approver-scoped.repository';
+import { ContractCommentScopedRepository } from '../scoped-repository/contract-comment-scoped.repository';
 import {
   Contract,
   ContractStatus,
@@ -181,12 +182,18 @@ const mockContractScopedRepository = {
 const mockChildScopedRepository = () => ({
   scopedFind: jest.fn().mockResolvedValue([]),
   scopedFindById: jest.fn().mockResolvedValue(null),
+  scopedFindByIdOrThrow: jest.fn().mockResolvedValue(null),
   scopedFindByIdViaContract: jest.fn().mockResolvedValue(null),
+  scopedFindByIdViaContractOrThrow: jest.fn().mockResolvedValue(null),
   findAcrossAllOrgs: jest.fn().mockResolvedValue([]),
 });
 const mockContractVersionScopedRepository = mockChildScopedRepository();
 const mockContractorResponseScopedRepository = mockChildScopedRepository();
 const mockContractApproverScopedRepository = mockChildScopedRepository();
+// Option B — S2b: scoped ContractComment repo. The by-id mutation loads route
+// through scopedFindByIdViaContract; default to a 404 (null/throw) so the
+// existing create/findAll/findById/update tests are unaffected.
+const mockContractCommentScopedRepository = mockChildScopedRepository();
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test suite
@@ -235,6 +242,8 @@ describe('ContractsService', () => {
         { provide: ContractVersionScopedRepository,        useValue: mockContractVersionScopedRepository },
         { provide: ContractorResponseScopedRepository,     useValue: mockContractorResponseScopedRepository },
         { provide: ContractApproverScopedRepository,       useValue: mockContractApproverScopedRepository },
+        // Option B — S2b: scoped ContractComment repo.
+        { provide: ContractCommentScopedRepository,        useValue: mockContractCommentScopedRepository },
       ],
     }).compile();
 

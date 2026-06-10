@@ -4,11 +4,13 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import {
   Contract,
   ContractApprover,
+  ContractComment,
   ContractVersion,
   ContractorResponse,
 } from '../../database/entities';
 import { ContractScopedRepository } from './contract-scoped.repository';
 import { ContractApproverScopedRepository } from './contract-approver-scoped.repository';
+import { ContractCommentScopedRepository } from './contract-comment-scoped.repository';
 import { ContractVersionScopedRepository } from './contract-version-scoped.repository';
 import { ContractorResponseScopedRepository } from './contractor-response-scoped.repository';
 
@@ -18,9 +20,10 @@ import { ContractorResponseScopedRepository } from './contractor-response-scoped
  * S1 provided the Contract ROOT. S2a adds the first CLEAN direct-contract_id
  * CHILDREN — ContractVersion, ContractorResponse, ContractApprover — each
  * resolving org via the canonical `child → contract → project → organization_id`
- * join. More child-entity scoped repositories are added here in later buckets
- * (S2b–S2e); the ESLint lint that bans bare contract-repo access (and routes
- * everything through this module) is the final bucket.
+ * join. S2b adds ContractComment (by-id mutation-path loads). More child-entity
+ * scoped repositories are added here in later buckets (S2c–S2e); the ESLint lint
+ * that bans bare contract-repo access (and routes everything through this module)
+ * is the final bucket.
  *
  * Consumers import THIS module and inject the scoped repositories — they do NOT
  * inject `@InjectRepository(Contract|ContractVersion|…)` for tenancy-scoped
@@ -34,6 +37,7 @@ import { ContractorResponseScopedRepository } from './contractor-response-scoped
       ContractVersion,
       ContractorResponse,
       ContractApprover,
+      ContractComment,
     ]),
   ],
   providers: [
@@ -41,12 +45,14 @@ import { ContractorResponseScopedRepository } from './contractor-response-scoped
     ContractVersionScopedRepository,
     ContractorResponseScopedRepository,
     ContractApproverScopedRepository,
+    ContractCommentScopedRepository,
   ],
   exports: [
     ContractScopedRepository,
     ContractVersionScopedRepository,
     ContractorResponseScopedRepository,
     ContractApproverScopedRepository,
+    ContractCommentScopedRepository,
   ],
 })
 export class ScopedRepositoryModule {}

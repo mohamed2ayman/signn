@@ -50,6 +50,7 @@ describe('ContractsService — Option B scoped-repo wiring (mutation paths)', ()
       noop, // contractVersionScoped (Option B S2a — unused by these ROOT mutations)
       noop, // contractorResponseScoped (Option B S2a — unused here)
       noop, // contractApproverScoped (Option B S2a — unused here)
+      noop, // contractCommentScoped (Option B S2b — unused by these ROOT mutations)
     );
   }
 
