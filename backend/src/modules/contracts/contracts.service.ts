@@ -36,6 +36,9 @@ import { ContractTemplatesService, isStandardForm, getLicenseOrg } from '../cont
 import { EmailService } from '../notifications/email.service';
 import { ContractAccessService } from './services/contract-access.service';
 import { ContractScopedRepository } from '../scoped-repository/contract-scoped.repository';
+import { ContractVersionScopedRepository } from '../scoped-repository/contract-version-scoped.repository';
+import { ContractorResponseScopedRepository } from '../scoped-repository/contractor-response-scoped.repository';
+import { ContractApproverScopedRepository } from '../scoped-repository/contract-approver-scoped.repository';
 
 @Injectable()
 export class ContractsService {
@@ -66,6 +69,11 @@ export class ContractsService {
     // Option B — S1: data-layer tenancy chokepoint for the Contract ROOT.
     // Independent of `contractAccess` (the wall) — both fire on every mutation.
     private readonly contractScoped: ContractScopedRepository,
+    // Option B — S2a: scoped CHILD repos (CLEAN direct contract_id children).
+    // Their LIST reads route through scopedFind (canonical child→contract→org).
+    private readonly contractVersionScoped: ContractVersionScopedRepository,
+    private readonly contractorResponseScoped: ContractorResponseScopedRepository,
+    private readonly contractApproverScoped: ContractApproverScopedRepository,
   ) {}
 
   // ─── Contract CRUD ─────────────────────────────────────────
@@ -684,26 +692,30 @@ export class ContractsService {
     contractId: string,
     orgId: string,
   ): Promise<ContractVersion[]> {
-    // Tenant-isolation Tier 2 — wall on URL contractId.
+    // WALL (persona) — Tier 2 findInOrg on the URL contractId, unchanged.
     await this.contractAccess.findInOrg(contractId, orgId);
-    return this.contractVersionRepository.find({
-      where: { contract_id: contractId },
-      relations: ['creator', 'triggered_by_user'],
-      order: { version_number: 'ASC' },
-    });
+    // SCOPED LIST (tenancy — Option B S2a) — the version rows load through the
+    // scoped repo, which independently re-applies version→contract→project→org.
+    // Both layers fire; canonical-only resolution.
+    return this.contractVersionScoped.scopedFind(
+      { contract_id: contractId },
+      orgId,
+      { relations: ['creator', 'triggered_by_user'], order: { version_number: 'ASC' } },
+    );
   }
 
   async getMilestoneVersions(
     contractId: string,
     orgId: string,
   ): Promise<ContractVersion[]> {
-    // Tenant-isolation Tier 2 — wall on URL contractId.
+    // WALL (persona) — Tier 2 findInOrg, unchanged.
     await this.contractAccess.findInOrg(contractId, orgId);
-    return this.contractVersionRepository.find({
-      where: { contract_id: contractId, is_milestone: true },
-      relations: ['creator', 'triggered_by_user'],
-      order: { version_number: 'ASC' },
-    });
+    // SCOPED LIST (tenancy — Option B S2a).
+    return this.contractVersionScoped.scopedFind(
+      { contract_id: contractId, is_milestone: true },
+      orgId,
+      { relations: ['creator', 'triggered_by_user'], order: { version_number: 'ASC' } },
+    );
   }
 
   async getVersion(
@@ -1012,13 +1024,14 @@ export class ContractsService {
     contractId: string,
     orgId: string,
   ): Promise<ContractorResponse[]> {
-    // Tenant-isolation Tier 2 — wall on URL contractId.
+    // WALL (persona) — Tier 2 findInOrg, unchanged.
     await this.contractAccess.findInOrg(contractId, orgId);
-    return this.contractorResponseRepository.find({
-      where: { contract_id: contractId },
-      relations: ['party'],
-      order: { created_at: 'DESC' },
-    });
+    // SCOPED LIST (tenancy — Option B S2a) — response→contract→project→org.
+    return this.contractorResponseScoped.scopedFind(
+      { contract_id: contractId },
+      orgId,
+      { relations: ['party'], order: { created_at: 'DESC' } },
+    );
   }
 
   // ─── Approval Workflow ─────────────────────────────────────
@@ -1215,12 +1228,14 @@ export class ContractsService {
     contractId: string,
     orgId: string,
   ): Promise<ContractApprover[]> {
+    // WALL (persona) — Tier 2 findInOrg, unchanged.
     await this.contractAccess.findInOrg(contractId, orgId);
-    return this.contractApproverRepository.find({
-      where: { contract_id: contractId },
-      relations: ['user'],
-      order: { assigned_at: 'ASC' },
-    });
+    // SCOPED LIST (tenancy — Option B S2a) — approver→contract→project→org.
+    return this.contractApproverScoped.scopedFind(
+      { contract_id: contractId },
+      orgId,
+      { relations: ['user'], order: { assigned_at: 'ASC' } },
+    );
   }
 
   /**

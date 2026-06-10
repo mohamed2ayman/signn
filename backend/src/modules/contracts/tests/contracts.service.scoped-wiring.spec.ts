@@ -47,6 +47,9 @@ describe('ContractsService — Option B scoped-repo wiring (mutation paths)', ()
       noop, // emailService
       opts.contractAccess, // contractAccess (the wall)
       opts.contractScoped, // contractScoped (Option B chokepoint)
+      noop, // contractVersionScoped (Option B S2a — unused by these ROOT mutations)
+      noop, // contractorResponseScoped (Option B S2a — unused here)
+      noop, // contractApproverScoped (Option B S2a — unused here)
     );
   }
 
