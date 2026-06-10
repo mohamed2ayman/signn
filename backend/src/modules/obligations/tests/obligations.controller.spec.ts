@@ -14,6 +14,9 @@ const MOCK_USER = {
   email: 'owner@sign.com',
   role: 'OWNER_ADMIN' as any,
   org_id: 'org-uuid-1',
+  // PRE-S2c walls thread @OrganizationId() (req.user.organization_id) into
+  // the /:id routes — the permission gate and the org gate are independent.
+  organization_id: 'org-uuid-1',
 };
 
 /** Always passes — simulates OWNER_ADMIN (bypasses permission checks). */
@@ -145,7 +148,11 @@ describe('ObligationsController', () => {
         .delete(`/obligations/${uuid}`)
         .expect(200)
         .expect({ message: 'Obligation deleted successfully' });
-      expect(mockObligationsService.delete).toHaveBeenCalledWith(uuid);
+      // PRE-S2c: delete() now also receives the caller's orgId (org wall).
+      expect(mockObligationsService.delete).toHaveBeenCalledWith(
+        uuid,
+        'org-uuid-1',
+      );
     });
 
     it('GET /obligations/:id returns 403 when PermissionLevelGuard denies', async () => {
