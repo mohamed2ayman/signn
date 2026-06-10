@@ -57,6 +57,13 @@ export const chatService = {
       .post<SendMessageResponse>(
         `/chat/sessions/${sessionId}/messages`,
         { message },
+        // Chat sendMessage is synchronous on the backend (it polls the AI job
+        // up to ~30s). Legal-grounded chat calls take 20-27s on Arabic queries,
+        // exceeding the global 15s axios timeout and surfacing as a silent
+        // failure even though the backend succeeds. Use 60s here to absorb the
+        // latency. The proper fix is to make chat async with polling (tracked
+        // separately); until then this override prevents premature timeouts.
+        { timeout: 60000 },
       )
       .then((r) => r.data),
 };
