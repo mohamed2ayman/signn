@@ -742,12 +742,64 @@ block schema.
 
 ---
 
-### 7.27 — Official Gazette Integration
-**Owner:** Youssef | **Priority:** 🟡 MEDIUM | **Status:** ❌ Not started
-- Monitor Egyptian Official Gazette for new construction-related legislation
-- Auto-import relevant updates into Knowledge Base
-- Admin notifications when new applicable regulations are detected
-- Phase 1: Egypt only; Phase 2: UAE; Phase 3: per-country expansion
+### ✅ 7.27 — Legal Corpus Foundation — COMPLETE (2026-06-10)
+**Owner:** Ayman | **Priority:** 🟡 MEDIUM | **Status:** ✅ Complete (local branch feature/7-27-legal-corpus, pending push + merge to main)
+
+**Scope shipped (v1):**
+- Country-agnostic `legal_documents` + `legal_document_chunks` tables with pgvector HNSW index (m=16, ef_construction=64)
+- `legal_sources` catalog with per-source flags (`is_visual_order`, `force_ocr`) for handling source-specific quirks (broken text layers, RTL visual order)
+- Admin upload endpoint `POST /admin/legal-documents` (SYSTEM_ADMIN, 50 MB cap)
+- Full ingestion pipeline:
+  - Text extraction (reuses Phase 9.1c abstraction): force-OCR branch at 300 dpi (page-by-page rendering, no OOM) for PDFs with broken text layers; text-layer branch for clean digital PDFs
+  - NFKC normalization
+  - Optional per-line Arabic visual→logical word-order reversal (flag-gated; suppressed when force_ocr=true since OCR is logical-order natively)
+  - Hybrid chunking: article-boundary split (Arabic مادة and English Article with Western or Arabic-Indic numerals); oversized articles (>6000 tokens via tiktoken cl100k_base) sub-split at sentence boundaries
+  - Bulk insert chunks; embed via OpenAI text-embedding-3-small (1536 dims) in batches of 50; bulk UPDATE vectors
+  - Bounded retry on transient OpenAI errors (4 attempts, exponential backoff)
+  - Celery `on_failure` backstop marks PENDING/PROCESSING docs FAILED if worker dies (OOM, SIGKILL, unhandled exceptions)
+- Jurisdiction-scoped retrieval via cosine distance + per-source quirk handling
+- AI Chat consumer (Phase E) — chat queries the corpus when the project's country maps to a supported jurisdiction, injects retrieved chunks as `<legal_context>` block, AI cites specific articles in responses
+- Async chat with polling (Option 2) — chat backend returns immediately with job_id, frontend polls status endpoint every 1.5s, 90s cap, resumes polling on page refresh if in-flight
+- Seed: Egyptian Tax Authority as first source (force_ocr=true, is_visual_order=false)
+- 15 lessons captured (#153–#167)
+
+**Phase D smoke verified GREEN on Civil Code 131/1948:**
+- Clean Arabic text (corruption rate dropped from ~1300 → 7)
+- 1107 chunks all embedded, 980 distinct articles detected
+- Retrieval works for sales (مادة 418+), partnership (مادة 1149), and cross-language EN→AR queries
+- Jurisdiction isolation enforced at data layer
+
+**Phase E + Option 2 verified GREEN via manual UI test:**
+- Arabic force-majeure question returned grounded Arabic response citing Egyptian Civil Code Articles 215, 217, 373
+- Non-legal questions (e.g. "capital of France") gracefully answer without errors or empty legal-context blocks
+- Async polling renders typing dots immediately; response appears smoothly when ready (~22-27 s total)
+
+**Architectural decisions (locked):**
+- pgvector with HNSW index (easy swap to IVFFlat via single migration if needed)
+- OpenAI text-embedding-3-small (same model as KB; vectors from different models are not comparable, so this is fixed until a coordinated migration)
+- TypeORM enum types with `_enum` suffix (lesson #143)
+- TypeORM cannot own pgvector columns; Python owns writes (lesson #157)
+- Jurisdiction as `varchar(10)` with DTO-level `@IsIn` allowlist (`EG`, `AE`, `SA`, `QA`, `UK`) — adding a country is a data change, not a schema migration
+
+**Deferred (future enhancements, not blocking):**
+- Streaming chat responses — biggest perceived-speed win, makes 25 s feel like 5 s (touches backend, ai-backend, frontend; ~1-2 days)
+- Claude Haiku for chat — possibly 3× faster generation with minor quality drop; worth A/B test
+- Additional AI consumers using the same retrieval pattern: risk analysis, compliance check, claims, notices, drafting, conflict-of-law / governing-law detection
+- Scheduled crawler for UAE federal (uaelegislation.gov.ae — the only source verified permissive for automated access). All other sources (Dubai SLC, Dubai Legal Affairs, Qatar Al Meezan, KSA BoE, KSA Umm al-Qura, Egypt Alamiria) confirmed restricted/personal-use only — manual ingestion or licensed access only
+- `source_type=CURATED_SUMMARY` content shape for license-restricted jurisdictions (team-authored summaries rather than verbatim law text)
+- Admin UI for managing `legal_sources` (currently SQL-managed)
+- Tuning for dual-concept Arabic queries (e.g. force majeure + contract effect — currently the target article ranks #20-ish; query rewriting or hybrid keyword+vector search are future options)
+- Cleanup of deprecated `triggerEmbedLegalChunks` / `run_embed_legal_chunks` / `EmbedLegalChunksRequest` (marked @deprecated, still present)
+
+**How to add a new country (operational checklist):**
+1. Identify a clean PDF source from a ministry or parliament site
+2. Verify the source's terms permit commercial reuse, or use curated summaries instead
+3. Open a sample PDF in a plain text editor:
+   - If word order is reversed in Arabic → `is_visual_order = true`
+   - If characters are corrupted (ك→آ etc.) → `force_ocr = true`
+4. INSERT a row into `legal_sources` with the correct flags
+5. Add the country code to the DTO `@IsIn` allowlist if it's not already there (`EG`, `AE`, `SA`, `QA`, `UK`)
+6. Upload via the admin endpoint with the new `source_id`; the pipeline handles everything else
 
 ---
 
@@ -1182,7 +1234,7 @@ No new env vars required for existing local dev deployments.
 | — | Internal Contract Sharing Fix | ✅ Complete (PR #44) | A | 2026-06-04 |
 | — | CONTRACTOR_* Audit | ✅ Audited — removal blocked until 7.18 | A | 2026-06-04 |
 | — | ContractShare Step 1 — dead endpoint + broken email + org-scope fix | ✅ Complete | A | 2026-06-05 |
-| 7.27 | Official Gazette | ❌ Not started | Y | |
+| 7.27 | Legal Corpus | ✅ Complete (feature/7-27-legal-corpus, pending push) | A | 2026-06-10 |
 | 7.28 | ERP Integration | ❌ Not started | A+Y | |
 | 7.29 | Settlement Checkbox | ❌ Not started | Y | |
 | 7.30 | Clause Library | ✅ Complete | A | |
