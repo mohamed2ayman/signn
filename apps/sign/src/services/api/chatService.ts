@@ -15,6 +15,12 @@ export interface ChatMessageCitation {
   [key: string]: any;
 }
 
+export type ChatMessageStatus =
+  | 'PENDING'
+  | 'PROCESSING'
+  | 'COMPLETED'
+  | 'FAILED';
+
 export interface ChatMessage {
   id: string;
   session_id: string;
@@ -22,8 +28,14 @@ export interface ChatMessage {
   user_id: string;
   org_id: string;
   role: 'USER' | 'ASSISTANT';
-  content: string;
+  // Nullable while an async ASSISTANT message is still being generated.
+  content: string | null;
   citations: ChatMessageCitation[] | null;
+  // Async lifecycle (Phase 7.27). USER messages arrive COMPLETED; the
+  // ASSISTANT message starts PENDING and is polled to COMPLETED/FAILED.
+  status: ChatMessageStatus;
+  job_id?: string | null;
+  error_message?: string | null;
   created_at: string;
 }
 
@@ -57,6 +69,18 @@ export const chatService = {
       .post<SendMessageResponse>(
         `/chat/sessions/${sessionId}/messages`,
         { message },
+        // Async chat (Phase 7.27): the backend now returns immediately with a
+        // PENDING assistant message and the client polls getMessageStatus, so
+        // this call is sub-second. The 60s override is kept as harmless
+        // defense-in-depth; it should never trigger.
+        { timeout: 60000 },
       )
+      .then((r) => r.data),
+
+  // Poll the assistant message until status is COMPLETED or FAILED. Each poll
+  // is fast, so it uses the default (15s) axios timeout.
+  getMessageStatus: (messageId: string) =>
+    api
+      .get<ChatMessage>(`/chat/messages/${messageId}/status`)
       .then((r) => r.data),
 };

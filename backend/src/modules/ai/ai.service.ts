@@ -112,6 +112,7 @@ export class AiService {
     org_id?: string;
     history?: Array<{ role: string; content: string }>;
     system_context?: string;
+    knowledge_context?: string;
   }): Promise<{ job_id: string; status: string }> {
     const response = await firstValueFrom(
       this.httpService.post(`${this.aiBackendUrl}/agents/chat`, data),
@@ -216,5 +217,80 @@ export class AiService {
       this.httpService.post(`${this.aiBackendUrl}/embeddings/search`, data),
     );
     return response.data;
+  }
+
+  // ─── Legal Corpus — Phase 7.27 ────────────────────────────
+
+  /**
+   * Dispatch the FULL legal-document ingestion pipeline to ai-backend
+   * (Phase E refactor). One Celery task does extract → NFKC-normalize →
+   * chunk (tiktoken-capped) → bulk-insert → embed → bulk-update vectors.
+   *
+   * This replaces the old multi-step flow (triggerExtractText →
+   * triggerEmbedLegalChunks) that chunked in TypeScript. Returns
+   * { job_id, status } immediately; the document's embedding_status
+   * column reflects progress (PENDING → PROCESSING → INDEXED/FAILED).
+   */
+  async triggerIngestLegalDocument(
+    documentId: string,
+    isVisualOrder = false,
+    forceOcr = false,
+  ): Promise<{
+    job_id: string;
+    status: string;
+  }> {
+    const response = await firstValueFrom(
+      this.httpService.post(
+        `${this.aiBackendUrl}/agents/ingest-legal-document`,
+        {
+          document_id: documentId,
+          is_visual_order: isVisualOrder,
+          force_ocr: forceOcr,
+        },
+      ),
+    );
+    this.logger.log(
+      `Legal document ingestion dispatched: document_id=${documentId} ` +
+        `is_visual_order=${isVisualOrder} force_ocr=${forceOcr} ` +
+        `job_id=${response.data.job_id}`,
+    );
+    return response.data;
+  }
+
+  /**
+   * @deprecated Phase E moved chunking into the single ingestion task
+   * (triggerIngestLegalDocument). Retained in case another caller exists;
+   * the legal-documents flow no longer uses this.
+   *
+   * Dispatch an async Celery job that embeds all PENDING chunks for a
+   * legal document. The job writes vectors directly to PostgreSQL via
+   * psycopg2 + pgvector.
+   *
+   * Returns { job_id, status } immediately; caller polls getJobStatus().
+   */
+  async triggerEmbedLegalChunks(data: {
+    document_id: string;
+  }): Promise<{ job_id: string; status: string }> {
+    const response = await firstValueFrom(
+      this.httpService.post(`${this.aiBackendUrl}/agents/embed-legal-chunks`, data),
+    );
+    this.logger.log(
+      `Legal chunk embedding dispatched: document_id=${data.document_id} job_id=${response.data.job_id}`,
+    );
+    return response.data;
+  }
+
+  /**
+   * Synchronous call — returns the OpenAI embedding vector for the given
+   * text. Used by the retrieval path (retrieveRelevantChunks) to embed
+   * the query text before the pgvector similarity search.
+   *
+   * Returns a number[] of length 1536 (text-embedding-3-small).
+   */
+  async embedQuery(text: string): Promise<number[]> {
+    const response = await firstValueFrom(
+      this.httpService.post(`${this.aiBackendUrl}/agents/embed-query`, { text }),
+    );
+    return response.data.embedding as number[];
   }
 }

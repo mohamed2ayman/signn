@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from anthropic import Anthropic
@@ -19,6 +20,12 @@ Guidelines:
 - If a question cannot be answered from the available context, say so clearly.
 - Keep your tone professional but accessible -- avoid unnecessary legal jargon.
 - When unsure, express uncertainty rather than guessing.
+- When legal passages are provided inside a <legal_context> block, ground your
+  answer in them and cite the specific article by number when relevant
+  (e.g., "per Article 217 of the Egyptian Civil Code"). If the provided
+  passages do not address the question, answer from general knowledge and note
+  that the corpus did not contain a specific reference. Do not force a citation
+  when none of the passages are on point.
 
 You MUST structure your response as a JSON object with two keys:
 
@@ -117,5 +124,29 @@ class ConversationalAgent:
         )
 
         raw_text = response.content[0].text
-        result: dict[str, Any] = json.loads(raw_text)
-        return result
+        return self._parse_response(raw_text)
+
+    @staticmethod
+    def _parse_response(raw_text: str) -> dict[str, Any]:
+        """Parse the model's reply into {response, citations}, resiliently.
+
+        The SYSTEM_PROMPT asks for strict JSON, but models frequently wrap it in
+        a ```json ... ``` markdown fence (especially once a large legal_context
+        block is present) or answer in prose. Naive json.loads then throws and
+        the whole chat turn fails. Strip fences, try JSON, and fall back to
+        treating the raw text as the response with no citations — chat must
+        always return a usable answer.
+        """
+        text = raw_text.strip()
+        if text.startswith("```"):
+            text = re.sub(r"^```[a-zA-Z]*\s*\n?", "", text)
+            text = re.sub(r"\n?```\s*$", "", text).strip()
+        try:
+            parsed = json.loads(text)
+            if isinstance(parsed, dict) and "response" in parsed:
+                parsed.setdefault("citations", [])
+                return parsed
+        except (json.JSONDecodeError, ValueError):
+            pass
+        # Prose (or non-conforming JSON) → wrap as the response.
+        return {"response": raw_text.strip(), "citations": []}

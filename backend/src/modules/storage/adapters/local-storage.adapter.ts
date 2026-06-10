@@ -34,6 +34,7 @@ export class LocalStorageAdapter implements IStorageAdapter {
       'temp',
       'compliance-reports',
       'gdpr-exports',
+      'legal-documents',
     ];
     for (const dir of dirs) {
       const fullPath = path.join(this.uploadDir, dir);
@@ -107,6 +108,9 @@ export class LocalStorageAdapter implements IStorageAdapter {
   }
 
   getLocalPathOrNull(fileUrl: string): string | null {
+    if (!fileUrl || !fileUrl.startsWith(`${this.baseUrl}/uploads/`)) {
+      return null;
+    }
     try {
       const filePath = this.urlToLocalPath(fileUrl);
       this.assertContained(filePath);

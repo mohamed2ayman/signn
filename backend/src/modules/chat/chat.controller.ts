@@ -87,11 +87,26 @@ export class ChatController {
     // sendMessage is downstream of createSession — a session can only
     // carry a contract_id that already passed the createSession wall.
     // Tenant isolation here is inherited; no additional check needed.
+    // ASYNC (Phase 7.27): returns immediately with a PENDING assistant
+    // message; the client polls GET /chat/messages/:id/status below.
     return this.chatService.sendMessage(
       sessionId,
       user.id,
       orgId,
       dto.message,
     );
+  }
+
+  /**
+   * Async-chat advancer (Phase 7.27). The client polls this for the assistant
+   * message until status is COMPLETED or FAILED. Ownership is enforced
+   * service-side (caller must own the message's session).
+   */
+  @Get('messages/:id/status')
+  async getMessageStatus(
+    @Param('id') messageId: string,
+    @CurrentUser() user: any,
+  ) {
+    return this.chatService.getMessageStatus(messageId, user.id);
   }
 }
