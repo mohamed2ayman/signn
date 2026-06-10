@@ -782,8 +782,9 @@ block schema.
 - Jurisdiction as `varchar(10)` with DTO-level `@IsIn` allowlist (`EG`, `AE`, `SA`, `QA`, `UK`) — adding a country is a data change, not a schema migration
 
 **Deferred (future enhancements, not blocking):**
-- Streaming chat responses — biggest perceived-speed win, makes 25 s feel like 5 s (touches backend, ai-backend, frontend; ~1-2 days)
-- Claude Haiku for chat — possibly 3× faster generation with minor quality drop; worth A/B test
+**Chat speed (chat is currently ~22-27s for Arabic legal questions — bottleneck is Claude generating Arabic text on Anthropic's servers, ~20s of that; AWS deployment will save ~2-3s of network/CPU but not the generation itself). Two paths to faster chat:**
+- **Streaming responses** — same total time, but text appears progressively (perceived 5× faster, like ChatGPT/Claude.ai). Touches backend, ai-backend, and frontend (SSE or similar). ~1-2 days of work.
+- **Claude Haiku for chat** — 3× faster generation (~8s instead of 25s), possibly weaker legal reasoning. Requires A/B testing against real Arabic legal questions before committing. Sonnet stays for non-chat consumers (risk, compliance, claims, etc.) where quality matters more than latency.
 - Additional AI consumers using the same retrieval pattern: risk analysis, compliance check, claims, notices, drafting, conflict-of-law / governing-law detection
 - Scheduled crawler for UAE federal (uaelegislation.gov.ae — the only source verified permissive for automated access). All other sources (Dubai SLC, Dubai Legal Affairs, Qatar Al Meezan, KSA BoE, KSA Umm al-Qura, Egypt Alamiria) confirmed restricted/personal-use only — manual ingestion or licensed access only
 - `source_type=CURATED_SUMMARY` content shape for license-restricted jurisdictions (team-authored summaries rather than verbatim law text)
