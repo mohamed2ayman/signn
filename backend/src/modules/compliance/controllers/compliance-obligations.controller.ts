@@ -65,6 +65,25 @@ export class ComplianceObligationsController {
     await this.contractAccess.findInOrg(contractId, user.organization_id);
   }
 
+  /**
+   * PRE-S2c HOTFIX: obligation-in-contract pin. Loads the obligation and
+   * verifies it belongs to the contract already authorized by
+   * assertContractInCallerOrg. 404 (never 403) on miss or mismatch — no
+   * existence leak. Always call AFTER the org wall, never instead of it.
+   */
+  private async loadObligationInContract(
+    obligationId: string,
+    contractId: string,
+  ): Promise<Obligation> {
+    const obligation = await this.obligationRepo.findOne({
+      where: { id: obligationId },
+    });
+    if (!obligation || obligation.contract_id !== contractId) {
+      throw new NotFoundException('Obligation not found');
+    }
+    return obligation;
+  }
+
   // ─── Existing Phase 3.4 endpoints ────────────────────────────────────────
 
   @Get('contracts/:contractId/obligations')
@@ -92,12 +111,16 @@ export class ComplianceObligationsController {
   @Patch('contracts/:contractId/obligations/:obligationId')
   @RequirePermission(PermissionLevel.EDITOR)
   async update(
+    @Param('contractId') contractId: string,
     @Param('obligationId') id: string,
     @Body() body: UpdateObligationInlineDto,
     @CurrentUser() user: User,
   ): Promise<Obligation> {
-    const o = await this.obligationRepo.findOne({ where: { id } });
-    if (!o) throw new Error('Obligation not found');
+    // PRE-S2c HOTFIX: cross-tenant WRITE wall — contract-in-org, then
+    // obligation-in-contract. S2c absorbs this load into the scoped repo;
+    // the wall stays as defense-in-depth.
+    await this.assertContractInCallerOrg(contractId, user);
+    const o = await this.loadObligationInContract(id, contractId);
     Object.assign(o, body);
     if (
       (body.status === ObligationStatus.MET ||
@@ -115,8 +138,11 @@ export class ComplianceObligationsController {
   @Header('Content-Type', 'text/calendar; charset=utf-8')
   async icalForContract(
     @Param('contractId') contractId: string,
+    @CurrentUser() user: User,
     @Res() res: Response,
   ): Promise<void> {
+    // PRE-S2c HOTFIX: org wall on the unwalled list read.
+    await this.assertContractInCallerOrg(contractId, user);
     const items = await this.obligationRepo.find({
       where: { contract_id: contractId },
       relations: ['contract'],
@@ -137,14 +163,27 @@ export class ComplianceObligationsController {
   async listForProject(
     @Param('projectId') projectId: string,
     @Query() filters: ObligationFiltersDto,
+    @CurrentUser() user: User,
   ): Promise<Obligation[]> {
+    // PRE-S2c HOTFIX: org wall. The URL's project_id is denormalized and was
+    // trusted bare — bypass roles skipped the membership guard, so any
+    // authenticated caller could list a foreign project's obligations. The
+    // canonical contract→project org join narrows the read to the caller's
+    // org; a no-org caller gets nothing (no existence leak either way).
+    if (!user.organization_id) {
+      return [];
+    }
     return this.applyFilters(
       this.obligationRepo
         .createQueryBuilder('o')
         .leftJoinAndSelect('o.contract', 'c')
         .leftJoinAndSelect('o.assignees', 'oa')
         .leftJoinAndSelect('oa.user', 'au')
-        .where('o.project_id = :projectId', { projectId }),
+        .leftJoin('c.project', 'p')
+        .where('o.project_id = :projectId', { projectId })
+        .andWhere('p.organization_id = :orgId', {
+          orgId: user.organization_id,
+        }),
       filters,
     )
       .orderBy('o.due_date', 'ASC')
@@ -161,10 +200,14 @@ export class ComplianceObligationsController {
   @Post('contracts/:contractId/obligations/:obligationId/assign')
   @RequirePermission(PermissionLevel.EDITOR)
   async assignUser(
+    @Param('contractId') contractId: string,
     @Param('obligationId') obligationId: string,
     @Body() body: AssignObligationDto,
     @CurrentUser() user: User,
   ) {
+    // PRE-S2c HOTFIX: cross-tenant wall — contract-in-org + obligation pin.
+    await this.assertContractInCallerOrg(contractId, user);
+    await this.loadObligationInContract(obligationId, contractId);
     return this.obligationSvc.assignUser(obligationId, body.user_id, user.id);
   }
 
@@ -177,9 +220,14 @@ export class ComplianceObligationsController {
   @RequirePermission(PermissionLevel.EDITOR)
   @HttpCode(204)
   async unassignUser(
+    @Param('contractId') contractId: string,
     @Param('obligationId') obligationId: string,
     @Param('userId') userId: string,
+    @CurrentUser() user: User,
   ): Promise<void> {
+    // PRE-S2c HOTFIX: cross-tenant wall — contract-in-org + obligation pin.
+    await this.assertContractInCallerOrg(contractId, user);
+    await this.loadObligationInContract(obligationId, contractId);
     await this.obligationSvc.unassignUser(obligationId, userId);
   }
 
@@ -191,9 +239,14 @@ export class ComplianceObligationsController {
   @Put('contracts/:contractId/obligations/:obligationId/evidence')
   @RequirePermission(PermissionLevel.EDITOR)
   async updateEvidence(
+    @Param('contractId') contractId: string,
     @Param('obligationId') obligationId: string,
     @Body() body: UpdateEvidenceDto,
+    @CurrentUser() user: User,
   ): Promise<Obligation> {
+    // PRE-S2c HOTFIX: cross-tenant wall — contract-in-org + obligation pin.
+    await this.assertContractInCallerOrg(contractId, user);
+    await this.loadObligationInContract(obligationId, contractId);
     return this.obligationSvc.updateEvidence(obligationId, body.evidence_url);
   }
 
@@ -209,7 +262,12 @@ export class ComplianceObligationsController {
   async getReminderLogs(
     @Param('contractId') contractId: string,
     @Param('obligationId') obligationId: string,
+    @CurrentUser() user: User,
   ) {
+    // PRE-S2c HOTFIX: org gate on top of the pre-existing contract pin —
+    // the pin alone passes when the obligation genuinely belongs to the
+    // foreign contract named in the URL.
+    await this.assertContractInCallerOrg(contractId, user);
     const obligation = await this.obligationRepo.findOne({
       where: { id: obligationId },
     });

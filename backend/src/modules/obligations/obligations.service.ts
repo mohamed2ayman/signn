@@ -4,7 +4,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, LessThanOrEqual, In } from 'typeorm';
+import { Repository } from 'typeorm';
 import { Obligation, ObligationStatus } from '../../database/entities';
 import { CreateObligationDto, UpdateObligationDto } from './dto';
 // Tenant-isolation Tier 2 — wall the dashboard's optional contract_id
@@ -47,7 +47,21 @@ export class ObligationsService {
     });
   }
 
-  async findById(id: string): Promise<Obligation> {
+  /**
+   * PRE-S2c HOTFIX: org wall on the /:id surface. Pre-fix this load had no
+   * org anywhere — Phase 7.15 permission gating is NOT a tenancy boundary
+   * (bypass roles skip it), so an org-A caller could read/mutate/DELETE an
+   * org-B obligation by id (update/complete/delete all feed off this load).
+   * After loading by id, the obligation's contract is resolved in the
+   * caller's org via findInOrg — cross-tenant → 404 (never 403, no
+   * existence leak). S2c absorbs this into the scoped chokepoint; the wall
+   * stays as defense-in-depth.
+   */
+  async findById(id: string, orgId: string): Promise<Obligation> {
+    if (!orgId) {
+      // No-org caller cannot own contracts. 404 — no existence leak.
+      throw new NotFoundException('Obligation not found');
+    }
     const obligation = await this.obligationRepository.findOne({
       where: { id },
       relations: ['contract', 'contract_clause', 'contract_clause.clause', 'completer'],
@@ -56,6 +70,8 @@ export class ObligationsService {
     if (!obligation) {
       throw new NotFoundException('Obligation not found');
     }
+
+    await this.contractAccess.findInOrg(obligation.contract_id, orgId);
 
     return obligation;
   }
@@ -69,8 +85,15 @@ export class ObligationsService {
     return this.obligationRepository.save(obligation);
   }
 
-  async update(id: string, dto: UpdateObligationDto): Promise<Obligation> {
-    const obligation = await this.findById(id);
+  // PRE-S2c HOTFIX: update/complete/delete inherit the org wall by flowing
+  // through the now-scoped findById — none of them does a bare repo load.
+
+  async update(
+    id: string,
+    dto: UpdateObligationDto,
+    orgId: string,
+  ): Promise<Obligation> {
+    const obligation = await this.findById(id, orgId);
 
     if (dto.description !== undefined) obligation.description = dto.description;
     if (dto.responsible_party !== undefined) obligation.responsible_party = dto.responsible_party;
@@ -83,8 +106,13 @@ export class ObligationsService {
     return this.obligationRepository.save(obligation);
   }
 
-  async complete(id: string, userId: string, evidenceUrl?: string): Promise<Obligation> {
-    const obligation = await this.findById(id);
+  async complete(
+    id: string,
+    userId: string,
+    orgId: string,
+    evidenceUrl?: string,
+  ): Promise<Obligation> {
+    const obligation = await this.findById(id, orgId);
 
     obligation.status = ObligationStatus.COMPLETED;
     obligation.completed_at = new Date();
@@ -94,34 +122,55 @@ export class ObligationsService {
     return this.obligationRepository.save(obligation);
   }
 
-  async delete(id: string): Promise<void> {
-    const obligation = await this.findById(id);
+  async delete(id: string, orgId: string): Promise<void> {
+    const obligation = await this.findById(id, orgId);
     await this.obligationRepository.remove(obligation);
   }
 
-  async getUpcoming(daysAhead: number = 30): Promise<Obligation[]> {
+  // PRE-S2c HOTFIX: getUpcoming/getOverdue were PLATFORM-WIDE (no org
+  // predicate). Both now take the caller's orgId and apply the canonical
+  // org join (obligation.contract → contract.project AND
+  // p.organization_id = :orgId) — same posture as getPortfolio/getCalendar
+  // in ComplianceObligationService. S2c later subsumes these reads into the
+  // scoped chokepoint; the predicate stays as defense-in-depth.
+
+  async getUpcoming(orgId: string, daysAhead: number = 30): Promise<Obligation[]> {
+    if (!orgId) {
+      // No-org caller owns no contracts — empty, no existence leak.
+      return [];
+    }
     const futureDate = new Date();
     futureDate.setDate(futureDate.getDate() + daysAhead);
 
-    return this.obligationRepository.find({
-      where: {
-        due_date: LessThanOrEqual(futureDate),
-        status: In([ObligationStatus.PENDING, ObligationStatus.IN_PROGRESS]),
-      },
-      relations: ['contract', 'contract_clause'],
-      order: { due_date: 'ASC' },
-    });
+    return this.obligationRepository
+      .createQueryBuilder('obligation')
+      .leftJoinAndSelect('obligation.contract', 'contract')
+      .leftJoinAndSelect('obligation.contract_clause', 'contract_clause')
+      .leftJoin('contract.project', 'p')
+      .where('obligation.due_date <= :futureDate', { futureDate })
+      .andWhere('obligation.status IN (:...statuses)', {
+        statuses: [ObligationStatus.PENDING, ObligationStatus.IN_PROGRESS],
+      })
+      .andWhere('p.organization_id = :orgId', { orgId })
+      .orderBy('obligation.due_date', 'ASC')
+      .getMany();
   }
 
-  async getOverdue(): Promise<Obligation[]> {
+  async getOverdue(orgId: string): Promise<Obligation[]> {
+    if (!orgId) {
+      // No-org caller owns no contracts — empty, no existence leak.
+      return [];
+    }
     const qb = this.obligationRepository
       .createQueryBuilder('obligation')
       .leftJoinAndSelect('obligation.contract', 'contract')
       .leftJoinAndSelect('obligation.contract_clause', 'contract_clause')
+      .leftJoin('contract.project', 'p')
       .where('obligation.due_date < NOW()')
       .andWhere('obligation.status IN (:...statuses)', {
         statuses: [ObligationStatus.PENDING, ObligationStatus.IN_PROGRESS],
       })
+      .andWhere('p.organization_id = :orgId', { orgId })
       .orderBy('obligation.due_date', 'ASC');
 
     return qb.getMany();
