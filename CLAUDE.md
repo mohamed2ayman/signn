@@ -1,7 +1,7 @@
 # CLAUDE.md — Project Intelligence File
 > Read this entire file at the start of every Claude Code session before touching any code.
 > This file is the single source of truth for all architectural decisions, rules, and context.
-> Last updated: 2026-06-06 (Phase 7.18 Part 2 shipped — managing-user compliance run is the FIRST wired metering consumer. PR #49 squash-merged at `49f785f` on top of engine PR #46 (`9200f38`). Async reconcile shape: reserve in-request behind the #45 access wall, commit/release in `refreshFromAi` + both synchronous fail paths, sweeper backstop for never-polled runs; `reservation_id` on `compliance_checks` via additive migration `1754000000001`; four ops-search log signals (`metering.compliance.{committed_after_release|released_after_terminal|commit_error|release_error}`); engine code UNTOUCHED. Rule 9 parenthetical updated. New bottom-of-file "Phase 7.18 Part 2 — Compliance metering consumer" section. Staging gate (G.1–G.7) reframed as a **Phase 9 release-gate, NOT a merge-gate** — runbook stays in `docs/metering-part2-staging-gate.md`. NO new lessons added — substantive Part 2 lessons (TTL-vs-p99, sweeper-at-scale) need real load, deferred to Phase 9. ContractShare Step 1 deprecation shipped — dead public token endpoint removed, broken external email path removed, cross-tenant info disclosure in `getSharesByContract()` fixed, frontend external sharing gated with "coming soon" message. Lesson #152. Phase 7.18 metering engine primitive shipped — commit `dc31bb6` on `feat/metering-primitive-7.18`. Schema + allowance resolver + MeteringService authority (reserve/commit/release) + dangling-reserve sweeper + READ COMMITTED startup invariant. 20 real-Postgres concurrency + precedence tests; full backend suite 430/430. ENGINE ONLY — no consumer wiring (Part 2). See "Metering Engine Invariants — Phase 7.18 (shipped 2026-06-04)" section at the bottom; new ARCHITECTURE RULES Rule 9 is the spine pointer. Lessons #148–#150 capture the engine-earned discipline (TypeORM 0.3 `[rows, rowCount]` shape, read-then-write transitions, existence-check-then-insert idempotency race). Phase 7.26 shipped — Track A complete. 12 missing i18n keys added across EN and AR locales; FR was already structurally complete. Track B (legal page localization) deferred pending legal team translated content. Phase 7.25 fully documented (PR #41). **CRITICAL** — Phase 3.4 compliance PDF reports + Phase 4 ExportService contract PDFs are CURRENTLY BROKEN by the same pdfmake v0.1 require pattern 2c just fixed; see Critical Known Bugs + lesson #142, HIGH priority. Internal Contract Sharing fix shipped (PR #44) — cross-tenant bug in `createShare()` fixed + ProjectMember creation + notification dispatch + org-member autocomplete.)
+> Last updated: 2026-06-10 (Phase 7.27 Legal Corpus shipped end-to-end (local branch `feature/7-27-legal-corpus`, pending push/merge) — country-agnostic `legal_documents`/`legal_document_chunks`/`legal_sources` schema with pgvector HNSW; full ingestion pipeline (StorageService → text extraction with a force-OCR branch for broken-font PDFs → NFKC + optional Arabic visual→logical reversal → tiktoken-capped article-boundary chunking → OpenAI text-embedding-3-small → bulk vector write), jurisdiction-scoped retrieval, and AI Chat wired as the first consumer with async polling. Per-source flags `is_visual_order`/`force_ocr` handle per-country quirks; Egyptian Tax Authority seeded (force_ocr=true). Phase D verified GREEN on Egyptian Civil Code 131/1948; Phase E + async chat verified GREEN via UI (Arabic force-majeure → grounded answer citing Civil Code Articles 215/217/373). New bottom-of-file "Phase 7.27 — Legal Corpus (shipped 2026-06-10)" section; lessons #153–#167. Prior: Phase 7.18 Part 2 shipped — managing-user compliance run is the FIRST wired metering consumer. PR #49 squash-merged at `49f785f` on top of engine PR #46 (`9200f38`). Async reconcile shape: reserve in-request behind the #45 access wall, commit/release in `refreshFromAi` + both synchronous fail paths, sweeper backstop for never-polled runs; `reservation_id` on `compliance_checks` via additive migration `1754000000001`; four ops-search log signals (`metering.compliance.{committed_after_release|released_after_terminal|commit_error|release_error}`); engine code UNTOUCHED. Rule 9 parenthetical updated. New bottom-of-file "Phase 7.18 Part 2 — Compliance metering consumer" section. Staging gate (G.1–G.7) reframed as a **Phase 9 release-gate, NOT a merge-gate** — runbook stays in `docs/metering-part2-staging-gate.md`. NO new lessons added — substantive Part 2 lessons (TTL-vs-p99, sweeper-at-scale) need real load, deferred to Phase 9. ContractShare Step 1 deprecation shipped — dead public token endpoint removed, broken external email path removed, cross-tenant info disclosure in `getSharesByContract()` fixed, frontend external sharing gated with "coming soon" message. Lesson #152. Phase 7.18 metering engine primitive shipped — commit `dc31bb6` on `feat/metering-primitive-7.18`. Schema + allowance resolver + MeteringService authority (reserve/commit/release) + dangling-reserve sweeper + READ COMMITTED startup invariant. 20 real-Postgres concurrency + precedence tests; full backend suite 430/430. ENGINE ONLY — no consumer wiring (Part 2). See "Metering Engine Invariants — Phase 7.18 (shipped 2026-06-04)" section at the bottom; new ARCHITECTURE RULES Rule 9 is the spine pointer. Lessons #148–#150 capture the engine-earned discipline (TypeORM 0.3 `[rows, rowCount]` shape, read-then-write transitions, existence-check-then-insert idempotency race). Phase 7.26 shipped — Track A complete. 12 missing i18n keys added across EN and AR locales; FR was already structurally complete. Track B (legal page localization) deferred pending legal team translated content. Phase 7.25 fully documented (PR #41). **CRITICAL** — Phase 3.4 compliance PDF reports + Phase 4 ExportService contract PDFs are CURRENTLY BROKEN by the same pdfmake v0.1 require pattern 2c just fixed; see Critical Known Bugs + lesson #142, HIGH priority. Internal Contract Sharing fix shipped (PR #44) — cross-tenant bug in `createShare()` fixed + ProjectMember creation + notification dispatch + org-member autocomplete.)
 
 ---
 
@@ -3755,3 +3755,102 @@ substantive Part 2 lessons (TTL-vs-p99 tuning, sweeper-at-scale behaviour,
 applied:false alert cadence) are deliberately deferred to that pass — same
 discipline as engine lessons #148–#150 which were earned by failing tests, not
 written ahead of evidence.
+
+---
+
+## Phase 7.27 — Legal Corpus (shipped 2026-06-10)
+
+Country-agnostic, jurisdiction-scoped legal document corpus with semantic retrieval for AI consumers. First wired consumer: AI Chat (Phase E + async Option 2).
+
+### Tables
+
+**legal_sources** — catalog of legal content sources with per-source flags
+- `id, name, base_url, jurisdiction, is_visual_order, force_ocr, notes`
+- Seed: Egyptian Tax Authority (force_ocr=true, is_visual_order=false)
+
+**legal_documents** — one row per ingested law/decree
+- `jurisdiction` (varchar(10), DTO-allowlisted to EG/AE/SA/QA/UK — extend the allowlist to add countries)
+- `source_type` (PRIMARY_TEXT | CURATED_SUMMARY)
+- Law metadata: `title, law_number, law_year, gregorian_date, hijri_date, status` (IN_FORCE | AMENDED | REPEALED), `language` (varchar(5)[] for bilingual support)
+- `source_id` FK → `legal_sources`
+- `parent_law_id` self-FK (for "regulation implements law" relationships)
+- `storage_key, extracted_text, content_hash`
+- `embedding_status_enum` (PENDING | PROCESSING | INDEXED | FAILED) — TypeORM column, `_enum` suffix per lesson #143
+
+**legal_document_chunks** — chunked text with embeddings
+- `chunk_index, chunk_text, article_reference, token_count`
+- `embedding vector(1536)` — NOT modeled in the TypeORM entity (Python owns writes via psycopg2; lesson #157)
+- `jurisdiction` denormalized for index-only filter scans
+- HNSW index: `m=16, ef_construction=64, vector_cosine_ops`
+
+### Ingestion pipeline
+
+Celery task `run_ingest_legal_document` (in ai-backend):
+1. Admin uploads PDF → `POST /admin/legal-documents`
+2. Backend stores file via `StorageService`, creates `legal_documents` row (status PENDING), dispatches the Celery task
+3. ai-backend extracts text:
+   - `force_ocr=true` branch: 300 dpi page-by-page OCR with per-page error isolation (lesson #160)
+   - `force_ocr=false` branch: text-layer extraction (uses Phase 9.1c TextExtractorService abstraction)
+4. NFKC normalize
+5. If `is_visual_order=true` AND `force_ocr=false`: per-line Arabic word-order reversal (lesson #163)
+6. Chunk: split at article boundaries (Arabic مادة and English Article, with Western or Arabic-Indic numerals); oversized articles (>6000 tokens via tiktoken cl100k_base) sub-split at sentence boundaries
+7. Bulk insert chunks (embedding=NULL)
+8. Embed in batches of 50 via OpenAI text-embedding-3-small; bulk UPDATE vectors. Bounded retry on transient errors (4 attempts, exponential backoff)
+9. Mark INDEXED
+10. `on_failure` backstop (lesson #161) catches OOM/SIGKILL/unhandled exceptions, marks doc FAILED with error message (status-guarded — never overwrites terminal states)
+
+### Retrieval
+
+`LegalDocumentsService.retrieveRelevantChunks(query, jurisdiction, topK)`:
+- Embeds the query via `POST /agents/embed-query` (synchronous, not Celery — small enough for per-message use)
+- SQL: `SELECT … FROM legal_document_chunks JOIN legal_documents WHERE jurisdiction = $2 AND status != 'REPEALED' ORDER BY embedding <=> $1 LIMIT $3`
+- Returns top-K chunks with parent doc metadata for citation
+
+### AI Chat consumer (Phase E + Option 2)
+
+- Chat session is contract-scoped; jurisdiction derived as contract → project → country (display name normalized to ISO; lesson #165)
+- When jurisdiction is in the allowlist, ChatService calls `retrieveRelevantChunks` with topK=5, formats results as `<legal_context jurisdiction="EG">…</legal_context>` block with citation instruction
+- Block passed through existing `knowledge_context` parameter on the conversational agent (no new parameter added)
+- When jurisdiction is absent or retrieval returns 0 chunks: silent fallback — chat proceeds without legal-context block, no error to user
+- Conversational agent uses fence-strip + prose fallback for Claude's response (lesson #166)
+
+### Async chat (Option 2)
+
+- `chat_messages` table extended with `status, job_id, error_message` columns; `content` made nullable (migration 1755000000005)
+- `POST /chat/sessions/:id/messages` creates user (COMPLETED) + assistant (PENDING) message rows, dispatches AI job, returns immediately
+- `GET /chat/messages/:id/status` endpoint-triggered advancer: polls ai-backend, persists result when job done, idempotent on terminal rows
+- In-flight messages older than 5 minutes auto-marked FAILED by next status check (staleness backstop)
+- Frontend ChatPanel polls every 1.5 s, 90 s cap, resumes on page refresh
+
+### Per-source flags
+
+- `is_visual_order` (boolean) — PDF stores Arabic in visual (RTL-reversed) word order. Triggers per-line word reversal during chunking. Suppressed when `force_ocr=true`.
+- `force_ocr` (boolean) — PDF's text layer has broken ToUnicode CMap (e.g. Egyptian Tax Authority kaf glyph mapped to wrong codepoint). Triggers page-by-page 300 dpi OCR. Lesson #162.
+
+### Adding a new source
+
+See NEXT_PHASES.md 7.27 "How to add a new country" — test PDF in a plain text editor → determine flags → SQL INSERT into `legal_sources` → upload via admin endpoint.
+
+### Adding a new country
+
+No code change required beyond the DTO `@IsIn` allowlist. Existing schema supports any jurisdiction string.
+
+### Embeddings provider
+
+OpenAI text-embedding-3-small (1536 dims, cl100k_base tokenizer). Same model as the Knowledge Base. **If this is ever swapped, ALL stored vectors must be re-embedded** — vectors from different models are not comparable.
+
+### Known limitations (v1)
+
+- No frontend admin UI for `legal_sources` — SQL-managed
+- No scheduled crawlers — manual upload only (UAE federal crawler is on the deferred list since it's the one source verified license-permissive for automated access)
+- No incremental updates — re-ingesting a document creates a new row; `content_hash` prevents exact duplicates but not amendments
+- Dual-concept queries with secondary semantic load surface on-topic but not specifically-correct articles (e.g. "force majeure AND effect on contract" surfaces contract-effect articles higher than the dedicated force-majeure article). Tuning is deferred work.
+
+### Hard rules — never violate
+
+1. The embedding model is OpenAI text-embedding-3-small. Never embed legal chunks with a different model without a full re-embedding plan — vectors from different models are not comparable.
+2. Source-level quirks (`is_visual_order`, `force_ocr`) must always be set per-source in `legal_sources`, never hardcoded in the pipeline. New sources require a manual evaluation before INSERT (see "Adding a new source").
+3. `force_ocr=true` ALWAYS suppresses `is_visual_order` — OCR output is logical-order natively, applying bidi reversal corrupts it.
+4. TypeORM entities must NOT include the `embedding` vector column. Python owns vector writes; TypeORM reads via raw SQL when needed (lesson #157).
+5. Async chat: the status-poll endpoint is the ONLY path that advances message state; do not duplicate the polling logic elsewhere.
+6. AI Chat must always silently fall back when no legal context is available. NEVER show users an empty `<legal_context>` block or a "no laws found" warning.
