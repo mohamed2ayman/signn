@@ -186,15 +186,27 @@ export class ObligationsService {
     upcoming_7_days: number;
   }> {
     // Tenant-isolation Tier 2 — when contract_id is supplied, wall it.
-    // Without it the dashboard remains org-wide (no contract context, so
-    // tenant scoping doesn't apply at this layer — same posture as the
-    // sibling /upcoming and /overdue endpoints).
     if (contractId) {
       await this.contractAccess.findInOrg(contractId, orgId);
+    } else if (!orgId) {
+      // POST-#60 HOTFIX: no-org caller owns no contracts — zeroed dashboard,
+      // repo never queried, no existence leak (mirrors getUpcoming/getOverdue).
+      return { total: 0, by_status: {}, overdue_count: 0, upcoming_7_days: 0 };
     }
     const qb = this.obligationRepository.createQueryBuilder('obligation');
     if (contractId) {
       qb.where('obligation.contract_id = :contractId', { contractId });
+    } else {
+      // POST-#60 HOTFIX (Ayman ruling): the contract-less branch was a BUG —
+      // it ran UNFILTERED, aggregating every tenant's obligations for any
+      // authenticated caller. Org-scope it via the canonical join
+      // (obligation.contract → contract.project AND p.organization_id =
+      // :orgId) — same posture as getUpcoming/getOverdue above. S2c later
+      // subsumes this read into the scoped chokepoint; the predicate stays
+      // as defense-in-depth.
+      qb.leftJoin('obligation.contract', 'contract')
+        .leftJoin('contract.project', 'p')
+        .where('p.organization_id = :orgId', { orgId });
     }
 
     const obligations = await qb.getMany();

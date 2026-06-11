@@ -76,11 +76,51 @@ describe('ObligationsService — Tier 2 dashboard access wall', () => {
     });
   });
 
-  describe('getDashboard (no contract_id — org-wide path)', () => {
-    it('does NOT call findInOrg (no contract scope to check); qb runs unfiltered', async () => {
+  describe('getDashboard (no contract_id — org-scoped path)', () => {
+    // FLIPPED (post-#60 follow-up, Ayman ruling): this block previously
+    // asserted the contract-less branch ran UNFILTERED
+    // (`expect(qb.where).not.toHaveBeenCalled()`) — a green test encoding a
+    // platform-wide leak: any authenticated caller's dashboard aggregated
+    // EVERY tenant's obligation rows. The contract-less branch is a bug, not
+    // an intended platform view. It must be org-scoped via the canonical
+    // join (obligation.contract → contract.project AND
+    // p.organization_id = :orgId) — same posture as getUpcoming/getOverdue
+    // post-#60.
+    it('is org-scoped via the canonical contract→project join; foreign-org rows excluded', async () => {
+      // Simulated two-tenant store: getMany honours the org predicate the
+      // way Postgres would. If the join + predicate were applied with the
+      // caller's org, only org-A rows come back; otherwise the platform-wide
+      // set (including the foreign-org row) leaks — which is exactly what
+      // the pre-fix service did.
+      const ROW_IN_A = { id: 'obl-in-a', status: 'PENDING', due_date: null };
+      const ROW_FOREIGN = {
+        id: 'obl-in-b-foreign',
+        status: 'PENDING',
+        due_date: null,
+      };
+      let orgPredicateApplied = false;
+      let orgPredicateParam: string | undefined;
+      const recordClause = (clause: string, params?: any) => {
+        if (clause === 'p.organization_id = :orgId') {
+          orgPredicateApplied = true;
+          orgPredicateParam = params?.orgId;
+        }
+      };
       const qb: any = {
-        where: jest.fn().mockReturnThis(),
-        getMany: jest.fn().mockResolvedValue([]),
+        leftJoin: jest.fn().mockReturnThis(),
+        where: jest.fn((clause: string, params?: any) => {
+          recordClause(clause, params);
+          return qb;
+        }),
+        andWhere: jest.fn((clause: string, params?: any) => {
+          recordClause(clause, params);
+          return qb;
+        }),
+        getMany: jest.fn(async () =>
+          orgPredicateApplied && orgPredicateParam === ORG_A
+            ? [ROW_IN_A]
+            : [ROW_IN_A, ROW_FOREIGN],
+        ),
       };
       const obligationRepository = {
         createQueryBuilder: jest.fn().mockReturnValue(qb),
@@ -89,11 +129,39 @@ describe('ObligationsService — Tier 2 dashboard access wall', () => {
 
       const svc = build({ obligationRepository, contractAccess });
 
-      await svc.getDashboard(ORG_A);
+      const result = await svc.getDashboard(ORG_A);
+
+      // No contract to wall — findInOrg stays uncalled; the org gate lives
+      // in the query predicate instead.
       expect(contractAccess.findInOrg).not.toHaveBeenCalled();
-      // qb.where is only called when contract_id is supplied; in the
-      // org-wide path it remains untouched.
-      expect(qb.where).not.toHaveBeenCalled();
+      // Canonical org join (mirrors getUpcoming/getOverdue).
+      expect(qb.leftJoin).toHaveBeenCalledWith(
+        'obligation.contract',
+        'contract',
+      );
+      expect(qb.leftJoin).toHaveBeenCalledWith('contract.project', 'p');
+      expect(orgPredicateApplied).toBe(true);
+      expect(orgPredicateParam).toBe(ORG_A);
+      // Cross-tenant probe: the foreign-org obligation is NOT counted.
+      expect(result.total).toBe(1);
+      expect(result.by_status).toEqual({ PENDING: 1 });
+    });
+
+    it('no-org caller → zeroed dashboard, repo NEVER queried', async () => {
+      const obligationRepository = { createQueryBuilder: jest.fn() };
+      const contractAccess = { findInOrg: jest.fn() };
+
+      const svc = build({ obligationRepository, contractAccess });
+
+      await expect(svc.getDashboard(undefined as any)).resolves.toEqual({
+        total: 0,
+        by_status: {},
+        overdue_count: 0,
+        upcoming_7_days: 0,
+      });
+
+      expect(obligationRepository.createQueryBuilder).not.toHaveBeenCalled();
+      expect(contractAccess.findInOrg).not.toHaveBeenCalled();
     });
   });
 });

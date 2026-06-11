@@ -63,8 +63,9 @@ export class ObligationsController {
     @Query('contract_id') contractId?: string,
   ) {
     // Tenant-isolation Tier 2 — service walls `contract_id` against the
-    // caller's org when supplied. Org-wide dashboard (no contract_id) is
-    // unchanged.
+    // caller's org when supplied. POST-#60 HOTFIX: the contract-less branch
+    // is org-scoped in the service via the canonical contract→project join
+    // (it previously ran platform-wide — that was a bug, not a feature).
     return this.obligationsService.getDashboard(orgId, contractId);
   }
 
