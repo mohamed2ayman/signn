@@ -32,8 +32,18 @@ import { PermissionLevelGuard } from '../../../common/guards/permission-level.gu
  * obligation.contract_id, orgId) — 404 (never 403) on miss, no existence
  * leak. update/complete/delete inherit the gate by flowing through the
  * now-scoped findById; none of them does a bare repo load of its own.
- * Option B S2c later subsumes this into the scoped chokepoint; the wall
- * stays as defense-in-depth.
+ *
+ * S2c-2 RE-AIM: Option B subsumed the by-id LOAD into the scoped-repository
+ * chokepoint (ObligationScopedRepository.scopedFindByIdOrThrow — layer 2,
+ * consulted FIRST), with the findInOrg wall STAYING above it as layer 1 and
+ * the trailing findOne now a hydration on the validated id. Cross-tenant
+ * denial therefore fires at the SCOPED layer before the wall or hydration
+ * are reached — the cross-tenant assertions below were re-aimed accordingly
+ * (scoped consulted; wall/hydration NOT reached), while the happy paths
+ * assert BOTH layers are consulted (wall liveness preserved — two layers,
+ * never a swap). The scoped layer's own independent denial is proven in
+ * obligations.service.s2c2-scoped-wiring.spec.ts (mock) and
+ * obligations.service.s2c2-scoped-data-layer.spec.ts (real Postgres).
  */
 
 const ORG_A = '00000000-0000-0000-0000-00000000000a';
@@ -80,9 +90,34 @@ function buildRepo(row: any) {
   };
 }
 
+/**
+ * S2c-2 — scoped-repo mock with the real join semantics: a row resolves only
+ * when its contract belongs to the caller's org (the only in-org pair is
+ * CONTRACT_IN_A × ORG_A); otherwise the no-existence-leak 404.
+ */
+function buildScoped(row: any) {
+  return {
+    scopedFindByIdOrThrow: jest
+      .fn()
+      .mockImplementation(async (id: string, orgId: string) => {
+        if (
+          row &&
+          id === row.id &&
+          row.contract_id === CONTRACT_IN_A &&
+          orgId === ORG_A
+        ) {
+          return { ...row };
+        }
+        throw new NotFoundException('Obligation not found');
+      }),
+    scopedFind: jest.fn().mockResolvedValue([]),
+  };
+}
+
 /** Built as `any` so the spec runs (red) against the pre-fix signatures. */
-function buildService(repo: any, contractAccess: any): any {
-  return new ObligationsService(repo, contractAccess);
+function buildService(repo: any, contractAccess: any, scoped: any): any {
+  const Ctor: any = ObligationsService;
+  return new Ctor(repo, contractAccess, scoped);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -98,22 +133,29 @@ describe('ObligationsService — PRE-S2c walls on the /:id surface (G–J)', () 
     it('CROSS-TENANT READ: org-A caller, org-B obligation → 404, foreign row never returned', async () => {
       const repo = buildRepo(OBLIGATION_IN_B);
       const contractAccess = buildContractAccess();
-      const svc = buildService(repo, contractAccess);
+      const scoped = buildScoped(OBLIGATION_IN_B);
+      const svc = buildService(repo, contractAccess, scoped);
 
       await expect(
         svc.findById(OBLIGATION_ID, ORG_A),
       ).rejects.toBeInstanceOf(NotFoundException);
 
-      expect(contractAccess.findInOrg).toHaveBeenCalledWith(
-        CONTRACT_IN_B,
+      // S2c-2 re-aim: denial now fires at the SCOPED layer (layer 2,
+      // consulted first) — the wall and the hydration load are never
+      // reached, and the foreign row is never hydrated into memory.
+      expect(scoped.scopedFindByIdOrThrow).toHaveBeenCalledWith(
+        OBLIGATION_ID,
         ORG_A,
       );
+      expect(contractAccess.findInOrg).not.toHaveBeenCalled();
+      expect(repo.findOne).not.toHaveBeenCalled();
     });
 
     it('nonexistent obligation → 404, findInOrg never called', async () => {
       const repo = buildRepo(null);
       const contractAccess = buildContractAccess();
-      const svc = buildService(repo, contractAccess);
+      const scoped = buildScoped(null);
+      const svc = buildService(repo, contractAccess, scoped);
 
       await expect(
         svc.findById(OBLIGATION_ID, ORG_A),
@@ -122,26 +164,35 @@ describe('ObligationsService — PRE-S2c walls on the /:id surface (G–J)', () 
       expect(contractAccess.findInOrg).not.toHaveBeenCalled();
     });
 
-    it('no-org caller → 404, repo NEVER queried, findInOrg never called', async () => {
+    it('no-org caller → 404, repo NEVER queried, neither layer consulted', async () => {
       const repo = buildRepo(OBLIGATION_IN_B);
       const contractAccess = buildContractAccess();
-      const svc = buildService(repo, contractAccess);
+      const scoped = buildScoped(OBLIGATION_IN_B);
+      const svc = buildService(repo, contractAccess, scoped);
 
       await expect(
         svc.findById(OBLIGATION_ID, undefined),
       ).rejects.toBeInstanceOf(NotFoundException);
 
       expect(repo.findOne).not.toHaveBeenCalled();
+      expect(scoped.scopedFindByIdOrThrow).not.toHaveBeenCalled();
       expect(contractAccess.findInOrg).not.toHaveBeenCalled();
     });
 
-    it('happy path: in-org obligation returned, wall consulted', async () => {
+    it('happy path: in-org obligation returned, BOTH layers consulted (wall stays live)', async () => {
       const repo = buildRepo(OBLIGATION_IN_A);
       const contractAccess = buildContractAccess();
-      const svc = buildService(repo, contractAccess);
+      const scoped = buildScoped(OBLIGATION_IN_A);
+      const svc = buildService(repo, contractAccess, scoped);
 
       const result = await svc.findById(OBLIGATION_ID, ORG_A);
 
+      // Layer 2 — scoped tenancy load.
+      expect(scoped.scopedFindByIdOrThrow).toHaveBeenCalledWith(
+        OBLIGATION_ID,
+        ORG_A,
+      );
+      // Layer 1 — the #60 wall STAYS consulted on the in-org path.
       expect(contractAccess.findInOrg).toHaveBeenCalledWith(
         CONTRACT_IN_A,
         ORG_A,
@@ -156,7 +207,8 @@ describe('ObligationsService — PRE-S2c walls on the /:id surface (G–J)', () 
     it('CROSS-TENANT WRITE: org-A caller, org-B obligation → 404, nothing saved', async () => {
       const repo = buildRepo(OBLIGATION_IN_B);
       const contractAccess = buildContractAccess();
-      const svc = buildService(repo, contractAccess);
+      const scoped = buildScoped(OBLIGATION_IN_B);
+      const svc = buildService(repo, contractAccess, scoped);
 
       await expect(
         svc.update(OBLIGATION_ID, { description: 'hijacked' }, ORG_A),
@@ -168,7 +220,8 @@ describe('ObligationsService — PRE-S2c walls on the /:id surface (G–J)', () 
     it('happy path: in-org update saves through the gate', async () => {
       const repo = buildRepo(OBLIGATION_IN_A);
       const contractAccess = buildContractAccess();
-      const svc = buildService(repo, contractAccess);
+      const scoped = buildScoped(OBLIGATION_IN_A);
+      const svc = buildService(repo, contractAccess, scoped);
 
       await svc.update(OBLIGATION_ID, { description: 'amended' }, ORG_A);
 
@@ -188,7 +241,8 @@ describe('ObligationsService — PRE-S2c walls on the /:id surface (G–J)', () 
     it('CROSS-TENANT WRITE: org-A caller completing org-B obligation → 404, nothing saved', async () => {
       const repo = buildRepo(OBLIGATION_IN_B);
       const contractAccess = buildContractAccess();
-      const svc = buildService(repo, contractAccess);
+      const scoped = buildScoped(OBLIGATION_IN_B);
+      const svc = buildService(repo, contractAccess, scoped);
 
       await expect(
         svc.complete(OBLIGATION_ID, USER_ID, ORG_A, 'https://x.com/e.pdf'),
@@ -200,7 +254,8 @@ describe('ObligationsService — PRE-S2c walls on the /:id surface (G–J)', () 
     it('happy path: in-org completion saves through the gate', async () => {
       const repo = buildRepo(OBLIGATION_IN_A);
       const contractAccess = buildContractAccess();
-      const svc = buildService(repo, contractAccess);
+      const scoped = buildScoped(OBLIGATION_IN_A);
+      const svc = buildService(repo, contractAccess, scoped);
 
       await svc.complete(OBLIGATION_ID, USER_ID, ORG_A);
 
@@ -219,7 +274,8 @@ describe('ObligationsService — PRE-S2c walls on the /:id surface (G–J)', () 
     it('CROSS-TENANT DELETE: org-A caller deleting org-B obligation → 404, remove NEVER called', async () => {
       const repo = buildRepo(OBLIGATION_IN_B);
       const contractAccess = buildContractAccess();
-      const svc = buildService(repo, contractAccess);
+      const scoped = buildScoped(OBLIGATION_IN_B);
+      const svc = buildService(repo, contractAccess, scoped);
 
       await expect(
         svc.delete(OBLIGATION_ID, ORG_A),
@@ -232,7 +288,8 @@ describe('ObligationsService — PRE-S2c walls on the /:id surface (G–J)', () 
     it('happy path: in-org delete removes through the gate', async () => {
       const repo = buildRepo(OBLIGATION_IN_A);
       const contractAccess = buildContractAccess();
-      const svc = buildService(repo, contractAccess);
+      const scoped = buildScoped(OBLIGATION_IN_A);
+      const svc = buildService(repo, contractAccess, scoped);
 
       await svc.delete(OBLIGATION_ID, ORG_A);
 

@@ -23,6 +23,9 @@ import { ResolveObligationProjectMiddleware } from '../../common/middleware/reso
 // Tenant-isolation Tier 2 — ObligationsService now injects
 // ContractAccessService for the dashboard's optional contract_id filter.
 import { ContractsModule } from '../contracts/contracts.module';
+// Option B — S2c-2: ObligationsService loads its by-id mutation surface
+// through ObligationScopedRepository (data-layer tenancy chokepoint).
+import { ScopedRepositoryModule } from '../scoped-repository/scoped-repository.module';
 
 @Module({
   imports: [
@@ -40,6 +43,7 @@ import { ContractsModule } from '../contracts/contracts.module';
     NotificationsModule,
     forwardRef(() => ComplianceModule),
     ContractsModule,
+    ScopedRepositoryModule,
   ],
   controllers: [ObligationsController],
   providers: [

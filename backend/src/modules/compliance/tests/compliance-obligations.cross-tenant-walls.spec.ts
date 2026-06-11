@@ -117,10 +117,19 @@ const mockIcal = {
   build: jest.fn().mockReturnValue('BEGIN:VCALENDAR\nEND:VCALENDAR'),
 };
 
-// S2c-1: the ical list read now loads through the scoped repo (data-layer
-// tenancy UNDER the wall — two layers).
+// S2c-1: the ical list read loads through the scoped repo (data-layer
+// tenancy UNDER the wall — two layers). S2c-2: the by-id loads
+// (loadObligationInContract → PATCH / assign / unassign / evidence /
+// reminders) do too. `scopedDbRow` is the obligation row "in the database";
+// the via-contract OrThrow mock applies the REAL join semantics against it
+// (id match + contract pin + the only in-org pair being
+// CONTRACT_IN_A × ORG_A), so the cross-tenant and pin-mismatch probes deny
+// exactly like Postgres does (proven in
+// obligation-scoped.s2c1.repository.spec.ts).
+let scopedDbRow: any;
 const mockObligationScoped = {
   scopedFind: jest.fn(),
+  scopedFindByIdViaContractOrThrow: jest.fn(),
 };
 
 /**
@@ -149,6 +158,26 @@ function resetMocks(): void {
   mockObligationRepo.save.mockImplementation(async (o: any) => o);
   mockObligationRepo.find.mockResolvedValue([]);
   mockObligationScoped.scopedFind.mockResolvedValue([]);
+  // S2c-2 — the scoped by-id load with real join semantics (see above).
+  scopedDbRow = { ...OBLIGATION_IN_A };
+  mockObligationScoped.scopedFindByIdViaContractOrThrow.mockImplementation(
+    async (
+      id: string,
+      orgId: string,
+      options?: { contractIdOverride?: string },
+    ) => {
+      if (
+        scopedDbRow &&
+        scopedDbRow.id === id &&
+        scopedDbRow.contract_id === options?.contractIdOverride &&
+        scopedDbRow.contract_id === CONTRACT_IN_A &&
+        orgId === ORG_A
+      ) {
+        return { ...scopedDbRow };
+      }
+      throw new NotFoundException('Obligation not found');
+    },
+  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -211,7 +240,7 @@ describe('ComplianceObligationsController — PRE-S2c cross-tenant walls (org-A 
 
   describe('PATCH update — cross-tenant WRITE wall', () => {
     it('org-A caller patching an obligation on org-B contract → 404, nothing loaded, nothing saved', async () => {
-      mockObligationRepo.findOne.mockResolvedValue({ ...OBLIGATION_IN_B });
+      scopedDbRow = { ...OBLIGATION_IN_B };
 
       const res = await request(app.getHttpServer())
         .patch(`/contracts/${CONTRACT_IN_B}/obligations/${OBLIGATION_ID}`)
@@ -223,15 +252,21 @@ describe('ComplianceObligationsController — PRE-S2c cross-tenant walls (org-A 
         CONTRACT_IN_B,
         ORG_A,
       );
-      // Wall fires BEFORE any obligation load or write.
+      // Wall (layer 1) fires BEFORE any obligation load or write — neither
+      // the scoped by-id load (layer 2) nor the bare repo is reached.
+      expect(
+        mockObligationScoped.scopedFindByIdViaContractOrThrow,
+      ).not.toHaveBeenCalled();
       expect(mockObligationRepo.findOne).not.toHaveBeenCalled();
       expect(mockObligationRepo.save).not.toHaveBeenCalled();
     });
 
     it('in-org contract but obligation belongs to a DIFFERENT contract → 404, nothing saved', async () => {
       // Caller pins their own contract in the URL, but the obligation id
-      // actually lives on another contract (e.g. org-B's).
-      mockObligationRepo.findOne.mockResolvedValue({ ...OBLIGATION_IN_B });
+      // actually lives on another contract (e.g. org-B's). S2c-2: the pin
+      // lives INSIDE the scoped load (`obligation.contract_id =
+      // :contractIdOverride`) — the mismatch is a scoped-load 404.
+      scopedDbRow = { ...OBLIGATION_IN_B };
 
       const res = await request(app.getHttpServer())
         .patch(`/contracts/${CONTRACT_IN_A}/obligations/${OBLIGATION_ID}`)
@@ -239,10 +274,15 @@ describe('ComplianceObligationsController — PRE-S2c cross-tenant walls (org-A 
         .send({ status: 'COMPLETED' });
 
       expect(res.status).toBe(404);
+      expect(
+        mockObligationScoped.scopedFindByIdViaContractOrThrow,
+      ).toHaveBeenCalledWith(OBLIGATION_ID, ORG_A, {
+        contractIdOverride: CONTRACT_IN_A,
+      });
       expect(mockObligationRepo.save).not.toHaveBeenCalled();
     });
 
-    it('happy path: in-org contract + obligation-in-contract → 200, walls consulted, save runs', async () => {
+    it('happy path: in-org contract + obligation-in-contract → 200, BOTH layers consulted, save runs', async () => {
       const res = await request(app.getHttpServer())
         .patch(`/contracts/${CONTRACT_IN_A}/obligations/${OBLIGATION_ID}`)
         .set('Authorization', 'Bearer valid-token')
@@ -253,6 +293,14 @@ describe('ComplianceObligationsController — PRE-S2c cross-tenant walls (org-A 
         CONTRACT_IN_A,
         ORG_A,
       );
+      // S2c-2 — layer 2 of 2: the by-id load carries the CALLER's org into
+      // the scoped repo. The legacy bare findOne is GONE from this path.
+      expect(
+        mockObligationScoped.scopedFindByIdViaContractOrThrow,
+      ).toHaveBeenCalledWith(OBLIGATION_ID, ORG_A, {
+        contractIdOverride: CONTRACT_IN_A,
+      });
+      expect(mockObligationRepo.findOne).not.toHaveBeenCalled();
       expect(mockObligationRepo.save).toHaveBeenCalledWith(
         expect.objectContaining({
           id: OBLIGATION_ID,
@@ -276,7 +324,8 @@ describe('ComplianceObligationsController — PRE-S2c cross-tenant walls (org-A 
     });
 
     it('in-org contract but obligation on a different contract → 404, service never reached', async () => {
-      mockObligationRepo.findOne.mockResolvedValue({ ...OBLIGATION_IN_B });
+      // S2c-2: the pin mismatch is a scoped-load 404.
+      scopedDbRow = { ...OBLIGATION_IN_B };
 
       const res = await request(app.getHttpServer())
         .post(`/contracts/${CONTRACT_IN_A}/obligations/${OBLIGATION_ID}/assign`)
@@ -287,7 +336,7 @@ describe('ComplianceObligationsController — PRE-S2c cross-tenant walls (org-A 
       expect(mockObligationSvc.assignUser).not.toHaveBeenCalled();
     });
 
-    it('happy path: walls pass → 201, service called', async () => {
+    it('happy path: walls pass → 201, service called with the caller org (S2c-2)', async () => {
       mockObligationSvc.assignUser.mockResolvedValue({
         obligation_id: OBLIGATION_ID,
         user_id: ASSIGNEE_USER_ID,
@@ -303,10 +352,12 @@ describe('ComplianceObligationsController — PRE-S2c cross-tenant walls (org-A 
         CONTRACT_IN_A,
         ORG_A,
       );
+      // S2c-2: the service-layer scoped load needs the caller org.
       expect(mockObligationSvc.assignUser).toHaveBeenCalledWith(
         OBLIGATION_ID,
         ASSIGNEE_USER_ID,
         USER_ID,
+        ORG_A,
       );
     });
   });
@@ -326,7 +377,8 @@ describe('ComplianceObligationsController — PRE-S2c cross-tenant walls (org-A 
     });
 
     it('in-org contract but obligation on a different contract → 404, service never reached', async () => {
-      mockObligationRepo.findOne.mockResolvedValue({ ...OBLIGATION_IN_B });
+      // S2c-2: the pin mismatch is a scoped-load 404.
+      scopedDbRow = { ...OBLIGATION_IN_B };
 
       const res = await request(app.getHttpServer())
         .delete(
@@ -338,7 +390,7 @@ describe('ComplianceObligationsController — PRE-S2c cross-tenant walls (org-A 
       expect(mockObligationSvc.unassignUser).not.toHaveBeenCalled();
     });
 
-    it('happy path: walls pass → 204, service called', async () => {
+    it('happy path: walls pass → 204, service called with the caller org (S2c-2)', async () => {
       mockObligationSvc.unassignUser.mockResolvedValue(undefined);
 
       const res = await request(app.getHttpServer())
@@ -351,6 +403,7 @@ describe('ComplianceObligationsController — PRE-S2c cross-tenant walls (org-A 
       expect(mockObligationSvc.unassignUser).toHaveBeenCalledWith(
         OBLIGATION_ID,
         ASSIGNEE_USER_ID,
+        ORG_A,
       );
     });
   });
@@ -371,7 +424,8 @@ describe('ComplianceObligationsController — PRE-S2c cross-tenant walls (org-A 
     });
 
     it('in-org contract but obligation on a different contract → 404, service never reached', async () => {
-      mockObligationRepo.findOne.mockResolvedValue({ ...OBLIGATION_IN_B });
+      // S2c-2: the pin mismatch is a scoped-load 404.
+      scopedDbRow = { ...OBLIGATION_IN_B };
 
       const res = await request(app.getHttpServer())
         .put(`/contracts/${CONTRACT_IN_A}/obligations/${OBLIGATION_ID}/evidence`)
@@ -382,7 +436,7 @@ describe('ComplianceObligationsController — PRE-S2c cross-tenant walls (org-A 
       expect(mockObligationSvc.updateEvidence).not.toHaveBeenCalled();
     });
 
-    it('happy path: walls pass → 200, service called', async () => {
+    it('happy path: walls pass → 200, service called with the caller org (S2c-2)', async () => {
       mockObligationSvc.updateEvidence.mockResolvedValue({
         ...OBLIGATION_IN_A,
         evidence_url: EVIDENCE_URL,
@@ -397,6 +451,7 @@ describe('ComplianceObligationsController — PRE-S2c cross-tenant walls (org-A 
       expect(mockObligationSvc.updateEvidence).toHaveBeenCalledWith(
         OBLIGATION_ID,
         EVIDENCE_URL,
+        ORG_A,
       );
     });
   });
@@ -450,10 +505,11 @@ describe('ComplianceObligationsController — PRE-S2c cross-tenant walls (org-A 
 
   describe('GET reminders — org gate on top of the existing contract pin', () => {
     it('org-A caller reading reminder logs on org-B contract (pin matches) → 404, logs never read', async () => {
-      // The pre-fix pin (obligation.contract_id === :contractId) PASSES here —
-      // the obligation genuinely belongs to org-B's contract. Only the org
-      // wall can stop this read.
-      mockObligationRepo.findOne.mockResolvedValue({ ...OBLIGATION_IN_B });
+      // The contract pin alone WOULD pass here — the obligation genuinely
+      // belongs to org-B's contract named in the URL. The wall (layer 1)
+      // stops it first; were it bypassed, the scoped parent load (layer 2)
+      // would deny on the org gate too.
+      scopedDbRow = { ...OBLIGATION_IN_B };
       mockObligationSvc.getReminderLogs.mockResolvedValue([]);
 
       const res = await request(app.getHttpServer())
@@ -466,7 +522,7 @@ describe('ComplianceObligationsController — PRE-S2c cross-tenant walls (org-A 
       expect(mockObligationSvc.getReminderLogs).not.toHaveBeenCalled();
     });
 
-    it('happy path: in-org contract + pin matches → 200', async () => {
+    it('happy path: in-org contract + pin matches → 200, parent loads through the SCOPED repo', async () => {
       mockObligationSvc.getReminderLogs.mockResolvedValue([]);
 
       const res = await request(app.getHttpServer())
@@ -479,6 +535,18 @@ describe('ComplianceObligationsController — PRE-S2c cross-tenant walls (org-A 
       expect(mockContractAccess.findInOrg).toHaveBeenCalledWith(
         CONTRACT_IN_A,
         ORG_A,
+      );
+      // S2c-2 — two-step: the PARENT obligation is validated through the
+      // scoped repo; the grandchild log list is keyed by the validated id.
+      // The legacy bare findOne is GONE from this path.
+      expect(
+        mockObligationScoped.scopedFindByIdViaContractOrThrow,
+      ).toHaveBeenCalledWith(OBLIGATION_ID, ORG_A, {
+        contractIdOverride: CONTRACT_IN_A,
+      });
+      expect(mockObligationRepo.findOne).not.toHaveBeenCalled();
+      expect(mockObligationSvc.getReminderLogs).toHaveBeenCalledWith(
+        OBLIGATION_ID,
       );
     });
   });
@@ -527,6 +595,9 @@ describe('ComplianceObligationsController — PRE-S2c walls (no-org caller)', ()
 
     expect(res.status).toBe(404);
     expect(mockContractAccess.findInOrg).not.toHaveBeenCalled();
+    expect(
+      mockObligationScoped.scopedFindByIdViaContractOrThrow,
+    ).not.toHaveBeenCalled();
     expect(mockObligationRepo.save).not.toHaveBeenCalled();
   });
 

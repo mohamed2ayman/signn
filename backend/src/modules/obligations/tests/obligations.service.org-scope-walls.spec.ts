@@ -45,7 +45,10 @@ function buildQb(rows: any[] = []): any {
 const noopContractAccess = { findInOrg: jest.fn() } as any;
 
 function buildService(repo: any): ObligationsService {
-  return new ObligationsService(repo, noopContractAccess);
+  // S2c-2 — third ctor dep (scoped repo). The upcoming/overdue QB paths
+  // under test never touch it; a noop satisfies the signature.
+  const Ctor: any = ObligationsService;
+  return new Ctor(repo, noopContractAccess, {} as any);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

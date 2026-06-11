@@ -171,8 +171,32 @@ const mockObligationRepo = {
 
 const mockIcal = { build: jest.fn().mockReturnValue('BEGIN:VCALENDAR\nEND:VCALENDAR') };
 
-// S2c-1 — the ical list read now loads through the scoped repo.
-const mockObligationScoped = { scopedFind: jest.fn().mockResolvedValue([]) };
+// S2c-1 — the ical list read loads through the scoped repo. S2c-2 — the
+// by-id loads (loadObligationInContract) do too: the via-contract OrThrow
+// mock carries the REAL semantics (resolve only the in-org id + contract-pin
+// match; otherwise the no-existence-leak 404), so the happy paths resolve
+// and the 404 probes below override per-test.
+const mockObligationScoped = {
+  scopedFind: jest.fn().mockResolvedValue([]),
+  scopedFindByIdViaContractOrThrow: jest
+    .fn()
+    .mockImplementation(
+      async (
+        id: string,
+        orgId: string,
+        options?: { contractIdOverride?: string },
+      ) => {
+        if (
+          id === OBLIGATION_ID &&
+          orgId === ORG_ID &&
+          options?.contractIdOverride === CONTRACT_ID
+        ) {
+          return { ...MOCK_OBLIGATION };
+        }
+        throw new NotFoundException('Obligation not found');
+      },
+    ),
+};
 
 // S0 — listForContract now walls contractId via ContractAccessService.findInOrg.
 // Default to resolving so the existing happy-path tests pass (MOCK_USER is in ORG_ID).
@@ -272,8 +296,17 @@ describe('ComplianceObligationService — Phase 7.1 unit', () => {
     find: jest.fn(),
   };
 
+  // S2c-2 — the scoped by-id tenancy load consulted by
+  // assignUser/unassignUser/updateEvidence. Default: resolve (in-org).
+  const mockScopedUnit = {
+    scopedFindByIdOrThrow: jest.fn(),
+  };
+
   beforeEach(async () => {
     jest.clearAllMocks();
+    mockScopedUnit.scopedFindByIdOrThrow.mockResolvedValue({
+      ...MOCK_OBLIGATION,
+    });
     const moduleRef = await Test.createTestingModule({
       providers: [
         ComplianceObligationService,
@@ -293,6 +326,7 @@ describe('ComplianceObligationService — Phase 7.1 unit', () => {
           provide: getRepositoryToken(ObligationReminderLog),
           useValue: mockReminderLogRepoUnit,
         },
+        { provide: ObligationScopedRepository, useValue: mockScopedUnit },
       ],
     }).compile();
 
@@ -311,6 +345,12 @@ describe('ComplianceObligationService — Phase 7.1 unit', () => {
         OBLIGATION_ID,
         ASSIGNEE_USER_ID,
         USER_ID,
+        ORG_ID,
+      );
+      // S2c-2 — the scoped tenancy load is consulted before the write.
+      expect(mockScopedUnit.scopedFindByIdOrThrow).toHaveBeenCalledWith(
+        OBLIGATION_ID,
+        ORG_ID,
       );
       expect(mockAssigneeRepo.create).toHaveBeenCalledWith({
         obligation_id: OBLIGATION_ID,
@@ -327,7 +367,7 @@ describe('ComplianceObligationService — Phase 7.1 unit', () => {
       mockAssigneeRepo.findOne.mockResolvedValue(MOCK_ASSIGNEE);
 
       await expect(
-        service.assignUser(OBLIGATION_ID, ASSIGNEE_USER_ID, USER_ID),
+        service.assignUser(OBLIGATION_ID, ASSIGNEE_USER_ID, USER_ID, ORG_ID),
       ).rejects.toThrow(ConflictException);
     });
   });
@@ -339,9 +379,14 @@ describe('ComplianceObligationService — Phase 7.1 unit', () => {
       mockAssigneeRepo.delete.mockResolvedValue({ affected: 1 });
 
       await expect(
-        service.unassignUser(OBLIGATION_ID, ASSIGNEE_USER_ID),
+        service.unassignUser(OBLIGATION_ID, ASSIGNEE_USER_ID, ORG_ID),
       ).resolves.toBeUndefined();
 
+      // S2c-2 — the scoped tenancy load is consulted before the delete.
+      expect(mockScopedUnit.scopedFindByIdOrThrow).toHaveBeenCalledWith(
+        OBLIGATION_ID,
+        ORG_ID,
+      );
       expect(mockAssigneeRepo.delete).toHaveBeenCalledWith({
         obligation_id: OBLIGATION_ID,
         user_id: ASSIGNEE_USER_ID,
@@ -352,7 +397,7 @@ describe('ComplianceObligationService — Phase 7.1 unit', () => {
       mockAssigneeRepo.delete.mockResolvedValue({ affected: 0 });
 
       await expect(
-        service.unassignUser(OBLIGATION_ID, 'non-existent-user'),
+        service.unassignUser(OBLIGATION_ID, 'non-existent-user', ORG_ID),
       ).rejects.toThrow(NotFoundException);
     });
   });
@@ -360,25 +405,34 @@ describe('ComplianceObligationService — Phase 7.1 unit', () => {
   // ── updateEvidence ─────────────────────────────────────────────────────
 
   describe('updateEvidence()', () => {
-    it('updates evidence_url and returns the saved obligation', async () => {
+    it('updates evidence_url on the SCOPED-loaded row and returns the saved obligation', async () => {
       const url = 'https://storage.sign.com/evidence.pdf';
       const updated = { ...MOCK_OBLIGATION, evidence_url: url };
-      mockObligationRepoUnit.findOne.mockResolvedValue({ ...MOCK_OBLIGATION });
       mockObligationRepoUnit.save.mockResolvedValue(updated);
 
-      const result = await service.updateEvidence(OBLIGATION_ID, url);
+      const result = await service.updateEvidence(OBLIGATION_ID, url, ORG_ID);
+      // S2c-2 re-aim: the load is the scoped by-id (the bare findOne is gone).
+      expect(mockScopedUnit.scopedFindByIdOrThrow).toHaveBeenCalledWith(
+        OBLIGATION_ID,
+        ORG_ID,
+      );
+      expect(mockObligationRepoUnit.findOne).not.toHaveBeenCalled();
       expect(mockObligationRepoUnit.save).toHaveBeenCalledWith(
         expect.objectContaining({ evidence_url: url }),
       );
       expect(result.evidence_url).toBe(url);
     });
 
-    it('throws NotFoundException when obligation does not exist', async () => {
-      mockObligationRepoUnit.findOne.mockResolvedValue(null);
+    it('throws NotFoundException when obligation does not exist (scoped load denies)', async () => {
+      // S2c-2 re-aim: the miss/cross-org denial comes from the scoped load.
+      mockScopedUnit.scopedFindByIdOrThrow.mockRejectedValue(
+        new NotFoundException('Obligation not found'),
+      );
 
       await expect(
-        service.updateEvidence('bad-uuid', 'https://example.com/ev.pdf'),
+        service.updateEvidence('bad-uuid', 'https://example.com/ev.pdf', ORG_ID),
       ).rejects.toThrow(NotFoundException);
+      expect(mockObligationRepoUnit.save).not.toHaveBeenCalled();
     });
   });
 
@@ -804,7 +858,8 @@ describe('ComplianceObligationsController — Phase 7.1 HTTP', () => {
     const path = `/contracts/${CONTRACT_ID}/obligations/${OBLIGATION_ID}/reminders`;
 
     it('returns 200 with reminder logs ordered by sent_at DESC', async () => {
-      mockObligationRepo.findOne.mockResolvedValue(MOCK_OBLIGATION);
+      // S2c-2: the parent obligation loads through the scoped repo (default
+      // mock resolves the in-org id + contract-pin match).
       mockObligationSvc.getReminderLogs.mockResolvedValue(MOCK_REMINDER_LOGS);
 
       const res = await request(app.getHttpServer())
@@ -829,7 +884,6 @@ describe('ComplianceObligationsController — Phase 7.1 HTTP', () => {
     });
 
     it('returns 200 with empty array when no reminders have been sent', async () => {
-      mockObligationRepo.findOne.mockResolvedValue(MOCK_OBLIGATION);
       mockObligationSvc.getReminderLogs.mockResolvedValue([]);
 
       const res = await request(app.getHttpServer())
@@ -846,7 +900,10 @@ describe('ComplianceObligationsController — Phase 7.1 HTTP', () => {
     });
 
     it('returns 404 when obligation does not exist', async () => {
-      mockObligationRepo.findOne.mockResolvedValue(null);
+      // S2c-2 re-aim: the miss now surfaces from the scoped parent load.
+      mockObligationScoped.scopedFindByIdViaContractOrThrow.mockRejectedValueOnce(
+        new NotFoundException('Obligation not found'),
+      );
 
       const res = await request(app.getHttpServer())
         .get(path)
@@ -857,11 +914,13 @@ describe('ComplianceObligationsController — Phase 7.1 HTTP', () => {
     });
 
     it('returns 404 when obligation belongs to a different contract', async () => {
-      // Obligation exists but is linked to a different contract
-      mockObligationRepo.findOne.mockResolvedValue({
-        ...MOCK_OBLIGATION,
-        contract_id: 'different-contract-uuid',
-      });
+      // S2c-2 re-aim: the contract pin lives INSIDE the scoped load
+      // (`obligation.contract_id = :contractIdOverride`) — a mismatched
+      // parent is a scoped-load 404, proven against real Postgres in
+      // obligation-scoped.s2c1.repository.spec.ts (override probes).
+      mockObligationScoped.scopedFindByIdViaContractOrThrow.mockRejectedValueOnce(
+        new NotFoundException('Obligation not found'),
+      );
 
       const res = await request(app.getHttpServer())
         .get(path)

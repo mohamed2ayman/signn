@@ -271,6 +271,48 @@ describeReal('Option B S2c-1 — Obligation scoped repository (real Postgres)', 
   });
 
   // ───────────────────────────────────────────────────────────────────────
+  // 4b. S2c-2 — the OrThrow forms the mutation wiring consumes
+  //     (ObligationsService.findById and the controller's
+  //     loadObligationInContract). REUSED from the S1 base; proven here in
+  //     the exact 404 shape the wired callers rely on.
+  // ───────────────────────────────────────────────────────────────────────
+  describe('S2c-2 — OrThrow by-id forms (wired by the mutation loads)', () => {
+    it('in-org: scopedFindByIdOrThrow returns the row', async () => {
+      const row = await obligationScoped.scopedFindByIdOrThrow(obligationA1, orgA);
+      expect(row.id).toBe(obligationA1);
+    });
+
+    it("cross-org: scopedFindByIdOrThrow throws the no-existence-leak 404 ('Obligation not found')", async () => {
+      await expect(
+        obligationScoped.scopedFindByIdOrThrow(obligationA1, orgB),
+      ).rejects.toMatchObject({
+        status: 404,
+        message: 'Obligation not found',
+      });
+    });
+
+    it('in-org + matching pin: scopedFindByIdViaContractOrThrow returns the row', async () => {
+      const row = await obligationScoped.scopedFindByIdViaContractOrThrow(
+        obligationA1,
+        orgA,
+        { contractIdOverride: contractA },
+      );
+      expect(row.id).toBe(obligationA1);
+    });
+
+    it('mismatched contract pin: scopedFindByIdViaContractOrThrow → 404 (the loadObligationInContract pin)', async () => {
+      await expect(
+        obligationScoped.scopedFindByIdViaContractOrThrow(obligationA1, orgA, {
+          contractIdOverride: contractB,
+        }),
+      ).rejects.toMatchObject({
+        status: 404,
+        message: 'Obligation not found',
+      });
+    });
+  });
+
+  // ───────────────────────────────────────────────────────────────────────
   // 5. COEXISTENCE — the #60 wall and scopedFind deny INDEPENDENTLY.
   // ───────────────────────────────────────────────────────────────────────
   describe('coexistence with the independent findInOrg wall (#60)', () => {

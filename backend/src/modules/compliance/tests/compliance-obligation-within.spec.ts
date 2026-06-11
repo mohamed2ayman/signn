@@ -23,10 +23,11 @@ function makeQbSpy() {
 
 function serviceWith(qb: any) {
   const obligationRepo: any = { createQueryBuilder: jest.fn(() => qb) };
-  // Only obligationRepo is used by getPortfolio; the other three repos are
-  // never touched on this path.
+  // Only obligationRepo is used by getPortfolio; the other repos and the
+  // S2c-2 scoped repo are never touched on this path.
   return new ComplianceObligationService(
     obligationRepo,
+    {} as any,
     {} as any,
     {} as any,
     {} as any,

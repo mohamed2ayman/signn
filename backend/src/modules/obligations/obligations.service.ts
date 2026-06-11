@@ -4,7 +4,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { Obligation, ObligationStatus } from '../../database/entities';
 import { CreateObligationDto, UpdateObligationDto } from './dto';
 // Tenant-isolation Tier 2 — wall the dashboard's optional contract_id
@@ -13,6 +13,11 @@ import { CreateObligationDto, UpdateObligationDto } from './dto';
 // PLG-entangled (Class-C) and moves to Option B — see
 // docs/tenant-isolation-tier2.md.
 import { ContractAccessService } from '../contracts/services/contract-access.service';
+// Option B — S2c-2: the by-id loads (findById and its update/complete/delete
+// inheritors) and the findByContract tenancy step go through the
+// scoped-repository chokepoint (canonical obligation→contract→project→org),
+// UNDER the #60/S0 walls — two checks, two layers.
+import { ObligationScopedRepository } from '../scoped-repository/obligation-scoped.repository';
 
 @Injectable()
 export class ObligationsService {
@@ -23,55 +28,81 @@ export class ObligationsService {
     private readonly obligationRepository: Repository<Obligation>,
     // Tenant-isolation Tier 2 — cross-tenant probe → 404 from findInOrg.
     private readonly contractAccess: ContractAccessService,
+    // S2c-2 — data-layer tenancy load for the by-id mutation surface.
+    private readonly obligationScoped: ObligationScopedRepository,
   ) {}
 
   async findByContract(
     contractId: string,
     orgId: string,
   ): Promise<Obligation[]> {
-    // INTERIM (S0): Class-C bypass-role wall. Option B will absorb this via the
-    //  scoped repository chokepoint — this findInOrg is the stop-gap until then.
-    // PLG bypass-roles (OWNER_ADMIN/SYSTEM_ADMIN/OPERATIONS) skip the project-
-    // membership check, and this load was unscoped — so a foreign contract's
-    // obligations leaked regardless of role. findInOrg applies the org gate at
-    // the data load; cross-tenant → 404.
+    // WALL (persona — S0, layer 1): Class-C bypass-role wall, unchanged.
     if (!orgId) {
       // No-org caller cannot own contracts. 404 (not 403) — no existence leak.
       throw new NotFoundException('Contract not found');
     }
     await this.contractAccess.findInOrg(contractId, orgId);
+    // SCOPED LIST (tenancy — Option B S2c-2, layer 2), STEP 1 of the
+    // two-step: the org-safe row set comes from the scoped chokepoint, which
+    // independently re-applies the canonical obligation→contract→project→org
+    // join. Cross-tenant rows are excluded even if the wall above were
+    // bypassed.
+    const scoped = await this.obligationScoped.scopedFind(
+      { contract_id: contractId },
+      orgId,
+    );
+    if (scoped.length === 0) {
+      return [];
+    }
+    // STEP 2 — hydration on the tenancy-validated ids ONLY. The nested
+    // 'contract_clause.clause' relation exceeds scopedFind's single-level
+    // relation support; the two-step keeps the scoped base minimal instead
+    // of growing it (S2c-2 plan). Keying by the validated ids (never by raw
+    // request input) carries the tenancy proof into the hydrate.
     return this.obligationRepository.find({
-      where: { contract_id: contractId },
+      where: { id: In(scoped.map((o) => o.id)) },
       relations: ['contract_clause', 'contract_clause.clause', 'completer'],
       order: { due_date: 'ASC' },
     });
   }
 
   /**
-   * PRE-S2c HOTFIX: org wall on the /:id surface. Pre-fix this load had no
-   * org anywhere — Phase 7.15 permission gating is NOT a tenancy boundary
-   * (bypass roles skip it), so an org-A caller could read/mutate/DELETE an
-   * org-B obligation by id (update/complete/delete all feed off this load).
-   * After loading by id, the obligation's contract is resolved in the
-   * caller's org via findInOrg — cross-tenant → 404 (never 403, no
-   * existence leak). S2c absorbs this into the scoped chokepoint; the wall
-   * stays as defense-in-depth.
+   * By-id load for the /:id surface and its mutation inheritors
+   * (update/complete/delete).
+   *
+   * Option B S2c-2 — two checks, two layers:
+   *   layer 2 (tenancy, data load): scopedFindByIdOrThrow resolves the
+   *     obligation through the canonical obligation→contract→project→org
+   *     join. Cross-org → 404 (never 403, no existence leak) BEFORE any
+   *     foreign field is hydrated.
+   *   layer 1 (persona, #60 wall): findInOrg on the scoped row's contract
+   *     STAYS as defense-in-depth, unchanged.
+   * The trailing findOne is HYDRATION on the tenancy-validated id — the
+   * nested 'contract_clause.clause' relation exceeds the scoped base's
+   * single-level relation support (same two-step as findByContract).
    */
   async findById(id: string, orgId: string): Promise<Obligation> {
     if (!orgId) {
       // No-org caller cannot own contracts. 404 — no existence leak.
       throw new NotFoundException('Obligation not found');
     }
+    // SCOPED LOAD (tenancy — layer 2): cross-org denied at the data layer.
+    const scoped = await this.obligationScoped.scopedFindByIdOrThrow(id, orgId);
+
+    // WALL (persona — #60, layer 1): stays as defense-in-depth.
+    await this.contractAccess.findInOrg(scoped.contract_id, orgId);
+
+    // HYDRATION on the validated id (nested relations — see doc comment).
     const obligation = await this.obligationRepository.findOne({
       where: { id },
       relations: ['contract', 'contract_clause', 'contract_clause.clause', 'completer'],
     });
 
     if (!obligation) {
+      // Row vanished between the scoped load and the hydrate (race) — same
+      // no-existence-leak 404.
       throw new NotFoundException('Obligation not found');
     }
-
-    await this.contractAccess.findInOrg(obligation.contract_id, orgId);
 
     return obligation;
   }
@@ -85,8 +116,10 @@ export class ObligationsService {
     return this.obligationRepository.save(obligation);
   }
 
-  // PRE-S2c HOTFIX: update/complete/delete inherit the org wall by flowing
-  // through the now-scoped findById — none of them does a bare repo load.
+  // S2c-2: update/complete/delete inherit BOTH layers (the scoped tenancy
+  // load and the #60 wall) by flowing through findById — none of them does a
+  // bare repo load of its own. The save/remove below operate on the
+  // scoped-then-hydrated row.
 
   async update(
     id: string,
