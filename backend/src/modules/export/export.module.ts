@@ -5,7 +5,6 @@ import {
   ContractClause,
   Clause,
   RiskAnalysis,
-  Obligation,
 } from '../../database/entities';
 import { ExportController } from './export.controller';
 import { ExportService } from './export.service';
@@ -13,6 +12,10 @@ import { ExportService } from './export.service';
 // (pdf / risk-report / summary) via ContractAccessService.findInOrg.
 // ContractsModule exports ContractAccessService.
 import { ContractsModule } from '../contracts/contracts.module';
+// Option B — S2c-1: the summary's obligations read loads through the
+// Obligation scoped repository (data-layer tenancy chokepoint). The bare
+// Obligation forFeature registration is gone with it.
+import { ScopedRepositoryModule } from '../scoped-repository/scoped-repository.module';
 
 @Module({
   imports: [
@@ -21,9 +24,9 @@ import { ContractsModule } from '../contracts/contracts.module';
       ContractClause,
       Clause,
       RiskAnalysis,
-      Obligation,
     ]),
     ContractsModule,
+    ScopedRepositoryModule,
   ],
   controllers: [ExportController],
   providers: [ExportService],

@@ -27,6 +27,10 @@ import { Obligation, ObligationStatus, PermissionLevel, User } from '../../../da
 import { IcalExportService } from '../services/ical-export.service';
 import { ComplianceObligationService } from '../services/compliance-obligation.service';
 import { ContractAccessService } from '../../contracts/services/contract-access.service';
+// Option B — S2c-1: the ical LIST read loads through the scoped-repository
+// tenancy chokepoint (canonical obligation→contract→project→org), UNDER the
+// #60 assertContractInCallerOrg wall — two checks, two layers.
+import { ObligationScopedRepository } from '../../scoped-repository/obligation-scoped.repository';
 import { ObligationFiltersDto } from '../dto/obligation-filters.dto';
 import { UpdateObligationInlineDto } from '../dto/update-obligation-inline.dto';
 import { AssignObligationDto } from '../dto/assign-obligation.dto';
@@ -47,6 +51,10 @@ export class ComplianceObligationsController {
     private readonly obligationSvc: ComplianceObligationService,
     // INTERIM (S0): Class-C bypass-role wall for listForContract.
     private readonly contractAccess: ContractAccessService,
+    // S2c-1: data-layer tenancy load for the ical read. The remaining bare
+    // obligationRepo uses (listForContract QB, the by-id loads) are S2c-2 /
+    // the lint bucket.
+    private readonly obligationScoped: ObligationScopedRepository,
   ) {}
 
   /**
@@ -141,12 +149,17 @@ export class ComplianceObligationsController {
     @CurrentUser() user: User,
     @Res() res: Response,
   ): Promise<void> {
-    // PRE-S2c HOTFIX: org wall on the unwalled list read.
+    // WALL (persona) — #60's org wall on the list read, unchanged (layer 1).
     await this.assertContractInCallerOrg(contractId, user);
-    const items = await this.obligationRepo.find({
-      where: { contract_id: contractId },
-      relations: ['contract'],
-    });
+    // SCOPED LIST (tenancy — Option B S2c-1, layer 2): the rows load through
+    // the scoped repo, which independently re-applies the canonical
+    // obligation→contract→project→org join. The wall above guarantees
+    // user.organization_id is non-null here.
+    const items = await this.obligationScoped.scopedFind(
+      { contract_id: contractId },
+      user.organization_id,
+      { relations: ['contract'] },
+    );
     const name = items[0]?.contract?.name
       ? `SIGN — ${items[0].contract.name}`
       : 'SIGN Obligations';

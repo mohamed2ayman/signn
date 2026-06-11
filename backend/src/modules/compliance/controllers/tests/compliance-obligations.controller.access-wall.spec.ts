@@ -6,6 +6,7 @@ import { ComplianceObligationsController } from '../compliance-obligations.contr
 import { IcalExportService } from '../../services/ical-export.service';
 import { ComplianceObligationService } from '../../services/compliance-obligation.service';
 import { ContractAccessService } from '../../../contracts/services/contract-access.service';
+import { ObligationScopedRepository } from '../../../scoped-repository/obligation-scoped.repository';
 import { JwtAuthGuard } from '../../../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../../../common/guards/roles.guard';
 import { PermissionLevelGuard } from '../../../../common/guards/permission-level.guard';
@@ -79,6 +80,8 @@ describe('ComplianceObligationsController.listForContract — Class-C wall (S0)'
         { provide: IcalExportService, useValue: {} },
         { provide: ComplianceObligationService, useValue: {} },
         { provide: ContractAccessService, useValue: contractAccess },
+        // S2c-1 — new controller dep (ical scoped load); not exercised here.
+        { provide: ObligationScopedRepository, useValue: { scopedFind: jest.fn() } },
       ],
     })
       .overrideGuard(JwtAuthGuard)

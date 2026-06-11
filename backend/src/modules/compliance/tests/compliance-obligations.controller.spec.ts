@@ -17,6 +17,7 @@ import { ComplianceObligationsController } from '../controllers/compliance-oblig
 import { ComplianceObligationService } from '../services/compliance-obligation.service';
 import { IcalExportService } from '../services/ical-export.service';
 import { ContractAccessService } from '../../contracts/services/contract-access.service';
+import { ObligationScopedRepository } from '../../scoped-repository/obligation-scoped.repository';
 import {
   Obligation,
   ObligationAssignee,
@@ -170,6 +171,9 @@ const mockObligationRepo = {
 
 const mockIcal = { build: jest.fn().mockReturnValue('BEGIN:VCALENDAR\nEND:VCALENDAR') };
 
+// S2c-1 — the ical list read now loads through the scoped repo.
+const mockObligationScoped = { scopedFind: jest.fn().mockResolvedValue([]) };
+
 // S0 — listForContract now walls contractId via ContractAccessService.findInOrg.
 // Default to resolving so the existing happy-path tests pass (MOCK_USER is in ORG_ID).
 const mockContractAccess = { findInOrg: jest.fn().mockResolvedValue({}) };
@@ -189,6 +193,7 @@ async function buildApp(): Promise<INestApplication> {
         provide: getRepositoryToken(Obligation),
         useValue: mockObligationRepo,
       },
+      { provide: ObligationScopedRepository, useValue: mockObligationScoped },
     ],
   })
     .overrideGuard(JwtAuthGuard)
@@ -222,6 +227,7 @@ async function buildLowPermApp(): Promise<INestApplication> {
         provide: getRepositoryToken(Obligation),
         useValue: mockObligationRepo,
       },
+      { provide: ObligationScopedRepository, useValue: mockObligationScoped },
     ],
   })
     .overrideGuard(JwtAuthGuard)

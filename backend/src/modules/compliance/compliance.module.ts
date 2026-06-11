@@ -36,6 +36,9 @@ import { AiModule } from '../ai/ai.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { ContractsModule } from '../contracts/contracts.module';
 import { MeteringModule } from '../metering/metering.module';
+// Option B — S2c-1: ObligationScopedRepository for the ical list read
+// (data-layer tenancy chokepoint under the #60 wall).
+import { ScopedRepositoryModule } from '../scoped-repository/scoped-repository.module';
 import { PermissionLevelGuard } from '../../common/guards/permission-level.guard';
 import { ResolveObligationProjectMiddleware } from '../../common/middleware/resolve-obligation-project.middleware';
 
@@ -72,6 +75,8 @@ import { ResolveObligationProjectMiddleware } from '../../common/middleware/reso
     // MeteringService (the engine authority). The compliance run is the
     // first surface to call reserve / commit / release.
     MeteringModule,
+    // Option B — S2c-1: scoped obligation loads (ical read; more in S2c-2).
+    ScopedRepositoryModule,
   ],
   controllers: [
     ComplianceController,

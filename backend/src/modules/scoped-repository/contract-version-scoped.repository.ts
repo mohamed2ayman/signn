@@ -24,6 +24,13 @@ export class ContractVersionScopedRepository extends ScopedContractRepository<Co
   protected readonly notFoundMessage = 'Contract version not found';
   protected readonly entityAlias = 'version';
 
+  // S2c-1 allowlist guard: the S2a wired reads (getVersions /
+  // getMilestoneVersions) filter on contract_id + is_milestone only.
+  protected readonly allowedFilterKeys: ReadonlySet<string> = new Set([
+    'contract_id',
+    'is_milestone',
+  ]);
+
   constructor(
     @InjectRepository(ContractVersion)
     repo: Repository<ContractVersion>,

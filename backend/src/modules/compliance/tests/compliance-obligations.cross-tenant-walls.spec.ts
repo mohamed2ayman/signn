@@ -15,6 +15,7 @@ import { ComplianceObligationsController } from '../controllers/compliance-oblig
 import { ComplianceObligationService } from '../services/compliance-obligation.service';
 import { IcalExportService } from '../services/ical-export.service';
 import { ContractAccessService } from '../../contracts/services/contract-access.service';
+import { ObligationScopedRepository } from '../../scoped-repository/obligation-scoped.repository';
 import {
   Obligation,
   ObligationStatus,
@@ -116,6 +117,12 @@ const mockIcal = {
   build: jest.fn().mockReturnValue('BEGIN:VCALENDAR\nEND:VCALENDAR'),
 };
 
+// S2c-1: the ical list read now loads through the scoped repo (data-layer
+// tenancy UNDER the wall — two layers).
+const mockObligationScoped = {
+  scopedFind: jest.fn(),
+};
+
 /**
  * Mimics the real findInOrg semantics: the ONLY in-org pair is
  * (CONTRACT_IN_A, ORG_A); anything else (cross-tenant, unknown contract)
@@ -141,6 +148,7 @@ function resetMocks(): void {
   mockObligationRepo.findOne.mockResolvedValue({ ...OBLIGATION_IN_A });
   mockObligationRepo.save.mockImplementation(async (o: any) => o);
   mockObligationRepo.find.mockResolvedValue([]);
+  mockObligationScoped.scopedFind.mockResolvedValue([]);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -166,6 +174,7 @@ async function buildApp(user: Partial<User>): Promise<INestApplication> {
       { provide: IcalExportService, useValue: mockIcal },
       { provide: ContractAccessService, useValue: mockContractAccess },
       { provide: getRepositoryToken(Obligation), useValue: mockObligationRepo },
+      { provide: ObligationScopedRepository, useValue: mockObligationScoped },
     ],
   })
     .overrideGuard(JwtAuthGuard)
@@ -394,19 +403,22 @@ describe('ComplianceObligationsController — PRE-S2c cross-tenant walls (org-A 
 
   // ── Route C: GET ical ────────────────────────────────────────────────────
 
-  describe('GET ical — cross-tenant wall', () => {
+  describe('GET ical — cross-tenant wall + scoped load underneath (S2c-1)', () => {
     it('org-A caller exporting org-B contract obligations → 404, nothing loaded', async () => {
       const res = await request(app.getHttpServer())
         .get(`/contracts/${CONTRACT_IN_B}/obligations/ical`)
         .set('Authorization', 'Bearer valid-token');
 
       expect(res.status).toBe(404);
+      // Neither the legacy bare repo NOR the scoped repo is reached — the
+      // wall short-circuits first (layer 1 of 2).
       expect(mockObligationRepo.find).not.toHaveBeenCalled();
+      expect(mockObligationScoped.scopedFind).not.toHaveBeenCalled();
       expect(mockIcal.build).not.toHaveBeenCalled();
     });
 
-    it('happy path: in-org contract → 200 text/calendar, wall consulted', async () => {
-      mockObligationRepo.find.mockResolvedValue([
+    it('happy path: in-org contract → 200 text/calendar, wall consulted, rows load through the SCOPED repo with the caller org', async () => {
+      mockObligationScoped.scopedFind.mockResolvedValue([
         { ...OBLIGATION_IN_A, contract: { name: 'Contract A' } },
       ]);
 
@@ -419,6 +431,17 @@ describe('ComplianceObligationsController — PRE-S2c cross-tenant walls (org-A 
         CONTRACT_IN_A,
         ORG_A,
       );
+      // S2c-1 — layer 2 of 2: the data load itself carries the CALLER's org
+      // into the scoped repo (the wall above could be bypassed and the
+      // scoped repo would still exclude foreign rows — proven against real
+      // Postgres in obligation-scoped.s2c1.repository.spec.ts).
+      expect(mockObligationScoped.scopedFind).toHaveBeenCalledWith(
+        { contract_id: CONTRACT_IN_A },
+        ORG_A,
+        { relations: ['contract'] },
+      );
+      // The legacy bare repo read is GONE from this path.
+      expect(mockObligationRepo.find).not.toHaveBeenCalled();
       expect(res.text).toContain('BEGIN:VCALENDAR');
     });
   });

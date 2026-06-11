@@ -85,7 +85,9 @@ export class ExportController {
   ) {
     await this.assertContractInCallerOrg(id, orgId);
     const fmt = format === 'json' ? 'json' : 'pdf';
-    const result = await this.exportService.generateContractSummary(id, fmt);
+    // S2c-1: the caller's org rides into the service so the obligations read
+    // loads through the scoped repo (data-layer tenancy under the wall above).
+    const result = await this.exportService.generateContractSummary(id, orgId, fmt);
 
     if (fmt === 'json') {
       res.json(result);
