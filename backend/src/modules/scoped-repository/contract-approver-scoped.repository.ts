@@ -19,6 +19,12 @@ export class ContractApproverScopedRepository extends ScopedContractRepository<C
   protected readonly notFoundMessage = 'Contract approver not found';
   protected readonly entityAlias = 'approver';
 
+  // S2c-1 allowlist guard: the spec'd list reads filter on contract_id only.
+  // Widening is a deliberate per-bucket decision.
+  protected readonly allowedFilterKeys: ReadonlySet<string> = new Set([
+    'contract_id',
+  ]);
+
   constructor(
     @InjectRepository(ContractApprover)
     repo: Repository<ContractApprover>,

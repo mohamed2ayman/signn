@@ -33,6 +33,11 @@ export class ContractCommentScopedRepository extends ScopedContractRepository<Co
   protected readonly notFoundMessage = 'Comment not found';
   protected readonly entityAlias = 'comment';
 
+  // S2c-1 allowlist guard: the comment LIST path is unwired (S2b wired the
+  // by-id mutation loads only) — EMPTY set; any filter key throws until a
+  // bucket deliberately wires one.
+  protected readonly allowedFilterKeys: ReadonlySet<string> = new Set();
+
   constructor(
     @InjectRepository(ContractComment)
     repo: Repository<ContractComment>,

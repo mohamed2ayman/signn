@@ -5,8 +5,12 @@ import {
   Contract,
   ContractClause,
   RiskAnalysis,
-  Obligation,
 } from '../../database/entities';
+// Option B — S2c-1: the obligations read in generateContractSummary routes
+// through the scoped-repository tenancy chokepoint (canonical
+// obligation→contract→project→org). The controller's #60/Tier-2 findInOrg
+// wall STAYS in front — two checks, two layers.
+import { ObligationScopedRepository } from '../scoped-repository/obligation-scoped.repository';
 
 // pdfmake types - use any for flexibility since pdfmake types vary by version
 type TDocumentDefinitions = any;
@@ -24,8 +28,10 @@ export class ExportService {
     private readonly contractRepository: Repository<Contract>,
     @InjectRepository(RiskAnalysis)
     private readonly riskAnalysisRepository: Repository<RiskAnalysis>,
-    @InjectRepository(Obligation)
-    private readonly obligationRepository: Repository<Obligation>,
+    // S2c-1: scoped repo replaces the bare Obligation repository — the only
+    // obligation read in this service is the summary's, now org-gated at the
+    // data layer.
+    private readonly obligationScoped: ObligationScopedRepository,
   ) {}
 
   /**
@@ -216,6 +222,7 @@ export class ExportService {
    */
   async generateContractSummary(
     contractId: string,
+    orgId: string,
     format: 'pdf' | 'json' = 'pdf',
   ): Promise<Buffer | Record<string, any>> {
     const contract = await this.contractRepository.findOne({
@@ -231,9 +238,14 @@ export class ExportService {
       where: { contract_id: contractId },
     });
 
-    const obligations = await this.obligationRepository.find({
-      where: { contract_id: contractId },
-    });
+    // WALL (persona) — the controller's Tier-2 findInOrg already authorized
+    // contractId for this caller. SCOPED LIST (tenancy — Option B S2c-1) —
+    // the obligation rows load through the scoped repo, which independently
+    // re-applies obligation→contract→project→org. Both layers fire.
+    const obligations = await this.obligationScoped.scopedFind(
+      { contract_id: contractId },
+      orgId,
+    );
 
     const summary = {
       contract: {

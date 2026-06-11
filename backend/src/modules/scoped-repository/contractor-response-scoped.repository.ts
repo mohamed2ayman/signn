@@ -21,6 +21,12 @@ export class ContractorResponseScopedRepository extends ScopedContractRepository
   protected readonly notFoundMessage = 'Contractor response not found';
   protected readonly entityAlias = 'response';
 
+  // S2c-1 allowlist guard: the spec'd list reads filter on contract_id only.
+  // Widening is a deliberate per-bucket decision.
+  protected readonly allowedFilterKeys: ReadonlySet<string> = new Set([
+    'contract_id',
+  ]);
+
   constructor(
     @InjectRepository(ContractorResponse)
     repo: Repository<ContractorResponse>,

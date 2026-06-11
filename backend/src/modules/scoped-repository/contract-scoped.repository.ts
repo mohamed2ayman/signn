@@ -28,6 +28,10 @@ export class ContractScopedRepository extends ScopedContractRepository<Contract>
   /** Alias used by {@link buildScopedQuery} and {@link buildScopedListQuery}. */
   protected readonly entityAlias = 'contract';
 
+  // S2c-1 allowlist guard: no scopedFind caller is wired on the Contract ROOT
+  // — EMPTY set; any filter key throws until a bucket deliberately wires one.
+  protected readonly allowedFilterKeys: ReadonlySet<string> = new Set();
+
   constructor(
     @InjectRepository(Contract)
     contractRepository: Repository<Contract>,

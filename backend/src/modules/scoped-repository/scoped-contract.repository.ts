@@ -172,6 +172,29 @@ export abstract class ScopedContractRepository<T extends ObjectLiteral> {
   protected abstract readonly entityAlias: string;
 
   /**
+   * S2c-1 (Ayman ratified) — per-entity ALLOWLIST of filter KEYS that
+   * {@link scopedFind} may accept.
+   *
+   * scopedFind interpolates each filter KEY into the SQL string (the VALUES
+   * are always bound as parameters; keys cannot be). Today every key at every
+   * call site is a code-controlled literal, but later buckets wire more
+   * callers — so the key is guarded structurally: a key not in the subclass's
+   * allowlist throws BEFORE any interpolation happens.
+   *
+   * Declare ONLY the keys the subclass's wired reads actually filter on.
+   * Widening a subclass's allowlist is a deliberate per-bucket decision,
+   * never a drive-by. Subclasses with no wired scopedFind caller declare an
+   * EMPTY set (any filter key throws until a bucket wires one).
+   *
+   * Scope note: this guard is the filter-KEY gate only. Operator/range
+   * support and a query-builder wrapper are explicitly NOT this mechanism's
+   * job — complex reads stay raw QB → the lint bucket (Q3). The `relations` /
+   * `order` identifiers remain code-controlled literals at every call site
+   * (same posture filter keys had pre-S2c-1).
+   */
+  protected abstract readonly allowedFilterKeys: ReadonlySet<string>;
+
+  /**
    * Build the org-scoped LIST query base: a fresh query builder aliased
    * {@link entityAlias}, with the child→parent-contract→project join and the
    * org filter ALWAYS applied — the SAME join hops as {@link buildScopedQuery},
@@ -209,8 +232,21 @@ export abstract class ScopedContractRepository<T extends ObjectLiteral> {
     const qb = this.buildScopedListQuery(orgId);
 
     for (const [key, value] of Object.entries(filter)) {
+      // ALLOWLIST GUARD (S2c-1) — the filter KEY is interpolated into SQL
+      // below; reject anything the subclass has not explicitly declared,
+      // BEFORE the key touches the query string.
+      if (!this.allowedFilterKeys.has(key)) {
+        throw new Error(
+          `scopedFind: filter key "${key}" is not allowlisted for ` +
+            `${this.constructor.name} (allowed: ` +
+            `[${[...this.allowedFilterKeys].join(', ')}]). Filter keys are ` +
+            `interpolated into SQL — declare the key in the subclass's ` +
+            `allowedFilterKeys before filtering on it.`,
+        );
+      }
       // Column ref on the entity alias; value bound as a parameter. The org
-      // gate lives on the `project` alias and is untouched by these predicates.
+      // gate lives on the subclass's gate alias and is untouched by these
+      // predicates.
       qb.andWhere(`${this.entityAlias}.${key} = :flt_${key}`, {
         [`flt_${key}`]: value,
       });
