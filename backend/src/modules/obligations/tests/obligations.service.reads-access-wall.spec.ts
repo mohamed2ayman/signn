@@ -24,7 +24,10 @@ describe('ObligationsService — Tier 2 dashboard access wall', () => {
     obligationRepository?: any;
     contractAccess: any;
   }): ObligationsService {
-    return new ObligationsService(obligationRepository ?? noop, contractAccess);
+    // S2c-2 — third ctor dep (scoped repo). The dashboard paths under test
+    // never touch it; a noop satisfies the signature.
+    const Ctor: any = ObligationsService;
+    return new Ctor(obligationRepository ?? noop, contractAccess, noop);
   }
 
   describe('getDashboard (with contract_id supplied)', () => {

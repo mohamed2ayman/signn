@@ -51,9 +51,11 @@ export class ComplianceObligationsController {
     private readonly obligationSvc: ComplianceObligationService,
     // INTERIM (S0): Class-C bypass-role wall for listForContract.
     private readonly contractAccess: ContractAccessService,
-    // S2c-1: data-layer tenancy load for the ical read. The remaining bare
-    // obligationRepo uses (listForContract QB, the by-id loads) are S2c-2 /
-    // the lint bucket.
+    // S2c-1: data-layer tenancy load for the ical read. S2c-2: the by-id
+    // loads (loadObligationInContract → PATCH update / assign / unassign /
+    // evidence / reminders) also load through it. The remaining bare
+    // obligationRepo uses (the listForContract/listForProject QBs, the PATCH
+    // save) stay raw per Q3 — the lint bucket.
     private readonly obligationScoped: ObligationScopedRepository,
   ) {}
 
@@ -74,22 +76,25 @@ export class ComplianceObligationsController {
   }
 
   /**
-   * PRE-S2c HOTFIX: obligation-in-contract pin. Loads the obligation and
-   * verifies it belongs to the contract already authorized by
-   * assertContractInCallerOrg. 404 (never 403) on miss or mismatch — no
-   * existence leak. Always call AFTER the org wall, never instead of it.
+   * Obligation-in-contract load. Option B S2c-2: loads through the
+   * scoped-repository chokepoint (layer 2) — the canonical
+   * obligation→contract→project→org join with the URL contract as a
+   * NARROWING pin (`obligation.contract_id = :contractIdOverride`; the pin
+   * can never widen or change the caller's org). Replaces the bare findOne +
+   * manual pin. 404 (never 403) on miss, contract mismatch, or cross-org —
+   * no existence leak. Always call AFTER the org wall (layer 1), never
+   * instead of it; the wall guarantees `orgId` is non-null here.
    */
   private async loadObligationInContract(
     obligationId: string,
     contractId: string,
+    orgId: string,
   ): Promise<Obligation> {
-    const obligation = await this.obligationRepo.findOne({
-      where: { id: obligationId },
-    });
-    if (!obligation || obligation.contract_id !== contractId) {
-      throw new NotFoundException('Obligation not found');
-    }
-    return obligation;
+    return this.obligationScoped.scopedFindByIdViaContractOrThrow(
+      obligationId,
+      orgId,
+      { contractIdOverride: contractId },
+    );
   }
 
   // ─── Existing Phase 3.4 endpoints ────────────────────────────────────────
@@ -124,11 +129,16 @@ export class ComplianceObligationsController {
     @Body() body: UpdateObligationInlineDto,
     @CurrentUser() user: User,
   ): Promise<Obligation> {
-    // PRE-S2c HOTFIX: cross-tenant WRITE wall — contract-in-org, then
-    // obligation-in-contract. S2c absorbs this load into the scoped repo;
-    // the wall stays as defense-in-depth.
+    // WALL (persona — #60, layer 1): contract-in-org, unchanged.
     await this.assertContractInCallerOrg(contractId, user);
-    const o = await this.loadObligationInContract(id, contractId);
+    // SCOPED LOAD (tenancy — Option B S2c-2, layer 2): by-id through the
+    // canonical org join with the contract pin. The save below operates on
+    // the scoped-loaded row.
+    const o = await this.loadObligationInContract(
+      id,
+      contractId,
+      user.organization_id,
+    );
     Object.assign(o, body);
     if (
       (body.status === ObligationStatus.MET ||
@@ -218,10 +228,19 @@ export class ComplianceObligationsController {
     @Body() body: AssignObligationDto,
     @CurrentUser() user: User,
   ) {
-    // PRE-S2c HOTFIX: cross-tenant wall — contract-in-org + obligation pin.
+    // WALL (#60, layer 1) + SCOPED LOAD (S2c-2, layer 2).
     await this.assertContractInCallerOrg(contractId, user);
-    await this.loadObligationInContract(obligationId, contractId);
-    return this.obligationSvc.assignUser(obligationId, body.user_id, user.id);
+    await this.loadObligationInContract(
+      obligationId,
+      contractId,
+      user.organization_id,
+    );
+    return this.obligationSvc.assignUser(
+      obligationId,
+      body.user_id,
+      user.id,
+      user.organization_id,
+    );
   }
 
   /**
@@ -238,10 +257,18 @@ export class ComplianceObligationsController {
     @Param('userId') userId: string,
     @CurrentUser() user: User,
   ): Promise<void> {
-    // PRE-S2c HOTFIX: cross-tenant wall — contract-in-org + obligation pin.
+    // WALL (#60, layer 1) + SCOPED LOAD (S2c-2, layer 2).
     await this.assertContractInCallerOrg(contractId, user);
-    await this.loadObligationInContract(obligationId, contractId);
-    await this.obligationSvc.unassignUser(obligationId, userId);
+    await this.loadObligationInContract(
+      obligationId,
+      contractId,
+      user.organization_id,
+    );
+    await this.obligationSvc.unassignUser(
+      obligationId,
+      userId,
+      user.organization_id,
+    );
   }
 
   /**
@@ -257,10 +284,18 @@ export class ComplianceObligationsController {
     @Body() body: UpdateEvidenceDto,
     @CurrentUser() user: User,
   ): Promise<Obligation> {
-    // PRE-S2c HOTFIX: cross-tenant wall — contract-in-org + obligation pin.
+    // WALL (#60, layer 1) + SCOPED LOAD (S2c-2, layer 2).
     await this.assertContractInCallerOrg(contractId, user);
-    await this.loadObligationInContract(obligationId, contractId);
-    return this.obligationSvc.updateEvidence(obligationId, body.evidence_url);
+    await this.loadObligationInContract(
+      obligationId,
+      contractId,
+      user.organization_id,
+    );
+    return this.obligationSvc.updateEvidence(
+      obligationId,
+      body.evidence_url,
+      user.organization_id,
+    );
   }
 
   // ─── Phase 7.2-C — Reminder history ──────────────────────────────────────
@@ -277,17 +312,18 @@ export class ComplianceObligationsController {
     @Param('obligationId') obligationId: string,
     @CurrentUser() user: User,
   ) {
-    // PRE-S2c HOTFIX: org gate on top of the pre-existing contract pin —
-    // the pin alone passes when the obligation genuinely belongs to the
-    // foreign contract named in the URL.
+    // WALL (#60, layer 1): contract-in-org, unchanged.
     await this.assertContractInCallerOrg(contractId, user);
-    const obligation = await this.obligationRepo.findOne({
-      where: { id: obligationId },
-    });
-    if (!obligation || obligation.contract_id !== contractId) {
-      throw new NotFoundException('Obligation not found');
-    }
-    const logs = await this.obligationSvc.getReminderLogs(obligationId);
+    // SCOPED PARENT LOAD (S2c-2, layer 2): org + contract proven on the
+    // PARENT obligation via the scoped chokepoint; the grandchild log list
+    // below is then keyed by the VALIDATED obligation id (two-step — no
+    // grandchild scoped subclass, per the S2c plan).
+    const obligation = await this.loadObligationInContract(
+      obligationId,
+      contractId,
+      user.organization_id,
+    );
+    const logs = await this.obligationSvc.getReminderLogs(obligation.id);
     return logs.map((l) => ({
       id: l.id,
       reminder_type: l.reminder_type,

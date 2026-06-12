@@ -16,6 +16,11 @@ import {
 } from '../../../database/entities';
 import { ObligationReminderLog } from '../../../database/entities/obligation-reminder-log.entity';
 import { ObligationPortfolioFiltersDto } from '../dto/obligation-portfolio-filters.dto';
+// Option B — S2c-2: assignUser/unassignUser/updateEvidence load the
+// obligation through the scoped-repository tenancy chokepoint (canonical
+// obligation→contract→project→org) BEFORE mutating — UNDER the #60
+// controller walls. Two checks, two layers.
+import { ObligationScopedRepository } from '../../scoped-repository/obligation-scoped.repository';
 
 /** Shape returned by getCalendar(). */
 export interface CalendarEvent {
@@ -73,6 +78,8 @@ export class ComplianceObligationService {
     private readonly assigneeRepo: Repository<ObligationAssignee>,
     @InjectRepository(ObligationReminderLog)
     private readonly reminderLogRepo: Repository<ObligationReminderLog>,
+    // S2c-2 — data-layer tenancy load before assignee/evidence mutations.
+    private readonly obligationScoped: ObligationScopedRepository,
   ) {}
 
   // ─── Phase 3.4 — Layer-4 obligation extraction ───────────────────────────
@@ -131,12 +138,19 @@ export class ComplianceObligationService {
   /**
    * Assign a user to an obligation.
    * Throws ConflictException (409) if the user is already assigned.
+   *
+   * S2c-2: the obligation resolves through the scoped chokepoint (layer 2)
+   * before the assignee write — previously this method mutated with NO
+   * obligation load at all. The #60 controller wall stays above (layer 1).
    */
   async assignUser(
     obligationId: string,
     userId: string,
     assignedBy: string,
+    orgId: string,
   ): Promise<ObligationAssignee> {
+    // SCOPED LOAD (tenancy) — cross-org → 404, no existence leak.
+    await this.obligationScoped.scopedFindByIdOrThrow(obligationId, orgId);
     const existing = await this.assigneeRepo.findOne({
       where: { obligation_id: obligationId, user_id: userId },
     });
@@ -156,8 +170,17 @@ export class ComplianceObligationService {
   /**
    * Remove a user's assignment from an obligation.
    * Throws NotFoundException (404) if the assignee row does not exist.
+   *
+   * S2c-2: scoped obligation load before the assignee delete (this method
+   * previously mutated with NO obligation load). Wall stays above.
    */
-  async unassignUser(obligationId: string, userId: string): Promise<void> {
+  async unassignUser(
+    obligationId: string,
+    userId: string,
+    orgId: string,
+  ): Promise<void> {
+    // SCOPED LOAD (tenancy) — cross-org → 404, no existence leak.
+    await this.obligationScoped.scopedFindByIdOrThrow(obligationId, orgId);
     const result = await this.assigneeRepo.delete({
       obligation_id: obligationId,
       user_id: userId,
@@ -169,15 +192,20 @@ export class ComplianceObligationService {
 
   /**
    * Attach a evidence URL to an obligation (e.g. a completion document).
+   *
+   * S2c-2: the bare findOne is replaced by the scoped by-id load — the save
+   * operates on the scoped-loaded row. Wall stays above.
    */
   async updateEvidence(
     obligationId: string,
     evidenceUrl: string,
+    orgId: string,
   ): Promise<Obligation> {
-    const o = await this.obligationRepo.findOne({
-      where: { id: obligationId },
-    });
-    if (!o) throw new NotFoundException('Obligation not found');
+    // SCOPED LOAD (tenancy) — cross-org → 404, no existence leak.
+    const o = await this.obligationScoped.scopedFindByIdOrThrow(
+      obligationId,
+      orgId,
+    );
     o.evidence_url = evidenceUrl;
     return this.obligationRepo.save(o);
   }
