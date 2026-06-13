@@ -67,7 +67,9 @@ export class ExportController {
     @Res() res: Response,
   ) {
     await this.assertContractInCallerOrg(id, orgId);
-    const buffer = await this.exportService.generateRiskReport(id);
+    // S2d: the caller's org rides into the service so the risk read loads
+    // through the scoped repo (data-layer tenancy under the wall above).
+    const buffer = await this.exportService.generateRiskReport(id, orgId);
     res.set({
       'Content-Type': 'application/pdf',
       'Content-Disposition': `attachment; filename="risk-report-${id}.pdf"`,

@@ -8,6 +8,7 @@ import {
   ContractVersion,
   ContractorResponse,
   Obligation,
+  RiskAnalysis,
 } from '../../database/entities';
 import { ContractScopedRepository } from './contract-scoped.repository';
 import { ContractApproverScopedRepository } from './contract-approver-scoped.repository';
@@ -15,6 +16,7 @@ import { ContractCommentScopedRepository } from './contract-comment-scoped.repos
 import { ContractVersionScopedRepository } from './contract-version-scoped.repository';
 import { ContractorResponseScopedRepository } from './contractor-response-scoped.repository';
 import { ObligationScopedRepository } from './obligation-scoped.repository';
+import { RiskScopedRepository } from './risk-scoped.repository';
 
 /**
  * Option B — the scoped-repository module: the data-layer tenancy chokepoint.
@@ -42,6 +44,7 @@ import { ObligationScopedRepository } from './obligation-scoped.repository';
       ContractApprover,
       ContractComment,
       Obligation,
+      RiskAnalysis,
     ]),
   ],
   providers: [
@@ -51,6 +54,7 @@ import { ObligationScopedRepository } from './obligation-scoped.repository';
     ContractApproverScopedRepository,
     ContractCommentScopedRepository,
     ObligationScopedRepository,
+    RiskScopedRepository,
   ],
   exports: [
     ContractScopedRepository,
@@ -59,6 +63,7 @@ import { ObligationScopedRepository } from './obligation-scoped.repository';
     ContractApproverScopedRepository,
     ContractCommentScopedRepository,
     ObligationScopedRepository,
+    RiskScopedRepository,
   ],
 })
 export class ScopedRepositoryModule {}

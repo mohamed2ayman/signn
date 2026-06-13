@@ -27,8 +27,8 @@ describe('ExportService.generateContractSummary — S2c-1 scoped obligations rea
   const CONTRACT_A = '11111111-1111-1111-1111-1111111111a1';
 
   let contractRepo: any;
-  let riskRepo: any;
   let obligationScoped: any;
+  let riskScoped: any;
   let service: ExportService;
 
   beforeEach(() => {
@@ -44,14 +44,16 @@ describe('ExportService.generateContractSummary — S2c-1 scoped obligations rea
         contract_clauses: [],
       }),
     };
-    riskRepo = { find: jest.fn().mockResolvedValue([]) };
     obligationScoped = {
       scopedFind: jest.fn().mockResolvedValue([
         { id: 'ob-1', status: 'OVERDUE' },
         { id: 'ob-2', status: 'PENDING' },
       ]),
     };
-    service = new ExportService(contractRepo, riskRepo, obligationScoped);
+    // S2d: the risk read also routes through a scoped repo now (ctor order:
+    // contractRepo, obligationScoped, riskScoped — the bare risk repo is gone).
+    riskScoped = { scopedFind: jest.fn().mockResolvedValue([]) };
+    service = new ExportService(contractRepo, obligationScoped, riskScoped);
   });
 
   it('routes the obligations read through scopedFind with the CALLER org (json path)', async () => {

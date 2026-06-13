@@ -4,13 +4,17 @@ import { Repository } from 'typeorm';
 import {
   Contract,
   ContractClause,
-  RiskAnalysis,
 } from '../../database/entities';
 // Option B — S2c-1: the obligations read in generateContractSummary routes
 // through the scoped-repository tenancy chokepoint (canonical
 // obligation→contract→project→org). The controller's #60/Tier-2 findInOrg
 // wall STAYS in front — two checks, two layers.
 import { ObligationScopedRepository } from '../scoped-repository/obligation-scoped.repository';
+// Option B — S2d: the two per-contract RISK reads (generateRiskReport,
+// generateContractSummary) route through the RiskAnalysis scoped repository
+// (canonical risk→contract→project→org), replacing the bare RiskAnalysis
+// repository. The controller's findInOrg wall STAYS in front — two layers.
+import { RiskScopedRepository } from '../scoped-repository/risk-scoped.repository';
 
 // pdfmake types - use any for flexibility since pdfmake types vary by version
 type TDocumentDefinitions = any;
@@ -26,12 +30,13 @@ export class ExportService {
   constructor(
     @InjectRepository(Contract)
     private readonly contractRepository: Repository<Contract>,
-    @InjectRepository(RiskAnalysis)
-    private readonly riskAnalysisRepository: Repository<RiskAnalysis>,
-    // S2c-1: scoped repo replaces the bare Obligation repository — the only
-    // obligation read in this service is the summary's, now org-gated at the
-    // data layer.
+    // S2c-1: scoped repo replaces the bare Obligation repository — the
+    // summary's obligation read is org-gated at the data layer.
     private readonly obligationScoped: ObligationScopedRepository,
+    // S2d: scoped repo replaces the bare RiskAnalysis repository — both risk
+    // reads (risk-report + summary) are org-gated at the data layer, under the
+    // export controller's findInOrg wall.
+    private readonly riskScoped: RiskScopedRepository,
   ) {}
 
   /**
@@ -117,7 +122,7 @@ export class ExportService {
   /**
    * Generate a risk analysis report PDF
    */
-  async generateRiskReport(contractId: string): Promise<Buffer> {
+  async generateRiskReport(contractId: string, orgId: string): Promise<Buffer> {
     const contract = await this.contractRepository.findOne({
       where: { id: contractId },
       relations: ['project'],
@@ -127,10 +132,15 @@ export class ExportService {
       throw new NotFoundException('Contract not found');
     }
 
-    const risks = await this.riskAnalysisRepository.find({
-      where: { contract_id: contractId },
-      order: { created_at: 'DESC' },
-    });
+    // WALL (persona) — the controller's Tier-2 findInOrg already authorized
+    // contractId for this caller. SCOPED LIST (tenancy — Option B S2d) — the
+    // risk rows load through the scoped repo (canonical
+    // risk→contract→project→org); both layers fire.
+    const risks = await this.riskScoped.scopedFind(
+      { contract_id: contractId },
+      orgId,
+      { order: { created_at: 'DESC' } },
+    );
 
     const highCount = risks.filter((r) => r.risk_level === 'HIGH').length;
     const mediumCount = risks.filter((r) => r.risk_level === 'MEDIUM').length;
@@ -234,14 +244,19 @@ export class ExportService {
       throw new NotFoundException('Contract not found');
     }
 
-    const risks = await this.riskAnalysisRepository.find({
-      where: { contract_id: contractId },
-    });
-
     // WALL (persona) — the controller's Tier-2 findInOrg already authorized
-    // contractId for this caller. SCOPED LIST (tenancy — Option B S2c-1) —
-    // the obligation rows load through the scoped repo, which independently
-    // re-applies obligation→contract→project→org. Both layers fire.
+    // contractId for this caller. SCOPED LIST (tenancy — Option B S2d) — the
+    // risk rows load through the scoped repo (canonical
+    // risk→contract→project→org), replacing the former bare find. Both layers
+    // fire; mirrors the obligation scoped read below.
+    const risks = await this.riskScoped.scopedFind(
+      { contract_id: contractId },
+      orgId,
+    );
+
+    // SCOPED LIST (tenancy — Option B S2c-1) — the obligation rows load through
+    // the scoped repo, which independently re-applies
+    // obligation→contract→project→org. Both layers fire.
     const obligations = await this.obligationScoped.scopedFind(
       { contract_id: contractId },
       orgId,
