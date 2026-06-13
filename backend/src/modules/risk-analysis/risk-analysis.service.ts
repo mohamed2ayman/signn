@@ -4,13 +4,17 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { RiskAnalysis, RiskRule, RiskCategory } from '../../database/entities';
 import { CreateRiskRuleDto, UpdateRiskStatusDto } from './dto';
 import { CollaborationGateway } from '../collaboration/collaboration.gateway';
 // Tenant-isolation Tier 2 — wall the two contractId-keyed reads
 // (getByContract + getRiskSummary) via ContractAccessService.findInOrg.
 import { ContractAccessService } from '../contracts/services/contract-access.service';
+// Option B — S2d: the two per-contract risk LIST reads load through the
+// RiskAnalysis scoped-repository chokepoint (canonical
+// risk→contract→project→org), UNDER the findInOrg wall — two checks, two layers.
+import { RiskScopedRepository } from '../scoped-repository/risk-scoped.repository';
 
 @Injectable()
 export class RiskAnalysisService {
@@ -26,16 +30,34 @@ export class RiskAnalysisService {
     private readonly collaborationGateway: CollaborationGateway,
     // Tenant-isolation Tier 2 — cross-tenant probe → 404 from findInOrg.
     private readonly contractAccess: ContractAccessService,
+    // Option B — S2d — data-layer tenancy load for the per-contract risk reads.
+    private readonly riskScoped: RiskScopedRepository,
   ) {}
 
   // ─── Risk Analyses ────────────────────────────────────────
 
   async getByContract(contractId: string, orgId: string): Promise<RiskAnalysis[]> {
-    // Tenant-isolation Tier 2 — wall the URL contractId BEFORE the bare
-    // find runs. Cross-tenant probe → 404.
+    // WALL (persona — Tier 2 / #60, layer 1): cross-tenant probe → 404 BEFORE
+    // any data load. Stays independent of the scoped layer below.
     await this.contractAccess.findInOrg(contractId, orgId);
+    // SCOPED LIST (tenancy — Option B S2d, layer 2), STEP 1 of the two-step:
+    // the org-safe id set comes from the scoped chokepoint, which independently
+    // re-applies the canonical risk→contract→project→org join. Cross-tenant
+    // rows are excluded even if the wall above were bypassed.
+    const scoped = await this.riskScoped.scopedFind(
+      { contract_id: contractId },
+      orgId,
+    );
+    if (scoped.length === 0) {
+      return [];
+    }
+    // STEP 2 — hydrate on the tenancy-validated ids ONLY. The nested
+    // 'contract_clause.clause' relation exceeds scopedFind's single-level
+    // relation support; keying by the validated ids (never raw request input)
+    // carries the tenancy proof into the hydrate. Same two-step as
+    // ObligationsService.findByContract.
     return this.riskAnalysisRepository.find({
-      where: { contract_id: contractId },
+      where: { id: In(scoped.map((r) => r.id)) },
       relations: ['contract_clause', 'contract_clause.clause', 'handler'],
       order: { created_at: 'DESC' },
     });
@@ -85,11 +107,15 @@ export class RiskAnalysisService {
     by_status: Record<string, number>;
     by_category: Record<string, number>;
   }> {
-    // Tenant-isolation Tier 2 — wall on URL contractId.
+    // WALL (persona — Tier 2 / #60, layer 1): cross-tenant probe → 404.
     await this.contractAccess.findInOrg(contractId, orgId);
-    const risks = await this.riskAnalysisRepository.find({
-      where: { contract_id: contractId },
-    });
+    // SCOPED LIST (tenancy — Option B S2d, layer 2): the per-contract risk rows
+    // load through the scoped chokepoint (canonical risk→contract→project→org);
+    // the in-memory aggregation below is unchanged.
+    const risks = await this.riskScoped.scopedFind(
+      { contract_id: contractId },
+      orgId,
+    );
 
     const byLevel: Record<string, number> = {};
     const byStatus: Record<string, number> = {};

@@ -50,14 +50,20 @@ describe('ExportController — cross-tenant access wall (Tier 2)', () => {
       (c: ExportController, id: string, orgId: string, response: any) =>
         c.exportContractPdf(id, orgId, response),
       'generateContractPdf' as const,
+      // generateContractPdf is a CONTRACT read (out of S2d risk scope) — still
+      // called with the id only.
+      ['contract-in-a'] as const,
     ],
     [
       'GET /export/contracts/:id/risk-report (exportRiskReport)',
       (c: ExportController, id: string, orgId: string, response: any) =>
         c.exportRiskReport(id, orgId, response),
       'generateRiskReport' as const,
+      // S2d: the caller org now rides into generateRiskReport so the risk read
+      // loads through the scoped repo.
+      ['contract-in-a', ORG_A] as const,
     ],
-  ])('%s', (_label, invoke, generateMethod) => {
+  ])('%s', (_label, invoke, generateMethod, expectedArgs) => {
     it('cross-tenant: 404 and the renderer is NEVER called', async () => {
       contractAccess.findInOrg.mockRejectedValue(
         new NotFoundException('Contract not found'),
@@ -87,7 +93,7 @@ describe('ExportController — cross-tenant access wall (Tier 2)', () => {
         'contract-in-a',
         ORG_A,
       );
-      expect(exportService[generateMethod]).toHaveBeenCalledWith('contract-in-a');
+      expect(exportService[generateMethod]).toHaveBeenCalledWith(...expectedArgs);
       expect(res.end).toHaveBeenCalledWith(pdfBytes);
     });
 

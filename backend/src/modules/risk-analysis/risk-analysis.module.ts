@@ -24,6 +24,10 @@ import { RiskOverrideService } from './services/risk-override.service';
 // and `.../summary` reads at the service layer via
 // ContractAccessService.findInOrg.
 import { ContractsModule } from '../contracts/contracts.module';
+// Option B — S2d: the per-contract risk LIST reads (getByContract,
+// getRiskSummary) load through the RiskAnalysis scoped repository
+// (canonical risk→contract→project→org), UNDER the findInOrg wall.
+import { ScopedRepositoryModule } from '../scoped-repository/scoped-repository.module';
 
 @Module({
   imports: [
@@ -55,6 +59,7 @@ import { ContractsModule } from '../contracts/contracts.module';
     // 'email-queue'.
     BullModule.registerQueue({ name: 'learned-baseline' }),
     ContractsModule,
+    ScopedRepositoryModule,
   ],
   controllers: [
     RiskAnalysisController,

@@ -4,7 +4,6 @@ import {
   Contract,
   ContractClause,
   Clause,
-  RiskAnalysis,
 } from '../../database/entities';
 import { ExportController } from './export.controller';
 import { ExportService } from './export.service';
@@ -23,7 +22,6 @@ import { ScopedRepositoryModule } from '../scoped-repository/scoped-repository.m
       Contract,
       ContractClause,
       Clause,
-      RiskAnalysis,
     ]),
     ContractsModule,
     ScopedRepositoryModule,
