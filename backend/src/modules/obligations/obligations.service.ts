@@ -107,7 +107,26 @@ export class ObligationsService {
     return obligation;
   }
 
-  async create(dto: CreateObligationDto): Promise<Obligation> {
+  async create(dto: CreateObligationDto, orgId: string): Promise<Obligation> {
+    // WALL (tenant-isolation hotfix, pre-S2d): create() inserts an obligation
+    // keyed by the body-supplied dto.contract_id. Pre-fix there was NO
+    // contract-in-org check — the route middleware only resolves a project
+    // from req.params (contract_id lives in the BODY here), so the permission
+    // guard falls through and a caller could insert against ANOTHER org's
+    // contract (a live cross-tenant write). Resolve the contract through the
+    // caller's org via findInOrg BEFORE inserting — cross-tenant → 404 (never
+    // 403, no existence leak). Same primitive as the #60 hotfix and the
+    // S2c-2 by-id mutation surface.
+    //
+    // This is an insert keyed by a request-body field, not a by-id load, so
+    // it stays a stop-gap wall and deliberately does NOT route through the
+    // scoped repository (those chokepoints serve the by-id paths).
+    if (!orgId) {
+      // No-org caller cannot own contracts. 404 — no existence leak.
+      throw new NotFoundException('Contract not found');
+    }
+    await this.contractAccess.findInOrg(dto.contract_id, orgId);
+
     const obligation = this.obligationRepository.create({
       ...dto,
       status: ObligationStatus.PENDING,
