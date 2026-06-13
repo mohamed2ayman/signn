@@ -85,10 +85,19 @@ export class ObligationsController {
     return this.obligationsService.findById(id, orgId);
   }
 
+  // HOTFIX (pre-S2d): thread the caller's org so the service can wall
+  // dto.contract_id via findInOrg before inserting. The route middleware
+  // can't resolve a project for this route (contract_id is in the body, not
+  // a param), so the permission guard alone does not org-scope the write —
+  // the org wall is the gate. Permission gating and the org wall are
+  // independent.
   @Post()
   @RequirePermission(PermissionLevel.EDITOR)
-  async create(@Body() dto: CreateObligationDto) {
-    return this.obligationsService.create(dto);
+  async create(
+    @Body() dto: CreateObligationDto,
+    @OrganizationId() orgId: string,
+  ) {
+    return this.obligationsService.create(dto, orgId);
   }
 
   @Put(':id([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})')
