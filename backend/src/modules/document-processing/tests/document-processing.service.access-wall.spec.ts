@@ -71,6 +71,11 @@ describe('DocumentProcessingService — cross-tenant access wall (Tier 1)', () =
         commit: jest.fn().mockResolvedValue({ applied: true, status: 'committed' }),
         release: jest.fn().mockResolvedValue({ applied: true, status: 'released' }),
       } as any,
+      // Option B — S2f: DocumentUploadScopedRepository is now a REQUIRED dep.
+      // None of these access-wall paths (uploadAndProcess / reprocess /
+      // finalizeReview) loads via the scoped chokepoint, so this stub is never
+      // invoked — it only satisfies the constructor (house plain-stub pattern).
+      { scopedFind: jest.fn(), scopedFindByIdOrThrow: jest.fn() } as any,
     );
   }
 
@@ -202,6 +207,9 @@ describe('DocumentProcessingService — cross-tenant access wall (Tier 1)', () =
         contractAccess as any,
         // Phase 7.18 Part 3 — MeteringService dep (no-op stub).
         { reserve: jest.fn(), commit: jest.fn(), release: jest.fn() } as any,
+        // Option B — S2f: DocumentUploadScopedRepository (required dep). reprocess
+        // does NOT load via the scoped chokepoint, so this stub is never invoked.
+        { scopedFind: jest.fn(), scopedFindByIdOrThrow: jest.fn() } as any,
       );
 
       await expect(svc.reprocess(DOC_IN_B, ORG_A)).rejects.toBeInstanceOf(
@@ -238,6 +246,9 @@ describe('DocumentProcessingService — cross-tenant access wall (Tier 1)', () =
         contractAccess as any,
         // Phase 7.18 Part 3 — MeteringService dep (no-op stub).
         { reserve: jest.fn(), commit: jest.fn(), release: jest.fn() } as any,
+        // Option B — S2f: DocumentUploadScopedRepository (required dep). reprocess
+        // does NOT load via the scoped chokepoint, so this stub is never invoked.
+        { scopedFind: jest.fn(), scopedFindByIdOrThrow: jest.fn() } as any,
       );
 
       await expect(svc.reprocess('does-not-exist', ORG_A)).rejects.toBeInstanceOf(
@@ -325,6 +336,9 @@ describe('DocumentProcessingService — cross-tenant access wall (Tier 1)', () =
         noop,
         contractAccess as any,
         metering as any,
+        // Option B — S2f: DocumentUploadScopedRepository (required dep). reprocess
+        // does NOT load via the scoped chokepoint, so this stub is never invoked.
+        { scopedFind: jest.fn(), scopedFindByIdOrThrow: jest.fn() } as any,
       );
       // Stub startTextExtraction so the test doesn't dispatch.
       (svc as any).startTextExtraction = jest.fn().mockResolvedValue(undefined);

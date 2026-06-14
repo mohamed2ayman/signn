@@ -8,6 +8,7 @@ import {
   ContractComment,
   ContractVersion,
   ContractorResponse,
+  DocumentUpload,
   Notice,
   Obligation,
   RiskAnalysis,
@@ -23,6 +24,7 @@ import { RiskScopedRepository } from './risk-scoped.repository';
 import { NoticeScopedRepository } from './notice-scoped.repository';
 import { ClaimScopedRepository } from './claim-scoped.repository';
 import { SubContractScopedRepository } from './subcontract-scoped.repository';
+import { DocumentUploadScopedRepository } from './document-upload-scoped.repository';
 
 /**
  * Option B — the scoped-repository module: the data-layer tenancy chokepoint.
@@ -35,8 +37,15 @@ import { SubContractScopedRepository } from './subcontract-scoped.repository';
  * S2c-2). S2d adds RiskAnalysis. S2e adds the drift-four child entities —
  * Notice, Claim, SubContract (DocumentUpload was STOPPED; see the S2e digest —
  * its updateExtractedText path gates on the denormalized `organization_id`
- * column only, with no #57 findInOrg wall to layer under, so absorbing it would
- * be a denorm→canonical swap, not the two-layer add). The ESLint lint that bans
+ * column only, with no #57 findInOrg wall to layer under, so absorbing it then
+ * would have been a denorm→canonical swap, not the two-layer add). S2f adds
+ * DocumentUpload the correct way: Phase 1 first walled updateExtractedText with
+ * the canonical findInOrg, THEN this module adds the scoped chokepoint
+ * underneath (the two clean request-scoped reads — getDocuments + the
+ * now-walled updateExtractedText). Its metering-entangled paths
+ * (pollAndAdvance/reprocess) are deferred (the dead getDocumentStatus service
+ * method was removed in the S2f follow-up cleanup);
+ * see docs/option-b-s2f-document-upload-recon.md. The ESLint lint that bans
  * bare contract-repo access (and routes everything through this module) is the
  * final bucket.
  *
@@ -58,6 +67,7 @@ import { SubContractScopedRepository } from './subcontract-scoped.repository';
       Notice,
       Claim,
       SubContract,
+      DocumentUpload,
     ]),
   ],
   providers: [
@@ -71,6 +81,7 @@ import { SubContractScopedRepository } from './subcontract-scoped.repository';
     NoticeScopedRepository,
     ClaimScopedRepository,
     SubContractScopedRepository,
+    DocumentUploadScopedRepository,
   ],
   exports: [
     ContractScopedRepository,
@@ -83,6 +94,7 @@ import { SubContractScopedRepository } from './subcontract-scoped.repository';
     NoticeScopedRepository,
     ClaimScopedRepository,
     SubContractScopedRepository,
+    DocumentUploadScopedRepository,
   ],
 })
 export class ScopedRepositoryModule {}

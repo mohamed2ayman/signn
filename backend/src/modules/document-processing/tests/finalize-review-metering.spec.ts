@@ -39,6 +39,7 @@ import { RiskMethodologyResolverService } from '../../risk-analysis/services/ris
 import { ContractAccessService } from '../../contracts/services/contract-access.service';
 import { MeteringService } from '../../metering/services/metering.service';
 import { MeterKey } from '../../metering/enums/meter-key.enum';
+import { DocumentUploadScopedRepository } from '../../scoped-repository/document-upload-scoped.repository';
 
 const ORG_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const ORG_B = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
@@ -132,6 +133,13 @@ describe('finalize_review metered consumer (wiring)', () => {
         { provide: RiskMethodologyResolverService, useValue: {} },
         { provide: ContractAccessService, useValue: mockContractAccess },
         { provide: MeteringService, useValue: mockMetering },
+        // Option B — S2f: DocumentUploadScopedRepository is now a REQUIRED dep.
+        // finalizeReview / pollAndSaveRisks do NOT load via the scoped
+        // chokepoint, so this stub is never invoked — it only satisfies DI.
+        {
+          provide: DocumentUploadScopedRepository,
+          useValue: { scopedFind: jest.fn(), scopedFindByIdOrThrow: jest.fn() },
+        },
       ],
     }).compile();
 

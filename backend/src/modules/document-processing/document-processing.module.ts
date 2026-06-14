@@ -23,6 +23,10 @@ import { ContractsModule } from '../contracts/contracts.module';
 // MeteringModule exports MeteringService (the engine authority — call
 // only; engine code MUST NOT be modified).
 import { MeteringModule } from '../metering/metering.module';
+// Option B — S2f: exports DocumentUploadScopedRepository — the data-layer
+// tenancy chokepoint the two clean DocumentUpload reads load through, under
+// the findInOrg wall (two checks, two layers).
+import { ScopedRepositoryModule } from '../scoped-repository/scoped-repository.module';
 
 @Module({
   imports: [
@@ -47,6 +51,7 @@ import { MeteringModule } from '../metering/metering.module';
     RiskAnalysisModule,
     ContractsModule,
     MeteringModule,
+    ScopedRepositoryModule,
   ],
   controllers: [DocumentProcessingController, ParseDocxController],
   providers: [DocumentProcessingService, ParseDocxService],

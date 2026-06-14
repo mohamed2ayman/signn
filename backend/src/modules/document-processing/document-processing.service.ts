@@ -36,6 +36,12 @@ import { ContractAccessService } from '../contracts/services/contract-access.ser
 import { MeteringService } from '../metering/services/metering.service';
 import { MeterKey, MeterLedgerStatus } from '../metering/enums/meter-key.enum';
 import { MeteringCaller } from '../metering/services/metering-resolver.service';
+// Option B — S2f: the DocumentUpload data-layer tenancy chokepoint. The two
+// clean request-scoped reads (getDocuments + the Phase-1-walled
+// updateExtractedText) load THROUGH this scoped repo, UNDER the findInOrg wall
+// (two checks, two layers). Required constructor dependency — same house style
+// as every other scoped repo (S2c-2/S2d/S2e). Provided via ScopedRepositoryModule.
+import { DocumentUploadScopedRepository } from '../scoped-repository/document-upload-scoped.repository';
 
 @Injectable()
 export class DocumentProcessingService {
@@ -77,6 +83,10 @@ export class DocumentProcessingService {
     // the proven compliance Part 2 shape verbatim. Engine code MUST NOT
     // be modified — call only.
     private readonly metering: MeteringService,
+    // Option B — S2f — data-layer tenancy load for the two clean
+    // request-scoped DocumentUpload reads (getDocuments + updateExtractedText).
+    // Required dependency (house style); provided via ScopedRepositoryModule.
+    private readonly documentScoped: DocumentUploadScopedRepository,
   ) {}
 
   /**
@@ -621,52 +631,59 @@ export class DocumentProcessingService {
   /**
    * Get all documents for a contract.
    *
-   * Tenant-isolation Tier 2 — `orgId` required so the bare `find` is
-   * walled by `findInOrg(contractId, orgId)` first. Cross-tenant → 404.
+   * Two checks, two layers (CLAUDE.md Option B):
+   *   layer 1 (persona — Tier 2 wall): `findInOrg(contractId, orgId)` →
+   *     cross-tenant probe → 404 BEFORE any data load. Stays independent.
+   *   layer 2 (tenancy — Option B S2f scoped chokepoint): the list loads
+   *     through `scopedFind`, which independently re-applies the canonical
+   *     document→contract→project→org join — cross-tenant rows are excluded
+   *     even if the wall above were bypassed.
+   * No nested relations on this read → no two-step hydrate; the
+   * priority/created ordering is applied on the entity alias by scopedFind.
    */
   async getDocuments(contractId: string, orgId: string): Promise<DocumentUpload[]> {
     await this.contractAccess.findInOrg(contractId, orgId);
-    return this.documentUploadRepository.find({
-      where: { contract_id: contractId },
-      order: { document_priority: 'ASC', created_at: 'ASC' },
-    });
-  }
-
-  /**
-   * Get a single document with status info.
-   *
-   * Tenant-isolation Tier 2 — CHILD-KEYED route. The URL carries a
-   * `:contractId` segment but the service only uses `:docId`. Per the
-   * PR #45 lesson, do NOT trust the URL contractId — load the doc by
-   * id, then walk `doc.contract_id → findInOrg(_, orgId)`.
-   */
-  async getDocumentStatus(docId: string, orgId: string): Promise<DocumentUpload> {
-    const doc = await this.documentUploadRepository.findOne({
-      where: { id: docId },
-    });
-    if (!doc) {
-      throw new NotFoundException('Document not found');
-    }
-    // Tenant wall — walk doc → contract → org. Throws 404 if the doc's
-    // contract belongs to another org.
-    await this.contractAccess.findInOrg(doc.contract_id, orgId);
-    return doc;
+    return this.documentScoped.scopedFind(
+      { contract_id: contractId },
+      orgId,
+      { order: { document_priority: 'ASC', created_at: 'ASC' } },
+    );
   }
 
   /**
    * Update the extracted text of a document (manual correction).
+   *
+   * Tenant-isolation (S2f Phase 1) — CHILD-KEYED. Was gated ONLY on the
+   * DENORMALIZED `organization_id` column (`findOne({ id, organization_id })`),
+   * with no canonical wall. That column can drift from the canonical
+   * `contract → project → organization_id` truth (the same drift class S2c-1 /
+   * S2e proved reachable), so a document whose denorm org reads as the caller's
+   * while its contract belongs to ANOTHER org was writable — a cross-org write.
+   * Load the doc by id, then wall its canonical contract:
+   * `doc.contract_id → findInOrg(_, orgId)` → 404 on a cross-tenant probe
+   * (never 403 — no existence leak). The canonical contract is now the tenancy
+   * authority; the denorm column is no longer trusted. Same wall shape as
+   * pollAndAdvance / reprocess (PR #45).
+   *
+   * S2f Phase 2 — two checks, two layers (CLAUDE.md Option B):
+   *   layer 2 (tenancy — scoped chokepoint): `scopedFindByIdOrThrow` resolves
+   *     the document through the canonical document→contract→project→org join.
+   *     Cross-org → 404 (never 403, no existence leak) at the data layer.
+   *   layer 1 (persona — Phase 1 wall): `findInOrg` on the scoped row's
+   *     canonical contract STAYS as defense-in-depth.
+   * No nested relations needed for a text correction, so the scoped row is
+   * mutated and saved directly (it carries every `document` column — the
+   * scoped query inner-joins for filtering, not selecting).
    */
   async updateExtractedText(
     docId: string,
     orgId: string,
     text: string,
   ): Promise<DocumentUpload> {
-    const doc = await this.documentUploadRepository.findOne({
-      where: { id: docId, organization_id: orgId },
-    });
-    if (!doc) {
-      throw new NotFoundException('Document not found');
-    }
+    // SCOPED LOAD (tenancy — layer 2): cross-org denied at the data layer.
+    const doc = await this.documentScoped.scopedFindByIdOrThrow(docId, orgId);
+    // WALL (persona — Phase 1, layer 1): stays as defense-in-depth.
+    await this.contractAccess.findInOrg(doc.contract_id, orgId);
     doc.extracted_text = text;
     return this.documentUploadRepository.save(doc);
   }
