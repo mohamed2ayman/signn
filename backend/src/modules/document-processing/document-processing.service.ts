@@ -655,6 +655,19 @@ export class DocumentProcessingService {
 
   /**
    * Update the extracted text of a document (manual correction).
+   *
+   * Tenant-isolation (S2f Phase 1) — CHILD-KEYED. Was gated ONLY on the
+   * DENORMALIZED `organization_id` column (`findOne({ id, organization_id })`),
+   * with no canonical wall. That column can drift from the canonical
+   * `contract → project → organization_id` truth (the same drift class S2c-1 /
+   * S2e proved reachable), so a document whose denorm org reads as the caller's
+   * while its contract belongs to ANOTHER org was writable — a cross-org write.
+   * Load the doc by id, then wall its canonical contract:
+   * `doc.contract_id → findInOrg(_, orgId)` → 404 on a cross-tenant probe
+   * (never 403 — no existence leak). The canonical contract is now the tenancy
+   * authority; the denorm column is no longer trusted. Same wall shape as
+   * pollAndAdvance / reprocess (PR #45). Phase 2 layers the scoped chokepoint
+   * underneath this wall (two checks, two layers).
    */
   async updateExtractedText(
     docId: string,
@@ -662,11 +675,13 @@ export class DocumentProcessingService {
     text: string,
   ): Promise<DocumentUpload> {
     const doc = await this.documentUploadRepository.findOne({
-      where: { id: docId, organization_id: orgId },
+      where: { id: docId },
     });
     if (!doc) {
       throw new NotFoundException('Document not found');
     }
+    // WALL (canonical, layer 1) — cross-tenant probe → 404 BEFORE the write.
+    await this.contractAccess.findInOrg(doc.contract_id, orgId);
     doc.extracted_text = text;
     return this.documentUploadRepository.save(doc);
   }
