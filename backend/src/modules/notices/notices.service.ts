@@ -20,6 +20,10 @@ import {
   CreateNoticeResponseDto,
 } from './dto';
 import { ContractAccessService } from '../contracts/services/contract-access.service';
+// Option B — S2e: NoticesService loads its per-contract LIST and by-id surfaces
+// through NoticeScopedRepository (the data-layer tenancy chokepoint, layer 2),
+// UNDER the independent #57 / Tier 3 findInOrg walls (layer 1).
+import { NoticeScopedRepository } from '../scoped-repository/notice-scoped.repository';
 
 @Injectable()
 export class NoticesService {
@@ -40,6 +44,8 @@ export class NoticesService {
     private readonly contractRepo: Repository<Contract>,
 
     private readonly contractAccess: ContractAccessService,
+
+    private readonly noticeScoped: NoticeScopedRepository,
   ) {}
 
   async create(
@@ -97,14 +103,33 @@ export class NoticesService {
 
     await this.checkOverdueNotices(contractId);
 
-    return this.noticeRepo.find({
-      where: { contract_id: contractId },
-      relations: ['submitter'],
-      order: { created_at: 'DESC' },
-    });
+    // SCOPED LIST (tenancy — Option B S2e, layer 2): the org-safe row set comes
+    // from the scoped chokepoint, which independently re-applies the canonical
+    // notice→contract→project→org join. Cross-tenant rows are excluded even if
+    // the wall above were bypassed. relations/order are single-level, so this is
+    // a behavior-preserving drop-in for the bare find (no two-step needed).
+    return this.noticeScoped.scopedFind(
+      { contract_id: contractId },
+      orgId,
+      { relations: ['submitter'], order: { created_at: 'DESC' } },
+    );
   }
 
   async findById(id: string, orgId: string): Promise<Notice> {
+    // SCOPED LOAD (tenancy — Option B S2e, layer 2): cross-org denied at the
+    // data layer BEFORE any nested relation is hydrated.
+    const scoped = await this.noticeScoped.scopedFindByIdOrThrow(id, orgId);
+
+    // WALL (persona — #57 S0-part-2, layer 1): STAYS as defense-in-depth, keyed
+    // on the scoped row's OWN contract_id (never a URL-supplied contractId).
+    // This is the shared loader, so acknowledge/respond/updateStatus inherit
+    // both layers.
+    await this.contractAccess.findInOrg(scoped.contract_id, orgId);
+
+    // HYDRATION on the tenancy-validated id — the nested relations
+    // (documents.uploader, responses.responder, status_logs.changer) exceed the
+    // scoped base's single-level relation support; the two-step keeps the base
+    // minimal instead of growing it.
     const notice = await this.noticeRepo.findOne({
       where: { id },
       relations: [
@@ -120,15 +145,10 @@ export class NoticesService {
     });
 
     if (!notice) {
+      // Row vanished between the scoped load and the hydrate (race) — same
+      // no-existence-leak 404.
       throw new NotFoundException('Notice not found');
     }
-
-    // INTERIM (S0-part-2): child-id cross-tenant wall. Option B S2e absorbs this
-    //  via the scoped repository (scopedFindByIdViaContract). findInOrg stop-gap
-    //  until then. Resolves via the notice's OWN parent contract_id (never a
-    //  URL-supplied contractId) → cross-tenant 404, no existence leak. This is
-    //  the shared loader, so acknowledge/respond/updateStatus inherit the wall.
-    await this.contractAccess.findInOrg(notice.contract_id, orgId);
 
     return notice;
   }

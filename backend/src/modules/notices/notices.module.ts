@@ -11,6 +11,9 @@ import { NoticesController } from './notices.controller';
 import { NoticesService } from './notices.service';
 import { PermissionLevelGuard } from '../../common/guards/permission-level.guard';
 import { ContractsModule } from '../contracts/contracts.module';
+// Option B — S2e: NoticesService loads its per-contract LIST + by-id surfaces
+// through NoticeScopedRepository (data-layer tenancy chokepoint).
+import { ScopedRepositoryModule } from '../scoped-repository/scoped-repository.module';
 
 @Module({
   imports: [
@@ -26,6 +29,7 @@ import { ContractsModule } from '../contracts/contracts.module';
     // Tenant-isolation Tier 3 — ContractAccessService is the wall for
     // POST /notices + GET /notices?contract_id=.
     ContractsModule,
+    ScopedRepositoryModule,
   ],
   controllers: [NoticesController],
   providers: [NoticesService, PermissionLevelGuard],

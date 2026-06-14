@@ -5,6 +5,11 @@ import { Repository } from 'typeorm';
 import { SubContract, SubContractStatusLog } from '../../database/entities/sub-contract.entity';
 import { Contract, ContractStatus } from '../../database/entities/contract.entity';
 import { ContractAccessService } from '../contracts/services/contract-access.service';
+// Option B — S2e: SubContractsService loads its per-main-contract LIST and
+// by-id surfaces through SubContractScopedRepository (the data-layer tenancy
+// chokepoint, layer 2), UNDER the independent #57 / Tier 3 findInOrg walls
+// (layer 1).
+import { SubContractScopedRepository } from '../scoped-repository/subcontract-scoped.repository';
 
 @Injectable()
 export class SubContractsService {
@@ -16,6 +21,7 @@ export class SubContractsService {
     @InjectRepository(Contract)
     private readonly contractRepo: Repository<Contract>,
     private readonly contractAccess: ContractAccessService,
+    private readonly subContractScoped: SubContractScopedRepository,
   ) {}
 
   async create(
@@ -68,28 +74,42 @@ export class SubContractsService {
       throw new BadRequestException('Main contract must be ACTIVE to list subcontracts');
     }
 
-    return this.subContractRepo.find({
-      where: { main_contract_id: mainContractId },
-      relations: ['creator', 'mainContract'],
-      order: { created_at: 'DESC' },
-    });
+    // SCOPED LIST (tenancy — Option B S2e, layer 2): the org-safe row set comes
+    // from the scoped chokepoint, which independently re-applies the canonical
+    // sub→main_contract→project→org join. relations/order are single-level
+    // (the `mainContract` hydration coexists with the gate join via the
+    // distinct org_gate_main_contract alias), so this is a behavior-preserving
+    // drop-in for the bare find.
+    return this.subContractScoped.scopedFind(
+      { main_contract_id: mainContractId },
+      orgId,
+      { relations: ['creator', 'mainContract'], order: { created_at: 'DESC' } },
+    );
   }
 
   async findById(id: string, orgId: string): Promise<SubContract> {
+    // SCOPED LOAD (tenancy — Option B S2e, layer 2): cross-org denied at the
+    // data layer BEFORE any nested relation is hydrated.
+    const scoped = await this.subContractScoped.scopedFindByIdOrThrow(id, orgId);
+
+    // WALL (persona — #57 S0-part-2, layer 1): STAYS as defense-in-depth, keyed
+    // on the sub-contract's OWN main_contract_id (a real contract id; never a
+    // URL-supplied one).
+    await this.contractAccess.findInOrg(scoped.main_contract_id, orgId);
+
+    // HYDRATION on the tenancy-validated id — the nested status_logs.changer
+    // relation exceeds the scoped base's single-level relation support; the
+    // two-step keeps the base minimal instead of growing it.
     const subContract = await this.subContractRepo.findOne({
       where: { id },
       relations: ['creator', 'mainContract', 'status_logs', 'status_logs.changer'],
     });
 
     if (!subContract) {
+      // Row vanished between the scoped load and the hydrate (race) — same
+      // no-existence-leak 404.
       throw new NotFoundException('Subcontract not found');
     }
-
-    // INTERIM (S0-part-2): child-id cross-tenant wall. Option B S2e absorbs this
-    //  via the scoped repository (scopedFindByIdViaContract). findInOrg stop-gap
-    //  until then. Resolves via the sub-contract's OWN main_contract_id (a real
-    //  contract id; never a URL-supplied one) → cross-tenant 404, no existence leak.
-    await this.contractAccess.findInOrg(subContract.main_contract_id, orgId);
 
     return subContract;
   }
@@ -100,15 +120,12 @@ export class SubContractsService {
     userId: string,
     orgId: string,
   ): Promise<SubContract> {
-    const subContract = await this.subContractRepo.findOne({ where: { id } });
+    // SCOPED LOAD (tenancy — Option B S2e, layer 2): cross-org denied at the
+    // data layer → 404, no existence leak.
+    const subContract = await this.subContractScoped.scopedFindByIdOrThrow(id, orgId);
 
-    if (!subContract) {
-      throw new NotFoundException('Subcontract not found');
-    }
-
-    // INTERIM (S0-part-2): child-id cross-tenant wall. Option B S2e absorbs this
-    //  via the scoped repository (scopedFindByIdViaContract). findInOrg stop-gap
-    //  until then. Resolves via the sub-contract's OWN main_contract_id → 404 cross-tenant.
+    // WALL (persona — #57 S0-part-2, layer 1): STAYS as defense-in-depth, keyed
+    // on the sub-contract's OWN main_contract_id.
     await this.contractAccess.findInOrg(subContract.main_contract_id, orgId);
 
     Object.assign(subContract, dto);
@@ -121,15 +138,12 @@ export class SubContractsService {
     userId: string,
     orgId: string,
   ): Promise<SubContract> {
-    const subContract = await this.subContractRepo.findOne({ where: { id } });
+    // SCOPED LOAD (tenancy — Option B S2e, layer 2): cross-org denied at the
+    // data layer → 404, no existence leak.
+    const subContract = await this.subContractScoped.scopedFindByIdOrThrow(id, orgId);
 
-    if (!subContract) {
-      throw new NotFoundException('Subcontract not found');
-    }
-
-    // INTERIM (S0-part-2): child-id cross-tenant wall. Option B S2e absorbs this
-    //  via the scoped repository (scopedFindByIdViaContract). findInOrg stop-gap
-    //  until then. Resolves via the sub-contract's OWN main_contract_id → 404 cross-tenant.
+    // WALL (persona — #57 S0-part-2, layer 1): STAYS as defense-in-depth, keyed
+    // on the sub-contract's OWN main_contract_id.
     await this.contractAccess.findInOrg(subContract.main_contract_id, orgId);
 
     const previousStatus = subContract.status;
@@ -147,15 +161,13 @@ export class SubContractsService {
     userId: string,
     orgId: string,
   ): Promise<{ shareUrl: string; token: string }> {
-    const subContract = await this.subContractRepo.findOne({ where: { id } });
+    // SCOPED LOAD (tenancy — Option B S2e, layer 2): cross-org denied at the
+    // data layer → 404, no existence leak. share only needs the row to exist
+    // in the caller's org before minting a token.
+    const subContract = await this.subContractScoped.scopedFindByIdOrThrow(id, orgId);
 
-    if (!subContract) {
-      throw new NotFoundException('Subcontract not found');
-    }
-
-    // INTERIM (S0-part-2): child-id cross-tenant wall. Option B S2e absorbs this
-    //  via the scoped repository (scopedFindByIdViaContract). findInOrg stop-gap
-    //  until then. Resolves via the sub-contract's OWN main_contract_id → 404 cross-tenant.
+    // WALL (persona — #57 S0-part-2, layer 1): STAYS as defense-in-depth, keyed
+    // on the sub-contract's OWN main_contract_id.
     await this.contractAccess.findInOrg(subContract.main_contract_id, orgId);
 
     const token = crypto.randomBytes(32).toString('hex');
