@@ -12,9 +12,6 @@ import { DocumentProcessingService } from '../document-processing.service';
  *
  *   - getDocuments(contractId, orgId)          contractId direct
  *   - pollAndAdvance(docId, orgId)             CHILD-keyed via docId
- *   - getDocumentStatus(docId, orgId)          CHILD-keyed via docId (defence
- *                                              in depth — controller routes
- *                                              go through pollAndAdvance)
  *   - getClausesForReview(contractId, orgId)   contractId direct
  *
  * For CHILD-keyed routes the wall walks `doc.contract_id → findInOrg(_, orgId)`
@@ -38,8 +35,8 @@ describe('DocumentProcessingService — Tier 2 READ access wall', () => {
     contractAccess: any;
     // Option B — S2f: the DocumentUpload scoped chokepoint. getDocuments now
     // loads its list through this (under the wall); the other reads here
-    // (pollAndAdvance / getDocumentStatus / getClausesForReview) do NOT touch
-    // it, so it defaults to undefined for them.
+    // (pollAndAdvance / getClausesForReview) do NOT touch it, so it defaults to
+    // undefined for them.
     documentScoped?: any;
   }): DocumentProcessingService {
     return new DocumentProcessingService(
@@ -163,38 +160,6 @@ describe('DocumentProcessingService — Tier 2 READ access wall', () => {
         svc.pollAndAdvance('does-not-exist', ORG_A),
       ).rejects.toBeInstanceOf(NotFoundException);
       expect(contractAccess.findInOrg).not.toHaveBeenCalled();
-    });
-  });
-
-  // ────────────────────────────────────────────────────────────────────
-  // getDocumentStatus — CHILD-keyed. Same shape as pollAndAdvance, but
-  // covers the dead-code path (defence in depth).
-  // ────────────────────────────────────────────────────────────────────
-  describe('getDocumentStatus (CHILD-keyed; defence-in-depth)', () => {
-    it('cross-tenant: 404 — foreign doc.contract_id walls', async () => {
-      const foreignDoc = {
-        id: DOC_IN_B,
-        contract_id: CONTRACT_IN_B,
-        organization_id: ORG_B,
-      };
-      const documentUploadRepository = {
-        findOne: jest.fn().mockResolvedValue(foreignDoc),
-      };
-      const contractAccess = {
-        findInOrg: jest
-          .fn()
-          .mockRejectedValue(new NotFoundException('Contract not found')),
-      };
-
-      const svc = build({ documentUploadRepository, contractAccess });
-
-      await expect(
-        svc.getDocumentStatus(DOC_IN_B, ORG_A),
-      ).rejects.toBeInstanceOf(NotFoundException);
-      expect(contractAccess.findInOrg).toHaveBeenCalledWith(
-        CONTRACT_IN_B,
-        ORG_A,
-      );
     });
   });
 

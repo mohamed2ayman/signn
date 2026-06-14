@@ -47,9 +47,8 @@ import { ScopedContractRepository } from './scoped-contract.repository';
 @Injectable()
 export class DocumentUploadScopedRepository extends ScopedContractRepository<DocumentUpload> {
   // Matches the existing thrown message in document-processing.service
-  // (updateExtractedText / pollAndAdvance / getDocumentStatus) so the
-  // scopedFindByIdOrThrow wiring is a byte-faithful drop-in. 404, never 403 —
-  // no existence leak.
+  // (updateExtractedText / pollAndAdvance) so the scopedFindByIdOrThrow wiring
+  // is a byte-faithful drop-in. 404, never 403 — no existence leak.
   protected readonly notFoundMessage = 'Document not found';
   protected readonly entityAlias = 'document';
 

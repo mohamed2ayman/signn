@@ -676,27 +676,6 @@ export class DocumentProcessingService {
   }
 
   /**
-   * Get a single document with status info.
-   *
-   * Tenant-isolation Tier 2 — CHILD-KEYED route. The URL carries a
-   * `:contractId` segment but the service only uses `:docId`. Per the
-   * PR #45 lesson, do NOT trust the URL contractId — load the doc by
-   * id, then walk `doc.contract_id → findInOrg(_, orgId)`.
-   */
-  async getDocumentStatus(docId: string, orgId: string): Promise<DocumentUpload> {
-    const doc = await this.documentUploadRepository.findOne({
-      where: { id: docId },
-    });
-    if (!doc) {
-      throw new NotFoundException('Document not found');
-    }
-    // Tenant wall — walk doc → contract → org. Throws 404 if the doc's
-    // contract belongs to another org.
-    await this.contractAccess.findInOrg(doc.contract_id, orgId);
-    return doc;
-  }
-
-  /**
    * Update the extracted text of a document (manual correction).
    *
    * Tenant-isolation (S2f Phase 1) — CHILD-KEYED. Was gated ONLY on the

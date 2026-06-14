@@ -43,7 +43,8 @@ import { DocumentUploadScopedRepository } from './document-upload-scoped.reposit
  * the canonical findInOrg, THEN this module adds the scoped chokepoint
  * underneath (the two clean request-scoped reads — getDocuments + the
  * now-walled updateExtractedText). Its metering-entangled paths
- * (pollAndAdvance/reprocess) and dead code (getDocumentStatus) are deferred;
+ * (pollAndAdvance/reprocess) are deferred (the dead getDocumentStatus service
+ * method was removed in the S2f follow-up cleanup);
  * see docs/option-b-s2f-document-upload-recon.md. The ESLint lint that bans
  * bare contract-repo access (and routes everything through this module) is the
  * final bucket.
