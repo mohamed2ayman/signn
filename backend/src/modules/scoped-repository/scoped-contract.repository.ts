@@ -1,5 +1,6 @@
 import { NotFoundException } from '@nestjs/common';
 import {
+  FindManyOptions,
   FindOptionsWhere,
   ObjectLiteral,
   Repository,
@@ -278,12 +279,25 @@ export abstract class ScopedContractRepository<T extends ObjectLiteral> {
    * certainly want {@link scopedFindById} / {@link scopedFindByIdViaContract}
    * with the caller's `orgId` instead.
    *
-   * S1 status: DEFINED (shape + this comment) but UNWIRED — there is no
-   * production caller. The ObligationReminderProcessor migration and the
-   * ESLint allowlist that fences this method to specific files are a later
-   * bucket. Adding a caller now is out of S1 scope.
+   * WIRING STATUS: the FIRST (and currently ONLY) production caller is the
+   * `ObligationReminderProcessor` system sweeper (BullMQ `@Processor`, no JWT /
+   * no request org in scope), wired in the processor-sweep bucket. It is
+   * reachable ONLY from that queue/scheduler path — never from a request-scoped
+   * controller or service (proven by the escape-hatch fence spec,
+   * findacrossallorgs-escape-hatch.spec.ts). The ESLint allowlist that fences
+   * this method to specific files at lint-time is still a later bucket; until
+   * it lands, the fence spec is the structural guard.
+   *
+   * OPTIONS (minimal additive — processor-sweep bucket): an optional
+   * {@link FindManyOptions} is passed straight through to `repo.find(options)`
+   * so a system caller can express its native `where` / `relations` shape (the
+   * sweeper filters on obligation `status` and hydrates contract/assignee
+   * relations). This is a pure TypeORM-native passthrough — it adds NO org
+   * filter (the all-orgs behaviour is the whole point of this method) and NO
+   * query-builder wrapper / operator DSL. The zero-arg call still works
+   * (`options` is optional → `repo.find()`), so the S1 shape is preserved.
    */
-  async findAcrossAllOrgs(): Promise<T[]> {
-    return this.repo.find();
+  async findAcrossAllOrgs(options?: FindManyOptions<T>): Promise<T[]> {
+    return this.repo.find(options);
   }
 }
