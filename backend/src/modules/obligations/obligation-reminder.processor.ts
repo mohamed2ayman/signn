@@ -18,6 +18,13 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationDispatchService } from '../notifications/notification-dispatch.service';
 import { baseEmailLayout } from '../notifications/templates/base-layout';
 import { ObligationTokenService } from '../compliance/services/obligation-token.service';
+// Option B — processor-sweep bucket: this system sweeper has NO request org in
+// scope; it legitimately reads obligations ACROSS ALL ORGS. Its org-blind reads
+// route through the scoped-repo base's named tenancy bypass
+// (ObligationScopedRepository.findAcrossAllOrgs) so the data-load surface is
+// consistent with every request-scoped read — WITHOUT imposing an org filter
+// that would break the all-orgs sweep.
+import { ObligationScopedRepository } from '../scoped-repository/obligation-scoped.repository';
 
 /**
  * Phase 3.4 / Phase 7.1 enhanced obligation-reminder engine.
@@ -47,6 +54,12 @@ export class ObligationReminderProcessor {
   private readonly backendUrl: string;
 
   constructor(
+    // Scoped-repo chokepoint for the org-blind obligation READS (the sweep).
+    private readonly obligationScoped: ObligationScopedRepository,
+    // Bare repo retained for the obligation WRITES ONLY (OVERDUE status flip +
+    // last_reminder_sent_at stamp) — both operate on a row already pulled from
+    // the all-orgs sweep, by id, with no org resolution needed. The scoped-repo
+    // base is read-only; there is no system-level write method to route through.
     @InjectRepository(Obligation)
     private readonly obligationRepository: Repository<Obligation>,
     @InjectRepository(ObligationReminderLog)
@@ -76,8 +89,11 @@ export class ObligationReminderProcessor {
   async handleCheckReminders(_job: Job): Promise<void> {
     this.logger.log('Running daily obligation reminder check...');
 
-    // Phase 7.1: load assignees + their user, escalation_contact_user on contract
-    const obligations = await this.obligationRepository.find({
+    // Phase 7.1: load assignees + their user, escalation_contact_user on contract.
+    // Option B (processor-sweep bucket): org-blind ALL-ORGS read via the named
+    // tenancy bypass — same TypeORM `where`/`relations` shape as before, no org
+    // filter (the sweep MUST see every org's obligations).
+    const obligations = await this.obligationScoped.findAcrossAllOrgs({
       where: {
         status: In([
           ObligationStatus.PENDING,
@@ -196,7 +212,10 @@ export class ObligationReminderProcessor {
   async handleWeeklyDigest(_job: Job): Promise<void> {
     this.logger.log('Running weekly obligations digest...');
 
-    const obligations = await this.obligationRepository.find({
+    // Option B (processor-sweep bucket): org-blind ALL-ORGS read via the named
+    // tenancy bypass — same TypeORM `where`/`relations` shape as before, no org
+    // filter (the weekly digest groups obligations by user across ALL orgs).
+    const obligations = await this.obligationScoped.findAcrossAllOrgs({
       where: {
         status: In([
           ObligationStatus.PENDING,

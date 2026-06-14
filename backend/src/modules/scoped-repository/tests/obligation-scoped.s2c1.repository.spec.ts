@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule } from '@nestjs/config';
-import { DataSource } from 'typeorm';
+import { DataSource, In } from 'typeorm';
 import { randomUUID } from 'crypto';
 
 // ─── CI-skip guard (LOUD) ─────────────────────────────────────────────────
@@ -23,7 +23,11 @@ if (SKIP_REAL_PG) {
 }
 const describeReal = SKIP_REAL_PG ? describe.skip : describe;
 
-import { Contract, GuestContractAccess } from '../../../database/entities';
+import {
+  Contract,
+  GuestContractAccess,
+  ObligationStatus,
+} from '../../../database/entities';
 import { ScopedRepositoryModule } from '../scoped-repository.module';
 import { ObligationScopedRepository } from '../obligation-scoped.repository';
 import { ContractAccessService } from '../../contracts/services/contract-access.service';
@@ -328,6 +332,50 @@ describeReal('Option B S2c-1 — Obligation scoped repository (real Postgres)', 
       await expect(
         obligationScoped.scopedFind({ contract_id: contractA }, orgA),
       ).resolves.toHaveLength(2);
+    });
+  });
+
+  // ───────────────────────────────────────────────────────────────────────
+  // 6. SYSTEM SWEEP — findAcrossAllOrgs CROSSES the tenancy boundary by
+  //    design (the processor-sweep bucket). This is the INVERSE of every
+  //    scoped probe above: the security property here is "the all-orgs read
+  //    really does see every org" — NOT "cross-org is blocked". The
+  //    ObligationReminderProcessor routes its org-blind sweeps through this
+  //    method; if it ever silently imposed an org filter, the reminders for
+  //    every org but one would stop firing.
+  // ───────────────────────────────────────────────────────────────────────
+  describe('findAcrossAllOrgs — system sweep (all-orgs, no org filter)', () => {
+    it('zero-arg (S1 shape) returns obligations from BOTH orgs', async () => {
+      const all = await obligationScoped.findAcrossAllOrgs();
+      const ids = all.map((o) => o.id);
+      // orgA (A1 + drifted-project A2) AND orgB (B1) — the sweep crosses tenancy.
+      expect(ids).toEqual(
+        expect.arrayContaining([obligationA1, obligationA2, obligationB1]),
+      );
+    });
+
+    it('with the processor`s exact options shape (status filter + contract relation) STILL returns rows across BOTH orgs', async () => {
+      // Mirrors handleCheckReminders / handleWeeklyDigest verbatim: the additive
+      // FindManyOptions passthrough must NOT introduce an org filter.
+      const swept = await obligationScoped.findAcrossAllOrgs({
+        where: {
+          status: In([
+            ObligationStatus.PENDING,
+            ObligationStatus.IN_PROGRESS,
+            ObligationStatus.OVERDUE,
+          ]),
+        },
+        relations: ['contract'],
+      });
+      const ids = swept.map((o) => o.id);
+      expect(ids).toEqual(
+        expect.arrayContaining([obligationA1, obligationA2, obligationB1]),
+      );
+      // The options passthrough hydrates the relation just like repo.find would.
+      const a1 = swept.find((o) => o.id === obligationA1);
+      expect(a1?.contract?.id).toBe(contractA);
+      const b1 = swept.find((o) => o.id === obligationB1);
+      expect(b1?.contract?.id).toBe(contractB);
     });
   });
 });

@@ -1,8 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
+import { Repository } from 'typeorm';
 
 import { ObligationReminderProcessor } from '../obligation-reminder.processor';
+import { ObligationScopedRepository } from '../../scoped-repository/obligation-scoped.repository';
 import {
   Contract,
   Obligation,
@@ -120,6 +122,18 @@ async function buildProcessor(): Promise<ObligationReminderProcessor> {
   const moduleRef: TestingModule = await Test.createTestingModule({
     providers: [
       ObligationReminderProcessor,
+      // Option B (processor-sweep bucket): the processor now reads obligations
+      // through ObligationScopedRepository.findAcrossAllOrgs. Provide a REAL
+      // scoped repo wrapping the SAME mockObligationRepo — findAcrossAllOrgs is
+      // a pure passthrough to repo.find(options), so every existing assertion on
+      // `mockObligationRepo.find` (the sweep data source) stays byte-identical.
+      {
+        provide: ObligationScopedRepository,
+        useFactory: () =>
+          new ObligationScopedRepository(
+            mockObligationRepo as unknown as Repository<Obligation>,
+          ),
+      },
       { provide: getRepositoryToken(Obligation), useValue: mockObligationRepo },
       { provide: getRepositoryToken(ObligationReminderLog), useValue: mockLogRepo },
       { provide: getRepositoryToken(Contract), useValue: mockContractRepo },
@@ -396,6 +410,63 @@ describe('ObligationReminderProcessor — Phase 7.1', () => {
           email_status: ObligationReminderEmailStatus.SENT,
         }),
       );
+    });
+  });
+
+  // ── All-orgs sweep (escape-hatch behaviour — Option B processor bucket) ────
+  // The processor reads via ObligationScopedRepository.findAcrossAllOrgs, the
+  // named tenancy bypass. The REQUIRED property is that the sweep sees EVERY
+  // org's obligations — a regression that imposed an org filter would silently
+  // stop reminders for all but one org. (Request-unreachability of the bypass
+  // is proven structurally in findacrossallorgs-escape-hatch.spec.ts.)
+  describe('check-reminders — all-orgs sweep', () => {
+    it('processes obligations from MULTIPLE orgs in one pass (no org filter imposed)', async () => {
+      const orgAObligation = makeObligation(7, {
+        id: 'obl-orgA',
+        contract_id: 'contract-orgA',
+        contract: {
+          id: 'contract-orgA',
+          name: 'Org A Contract',
+          creator: {
+            id: 'orgA-creator',
+            email: 'orgA@sign.com',
+            first_name: 'A',
+          } as User,
+          escalation_contact_user: null,
+          escalation_contact_email: null,
+        } as unknown as Contract,
+      });
+      const orgBObligation = makeObligation(7, {
+        id: 'obl-orgB',
+        contract_id: 'contract-orgB',
+        contract: {
+          id: 'contract-orgB',
+          name: 'Org B Contract',
+          creator: {
+            id: 'orgB-creator',
+            email: 'orgB@sign.com',
+            first_name: 'B',
+          } as User,
+          escalation_contact_user: null,
+          escalation_contact_email: null,
+        } as unknown as Contract,
+      });
+      mockObligationRepo.find.mockResolvedValue([orgAObligation, orgBObligation]);
+
+      await processor.handleCheckReminders(fakeJob);
+
+      const recipients = mockDispatch.enqueueEmail.mock.calls.map(
+        (c: any[]) => (c[0] as { to: string }).to,
+      );
+      // BOTH orgs' obligations were reminded — the sweep is genuinely all-orgs.
+      expect(recipients).toContain('orgA@sign.com');
+      expect(recipients).toContain('orgB@sign.com');
+
+      // And the underlying read carried NO org filter — only the status/relations
+      // sweep shape. A leaked org predicate here would be a regression.
+      const findArg = mockObligationRepo.find.mock.calls[0][0];
+      expect(findArg.where).toHaveProperty('status');
+      expect(JSON.stringify(findArg)).not.toMatch(/organization/i);
     });
   });
 });
