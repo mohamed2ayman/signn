@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   Logger,
+  Optional,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
@@ -36,6 +37,15 @@ import { ContractAccessService } from '../contracts/services/contract-access.ser
 import { MeteringService } from '../metering/services/metering.service';
 import { MeterKey, MeterLedgerStatus } from '../metering/enums/meter-key.enum';
 import { MeteringCaller } from '../metering/services/metering-resolver.service';
+// Option B — S2f: the DocumentUpload data-layer tenancy chokepoint. The two
+// clean request-scoped reads (getDocuments + the Phase-1-walled
+// updateExtractedText) load THROUGH this scoped repo, UNDER the findInOrg wall
+// (two checks, two layers). Injected @Optional ONLY to keep the
+// upload_extraction + finalize_review metering specs byte-identical (they
+// construct the service positionally / via DI without this dep and exercise no
+// scoped method); production ALWAYS provides it via ScopedRepositoryModule. See
+// docs/option-b-s2f-document-upload-recon.md §F.1.
+import { DocumentUploadScopedRepository } from '../scoped-repository/document-upload-scoped.repository';
 
 @Injectable()
 export class DocumentProcessingService {
@@ -77,7 +87,32 @@ export class DocumentProcessingService {
     // the proven compliance Part 2 shape verbatim. Engine code MUST NOT
     // be modified — call only.
     private readonly metering: MeteringService,
+    // Option B — S2f — data-layer tenancy load for the two clean
+    // request-scoped DocumentUpload reads (getDocuments + updateExtractedText).
+    // @Optional purely to preserve the byte-identical metering specs (recon
+    // §F.1); production always provides it via ScopedRepositoryModule.
+    @Optional()
+    private readonly documentScoped?: DocumentUploadScopedRepository,
   ) {}
+
+  /**
+   * The DocumentUpload scoped chokepoint, asserted present. The dependency is
+   * declared `@Optional()` ONLY so the upload_extraction / finalize_review
+   * metering specs (which construct this service without it and exercise no
+   * scoped method) stay byte-identical — production ALWAYS provides it via
+   * ScopedRepositoryModule. If it is ever missing at a scoped call site, fail
+   * loudly (a misconfiguration → 500) rather than silently degrade; the
+   * findInOrg wall still gates tenancy, so this is fail-safe, never a leak.
+   */
+  private get scopedDocs(): DocumentUploadScopedRepository {
+    if (!this.documentScoped) {
+      throw new Error(
+        'DocumentUploadScopedRepository is not wired — DocumentProcessingModule ' +
+          'must import ScopedRepositoryModule.',
+      );
+    }
+    return this.documentScoped;
+  }
 
   /**
    * Upload a document and start the processing pipeline.
@@ -621,15 +656,23 @@ export class DocumentProcessingService {
   /**
    * Get all documents for a contract.
    *
-   * Tenant-isolation Tier 2 — `orgId` required so the bare `find` is
-   * walled by `findInOrg(contractId, orgId)` first. Cross-tenant → 404.
+   * Two checks, two layers (CLAUDE.md Option B):
+   *   layer 1 (persona — Tier 2 wall): `findInOrg(contractId, orgId)` →
+   *     cross-tenant probe → 404 BEFORE any data load. Stays independent.
+   *   layer 2 (tenancy — Option B S2f scoped chokepoint): the list loads
+   *     through `scopedFind`, which independently re-applies the canonical
+   *     document→contract→project→org join — cross-tenant rows are excluded
+   *     even if the wall above were bypassed.
+   * No nested relations on this read → no two-step hydrate; the
+   * priority/created ordering is applied on the entity alias by scopedFind.
    */
   async getDocuments(contractId: string, orgId: string): Promise<DocumentUpload[]> {
     await this.contractAccess.findInOrg(contractId, orgId);
-    return this.documentUploadRepository.find({
-      where: { contract_id: contractId },
-      order: { document_priority: 'ASC', created_at: 'ASC' },
-    });
+    return this.scopedDocs.scopedFind(
+      { contract_id: contractId },
+      orgId,
+      { order: { document_priority: 'ASC', created_at: 'ASC' } },
+    );
   }
 
   /**
@@ -666,21 +709,26 @@ export class DocumentProcessingService {
    * `doc.contract_id → findInOrg(_, orgId)` → 404 on a cross-tenant probe
    * (never 403 — no existence leak). The canonical contract is now the tenancy
    * authority; the denorm column is no longer trusted. Same wall shape as
-   * pollAndAdvance / reprocess (PR #45). Phase 2 layers the scoped chokepoint
-   * underneath this wall (two checks, two layers).
+   * pollAndAdvance / reprocess (PR #45).
+   *
+   * S2f Phase 2 — two checks, two layers (CLAUDE.md Option B):
+   *   layer 2 (tenancy — scoped chokepoint): `scopedFindByIdOrThrow` resolves
+   *     the document through the canonical document→contract→project→org join.
+   *     Cross-org → 404 (never 403, no existence leak) at the data layer.
+   *   layer 1 (persona — Phase 1 wall): `findInOrg` on the scoped row's
+   *     canonical contract STAYS as defense-in-depth.
+   * No nested relations needed for a text correction, so the scoped row is
+   * mutated and saved directly (it carries every `document` column — the
+   * scoped query inner-joins for filtering, not selecting).
    */
   async updateExtractedText(
     docId: string,
     orgId: string,
     text: string,
   ): Promise<DocumentUpload> {
-    const doc = await this.documentUploadRepository.findOne({
-      where: { id: docId },
-    });
-    if (!doc) {
-      throw new NotFoundException('Document not found');
-    }
-    // WALL (canonical, layer 1) — cross-tenant probe → 404 BEFORE the write.
+    // SCOPED LOAD (tenancy — layer 2): cross-org denied at the data layer.
+    const doc = await this.scopedDocs.scopedFindByIdOrThrow(docId, orgId);
+    // WALL (persona — Phase 1, layer 1): stays as defense-in-depth.
     await this.contractAccess.findInOrg(doc.contract_id, orgId);
     doc.extracted_text = text;
     return this.documentUploadRepository.save(doc);

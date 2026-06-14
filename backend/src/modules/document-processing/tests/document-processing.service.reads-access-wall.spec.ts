@@ -31,10 +31,16 @@ describe('DocumentProcessingService — Tier 2 READ access wall', () => {
     documentUploadRepository,
     contractClauseRepository,
     contractAccess,
+    documentScoped,
   }: {
     documentUploadRepository?: any;
     contractClauseRepository?: any;
     contractAccess: any;
+    // Option B — S2f: the DocumentUpload scoped chokepoint. getDocuments now
+    // loads its list through this (under the wall); the other reads here
+    // (pollAndAdvance / getDocumentStatus / getClausesForReview) do NOT touch
+    // it, so it defaults to undefined for them.
+    documentScoped?: any;
   }): DocumentProcessingService {
     return new DocumentProcessingService(
       documentUploadRepository ?? noop,
@@ -51,6 +57,8 @@ describe('DocumentProcessingService — Tier 2 READ access wall', () => {
       // Phase 7.18 Part 3 — MeteringService dep. These read-side specs
       // don't exercise reserve/commit/release; no-op stub is sufficient.
       { reserve: jest.fn(), commit: jest.fn(), release: jest.fn() } as any,
+      // Option B — S2f scoped chokepoint (only getDocuments uses it).
+      documentScoped,
     );
   }
 
@@ -58,15 +66,19 @@ describe('DocumentProcessingService — Tier 2 READ access wall', () => {
   // getDocuments — contractId direct
   // ────────────────────────────────────────────────────────────────────
   describe('getDocuments (contractId direct)', () => {
-    it('cross-tenant: 404 BEFORE the repository.find runs', async () => {
-      const documentUploadRepository = { find: jest.fn() };
+    it('cross-tenant: 404 from the wall BEFORE the scoped list load', async () => {
+      // S2f re-aim: the by-contract list load moved from the bare repo `find`
+      // to the scoped chokepoint `scopedFind`. The LIVE WALL-DENIAL assertion
+      // (the dead-code check) is preserved — the wall still fires first and the
+      // scoped load is never reached on a cross-tenant probe.
+      const documentScoped = { scopedFind: jest.fn() };
       const contractAccess = {
         findInOrg: jest
           .fn()
           .mockRejectedValue(new NotFoundException('Contract not found')),
       };
 
-      const svc = build({ documentUploadRepository, contractAccess });
+      const svc = build({ documentScoped, contractAccess });
 
       await expect(
         svc.getDocuments(CONTRACT_IN_B, ORG_A),
@@ -76,22 +88,29 @@ describe('DocumentProcessingService — Tier 2 READ access wall', () => {
         CONTRACT_IN_B,
         ORG_A,
       );
-      expect(documentUploadRepository.find).not.toHaveBeenCalled();
+      expect(documentScoped.scopedFind).not.toHaveBeenCalled();
     });
 
-    it('happy path: in-org caller, docs returned', async () => {
+    it('happy path: in-org caller, docs returned from the scoped chokepoint', async () => {
       const docs = [{ id: 'doc-1' }];
-      const documentUploadRepository = {
-        find: jest.fn().mockResolvedValue(docs),
+      const documentScoped = {
+        scopedFind: jest.fn().mockResolvedValue(docs),
       };
       const contractAccess = { findInOrg: jest.fn().mockResolvedValue({}) };
 
-      const svc = build({ documentUploadRepository, contractAccess });
+      const svc = build({ documentScoped, contractAccess });
 
       const result = await svc.getDocuments('contract-in-a', ORG_A);
       expect(contractAccess.findInOrg).toHaveBeenCalledWith(
         'contract-in-a',
         ORG_A,
+      );
+      // S2f: the list comes from scopedFind, filtered by contract_id under the
+      // caller's org, ordered by priority then created_at.
+      expect(documentScoped.scopedFind).toHaveBeenCalledWith(
+        { contract_id: 'contract-in-a' },
+        ORG_A,
+        { order: { document_priority: 'ASC', created_at: 'ASC' } },
       );
       expect(result).toEqual(docs);
     });
