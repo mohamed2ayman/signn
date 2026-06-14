@@ -44,6 +44,8 @@ import { RiskSourceType } from '../../enums/risk-source-type.enum';
 import { ContractAccessService } from '../../../contracts/services/contract-access.service';
 // Phase 7.18 Part 3 — DocumentProcessingService injects MeteringService.
 import { MeteringService } from '../../../metering/services/metering.service';
+// Option B — S2f — DocumentProcessingService injects DocumentUploadScopedRepository.
+import { DocumentUploadScopedRepository } from '../../../scoped-repository/document-upload-scoped.repository';
 
 // ─────────────────────────────────────────────────────────────────────────
 // Fixtures
@@ -177,6 +179,13 @@ describe('AI risk writer — pollAndSaveRisks / saveAiRiskAsRow', () => {
             commit: jest.fn(),
             release: jest.fn(),
           },
+        },
+        // Option B — S2f: DocumentUploadScopedRepository is now a REQUIRED dep.
+        // pollAndSaveRisks does NOT load via the scoped chokepoint, so this stub
+        // is never invoked — it only satisfies DI.
+        {
+          provide: DocumentUploadScopedRepository,
+          useValue: { scopedFind: jest.fn(), scopedFindByIdOrThrow: jest.fn() },
         },
       ],
     }).compile();

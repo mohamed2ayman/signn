@@ -2,7 +2,6 @@ import {
   Injectable,
   NotFoundException,
   Logger,
-  Optional,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
@@ -40,11 +39,8 @@ import { MeteringCaller } from '../metering/services/metering-resolver.service';
 // Option B — S2f: the DocumentUpload data-layer tenancy chokepoint. The two
 // clean request-scoped reads (getDocuments + the Phase-1-walled
 // updateExtractedText) load THROUGH this scoped repo, UNDER the findInOrg wall
-// (two checks, two layers). Injected @Optional ONLY to keep the
-// upload_extraction + finalize_review metering specs byte-identical (they
-// construct the service positionally / via DI without this dep and exercise no
-// scoped method); production ALWAYS provides it via ScopedRepositoryModule. See
-// docs/option-b-s2f-document-upload-recon.md §F.1.
+// (two checks, two layers). Required constructor dependency — same house style
+// as every other scoped repo (S2c-2/S2d/S2e). Provided via ScopedRepositoryModule.
 import { DocumentUploadScopedRepository } from '../scoped-repository/document-upload-scoped.repository';
 
 @Injectable()
@@ -89,30 +85,9 @@ export class DocumentProcessingService {
     private readonly metering: MeteringService,
     // Option B — S2f — data-layer tenancy load for the two clean
     // request-scoped DocumentUpload reads (getDocuments + updateExtractedText).
-    // @Optional purely to preserve the byte-identical metering specs (recon
-    // §F.1); production always provides it via ScopedRepositoryModule.
-    @Optional()
-    private readonly documentScoped?: DocumentUploadScopedRepository,
+    // Required dependency (house style); provided via ScopedRepositoryModule.
+    private readonly documentScoped: DocumentUploadScopedRepository,
   ) {}
-
-  /**
-   * The DocumentUpload scoped chokepoint, asserted present. The dependency is
-   * declared `@Optional()` ONLY so the upload_extraction / finalize_review
-   * metering specs (which construct this service without it and exercise no
-   * scoped method) stay byte-identical — production ALWAYS provides it via
-   * ScopedRepositoryModule. If it is ever missing at a scoped call site, fail
-   * loudly (a misconfiguration → 500) rather than silently degrade; the
-   * findInOrg wall still gates tenancy, so this is fail-safe, never a leak.
-   */
-  private get scopedDocs(): DocumentUploadScopedRepository {
-    if (!this.documentScoped) {
-      throw new Error(
-        'DocumentUploadScopedRepository is not wired — DocumentProcessingModule ' +
-          'must import ScopedRepositoryModule.',
-      );
-    }
-    return this.documentScoped;
-  }
 
   /**
    * Upload a document and start the processing pipeline.
@@ -668,7 +643,7 @@ export class DocumentProcessingService {
    */
   async getDocuments(contractId: string, orgId: string): Promise<DocumentUpload[]> {
     await this.contractAccess.findInOrg(contractId, orgId);
-    return this.scopedDocs.scopedFind(
+    return this.documentScoped.scopedFind(
       { contract_id: contractId },
       orgId,
       { order: { document_priority: 'ASC', created_at: 'ASC' } },
@@ -706,7 +681,7 @@ export class DocumentProcessingService {
     text: string,
   ): Promise<DocumentUpload> {
     // SCOPED LOAD (tenancy — layer 2): cross-org denied at the data layer.
-    const doc = await this.scopedDocs.scopedFindByIdOrThrow(docId, orgId);
+    const doc = await this.documentScoped.scopedFindByIdOrThrow(docId, orgId);
     // WALL (persona — Phase 1, layer 1): stays as defense-in-depth.
     await this.contractAccess.findInOrg(doc.contract_id, orgId);
     doc.extracted_text = text;
