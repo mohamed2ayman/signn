@@ -53,8 +53,14 @@ export class RiskAnalysisController {
   @Get('clause/:clauseId')
   async getByClause(
     @Param('clauseId', ParseUUIDPipe) clauseId: string,
+    @CurrentUser() user: User,
   ) {
-    return this.riskAnalysisService.getByClause(clauseId);
+    // Tenant-isolation — service walls the clause's contract against the
+    // caller's org (pre-S2e stop-gap).
+    return this.riskAnalysisService.getByClause(
+      clauseId,
+      user.organization_id,
+    );
   }
 
   @Put(':id/status')
@@ -63,7 +69,14 @@ export class RiskAnalysisController {
     @Body() dto: UpdateRiskStatusDto,
     @CurrentUser() user: any,
   ) {
-    return this.riskAnalysisService.updateRiskStatus(id, dto, user.id);
+    // Tenant-isolation — service walls the risk's contract against the
+    // caller's org BEFORE the status mutation (pre-S2e stop-gap).
+    return this.riskAnalysisService.updateRiskStatus(
+      id,
+      dto,
+      user.id,
+      user.organization_id,
+    );
   }
 
   /**
