@@ -63,18 +63,34 @@ export class RiskAnalysisService {
     });
   }
 
-  async getByClause(contractClauseId: string): Promise<RiskAnalysis[]> {
-    return this.riskAnalysisRepository.find({
+  async getByClause(
+    contractClauseId: string,
+    orgId: string,
+  ): Promise<RiskAnalysis[]> {
+    const risks = await this.riskAnalysisRepository.find({
       where: { contract_clause_id: contractClauseId },
       relations: ['handler'],
       order: { created_at: 'DESC' },
     });
+    // No rows → nothing to leak; short-circuit before consulting the wall
+    // (there is no contract_id to resolve from an empty result set).
+    if (risks.length === 0) {
+      return [];
+    }
+    // WALL (pre-S2e stop-gap): every row for one contract_clause_id shares the
+    // SAME contract_id (a clause belongs to exactly one contract), so the
+    // cross-tenant probe on that contract gates the whole result set → 404
+    // BEFORE any foreign clause's risks are returned. Same findInOrg pattern
+    // as the #65 create() wall; NOT a scoped-repository conversion.
+    await this.contractAccess.findInOrg(risks[0].contract_id, orgId);
+    return risks;
   }
 
   async updateRiskStatus(
     id: string,
     dto: UpdateRiskStatusDto,
     userId: string,
+    orgId: string,
   ): Promise<RiskAnalysis> {
     const risk = await this.riskAnalysisRepository.findOne({
       where: { id },
@@ -83,6 +99,12 @@ export class RiskAnalysisService {
     if (!risk) {
       throw new NotFoundException('Risk analysis not found');
     }
+
+    // WALL (pre-S2e stop-gap): the by-id load resolves the row's contract_id;
+    // the cross-tenant probe → 404 (never 403) BEFORE the status mutation, so
+    // a caller can never flip the status on another org's risk analysis. Same
+    // findInOrg pattern as the #65 create() wall; NOT a scoped-repo conversion.
+    await this.contractAccess.findInOrg(risk.contract_id, orgId);
 
     risk.status = dto.status;
     risk.handled_by = userId;
