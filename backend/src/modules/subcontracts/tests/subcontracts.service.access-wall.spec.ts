@@ -14,8 +14,15 @@ import { ContractStatus } from '../../../database/entities';
  *
  * Cross-org → 404 (NOT 403, no existence leak); in-org → success.
  * The status-log side effect in create is gated by the wall.
+ *
+ * S2e RE-AIM: the LIST read (findAllByMainContract) now sources its rows from
+ * the scoped chokepoint (SubContractScopedRepository.scopedFind — layer 2)
+ * AFTER the Tier 3 findInOrg wall (layer 1, FIRST — also the status source).
+ * The wall stays the first gate; a cross-tenant probe is still denied by the
+ * WALL before scopedFind is reached. The in-org assertion moved from the bare
+ * subContractRepo.find to scopedFind. create() is UNCHANGED (wall-only stop-gap).
  */
-describe('SubContractsService — cross-tenant access wall (Tier 3)', () => {
+describe('SubContractsService — cross-tenant access wall (Tier 3 → S2e scoped list)', () => {
   const ORG_A = '00000000-0000-0000-0000-00000000000a';
   const CONTRACT_IN_A = '11111111-1111-1111-1111-1111111111a1';
   const CONTRACT_IN_B = '11111111-1111-1111-1111-1111111111b1';
@@ -28,14 +35,18 @@ describe('SubContractsService — cross-tenant access wall (Tier 3)', () => {
     statusLogRepo?: any;
     contractRepo?: any;
     contractAccess: any;
+    subContractScoped?: any;
   };
 
   function build(opts: Builder): SubContractsService {
-    return new SubContractsService(
+    // `any`-cast Ctor — the scoped repo is appended as the last constructor arg.
+    const Ctor: any = SubContractsService;
+    return new Ctor(
       opts.subContractRepo ?? noop,
       opts.statusLogRepo ?? noop,
       opts.contractRepo ?? noop,
       opts.contractAccess,
+      opts.subContractScoped ?? { scopedFind: jest.fn().mockResolvedValue([]) },
     );
   }
 
@@ -125,11 +136,12 @@ describe('SubContractsService — cross-tenant access wall (Tier 3)', () => {
   // findAllByMainContract — GET /subcontracts?main_contract_id=
   // ────────────────────────────────────────────────────────────────────
   describe('findAllByMainContract (GET /subcontracts?main_contract_id=)', () => {
-    it('cross-tenant: 404 BEFORE the subcontract list query runs', async () => {
+    it('cross-tenant: wall 404s FIRST — scoped list never runs', async () => {
       const subContractRepo = { find: jest.fn() };
       const contractAccess = { findInOrg: reject() };
+      const subContractScoped = { scopedFind: jest.fn() };
 
-      const svc = build({ subContractRepo, contractAccess });
+      const svc = build({ subContractRepo, contractAccess, subContractScoped });
 
       await expect(
         svc.findAllByMainContract(CONTRACT_IN_B, ORG_A),
@@ -140,28 +152,34 @@ describe('SubContractsService — cross-tenant access wall (Tier 3)', () => {
         ORG_A,
       );
       expect(subContractRepo.find).not.toHaveBeenCalled();
+      expect(subContractScoped.scopedFind).not.toHaveBeenCalled();
     });
 
-    it('happy path: in-org caller, subcontracts returned for the main contract', async () => {
+    it('happy path: in-org caller, subcontracts returned from the scoped list (layer 2)', async () => {
       const SUBS = [
         { id: 's1', main_contract_id: CONTRACT_IN_A },
         { id: 's2', main_contract_id: CONTRACT_IN_A },
       ];
-      const subContractRepo = { find: jest.fn().mockResolvedValue(SUBS) };
+      const subContractRepo = { find: jest.fn() };
       const contractAccess = { findInOrg: resolve() };
+      const subContractScoped = { scopedFind: jest.fn().mockResolvedValue(SUBS) };
 
-      const svc = build({ subContractRepo, contractAccess });
+      const svc = build({ subContractRepo, contractAccess, subContractScoped });
       const result = await svc.findAllByMainContract(CONTRACT_IN_A, ORG_A);
 
       expect(contractAccess.findInOrg).toHaveBeenCalledWith(
         CONTRACT_IN_A,
         ORG_A,
       );
-      expect(subContractRepo.find).toHaveBeenCalledWith({
-        where: { main_contract_id: CONTRACT_IN_A },
-        relations: ['creator', 'mainContract'],
-        order: { created_at: 'DESC' },
-      });
+      // Layer 2 — the scoped chokepoint sourced the rows. The `mainContract`
+      // relation hydrates beside the gate join (distinct org_gate_main_contract
+      // alias). The bare repo find is no longer used.
+      expect(subContractScoped.scopedFind).toHaveBeenCalledWith(
+        { main_contract_id: CONTRACT_IN_A },
+        ORG_A,
+        { relations: ['creator', 'mainContract'], order: { created_at: 'DESC' } },
+      );
+      expect(subContractRepo.find).not.toHaveBeenCalled();
       expect(result).toEqual(SUBS);
     });
   });

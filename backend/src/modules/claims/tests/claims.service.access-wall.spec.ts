@@ -16,8 +16,15 @@ import { ClaimStatus } from '../../../database/entities/claim.entity';
  * exercise cross-org → 404 (NotFoundException, NOT 403 — no existence
  * leak) and in-org → success. The wall fires BEFORE any downstream
  * read or write — claim repo is never touched on the cross-tenant path.
+ *
+ * S2e RE-AIM: the LIST read (findAllByContract) now sources its rows from the
+ * scoped chokepoint (ClaimScopedRepository.scopedFind — layer 2) AFTER the
+ * Tier 3 findInOrg wall (layer 1, FIRST — also the status source). The wall
+ * stays the first gate on the list path; a cross-tenant probe is still denied
+ * by the WALL before scopedFind is reached. The in-org assertion moved from the
+ * bare claimRepo.find to scopedFind. create() is UNCHANGED (wall-only stop-gap).
  */
-describe('ClaimsService — cross-tenant access wall (Tier 3)', () => {
+describe('ClaimsService — cross-tenant access wall (Tier 3 → S2e scoped list)', () => {
   const ORG_A = '00000000-0000-0000-0000-00000000000a';
   const ORG_B = '00000000-0000-0000-0000-00000000000b';
   const CONTRACT_IN_A = '11111111-1111-1111-1111-1111111111a1';
@@ -33,16 +40,20 @@ describe('ClaimsService — cross-tenant access wall (Tier 3)', () => {
     claimStatusLogRepo?: any;
     contractRepo?: any;
     contractAccess: any;
+    claimScoped?: any;
   };
 
   function build(opts: Builder): ClaimsService {
-    return new ClaimsService(
+    // `any`-cast Ctor — the scoped repo is appended as the last constructor arg.
+    const Ctor: any = ClaimsService;
+    return new Ctor(
       opts.claimRepo ?? noop,
       opts.claimDocumentRepo ?? noop,
       opts.claimResponseRepo ?? noop,
       opts.claimStatusLogRepo ?? noop,
       opts.contractRepo ?? noop,
       opts.contractAccess,
+      opts.claimScoped ?? { scopedFind: jest.fn().mockResolvedValue([]) },
     );
   }
 
@@ -132,11 +143,12 @@ describe('ClaimsService — cross-tenant access wall (Tier 3)', () => {
   // findAllByContract — GET /claims?contract_id=
   // ────────────────────────────────────────────────────────────────────
   describe('findAllByContract (GET /claims?contract_id=)', () => {
-    it('cross-tenant: 404 BEFORE the claim list query runs', async () => {
+    it('cross-tenant: wall 404s FIRST — scoped list never runs', async () => {
       const claimRepo = { find: jest.fn() };
       const contractAccess = { findInOrg: reject() };
+      const claimScoped = { scopedFind: jest.fn() };
 
-      const svc = build({ claimRepo, contractAccess });
+      const svc = build({ claimRepo, contractAccess, claimScoped });
 
       await expect(
         svc.findAllByContract(CONTRACT_IN_B, ORG_A),
@@ -146,30 +158,36 @@ describe('ClaimsService — cross-tenant access wall (Tier 3)', () => {
         CONTRACT_IN_B,
         ORG_A,
       );
-      // Cross-tenant probe: zero rows ever loaded from the victim org.
+      // Cross-tenant probe: zero rows ever loaded from the victim org, and the
+      // scoped chokepoint (layer 2) is never reached.
       expect(claimRepo.find).not.toHaveBeenCalled();
+      expect(claimScoped.scopedFind).not.toHaveBeenCalled();
     });
 
-    it('happy path: in-org caller, claims returned for the contract', async () => {
+    it('happy path: in-org caller, claims returned from the scoped list (layer 2)', async () => {
       const CLAIMS = [
         { id: 'c1', contract_id: CONTRACT_IN_A },
         { id: 'c2', contract_id: CONTRACT_IN_A },
       ];
-      const claimRepo = { find: jest.fn().mockResolvedValue(CLAIMS) };
+      const claimRepo = { find: jest.fn() };
       const contractAccess = { findInOrg: resolve() };
+      const claimScoped = { scopedFind: jest.fn().mockResolvedValue(CLAIMS) };
 
-      const svc = build({ claimRepo, contractAccess });
+      const svc = build({ claimRepo, contractAccess, claimScoped });
       const result = await svc.findAllByContract(CONTRACT_IN_A, ORG_A);
 
       expect(contractAccess.findInOrg).toHaveBeenCalledWith(
         CONTRACT_IN_A,
         ORG_A,
       );
-      expect(claimRepo.find).toHaveBeenCalledWith({
-        where: { contract_id: CONTRACT_IN_A },
-        relations: ['submitter', 'documents'],
-        order: { created_at: 'DESC' },
-      });
+      // Layer 2 — the scoped chokepoint sourced the rows (single-level
+      // relations/order preserved). The bare repo find is no longer used.
+      expect(claimScoped.scopedFind).toHaveBeenCalledWith(
+        { contract_id: CONTRACT_IN_A },
+        ORG_A,
+        { relations: ['submitter', 'documents'], order: { created_at: 'DESC' } },
+      );
+      expect(claimRepo.find).not.toHaveBeenCalled();
       expect(result).toEqual(CLAIMS);
     });
   });

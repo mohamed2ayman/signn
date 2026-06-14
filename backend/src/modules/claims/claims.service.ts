@@ -21,6 +21,10 @@ import {
   UploadClaimDocumentDto,
 } from './dto';
 import { ContractAccessService } from '../contracts/services/contract-access.service';
+// Option B — S2e: ClaimsService loads its per-contract LIST and by-id surfaces
+// through ClaimScopedRepository (the data-layer tenancy chokepoint, layer 2),
+// UNDER the independent #57 / Tier 3 findInOrg walls (layer 1).
+import { ClaimScopedRepository } from '../scoped-repository/claim-scoped.repository';
 
 @Injectable()
 export class ClaimsService {
@@ -41,6 +45,8 @@ export class ClaimsService {
     private readonly contractRepo: Repository<Contract>,
 
     private readonly contractAccess: ContractAccessService,
+
+    private readonly claimScoped: ClaimScopedRepository,
   ) {}
 
   async create(
@@ -94,14 +100,30 @@ export class ClaimsService {
       );
     }
 
-    return this.claimRepo.find({
-      where: { contract_id: contractId },
-      relations: ['submitter', 'documents'],
-      order: { created_at: 'DESC' },
-    });
+    // SCOPED LIST (tenancy — Option B S2e, layer 2): the org-safe row set comes
+    // from the scoped chokepoint, which independently re-applies the canonical
+    // claim→contract→project→org join. relations/order are single-level, so this
+    // is a behavior-preserving drop-in for the bare find (no two-step needed).
+    return this.claimScoped.scopedFind(
+      { contract_id: contractId },
+      orgId,
+      { relations: ['submitter', 'documents'], order: { created_at: 'DESC' } },
+    );
   }
 
   async findById(id: string, orgId: string): Promise<Claim> {
+    // SCOPED LOAD (tenancy — Option B S2e, layer 2): cross-org denied at the
+    // data layer BEFORE any nested relation is hydrated.
+    const scoped = await this.claimScoped.scopedFindByIdOrThrow(id, orgId);
+
+    // WALL (persona — #57 S0-part-2, layer 1): STAYS as defense-in-depth, keyed
+    // on the scoped row's OWN contract_id. This is the shared loader, so
+    // acknowledge/respond/updateStatus inherit both layers.
+    await this.contractAccess.findInOrg(scoped.contract_id, orgId);
+
+    // HYDRATION on the tenancy-validated id — the nested relations exceed the
+    // scoped base's single-level relation support; the two-step keeps the base
+    // minimal instead of growing it.
     const claim = await this.claimRepo.findOne({
       where: { id },
       relations: [
@@ -117,15 +139,10 @@ export class ClaimsService {
     });
 
     if (!claim) {
+      // Row vanished between the scoped load and the hydrate (race) — same
+      // no-existence-leak 404.
       throw new NotFoundException('Claim not found');
     }
-
-    // INTERIM (S0-part-2): child-id cross-tenant wall. Option B S2e absorbs this
-    //  via the scoped repository (scopedFindByIdViaContract). findInOrg stop-gap
-    //  until then. Resolves via the claim's OWN parent contract_id (never a
-    //  URL-supplied contractId) → cross-tenant 404, no existence leak. This is
-    //  the shared loader, so acknowledge/respond/updateStatus inherit the wall.
-    await this.contractAccess.findInOrg(claim.contract_id, orgId);
 
     return claim;
   }
@@ -222,16 +239,13 @@ export class ClaimsService {
     userId: string,
     orgId: string,
   ): Promise<ClaimDocument> {
-    const claim = await this.claimRepo.findOne({ where: { id } });
-    if (!claim) {
-      throw new NotFoundException('Claim not found');
-    }
+    // SCOPED LOAD (tenancy — Option B S2e, layer 2): this path loads the claim
+    // directly (not via findById), so it carries its OWN scoped load. Cross-org
+    // denied at the data layer → 404 ('Claim not found'), no existence leak.
+    const claim = await this.claimScoped.scopedFindByIdOrThrow(id, orgId);
 
-    // INTERIM (S0-part-2): child-id cross-tenant wall. Option B S2e absorbs this
-    //  via the scoped repository (scopedFindByIdViaContract). findInOrg stop-gap
-    //  until then. Resolves via the claim's OWN parent contract_id (never a
-    //  URL-supplied contractId) → cross-tenant 404, no existence leak. This path
-    //  loads the claim directly (not via findById), so it carries its own wall.
+    // WALL (persona — #57 S0-part-2, layer 1): STAYS as defense-in-depth, keyed
+    // on the claim's OWN parent contract_id (never a URL-supplied contractId).
     await this.contractAccess.findInOrg(claim.contract_id, orgId);
 
     const document = this.claimDocumentRepo.create({
