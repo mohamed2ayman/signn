@@ -78,9 +78,9 @@ export class PortfolioAnalyticsService {
   private readonly logger = new Logger(PortfolioAnalyticsService.name);
 
   constructor(
-    @InjectRepository(Contract)
+    @InjectRepository(Contract) // lint-exempt: aggregation QB (Q3 — org-wide, not per-contract)
     private readonly contractRepo: Repository<Contract>,
-    @InjectRepository(RiskAnalysis)
+    @InjectRepository(RiskAnalysis) // lint-exempt: aggregation QB (Q3 — org-wide, not per-contract)
     private readonly riskRepo: Repository<RiskAnalysis>,
   ) {}
 
@@ -170,7 +170,7 @@ export class PortfolioAnalyticsService {
     orgId: string,
     projectId?: string,
   ): SelectQueryBuilder<Contract> {
-    const qb = this.contractRepo
+    const qb = this.contractRepo // lint-exempt: aggregation QB (Q3 — org-wide, not per-contract)
       .createQueryBuilder('c')
       .innerJoin('c.project', 'p')
       .where('p.organization_id = :orgId', { orgId });
@@ -183,7 +183,7 @@ export class PortfolioAnalyticsService {
     orgId: string,
     projectId?: string,
   ): SelectQueryBuilder<RiskAnalysis> {
-    const qb = this.riskRepo
+    const qb = this.riskRepo // lint-exempt: aggregation QB (Q3 — org-wide, not per-contract)
       .createQueryBuilder('r')
       .innerJoin('r.contract', 'c')
       .innerJoin('c.project', 'p')
@@ -415,7 +415,7 @@ export class PortfolioAnalyticsService {
    * covering index `(contract_id) INCLUDE (risk_score)`. See lesson #134.
    */
   private async getProjectRisk(orgId: string) {
-    const rows = await this.riskRepo
+    const rows = await this.riskRepo // lint-exempt: aggregation QB (Q3 — org-wide, not per-contract)
       .createQueryBuilder('r')
       .innerJoin('r.contract', 'c')
       .innerJoin('c.project', 'p')
@@ -495,7 +495,7 @@ export class PortfolioAnalyticsService {
    * would violate the no-FX rule (v1). Per-currency value lives in its own widget.
    */
   private async getTopProjects(orgId: string) {
-    const contractRows = await this.contractRepo
+    const contractRows = await this.contractRepo // lint-exempt: aggregation QB (Q3 — org-wide, not per-contract)
       .createQueryBuilder('c')
       .innerJoin('c.project', 'p')
       .select('p.id', 'project_id')
@@ -518,7 +518,7 @@ export class PortfolioAnalyticsService {
         active_count: string;
       }>();
 
-    const riskRows = await this.riskRepo
+    const riskRows = await this.riskRepo // lint-exempt: aggregation QB (Q3 — org-wide, not per-contract)
       .createQueryBuilder('r')
       .innerJoin('r.contract', 'c')
       .innerJoin('c.project', 'p')

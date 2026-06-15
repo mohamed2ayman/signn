@@ -39,7 +39,7 @@ export class ContractTemplatesService {
     private readonly knowledgeAssetRepository: Repository<KnowledgeAsset>,
     @InjectRepository(Clause)
     private readonly clauseRepository: Repository<Clause>,
-    @InjectRepository(ContractClause)
+    @InjectRepository(ContractClause) // lint-exempt: system/admin template seeding
     private readonly contractClauseRepository: Repository<ContractClause>,
   ) {}
 
@@ -110,7 +110,7 @@ export class ContractTemplatesService {
         },
       });
 
-      const savedCc = await this.contractClauseRepository.save(contractClause);
+      const savedCc = await this.contractClauseRepository.save(contractClause); // lint-exempt: system/admin template seeding
       createdContractClauses.push(savedCc);
 
       // Create sub-clause records
@@ -143,7 +143,7 @@ export class ContractTemplatesService {
           },
         });
 
-        const savedSubCc = await this.contractClauseRepository.save(subContractClause);
+        const savedSubCc = await this.contractClauseRepository.save(subContractClause); // lint-exempt: system/admin template seeding
         createdContractClauses.push(savedSubCc);
       }
     }

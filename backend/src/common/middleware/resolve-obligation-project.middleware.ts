@@ -33,9 +33,9 @@ export class ResolveObligationProjectMiddleware implements NestMiddleware {
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
   constructor(
-    @InjectRepository(Obligation)
+    @InjectRepository(Obligation) // lint-exempt: system/no-orgId by design
     private readonly obligationRepo: Repository<Obligation>,
-    @InjectRepository(Contract)
+    @InjectRepository(Contract) // lint-exempt: system/no-orgId by design
     private readonly contractRepo: Repository<Contract>,
   ) {}
 
@@ -54,7 +54,7 @@ export class ResolveObligationProjectMiddleware implements NestMiddleware {
 
       // Case 2: /contracts/:contractId/* — look up the contract.
       if (params.contractId) {
-        const contract = await this.contractRepo.findOne({
+        const contract = await this.contractRepo.findOne({ // lint-exempt: system/no-orgId by design
           where: { id: params.contractId },
           select: ['id', 'project_id'],
         });
@@ -68,7 +68,7 @@ export class ResolveObligationProjectMiddleware implements NestMiddleware {
       // project_id.  Only fire for UUID-shaped segments so we don't hit
       // the DB for static path segments like 'upcoming' or 'overdue'.
       if (params.id && ResolveObligationProjectMiddleware.UUID_RE.test(params.id)) {
-        const ob = await this.obligationRepo.findOne({
+        const ob = await this.obligationRepo.findOne({ // lint-exempt: system/no-orgId by design
           where: { id: params.id },
           select: ['id', 'project_id'],
         });

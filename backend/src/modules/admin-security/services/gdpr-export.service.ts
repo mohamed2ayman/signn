@@ -68,11 +68,11 @@ export class GdprExportService {
   constructor(
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
-    @InjectRepository(Contract)
+    @InjectRepository(Contract) // lint-exempt: system/no-orgId by design
     private readonly contractRepo: Repository<Contract>,
-    @InjectRepository(Claim)
+    @InjectRepository(Claim) // lint-exempt: system/no-orgId by design
     private readonly claimRepo: Repository<Claim>,
-    @InjectRepository(Notice)
+    @InjectRepository(Notice) // lint-exempt: system/no-orgId by design
     private readonly noticeRepo: Repository<Notice>,
     @InjectRepository(Notification)
     private readonly notificationRepo: Repository<Notification>,
@@ -227,9 +227,9 @@ export class GdprExportService {
       devices,
     ] = await Promise.all([
       this.userRepo.findOne({ where: { id: userId } }),
-      this.contractRepo.find({ where: { created_by: userId }, take: 1000 }),
-      this.claimRepo.find({ where: { submitted_by: userId } as any, take: 1000 }),
-      this.noticeRepo.find({ where: { submitted_by: userId } as any, take: 1000 }),
+      this.contractRepo.find({ where: { created_by: userId }, take: 1000 }), // lint-exempt: system/no-orgId by design
+      this.claimRepo.find({ where: { submitted_by: userId } as any, take: 1000 }), // lint-exempt: system/no-orgId by design
+      this.noticeRepo.find({ where: { submitted_by: userId } as any, take: 1000 }), // lint-exempt: system/no-orgId by design
       this.notificationRepo.find({ where: { user_id: userId }, take: 500 }),
       this.supportRepo.find({ where: { user_id: userId }, take: 500 }),
       this.auditRepo.find({

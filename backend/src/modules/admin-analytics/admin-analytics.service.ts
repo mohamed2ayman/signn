@@ -21,7 +21,7 @@ export class AdminAnalyticsService {
   constructor(
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
-    @InjectRepository(Contract)
+    @InjectRepository(Contract) // lint-exempt: aggregation QB (Q3 — org-wide, not per-contract)
     private readonly contractRepo: Repository<Contract>,
     @InjectRepository(KnowledgeAsset)
     private readonly assetRepo: Repository<KnowledgeAsset>,
@@ -98,11 +98,11 @@ export class AdminAnalyticsService {
     ]);
 
     const [totalContracts, contractsPrev, contractsThisPeriod] = await Promise.all([
-      this.contractRepo.count(),
-      this.contractRepo.createQueryBuilder('c')
+      this.contractRepo.count(), // lint-exempt: aggregation QB (Q3 — org-wide, not per-contract)
+      this.contractRepo.createQueryBuilder('c') // lint-exempt: aggregation QB (Q3 — org-wide, not per-contract)
         .where('c.created_at >= :prevStart AND c.created_at < :start', { prevStart, start })
         .getCount(),
-      this.contractRepo.createQueryBuilder('c')
+      this.contractRepo.createQueryBuilder('c') // lint-exempt: aggregation QB (Q3 — org-wide, not per-contract)
         .where('c.created_at >= :start', { start })
         .getCount(),
     ]);
@@ -265,40 +265,40 @@ export class AdminAnalyticsService {
   // ─── CONTRACTS ─────────────────────────────────────────────────────────
   private async getContractsTab(start: Date) {
     const [totalContracts, contractsThisPeriod] = await Promise.all([
-      this.contractRepo.count(),
-      this.contractRepo.createQueryBuilder('c')
+      this.contractRepo.count(), // lint-exempt: aggregation QB (Q3 — org-wide, not per-contract)
+      this.contractRepo.createQueryBuilder('c') // lint-exempt: aggregation QB (Q3 — org-wide, not per-contract)
         .where('c.created_at >= :start', { start })
         .getCount(),
     ]);
 
     const [statusRows, typeRows] = await Promise.all([
-      this.contractRepo.createQueryBuilder('c')
+      this.contractRepo.createQueryBuilder('c') // lint-exempt: aggregation QB (Q3 — org-wide, not per-contract)
         .select('c.status', 'status')
         .addSelect('COUNT(*)', 'count')
         .groupBy('c.status')
         .getRawMany<{ status: string; count: string }>(),
-      this.contractRepo.createQueryBuilder('c')
+      this.contractRepo.createQueryBuilder('c') // lint-exempt: aggregation QB (Q3 — org-wide, not per-contract)
         .select('c.contract_type', 'type')
         .addSelect('COUNT(*)', 'count')
         .groupBy('c.contract_type')
         .getRawMany<{ type: string; count: string }>(),
     ]);
 
-    const avgRow = await this.contractRepo
+    const avgRow = await this.contractRepo // lint-exempt: aggregation QB (Q3 — org-wide, not per-contract)
       .createQueryBuilder('c')
       .select('AVG(EXTRACT(EPOCH FROM (c.executed_at - c.created_at)) / 86400.0)', 'days')
       .where('c.executed_at IS NOT NULL')
       .getRawOne<{ days: string | null }>();
 
     const [docusignCount, totalForAdoption] = await Promise.all([
-      this.contractRepo.createQueryBuilder('c')
+      this.contractRepo.createQueryBuilder('c') // lint-exempt: aggregation QB (Q3 — org-wide, not per-contract)
         .where('c.docusign_envelope_id IS NOT NULL')
         .getCount(),
-      this.contractRepo.count(),
+      this.contractRepo.count(), // lint-exempt: aggregation QB (Q3 — org-wide, not per-contract)
     ]);
 
     // Real time series: contracts created per day in period
-    const tsRows = await this.contractRepo
+    const tsRows = await this.contractRepo // lint-exempt: aggregation QB (Q3 — org-wide, not per-contract)
       .createQueryBuilder('c')
       .select("TO_CHAR(c.created_at, 'YYYY-MM-DD')", 'date')
       .addSelect('COUNT(*)', 'count')

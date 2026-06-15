@@ -52,7 +52,7 @@ export class AdminOrganizationsService {
     private readonly userRepo: Repository<User>,
     @InjectRepository(Project)
     private readonly projectRepo: Repository<Project>,
-    @InjectRepository(Contract)
+    @InjectRepository(Contract) // lint-exempt: system/no-orgId by design
     private readonly contractRepo: Repository<Contract>,
     @InjectRepository(AuditLog)
     private readonly auditRepo: Repository<AuditLog>,

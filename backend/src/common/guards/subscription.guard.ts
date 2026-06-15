@@ -39,7 +39,7 @@ export class SubscriptionGuard implements CanActivate {
     private readonly projectRepository: Repository<Project>,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
-    @InjectRepository(Contract)
+    @InjectRepository(Contract) // lint-exempt: DEAD CODE — SubscriptionGuard not wired; DO NOT wire without an org wall (count is org-blind cross-tenant leak if activated)
     private readonly contractRepository: Repository<Contract>,
   ) {}
 
@@ -120,7 +120,7 @@ export class SubscriptionGuard implements CanActivate {
       case 'max_contracts_per_project': {
         const projectId = request.body?.project_id || request.params?.projectId;
         if (projectId) {
-          const contractCount = await this.contractRepository.count({
+          const contractCount = await this.contractRepository.count({ // lint-exempt: DEAD CODE — SubscriptionGuard not wired; DO NOT wire without an org wall (count is org-blind cross-tenant leak if activated)
             where: { project_id: projectId },
           });
           if (contractCount >= plan.max_contracts_per_project) {

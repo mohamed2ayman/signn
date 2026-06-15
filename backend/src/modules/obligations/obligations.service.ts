@@ -24,7 +24,7 @@ export class ObligationsService {
   private readonly logger = new Logger(ObligationsService.name);
 
   constructor(
-    @InjectRepository(Obligation)
+    @InjectRepository(Obligation) // lint-exempt: two-step hydration (ids validated by scoped load)
     private readonly obligationRepository: Repository<Obligation>,
     // Tenant-isolation Tier 2 — cross-tenant probe → 404 from findInOrg.
     private readonly contractAccess: ContractAccessService,
@@ -59,7 +59,7 @@ export class ObligationsService {
     // relation support; the two-step keeps the scoped base minimal instead
     // of growing it (S2c-2 plan). Keying by the validated ids (never by raw
     // request input) carries the tenancy proof into the hydrate.
-    return this.obligationRepository.find({
+    return this.obligationRepository.find({ // lint-exempt: two-step hydration (ids validated by scoped load)
       where: { id: In(scoped.map((o) => o.id)) },
       relations: ['contract_clause', 'contract_clause.clause', 'completer'],
       order: { due_date: 'ASC' },
@@ -93,7 +93,7 @@ export class ObligationsService {
     await this.contractAccess.findInOrg(scoped.contract_id, orgId);
 
     // HYDRATION on the validated id (nested relations — see doc comment).
-    const obligation = await this.obligationRepository.findOne({
+    const obligation = await this.obligationRepository.findOne({ // lint-exempt: two-step hydration (ids validated by scoped load)
       where: { id },
       relations: ['contract', 'contract_clause', 'contract_clause.clause', 'completer'],
     });
@@ -132,7 +132,7 @@ export class ObligationsService {
       status: ObligationStatus.PENDING,
     });
 
-    return this.obligationRepository.save(obligation);
+    return this.obligationRepository.save(obligation); // lint-exempt: wall-protected (findInOrg) — row validated before write
   }
 
   // S2c-2: update/complete/delete inherit BOTH layers (the scoped tenancy
@@ -155,7 +155,7 @@ export class ObligationsService {
     if (dto.reminder_days_before !== undefined) obligation.reminder_days_before = dto.reminder_days_before;
     if (dto.evidence_url !== undefined) obligation.evidence_url = dto.evidence_url;
 
-    return this.obligationRepository.save(obligation);
+    return this.obligationRepository.save(obligation); // lint-exempt: wall-protected (findInOrg) — row validated before write
   }
 
   async complete(
@@ -171,12 +171,12 @@ export class ObligationsService {
     obligation.completed_by = userId;
     if (evidenceUrl) obligation.evidence_url = evidenceUrl;
 
-    return this.obligationRepository.save(obligation);
+    return this.obligationRepository.save(obligation); // lint-exempt: wall-protected (findInOrg) — row validated before write
   }
 
   async delete(id: string, orgId: string): Promise<void> {
     const obligation = await this.findById(id, orgId);
-    await this.obligationRepository.remove(obligation);
+    await this.obligationRepository.remove(obligation); // lint-exempt: wall-protected (findInOrg) — row validated before write
   }
 
   // PRE-S2c HOTFIX: getUpcoming/getOverdue were PLATFORM-WIDE (no org
@@ -194,7 +194,7 @@ export class ObligationsService {
     const futureDate = new Date();
     futureDate.setDate(futureDate.getDate() + daysAhead);
 
-    return this.obligationRepository
+    return this.obligationRepository // lint-exempt: aggregation QB (Q3 — obligation portfolio/calendar)
       .createQueryBuilder('obligation')
       .leftJoinAndSelect('obligation.contract', 'contract')
       .leftJoinAndSelect('obligation.contract_clause', 'contract_clause')
@@ -213,7 +213,7 @@ export class ObligationsService {
       // No-org caller owns no contracts — empty, no existence leak.
       return [];
     }
-    const qb = this.obligationRepository
+    const qb = this.obligationRepository // lint-exempt: aggregation QB (Q3 — obligation portfolio/calendar)
       .createQueryBuilder('obligation')
       .leftJoinAndSelect('obligation.contract', 'contract')
       .leftJoinAndSelect('obligation.contract_clause', 'contract_clause')
@@ -245,7 +245,7 @@ export class ObligationsService {
       // repo never queried, no existence leak (mirrors getUpcoming/getOverdue).
       return { total: 0, by_status: {}, overdue_count: 0, upcoming_7_days: 0 };
     }
-    const qb = this.obligationRepository.createQueryBuilder('obligation');
+    const qb = this.obligationRepository.createQueryBuilder('obligation'); // lint-exempt: aggregation QB (Q3 — obligation portfolio/calendar)
     if (contractId) {
       qb.where('obligation.contract_id = :contractId', { contractId });
     } else {

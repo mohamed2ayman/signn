@@ -216,6 +216,59 @@ docker exec sign-postgres psql -U sign_user -d sign_db \
 ```
 Targeting the wrong name fails silently if wrapped in `EXCEPTION WHEN` (the lesson #31/#103 anti-pattern) and loudly if not. See lesson #143.
 
+### 11. Contract-Scoped Repository Access — Go Through the Chokepoint
+Contract-scoped reads and by-id loads MUST go through the scoped-repository
+chokepoint (`backend/src/modules/scoped-repository/*ScopedRepository`), which
+always applies the canonical `contract → project → organization_id` tenancy
+gate. The `ContractAccessService` walls (`findInOrg` / `findAccessibleContract`)
+STAY as independent defense-in-depth (two checks, two layers — see Option B).
+
+A "contract-scoped entity" is one rooted in the `contract → project → org` chain.
+The enforced set (24, deliberately over-inclusive — over-detection beats missing
+surface; **pending Ayman confirm**): the 11 wired (`Contract`, `ContractVersion`,
+`ContractorResponse`, `ContractApprover`, `ContractComment`, `Obligation`,
+`RiskAnalysis`, `Notice`, `Claim`, `SubContract`, `DocumentUpload`) plus 13
+discovered (`ContractClause`, `ComplianceCheck`, `ComplianceFinding`,
+`ComplianceReportJob`, `NegotiationEvent`, `ContractShare`, `GuestContractAccess`,
+`GuestInvitation`, `ChatSession`, `ChatMessage`, `RiskAnalysisOverrideLog`,
+`ObligationAssignee`, `ObligationReminderLog`).
+
+**Enforced by the `no-bare-contract-repo-access` ESLint rule**
+(`backend/tools/eslint-rules/`, isolated config `backend/.eslintrc.contract-repo.cjs`,
+`npm run lint:contract-repo`, wired into the CI `Backend Tests` job). It is
+ERROR-level: a new bare repo access (`@InjectRepository(Entity)`,
+`getRepository(Entity)`, `<repo>.<dataMethod>()` on a `Repository<Entity>`,
+`<manager>.<dataMethod>(Entity, …)`) on a contract-scoped entity fails the build.
+The ONLY sanctioned exemption is a `// lint-exempt: <reason>` comment with a
+non-empty reason (a bare `// lint-exempt` is rejected). `noInlineConfig` makes
+`eslint-disable` of this rule inert — `// lint-exempt:` is the single exemption
+path, and every exemption therefore carries a reviewed reason.
+
+**This rule does NOT claim a stronger invariant than it enforces.** It currently
+ships with ~306 annotated/allowlisted exceptions (full classified inventory:
+`docs/option-b-lint-phase1-inventory.md`). The named, legitimate exceptions are:
+- **Org-wide aggregation QBs** (Q3) — dashboards/analytics/portfolio/drift, obligation
+  portfolio, `checkOverdueNotices`, create-sequence counts. Org-scoped, not per-contract.
+- **System / no-orgId paths** — background processors (obligation-reminder,
+  compliance-report), org-derivation (metering resolver), project-resolution
+  middleware, HMAC public token routes, admin GDPR export, the dead-code SubscriptionGuard.
+- **Two-step hydration / parked inline-join** — reads hydrated on ids already
+  validated by a scoped load; `getExplanation`/`applyOverride` inline-`r→c→p.org` joins.
+- **Wall-protected sites pending chokepoint migration** (≈104) — `compliance/*`,
+  `chat`, `guest-portal`, `negotiation`, `docusign`, `export`, and `ContractClause`
+  reads. Tenancy-safe TODAY via the `findInOrg` wall; a SCHEDULED future phase
+  migrates them onto the chokepoint. They are NOT yet on the chokepoint — the doc
+  and the `// lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled`
+  annotations say so honestly.
+- **Deprecating `contract-sharing`** — removed in ContractShare Step 2, not migrated.
+- **`subscription.guard.ts` count** — DEAD CODE; never wire without an org wall
+  (the count is org-blind and would be a cross-tenant leak if activated).
+
+When adding a new contract-scoped read: route it through the relevant
+`*ScopedRepository` (or add one). Do NOT reach for `// lint-exempt:` to silence
+the rule unless the access genuinely fits one of the named exception classes —
+and then state which one in the reason.
+
 ---
 
 ## Contract Status Machine

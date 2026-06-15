@@ -22,7 +22,7 @@ import { ObligationTokenService } from '../services/obligation-token.service';
 @Controller('public/obligations')
 export class PublicObligationController {
   constructor(
-    @InjectRepository(Obligation)
+    @InjectRepository(Obligation) // lint-exempt: system/no-orgId by design
     private readonly obligationRepo: Repository<Obligation>,
     private readonly tokens: ObligationTokenService,
     private readonly configService: ConfigService,
@@ -39,7 +39,7 @@ export class PublicObligationController {
       return;
     }
 
-    const o = await this.obligationRepo.findOne({
+    const o = await this.obligationRepo.findOne({ // lint-exempt: system/no-orgId by design
       where: { id: verified.payload.obligation_id },
     });
     if (!o) {
@@ -56,7 +56,7 @@ export class PublicObligationController {
     o.status = ObligationStatus.MET;
     o.completed_at = new Date();
     o.completed_by = verified.payload.user_id;
-    await this.obligationRepo.save(o);
+    await this.obligationRepo.save(o); // lint-exempt: system/no-orgId by design
     res.type('html').send(this.successPage(o.description, false));
   }
 

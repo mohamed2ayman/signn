@@ -29,7 +29,7 @@ import { ClaimScopedRepository } from '../scoped-repository/claim-scoped.reposit
 @Injectable()
 export class ClaimsService {
   constructor(
-    @InjectRepository(Claim)
+    @InjectRepository(Claim) // lint-exempt: two-step hydration (ids validated by scoped load)
     private readonly claimRepo: Repository<Claim>,
 
     @InjectRepository(ClaimDocument)
@@ -41,7 +41,7 @@ export class ClaimsService {
     @InjectRepository(ClaimStatusLog)
     private readonly claimStatusLogRepo: Repository<ClaimStatusLog>,
 
-    @InjectRepository(Contract)
+    @InjectRepository(Contract) // lint-exempt: two-step hydration (ids validated by scoped load)
     private readonly contractRepo: Repository<Contract>,
 
     private readonly contractAccess: ContractAccessService,
@@ -64,7 +64,7 @@ export class ClaimsService {
       );
     }
 
-    const existingCount = await this.claimRepo.count({
+    const existingCount = await this.claimRepo.count({ // lint-exempt: create-sequence count (per-contract, behind findInOrg wall)
       where: { contract_id: dto.contract_id },
     });
 
@@ -86,7 +86,7 @@ export class ClaimsService {
       status: ClaimStatus.DRAFT,
     });
 
-    return this.claimRepo.save(claim);
+    return this.claimRepo.save(claim); // lint-exempt: wall-protected (findInOrg) — row validated before write
   }
 
   async findAllByContract(contractId: string, orgId: string): Promise<Claim[]> {
@@ -124,7 +124,7 @@ export class ClaimsService {
     // HYDRATION on the tenancy-validated id — the nested relations exceed the
     // scoped base's single-level relation support; the two-step keeps the base
     // minimal instead of growing it.
-    const claim = await this.claimRepo.findOne({
+    const claim = await this.claimRepo.findOne({ // lint-exempt: two-step hydration (ids validated by scoped load)
       where: { id },
       relations: [
         'submitter',
@@ -154,7 +154,7 @@ export class ClaimsService {
     claim.status = ClaimStatus.ACKNOWLEDGED;
     claim.acknowledged_at = new Date();
 
-    const saved = await this.claimRepo.save(claim);
+    const saved = await this.claimRepo.save(claim); // lint-exempt: wall-protected (findInOrg) — row validated before write
 
     await this.logStatusChange(
       id,
@@ -188,7 +188,7 @@ export class ClaimsService {
     const savedResponse = await this.claimResponseRepo.save(response);
 
     claim.status = ClaimStatus.RESPONDED;
-    await this.claimRepo.save(claim);
+    await this.claimRepo.save(claim); // lint-exempt: wall-protected (findInOrg) — row validated before write
 
     await this.logStatusChange(
       id,
@@ -226,7 +226,7 @@ export class ClaimsService {
       claim.resolved_at = new Date();
     }
 
-    const saved = await this.claimRepo.save(claim);
+    const saved = await this.claimRepo.save(claim); // lint-exempt: wall-protected (findInOrg) — row validated before write
 
     await this.logStatusChange(id, userId, previousStatus, dto.status, dto.note);
 

@@ -75,7 +75,7 @@ export class RiskOverrideService {
     // →org. Both project_id and organization_id are NOT NULL (verified
     // against contract.entity.ts:109 and project.entity.ts:22), so
     // innerJoin cannot silently exclude a legitimate row.
-    const risk = await this.dataSource
+    const risk = await this.dataSource // lint-exempt: parked — inline-join-scoped (centralization pending)
       .getRepository(RiskAnalysis)
       .createQueryBuilder('r')
       .innerJoin('r.contract', 'c')
@@ -135,9 +135,9 @@ export class RiskOverrideService {
       risk.last_overridden_by = userId;
       risk.last_overridden_at = new Date();
 
-      const saved = await em.getRepository(RiskAnalysis).save(risk);
+      const saved = await em.getRepository(RiskAnalysis).save(risk); // lint-exempt: parked — inline-join-scoped (centralization pending)
 
-      await em.getRepository(RiskAnalysisOverrideLog).insert({
+      await em.getRepository(RiskAnalysisOverrideLog).insert({ // lint-exempt: parked — inline-join-scoped (centralization pending)
         risk_analysis_id: riskId,
         organization_id: orgId,
         risk_category: risk.risk_category,

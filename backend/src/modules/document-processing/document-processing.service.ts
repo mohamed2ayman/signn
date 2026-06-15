@@ -48,15 +48,15 @@ export class DocumentProcessingService {
   private readonly logger = new Logger(DocumentProcessingService.name);
 
   constructor(
-    @InjectRepository(DocumentUpload)
+    @InjectRepository(DocumentUpload) // lint-exempt: S2f-deferred (metering-entangled, walled)
     private readonly documentUploadRepository: Repository<DocumentUpload>,
     @InjectRepository(Clause)
     private readonly clauseRepository: Repository<Clause>,
-    @InjectRepository(ContractClause)
+    @InjectRepository(ContractClause) // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled (ContractClause)
     private readonly contractClauseRepository: Repository<ContractClause>,
-    @InjectRepository(Contract)
+    @InjectRepository(Contract) // lint-exempt: S2f-deferred (metering-entangled, walled)
     private readonly contractRepository: Repository<Contract>,
-    @InjectRepository(RiskAnalysis)
+    @InjectRepository(RiskAnalysis) // lint-exempt: S2f-deferred (metering-entangled, walled)
     private readonly riskAnalysisRepository: Repository<RiskAnalysis>,
     // Phase 7.17 — Prompt 1, A.1: audit-logs AI_RETURNED_UNKNOWN_RISK_CATEGORY
     // events when the AI returns a category that doesn't match the
@@ -185,7 +185,7 @@ export class DocumentProcessingService {
         reservation_id: reservation.reservation_id,
       });
 
-      saved = await this.documentUploadRepository.save(doc);
+      saved = await this.documentUploadRepository.save(doc); // lint-exempt: S2f-deferred (metering-entangled, walled)
       this.logger.log(
         `Document uploaded: ${saved.id} for contract ${contractId} ` +
           `(reservation=${reservation.reservation_id})`,
@@ -233,7 +233,7 @@ export class DocumentProcessingService {
 
       doc.processing_status = DocumentProcessingStatus.EXTRACTING_TEXT;
       doc.processing_job_id = result.job_id;
-      await this.documentUploadRepository.save(doc);
+      await this.documentUploadRepository.save(doc); // lint-exempt: S2f-deferred (metering-entangled, walled)
     } catch (error) {
       this.logger.error(
         `[startTextExtraction] Text extraction failed for document ${doc.id}: ${error.message}`,
@@ -241,7 +241,7 @@ export class DocumentProcessingService {
       );
       doc.processing_status = DocumentProcessingStatus.FAILED;
       doc.error_message = `Text extraction failed to start: ${error.message}`;
-      await this.documentUploadRepository.save(doc);
+      await this.documentUploadRepository.save(doc); // lint-exempt: S2f-deferred (metering-entangled, walled)
       // SYNC-DISPATCH FAILURE TERMINAL — refund the reservation.
       await this.releaseReservationOnFailure(doc);
     }
@@ -257,7 +257,7 @@ export class DocumentProcessingService {
    * id, then walk `doc.contract_id → findInOrg(_, orgId)`.
    */
   async pollAndAdvance(docId: string, orgId: string): Promise<DocumentUpload> {
-    const doc = await this.documentUploadRepository.findOne({
+    const doc = await this.documentUploadRepository.findOne({ // lint-exempt: S2f-deferred (metering-entangled, walled)
       where: { id: docId },
     });
 
@@ -287,7 +287,7 @@ export class DocumentProcessingService {
       doc.processing_status = DocumentProcessingStatus.FAILED;
       doc.error_message = jobStatus.error || 'Processing failed';
       doc.processing_job_id = null;
-      await this.documentUploadRepository.save(doc);
+      await this.documentUploadRepository.save(doc); // lint-exempt: S2f-deferred (metering-entangled, walled)
       // Phase 7.18 Part 3 — ASYNC TERMINAL FAILURE. The AI job reported
       // failed (text-extraction OR clause-extraction; both flow through
       // here). Refund the reservation. Inspect TransitionResult inside
@@ -329,7 +329,7 @@ export class DocumentProcessingService {
         );
         doc.processing_status = DocumentProcessingStatus.HUMAN_REVIEW_RECOMMENDED;
         doc.processing_job_id = null;
-        await this.documentUploadRepository.save(doc);
+        await this.documentUploadRepository.save(doc); // lint-exempt: S2f-deferred (metering-entangled, walled)
         // Phase 7.18 Part 3 — PARKED-TERMINAL state. No clauses were
         // extracted from this upload; the metered unit ("extraction") did
         // not produce its deliverable. Refund the reservation. If the
@@ -342,21 +342,21 @@ export class DocumentProcessingService {
 
       doc.processing_status = DocumentProcessingStatus.TEXT_EXTRACTED;
       doc.processing_job_id = null;
-      await this.documentUploadRepository.save(doc);
+      await this.documentUploadRepository.save(doc); // lint-exempt: S2f-deferred (metering-entangled, walled)
 
       // Extract party names if the text contains contract party markers
       const extractedText = doc.extracted_text || '';
       const partyMarker = /(?:بين\s*كل\s*من|تم\s*الاتفاق\s*بين\s*كل\s*من|كل\s*من\s*:)/;
       if (partyMarker.test(extractedText)) {
         // Only extract if the contract doesn't already have parties
-        const currentContract = await this.contractRepository.findOne({
+        const currentContract = await this.contractRepository.findOne({ // lint-exempt: S2f-deferred (metering-entangled, walled)
           where: { id: doc.contract_id },
         });
         if (!currentContract?.party_first_name && !currentContract?.party_second_name) {
           try {
             const parties = this.extractParties(extractedText);
             if (parties.firstParty || parties.secondParty) {
-              await this.contractRepository.update(
+              await this.contractRepository.update( // lint-exempt: S2f-deferred (metering-entangled, walled)
                 { id: doc.contract_id },
                 {
                   party_first_name: parties.firstParty,
@@ -393,7 +393,7 @@ export class DocumentProcessingService {
 
       doc.processing_status = DocumentProcessingStatus.CLAUSES_EXTRACTED;
       doc.processing_job_id = null;
-      await this.documentUploadRepository.save(doc);
+      await this.documentUploadRepository.save(doc); // lint-exempt: S2f-deferred (metering-entangled, walled)
 
       // Phase 7.18 Part 3 — ASYNC TERMINAL SUCCESS. Clauses are now in
       // the DB; the metered unit ("extraction") produced its
@@ -547,7 +547,7 @@ export class DocumentProcessingService {
    */
   private async startClauseExtraction(doc: DocumentUpload): Promise<void> {
     try {
-      const contract = await this.contractRepository.findOne({
+      const contract = await this.contractRepository.findOne({ // lint-exempt: S2f-deferred (metering-entangled, walled)
         where: { id: doc.contract_id },
       });
 
@@ -562,7 +562,7 @@ export class DocumentProcessingService {
 
       doc.processing_status = DocumentProcessingStatus.EXTRACTING_CLAUSES;
       doc.processing_job_id = result.job_id;
-      await this.documentUploadRepository.save(doc);
+      await this.documentUploadRepository.save(doc); // lint-exempt: S2f-deferred (metering-entangled, walled)
     } catch (error) {
       this.logger.error(
         `[startClauseExtraction] Clause extraction failed for document ${doc.id}: ${error.message}`,
@@ -570,7 +570,7 @@ export class DocumentProcessingService {
       );
       doc.processing_status = DocumentProcessingStatus.FAILED;
       doc.error_message = `Clause extraction failed to start: ${error.message}`;
-      await this.documentUploadRepository.save(doc);
+      await this.documentUploadRepository.save(doc); // lint-exempt: S2f-deferred (metering-entangled, walled)
       // SYNC-DISPATCH FAILURE TERMINAL — refund the reservation.
       await this.releaseReservationOnFailure(doc);
     }
@@ -620,7 +620,7 @@ export class DocumentProcessingService {
         order_index: i,
       });
 
-      await this.contractClauseRepository.save(contractClause);
+      await this.contractClauseRepository.save(contractClause); // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled (ContractClause)
     }
 
     this.logger.log(
@@ -685,7 +685,7 @@ export class DocumentProcessingService {
     // WALL (persona — Phase 1, layer 1): stays as defense-in-depth.
     await this.contractAccess.findInOrg(doc.contract_id, orgId);
     doc.extracted_text = text;
-    return this.documentUploadRepository.save(doc);
+    return this.documentUploadRepository.save(doc); // lint-exempt: two-step hydration (ids validated by scoped load)
   }
 
   /**
@@ -716,7 +716,7 @@ export class DocumentProcessingService {
     orgId: string,
     options?: { account_type?: MeteringCaller['account_type'] },
   ): Promise<DocumentUpload> {
-    const doc = await this.documentUploadRepository.findOne({
+    const doc = await this.documentUploadRepository.findOne({ // lint-exempt: S2f-deferred (metering-entangled, walled)
       where: { id: docId },
     });
     if (!doc) {
@@ -789,7 +789,7 @@ export class DocumentProcessingService {
         const clauseIds = previousClauses.map((c) => c.id);
 
         // Delete contract_clauses join records first (FK references clauses.id).
-        await this.contractClauseRepository.delete({ clause_id: In(clauseIds) });
+        await this.contractClauseRepository.delete({ clause_id: In(clauseIds) }); // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled (ContractClause)
 
         // Then delete the clause records themselves.
         await this.clauseRepository.delete({ source_document_id: docId });
@@ -808,7 +808,7 @@ export class DocumentProcessingService {
       // Phase 7.18 Part 3 — OVERWRITE reservation_id with the new one so
       // pollAndAdvance's commit/release acts on the NEW reservation.
       doc.reservation_id = reservation.reservation_id;
-      await this.documentUploadRepository.save(doc);
+      await this.documentUploadRepository.save(doc); // lint-exempt: S2f-deferred (metering-entangled, walled)
     } catch (err) {
       // Sync failure during cleanup or doc-row reset (before dispatch).
       // The new reservation hasn't been wired into the saved doc yet —
@@ -834,7 +834,7 @@ export class DocumentProcessingService {
    */
   async getClausesForReview(contractId: string, orgId: string) {
     await this.contractAccess.findInOrg(contractId, orgId);
-    return this.contractClauseRepository
+    return this.contractClauseRepository // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled (ContractClause)
       .createQueryBuilder('cc')
       .leftJoinAndSelect('cc.clause', 'clause')
       .leftJoinAndSelect('clause.source_document', 'source_doc')
@@ -989,7 +989,7 @@ export class DocumentProcessingService {
     let riskResult: { job_id: string; status: string };
     try {
       // Get all approved clauses with their source document metadata
-      const contractClauses = await this.contractClauseRepository
+      const contractClauses = await this.contractClauseRepository // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled (ContractClause)
         .createQueryBuilder('cc')
         .leftJoinAndSelect('cc.clause', 'clause')
         .leftJoinAndSelect('clause.source_document', 'source_doc')
@@ -1207,7 +1207,7 @@ export class DocumentProcessingService {
       status: 'OPEN',
     });
 
-    await this.riskAnalysisRepository.save(risk);
+    await this.riskAnalysisRepository.save(risk); // lint-exempt: S2f-deferred (metering-entangled, walled)
   }
 
   // ──────────────────────────────────────────────────────────────────────
@@ -1444,7 +1444,7 @@ export class DocumentProcessingService {
       recommendation: aiRisk.suggestion ?? null,
       status: 'OPEN',
     });
-    await this.riskAnalysisRepository.save(row);
+    await this.riskAnalysisRepository.save(row); // lint-exempt: S2f-deferred (metering-entangled, walled)
     return true;
   }
 

@@ -58,7 +58,7 @@ export class LearnedBaselineProcessor {
   private readonly logger = new Logger(LearnedBaselineProcessor.name);
 
   constructor(
-    @InjectRepository(RiskAnalysisOverrideLog)
+    @InjectRepository(RiskAnalysisOverrideLog) // lint-exempt: aggregation (Q3 — learned-baseline/methodology, org-wide)
     private readonly overrideLogRepo: Repository<RiskAnalysisOverrideLog>,
     @InjectRepository(RiskCategoryOrgLearnedBaseline)
     private readonly baselineRepo: Repository<RiskCategoryOrgLearnedBaseline>,
@@ -82,7 +82,7 @@ export class LearnedBaselineProcessor {
     // Done at the START of the worker so B.3's enqueue stays
     // unconditional. The moment override #10 lands, this gate passes
     // and the first baseline is written.
-    const totalCount = await this.overrideLogRepo.count({
+    const totalCount = await this.overrideLogRepo.count({ // lint-exempt: aggregation (Q3 — learned-baseline/methodology, org-wide)
       where: { organization_id: organizationId, risk_category: riskCategory },
     });
     if (totalCount < LEARNED_BASELINE_THRESHOLD) {
@@ -96,7 +96,7 @@ export class LearnedBaselineProcessor {
     // ── 2. Load most-recent 50 override-log rows ───────────────────
     // Index idx_risk_analysis_override_log_org_cat_created (S.4) makes
     // this an index scan with LIMIT 50.
-    const sample = await this.overrideLogRepo.find({
+    const sample = await this.overrideLogRepo.find({ // lint-exempt: aggregation (Q3 — learned-baseline/methodology, org-wide)
       where: { organization_id: organizationId, risk_category: riskCategory },
       order: { created_at: 'DESC' },
       take: LEARNED_BASELINE_SAMPLE_SIZE,
