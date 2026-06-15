@@ -62,7 +62,7 @@ export type InvitationVerifyResult =
 export class InvitationTokenService {
   constructor(
     private readonly config: ConfigService,
-    @InjectRepository(GuestInvitation)
+    @InjectRepository(GuestInvitation) // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
     private readonly invitationRepo: Repository<GuestInvitation>,
   ) {}
 
@@ -128,7 +128,7 @@ export class InvitationTokenService {
     }
 
     // ── 5. DB checks ──────────────────────────────────────────────────
-    const invitation = await this.invitationRepo.findOne({
+    const invitation = await this.invitationRepo.findOne({ // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
       where: { id: payload.invitation_id },
     });
     if (!invitation) {

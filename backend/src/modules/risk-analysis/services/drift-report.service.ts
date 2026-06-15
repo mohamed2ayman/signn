@@ -54,13 +54,13 @@ export class DriftReportService {
   private readonly cache = new Map<string, DriftReportCacheEntry>();
 
   constructor(
-    @InjectRepository(RiskAnalysisOverrideLog)
+    @InjectRepository(RiskAnalysisOverrideLog) // lint-exempt: aggregation QB (Q3 — risk drift, org-wide)
     private readonly overrideLogRepo: Repository<RiskAnalysisOverrideLog>,
     @InjectRepository(RiskCategoryPlatformDefault)
     private readonly platformDefaultRepo: Repository<RiskCategoryPlatformDefault>,
     @InjectRepository(RiskCategoryOrgLearnedBaseline)
     private readonly baselineRepo: Repository<RiskCategoryOrgLearnedBaseline>,
-    @InjectRepository(RiskAnalysis)
+    @InjectRepository(RiskAnalysis) // lint-exempt: aggregation QB (Q3 — risk drift, org-wide)
     private readonly riskRepo: Repository<RiskAnalysis>,
   ) {}
 
@@ -72,17 +72,17 @@ export class DriftReportService {
     }
 
     // ── org_summary: lifetime + trailing-30-day override counts ──
-    const lifetimeCount = await this.overrideLogRepo.count({
+    const lifetimeCount = await this.overrideLogRepo.count({ // lint-exempt: aggregation QB (Q3 — risk drift, org-wide)
       where: { organization_id: orgId },
     });
-    const thirtyDayCount = await this.overrideLogRepo
+    const thirtyDayCount = await this.overrideLogRepo // lint-exempt: aggregation QB (Q3 — risk drift, org-wide)
       .createQueryBuilder('o')
       .where('o.organization_id = :orgId', { orgId })
       .andWhere("o.created_at >= NOW() - INTERVAL '30 days'")
       .getCount();
 
     // ── most_overridden_categories: top 10 by count, with avg deltas ──
-    const catRows = await this.overrideLogRepo
+    const catRows = await this.overrideLogRepo // lint-exempt: aggregation QB (Q3 — risk drift, org-wide)
       .createQueryBuilder('o')
       .select('o.risk_category', 'risk_category')
       .addSelect('COUNT(*)', 'override_count')
@@ -98,7 +98,7 @@ export class DriftReportService {
     //    clause filters server-side so only threshold-crossing categories
     //    come back — a strongly-drifting low-volume category surfaces here
     //    even though it would never make the top-10-by-count list above.
-    const alertRows = await this.overrideLogRepo
+    const alertRows = await this.overrideLogRepo // lint-exempt: aggregation QB (Q3 — risk drift, org-wide)
       .createQueryBuilder('o')
       .select('o.risk_category', 'risk_category')
       .addSelect('COUNT(*)', 'override_count')
@@ -153,7 +153,7 @@ export class DriftReportService {
     // ── fallback_categories (Flag 13): categories with >5 FALLBACK-sourced
     //    findings. Joined via contract→project to scope by org. Signals
     //    which categories the resolver couldn't anchor to any methodology.
-    const fallbackCatRows = await this.riskRepo
+    const fallbackCatRows = await this.riskRepo // lint-exempt: aggregation QB (Q3 — risk drift, org-wide)
       .createQueryBuilder('r')
       .innerJoin('r.contract', 'c')
       .innerJoin('c.project', 'p')

@@ -14,11 +14,11 @@ import { SubContractScopedRepository } from '../scoped-repository/subcontract-sc
 @Injectable()
 export class SubContractsService {
   constructor(
-    @InjectRepository(SubContract)
+    @InjectRepository(SubContract) // lint-exempt: two-step hydration (ids validated by scoped load)
     private readonly subContractRepo: Repository<SubContract>,
     @InjectRepository(SubContractStatusLog)
     private readonly statusLogRepo: Repository<SubContractStatusLog>,
-    @InjectRepository(Contract)
+    @InjectRepository(Contract) // lint-exempt: two-step hydration (ids validated by scoped load)
     private readonly contractRepo: Repository<Contract>,
     private readonly contractAccess: ContractAccessService,
     private readonly subContractScoped: SubContractScopedRepository,
@@ -42,7 +42,7 @@ export class SubContractsService {
     }
 
     // Auto-generate subcontract number
-    const existingCount = await this.subContractRepo.count({
+    const existingCount = await this.subContractRepo.count({ // lint-exempt: create-sequence count (per-contract, behind findInOrg wall)
       where: { main_contract_id: dto.main_contract_id },
     });
     const subcontractNumber = `SC-${String(existingCount + 1).padStart(3, '0')}`;
@@ -55,7 +55,7 @@ export class SubContractsService {
       status: ContractStatus.DRAFT,
     });
 
-    const saved = await this.subContractRepo.save(subContract);
+    const saved = await this.subContractRepo.save(subContract); // lint-exempt: wall-protected (findInOrg) — row validated before write
 
     await this.logStatusChange(saved.id, userId, null, ContractStatus.DRAFT, 'Subcontract created');
 
@@ -100,7 +100,7 @@ export class SubContractsService {
     // HYDRATION on the tenancy-validated id — the nested status_logs.changer
     // relation exceeds the scoped base's single-level relation support; the
     // two-step keeps the base minimal instead of growing it.
-    const subContract = await this.subContractRepo.findOne({
+    const subContract = await this.subContractRepo.findOne({ // lint-exempt: two-step hydration (ids validated by scoped load)
       where: { id },
       relations: ['creator', 'mainContract', 'status_logs', 'status_logs.changer'],
     });
@@ -129,7 +129,7 @@ export class SubContractsService {
     await this.contractAccess.findInOrg(subContract.main_contract_id, orgId);
 
     Object.assign(subContract, dto);
-    return this.subContractRepo.save(subContract);
+    return this.subContractRepo.save(subContract); // lint-exempt: wall-protected (findInOrg) — row validated before write
   }
 
   async updateStatus(
@@ -149,7 +149,7 @@ export class SubContractsService {
     const previousStatus = subContract.status;
     subContract.status = dto.status as ContractStatus;
 
-    const saved = await this.subContractRepo.save(subContract);
+    const saved = await this.subContractRepo.save(subContract); // lint-exempt: wall-protected (findInOrg) — row validated before write
 
     await this.logStatusChange(id, userId, previousStatus, dto.status, dto.note);
 

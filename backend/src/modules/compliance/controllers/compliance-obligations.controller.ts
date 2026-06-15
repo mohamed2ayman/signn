@@ -45,7 +45,7 @@ const ONE_YEAR_MS = 365 * 24 * 60 * 60 * 1000;
 @UseGuards(JwtAuthGuard, RolesGuard, PermissionLevelGuard)
 export class ComplianceObligationsController {
   constructor(
-    @InjectRepository(Obligation)
+    @InjectRepository(Obligation) // lint-exempt: wall-protected (findInOrg + obligationScoped)
     private readonly obligationRepo: Repository<Obligation>,
     private readonly ical: IcalExportService,
     private readonly obligationSvc: ComplianceObligationService,
@@ -110,7 +110,7 @@ export class ComplianceObligationsController {
     //  scoped repository chokepoint — this findInOrg is the stop-gap until then.
     await this.assertContractInCallerOrg(contractId, user);
     return this.applyFilters(
-      this.obligationRepo
+      this.obligationRepo // lint-exempt: aggregation QB (Q3 — obligation list)
         .createQueryBuilder('o')
         .leftJoinAndSelect('o.assignees', 'oa')
         .leftJoinAndSelect('oa.user', 'au')
@@ -148,7 +148,7 @@ export class ComplianceObligationsController {
       o.completed_at = new Date();
       o.completed_by = user.id;
     }
-    return this.obligationRepo.save(o);
+    return this.obligationRepo.save(o); // lint-exempt: wall-protected (findInOrg + obligationScoped)
   }
 
   @Get('contracts/:contractId/obligations/ical')
@@ -197,7 +197,7 @@ export class ComplianceObligationsController {
       return [];
     }
     return this.applyFilters(
-      this.obligationRepo
+      this.obligationRepo // lint-exempt: aggregation QB (Q3 — obligation list)
         .createQueryBuilder('o')
         .leftJoinAndSelect('o.contract', 'c')
         .leftJoinAndSelect('o.assignees', 'oa')

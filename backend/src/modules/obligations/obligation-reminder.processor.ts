@@ -60,11 +60,11 @@ export class ObligationReminderProcessor {
     // last_reminder_sent_at stamp) — both operate on a row already pulled from
     // the all-orgs sweep, by id, with no org resolution needed. The scoped-repo
     // base is read-only; there is no system-level write method to route through.
-    @InjectRepository(Obligation)
+    @InjectRepository(Obligation) // lint-exempt: system/no-orgId (processor)
     private readonly obligationRepository: Repository<Obligation>,
-    @InjectRepository(ObligationReminderLog)
+    @InjectRepository(ObligationReminderLog) // lint-exempt: system/no-orgId (processor)
     private readonly logRepo: Repository<ObligationReminderLog>,
-    @InjectRepository(Contract)
+    @InjectRepository(Contract) // lint-exempt: system/no-orgId (processor)
     private readonly contractRepo: Repository<Contract>,
     @InjectRepository(Project)
     private readonly projectRepo: Repository<Project>,
@@ -124,7 +124,7 @@ export class ObligationReminderProcessor {
       // Flip status to OVERDUE on first cron pass after the deadline
       if (days < 0 && o.status !== ObligationStatus.OVERDUE) {
         o.status = ObligationStatus.OVERDUE;
-        await this.obligationRepository.save(o);
+        await this.obligationRepository.save(o); // lint-exempt: system/no-orgId (processor)
         flippedOverdue++;
       }
 
@@ -132,7 +132,7 @@ export class ObligationReminderProcessor {
       const reminderType = this.scheduledTierFor(days, o.reminder_schedule);
       if (!reminderType) continue;
 
-      const already = await this.logRepo.findOne({
+      const already = await this.logRepo.findOne({ // lint-exempt: system/no-orgId (processor)
         where: { obligation_id: o.id, reminder_type: reminderType },
       });
       if (already) continue;
@@ -185,13 +185,13 @@ export class ObligationReminderProcessor {
 
       // Write dedup log only after at least one send succeeded
       if (anySent) {
-        await this.logRepo.insert({
+        await this.logRepo.insert({ // lint-exempt: system/no-orgId (processor)
           obligation_id: o.id,
           reminder_type: reminderType,
           sent_to: primaryRecipients.map((u) => u.email).join(', '),
           email_status: ObligationReminderEmailStatus.SENT,
         });
-        await this.obligationRepository.update(o.id, {
+        await this.obligationRepository.update(o.id, { // lint-exempt: system/no-orgId (processor)
           last_reminder_sent_at: new Date(),
         });
         sent++;
@@ -273,7 +273,7 @@ export class ObligationReminderProcessor {
           templateName: 'obligation_weekly_digest',
         });
         for (const o of upcoming) {
-          await this.logRepo.insert({
+          await this.logRepo.insert({ // lint-exempt: system/no-orgId (processor)
             obligation_id: o.id,
             reminder_type: ObligationReminderType.WEEKLY_DIGEST,
             sent_to: user.email,

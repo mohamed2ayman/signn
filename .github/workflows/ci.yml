@@ -30,6 +30,17 @@ jobs:
         working-directory: backend
         run: npm ci
 
+      # Option B tenancy gate — the ENFORCING no-bare-contract-repo-access rule.
+      # Isolated config (--no-eslintrc): this runs ONLY the contract-repo rule,
+      # NOT the project's general lint (which has no config + a dangerous --fix).
+      # Fails the build (exit 1) on any new bare contract-scoped repo access that
+      # is not annotated `// lint-exempt: <reason>`. Runs before tests so a
+      # tenancy regression fails fast. See CLAUDE.md "Contract-Scoped Repository
+      # Access" Architecture Rule and docs/option-b-lint-phase1-inventory.md.
+      - name: Contract-repo tenancy lint (Option B chokepoint gate)
+        working-directory: backend
+        run: npm run lint:contract-repo
+
       - name: Run tests
         working-directory: backend
         run: npm test

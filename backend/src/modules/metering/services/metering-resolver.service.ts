@@ -72,7 +72,7 @@ export class MeteringResolver {
   private readonly logger = new Logger(MeteringResolver.name);
 
   constructor(
-    @InjectRepository(Contract)
+    @InjectRepository(Contract) // lint-exempt: system/no-orgId by design
     private readonly contractRepo: Repository<Contract>,
     @InjectRepository(MeterDefinition)
     private readonly meterDefRepo: Repository<MeterDefinition>,
@@ -101,7 +101,7 @@ export class MeteringResolver {
     caller: MeteringCaller,
     contractId: string,
   ): Promise<string> {
-    const contract = await this.contractRepo.findOne({
+    const contract = await this.contractRepo.findOne({ // lint-exempt: system/no-orgId by design
       where: { id: contractId },
       relations: ['project'],
     });
