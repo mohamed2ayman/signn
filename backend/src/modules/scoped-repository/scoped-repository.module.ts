@@ -9,6 +9,7 @@ import {
   ContractVersion,
   ContractorResponse,
   DocumentUpload,
+  NegotiationEvent,
   Notice,
   Obligation,
   RiskAnalysis,
@@ -25,6 +26,7 @@ import { NoticeScopedRepository } from './notice-scoped.repository';
 import { ClaimScopedRepository } from './claim-scoped.repository';
 import { SubContractScopedRepository } from './subcontract-scoped.repository';
 import { DocumentUploadScopedRepository } from './document-upload-scoped.repository';
+import { NegotiationEventScopedRepository } from './negotiation-event-scoped.repository';
 
 /**
  * Option B — the scoped-repository module: the data-layer tenancy chokepoint.
@@ -46,8 +48,16 @@ import { DocumentUploadScopedRepository } from './document-upload-scoped.reposit
  * (pollAndAdvance/reprocess) are deferred (the dead getDocumentStatus service
  * method was removed in the S2f follow-up cleanup);
  * see docs/option-b-s2f-document-upload-recon.md. The ESLint lint that bans
- * bare contract-repo access (and routes everything through this module) is the
- * final bucket.
+ * bare contract-repo access (and routes everything through this module) shipped
+ * after S2f and is now CI-enforced.
+ *
+ * CHOKEPOINT MIGRATION (post-lint, 1 of 4) adds NegotiationEvent — the first of
+ * the four modules the lint surfaced as "wall-protected; chokepoint migration
+ * scheduled" (negotiation/guest-portal/chat/compliance). It wires
+ * NegotiationService.findHistory (a paginated per-contract LIST read) through
+ * the NEW paginated scopedFindAndCount, under the module's own inline
+ * assertContractInOrg wall (KEPT inline, not consolidated into findInOrg). See
+ * docs/option-b-chokepoint-negotiation.md.
  *
  * Consumers import THIS module and inject the scoped repositories — they do NOT
  * inject `@InjectRepository(Contract|ContractVersion|…)` for tenancy-scoped
@@ -68,6 +78,7 @@ import { DocumentUploadScopedRepository } from './document-upload-scoped.reposit
       Claim,
       SubContract,
       DocumentUpload,
+      NegotiationEvent,
     ]),
   ],
   providers: [
@@ -82,6 +93,7 @@ import { DocumentUploadScopedRepository } from './document-upload-scoped.reposit
     ClaimScopedRepository,
     SubContractScopedRepository,
     DocumentUploadScopedRepository,
+    NegotiationEventScopedRepository,
   ],
   exports: [
     ContractScopedRepository,
@@ -95,6 +107,7 @@ import { DocumentUploadScopedRepository } from './document-upload-scoped.reposit
     ClaimScopedRepository,
     SubContractScopedRepository,
     DocumentUploadScopedRepository,
+    NegotiationEventScopedRepository,
   ],
 })
 export class ScopedRepositoryModule {}
