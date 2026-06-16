@@ -231,7 +231,58 @@ export abstract class ScopedContractRepository<T extends ObjectLiteral> {
     options?: { relations?: string[]; order?: Record<string, 'ASC' | 'DESC'> },
   ): Promise<T[]> {
     const qb = this.buildScopedListQuery(orgId);
+    this.applyScopedListOptions(qb, filter, options);
+    return qb.getMany();
+  }
 
+  /**
+   * Like {@link scopedFind} but returns `[rows, total]` via `getManyAndCount`,
+   * with optional `take` / `skip` PAGINATION — the shape a paginated per-contract
+   * LIST read needs (the first such caller is NegotiationService.findHistory,
+   * which returns `{ events, total }`).
+   *
+   * The `total` is the org-scoped count BEFORE pagination, exactly as
+   * `getManyAndCount` computes it: the `project.organization_id = :orgId` gate
+   * baked into {@link buildScopedListQuery} bounds BOTH the page AND the count,
+   * so `total` can never include a cross-tenant row.
+   *
+   * Same STRUCTURAL ORG-SAFETY as {@link scopedFind}: there is no orgId-override;
+   * `filter` predicates apply on the entity alias only and pass through the SAME
+   * allowlist guard ({@link applyScopedListOptions}); `take`/`skip` are pure
+   * pagination and can never touch, relax, or replace the gate. This is the
+   * FIRST paginated method on the base — deliberately minimal and additive (no
+   * operator/range DSL; complex reads still stay raw QB per Ayman B spec Q3).
+   */
+  async scopedFindAndCount(
+    filter: FindOptionsWhere<T>,
+    orgId: string,
+    options?: {
+      relations?: string[];
+      order?: Record<string, 'ASC' | 'DESC'>;
+      take?: number;
+      skip?: number;
+    },
+  ): Promise<[T[], number]> {
+    const qb = this.buildScopedListQuery(orgId);
+    this.applyScopedListOptions(qb, filter, options);
+    if (options?.skip !== undefined) qb.skip(options.skip);
+    if (options?.take !== undefined) qb.take(options.take);
+    return qb.getManyAndCount();
+  }
+
+  /**
+   * Shared by {@link scopedFind} and {@link scopedFindAndCount}: applies the
+   * allowlist-guarded `filter` predicates (entity alias only, values bound as
+   * parameters), single-level `relations` hydration, and `order` — all on the
+   * caller-supplied query builder, which ALREADY carries the org gate from
+   * {@link buildScopedListQuery}. One place owns the filter-KEY guard so both
+   * list methods enforce it byte-identically.
+   */
+  private applyScopedListOptions(
+    qb: SelectQueryBuilder<T>,
+    filter: FindOptionsWhere<T>,
+    options?: { relations?: string[]; order?: Record<string, 'ASC' | 'DESC'> },
+  ): void {
     for (const [key, value] of Object.entries(filter)) {
       // ALLOWLIST GUARD (S2c-1) — the filter KEY is interpolated into SQL
       // below; reject anything the subclass has not explicitly declared,
@@ -258,8 +309,6 @@ export abstract class ScopedContractRepository<T extends ObjectLiteral> {
     for (const [column, direction] of Object.entries(options?.order ?? {})) {
       qb.addOrderBy(`${this.entityAlias}.${column}`, direction);
     }
-
-    return qb.getMany();
   }
 
   // ── SYSTEM-LEVEL TENANCY BYPASS — read this before using ────────────────
