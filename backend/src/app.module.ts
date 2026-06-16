@@ -134,6 +134,15 @@ import { dataSourceOptions } from './config/data-source';
         // When 's3', AWS_S3_BUCKET + AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY are required.
         STORAGE_DRIVER: Joi.string().valid('local', 's3').default('local'),
 
+        // ── Encryption at rest (Phase 7.28 prerequisite) ─────────
+        // Master key for the AES-256-GCM CryptoService (common/utils/crypto.ts),
+        // the first encryption-at-rest primitive in the codebase. First consumer
+        // is ERP credential storage. OPTIONAL at boot (the app starts without it,
+        // like the other optional integration vars); CryptoService throws a clear
+        // error if encrypt/decrypt is called while it is missing. min(32) is the
+        // defensive entropy floor — the key is SHA-256-derived to 32 bytes.
+        ERP_CREDENTIAL_ENC_KEY: Joi.string().min(32).optional().allow(''),
+
         // ── Portfolio Export (Phase 7.17 Prompt 2c) ───────────────
         // HMAC secret for token-gated PDF download links. The bare-HTTP
         // download endpoint (GET /portfolio-exports/download) has NO JWT
