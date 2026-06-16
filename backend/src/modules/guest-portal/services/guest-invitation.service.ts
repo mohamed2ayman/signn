@@ -21,6 +21,7 @@ import {
 } from '../../../database/entities';
 import { AuthService } from '../../auth/auth.service';
 import { ContractAccessService } from '../../contracts/services/contract-access.service';
+import { GuestInvitationScopedRepository } from '../../scoped-repository/guest-invitation-scoped.repository';
 import { CreateGuestInvitationDto } from '../dto/create-guest-invitation.dto';
 import {
   EstablishIdentityDto,
@@ -68,13 +69,15 @@ export class GuestInvitationService {
 
   constructor(
     private readonly config: ConfigService,
-    @InjectRepository(GuestInvitation) // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
+    @InjectRepository(GuestInvitation) // lint-exempt: write-path repo (create + revoke save); the by-id READ goes through GuestInvitationScopedRepository — the chokepoint is read-only
     private readonly invitationRepo: Repository<GuestInvitation>,
     private readonly contractAccess: ContractAccessService,
     private readonly tokenService: InvitationTokenService,
     private readonly viewerService: ViewerCredentialService,
     private readonly dataSource: DataSource,
     private readonly authService: AuthService,
+    // Option B chokepoint (migration 2/4) — layer 2 for the revoke by-id load.
+    private readonly invitationScoped: GuestInvitationScopedRepository,
   ) {}
 
   async create(
@@ -103,7 +106,7 @@ export class GuestInvitationService {
       expires_at: expiresAt,
       created_by: creator.id,
     });
-    const saved = await this.invitationRepo.save(invitation); // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
+    const saved = await this.invitationRepo.save(invitation); // lint-exempt: write (create insert); wall-protected (findInOrg on dto.contract_id above) — chokepoint is read-only
 
     const token = this.tokenService.issue(saved.id, expiresAt);
 
@@ -122,16 +125,31 @@ export class GuestInvitationService {
     invitationId: string,
     actor: { id: string; organization_id: string | null },
   ): Promise<GuestInvitation> {
-    const invitation = await this.invitationRepo.findOne({ // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
-      where: { id: invitationId },
-    });
-    if (!invitation) {
-      throw new NotFoundException('Invitation not found');
-    }
-    // Authorize the revoker the same way the creator was authorized.
+    // A guest invitation is a contract-scoped entity; a revoker with no org can
+    // never resolve to one. Guard the org BEFORE the scoped load (which requires
+    // the caller's real org as its tenancy gate). 404, never 403 — no existence
+    // leak.
     if (!actor.organization_id) {
       throw new NotFoundException('Invitation not found');
     }
+
+    // SCOPED LOAD (tenancy — Option B chokepoint 2/4, layer 2): resolve the
+    // invitation through the canonical invitation → contract → project →
+    // organization_id join. A cross-org invitation id yields the
+    // no-existence-leak 404 ('Invitation not found') here, at the data layer,
+    // INDEPENDENTLY of the wall below. The scoped row carries every GuestInvitation
+    // column (the gate inner-joins for filtering, not selecting), so it is mutated
+    // and saved directly — same shape as DocumentProcessingService.updateExtractedText.
+    const invitation = await this.invitationScoped.scopedFindByIdOrThrow(
+      invitationId,
+      actor.organization_id,
+    );
+
+    // WALL (persona — bucket 1b-i, layer 1): STAYS as live defense-in-depth,
+    // keyed on the scoped row's OWN contract_id. findInOrg re-proves the parent
+    // contract is in the caller's org through ContractAccessService — the same
+    // authority the create path uses. Two checks, two layers (CLAUDE.md Option
+    // B); KEPT inline, never a swap.
     await this.contractAccess.findInOrg(
       invitation.contract_id,
       actor.organization_id,
@@ -147,7 +165,7 @@ export class GuestInvitationService {
 
     invitation.status = GuestInvitationStatus.REVOKED;
     invitation.revoked_at = new Date();
-    return this.invitationRepo.save(invitation); // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
+    return this.invitationRepo.save(invitation); // lint-exempt: write (revoke status update) of the scoped-validated row — chokepoint is read-only
   }
 
   /**
@@ -177,7 +195,7 @@ export class GuestInvitationService {
     ) {
       invitation.status = GuestInvitationStatus.ACCEPTED;
       invitation.accepted_at = invitation.accepted_at ?? new Date();
-      await this.invitationRepo.save(invitation); // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
+      await this.invitationRepo.save(invitation); // lint-exempt: PUBLIC token-gated path (exchange); HMAC token is the auth, no request org to scope by — chokepoint is read-only/org-scoped
     }
 
     const { token: viewerToken, expires_at: viewerExpiresAt } =
@@ -258,9 +276,9 @@ export class GuestInvitationService {
 
     // The atomic block. Anything that throws inside this rolls back.
     const result = await this.dataSource.transaction(async (manager) => {
-      const invitationRepo = manager.getRepository(GuestInvitation); // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
+      const invitationRepo = manager.getRepository(GuestInvitation); // lint-exempt: PUBLIC token-gated path (establish-identity); transactional SELECT-FOR-UPDATE by token-derived id, no request org — chokepoint is read-only/org-scoped
       const userRepo = manager.getRepository(User);
-      const accessRepo = manager.getRepository(GuestContractAccess); // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
+      const accessRepo = manager.getRepository(GuestContractAccess); // lint-exempt: PUBLIC token-gated path (establish-identity); transactional binding write, no request org — chokepoint is read-only/org-scoped
 
       // 1. SELECT FOR UPDATE — pessimistic lock on the invitation row.
       //    Two concurrent calls to establishIdentity(<same invitation>)
@@ -488,7 +506,7 @@ export class GuestInvitationService {
       account_type: guest.account_type,
     });
 
-    const commentRepo = this.dataSource.getRepository(ContractComment); // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
+    const commentRepo = this.dataSource.getRepository(ContractComment); // lint-exempt: guest WRITE (comment insert) walled by findAccessibleContract; guest has no org — chokepoint is read-only/org-scoped
     const comment = commentRepo.create({
       contract_id: contractId,
       contract_clause_id: contractClauseId,
