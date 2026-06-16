@@ -1,7 +1,7 @@
 # CLAUDE.md — Project Intelligence File
 > Read this entire file at the start of every Claude Code session before touching any code.
 > This file is the single source of truth for all architectural decisions, rules, and context.
-> Last updated: 2026-06-10 (Phase 7.27 Legal Corpus shipped end-to-end (local branch `feature/7-27-legal-corpus`, pending push/merge) — country-agnostic `legal_documents`/`legal_document_chunks`/`legal_sources` schema with pgvector HNSW; full ingestion pipeline (StorageService → text extraction with a force-OCR branch for broken-font PDFs → NFKC + optional Arabic visual→logical reversal → tiktoken-capped article-boundary chunking → OpenAI text-embedding-3-small → bulk vector write), jurisdiction-scoped retrieval, and AI Chat wired as the first consumer with async polling. Per-source flags `is_visual_order`/`force_ocr` handle per-country quirks; Egyptian Tax Authority seeded (force_ocr=true). Phase D verified GREEN on Egyptian Civil Code 131/1948; Phase E + async chat verified GREEN via UI (Arabic force-majeure → grounded answer citing Civil Code Articles 215/217/373). New bottom-of-file "Phase 7.27 — Legal Corpus (shipped 2026-06-10)" section; lessons #153–#167. Prior: Phase 7.18 Part 2 shipped — managing-user compliance run is the FIRST wired metering consumer. PR #49 squash-merged at `49f785f` on top of engine PR #46 (`9200f38`). Async reconcile shape: reserve in-request behind the #45 access wall, commit/release in `refreshFromAi` + both synchronous fail paths, sweeper backstop for never-polled runs; `reservation_id` on `compliance_checks` via additive migration `1754000000001`; four ops-search log signals (`metering.compliance.{committed_after_release|released_after_terminal|commit_error|release_error}`); engine code UNTOUCHED. Rule 9 parenthetical updated. New bottom-of-file "Phase 7.18 Part 2 — Compliance metering consumer" section. Staging gate (G.1–G.7) reframed as a **Phase 9 release-gate, NOT a merge-gate** — runbook stays in `docs/metering-part2-staging-gate.md`. NO new lessons added — substantive Part 2 lessons (TTL-vs-p99, sweeper-at-scale) need real load, deferred to Phase 9. ContractShare Step 1 deprecation shipped — dead public token endpoint removed, broken external email path removed, cross-tenant info disclosure in `getSharesByContract()` fixed, frontend external sharing gated with "coming soon" message. Lesson #152. Phase 7.18 metering engine primitive shipped — commit `dc31bb6` on `feat/metering-primitive-7.18`. Schema + allowance resolver + MeteringService authority (reserve/commit/release) + dangling-reserve sweeper + READ COMMITTED startup invariant. 20 real-Postgres concurrency + precedence tests; full backend suite 430/430. ENGINE ONLY — no consumer wiring (Part 2). See "Metering Engine Invariants — Phase 7.18 (shipped 2026-06-04)" section at the bottom; new ARCHITECTURE RULES Rule 9 is the spine pointer. Lessons #148–#150 capture the engine-earned discipline (TypeORM 0.3 `[rows, rowCount]` shape, read-then-write transitions, existence-check-then-insert idempotency race). Phase 7.26 shipped — Track A complete. 12 missing i18n keys added across EN and AR locales; FR was already structurally complete. Track B (legal page localization) deferred pending legal team translated content. Phase 7.25 fully documented (PR #41). **CRITICAL** — Phase 3.4 compliance PDF reports + Phase 4 ExportService contract PDFs are CURRENTLY BROKEN by the same pdfmake v0.1 require pattern 2c just fixed; see Critical Known Bugs + lesson #142, HIGH priority. Internal Contract Sharing fix shipped (PR #44) — cross-tenant bug in `createShare()` fixed + ProjectMember creation + notification dispatch + org-member autocomplete.)
+> Last updated: 2026-06-16 (Encryption-at-rest `CryptoService` shipped — PR #73 squash-merged to `main` at `b36b3d0` — AES-256-GCM util at `backend/src/common/utils/crypto.ts`, the first encryption-at-rest primitive; key `ERP_CREDENTIAL_ENC_KEY` (Joi `string().min(32).optional().allow('')`), SHA-256-derived to 32 bytes, random IV per call, auth-tag-verified. New bottom-of-file "Encryption-at-Rest Utility — CryptoService" section; lesson #169; 7.28 reframed to a per-org connector registry (import-only v1); new task 7.35 to encrypt the existing plaintext MFA TOTP + DocuSign RSA secrets. Prior 2026-06-10: Phase 7.27 Legal Corpus shipped end-to-end (local branch `feature/7-27-legal-corpus`, pending push/merge) — country-agnostic `legal_documents`/`legal_document_chunks`/`legal_sources` schema with pgvector HNSW; full ingestion pipeline (StorageService → text extraction with a force-OCR branch for broken-font PDFs → NFKC + optional Arabic visual→logical reversal → tiktoken-capped article-boundary chunking → OpenAI text-embedding-3-small → bulk vector write), jurisdiction-scoped retrieval, and AI Chat wired as the first consumer with async polling. Per-source flags `is_visual_order`/`force_ocr` handle per-country quirks; Egyptian Tax Authority seeded (force_ocr=true). Phase D verified GREEN on Egyptian Civil Code 131/1948; Phase E + async chat verified GREEN via UI (Arabic force-majeure → grounded answer citing Civil Code Articles 215/217/373). New bottom-of-file "Phase 7.27 — Legal Corpus (shipped 2026-06-10)" section; lessons #153–#167. Prior: Phase 7.18 Part 2 shipped — managing-user compliance run is the FIRST wired metering consumer. PR #49 squash-merged at `49f785f` on top of engine PR #46 (`9200f38`). Async reconcile shape: reserve in-request behind the #45 access wall, commit/release in `refreshFromAi` + both synchronous fail paths, sweeper backstop for never-polled runs; `reservation_id` on `compliance_checks` via additive migration `1754000000001`; four ops-search log signals (`metering.compliance.{committed_after_release|released_after_terminal|commit_error|release_error}`); engine code UNTOUCHED. Rule 9 parenthetical updated. New bottom-of-file "Phase 7.18 Part 2 — Compliance metering consumer" section. Staging gate (G.1–G.7) reframed as a **Phase 9 release-gate, NOT a merge-gate** — runbook stays in `docs/metering-part2-staging-gate.md`. NO new lessons added — substantive Part 2 lessons (TTL-vs-p99, sweeper-at-scale) need real load, deferred to Phase 9. ContractShare Step 1 deprecation shipped — dead public token endpoint removed, broken external email path removed, cross-tenant info disclosure in `getSharesByContract()` fixed, frontend external sharing gated with "coming soon" message. Lesson #152. Phase 7.18 metering engine primitive shipped — commit `dc31bb6` on `feat/metering-primitive-7.18`. Schema + allowance resolver + MeteringService authority (reserve/commit/release) + dangling-reserve sweeper + READ COMMITTED startup invariant. 20 real-Postgres concurrency + precedence tests; full backend suite 430/430. ENGINE ONLY — no consumer wiring (Part 2). See "Metering Engine Invariants — Phase 7.18 (shipped 2026-06-04)" section at the bottom; new ARCHITECTURE RULES Rule 9 is the spine pointer. Lessons #148–#150 capture the engine-earned discipline (TypeORM 0.3 `[rows, rowCount]` shape, read-then-write transitions, existence-check-then-insert idempotency race). Phase 7.26 shipped — Track A complete. 12 missing i18n keys added across EN and AR locales; FR was already structurally complete. Track B (legal page localization) deferred pending legal team translated content. Phase 7.25 fully documented (PR #41). **CRITICAL** — Phase 3.4 compliance PDF reports + Phase 4 ExportService contract PDFs are CURRENTLY BROKEN by the same pdfmake v0.1 require pattern 2c just fixed; see Critical Known Bugs + lesson #142, HIGH priority. Internal Contract Sharing fix shipped (PR #44) — cross-tenant bug in `createShare()` fixed + ProjectMember creation + notification dispatch + org-member autocomplete.)
 
 ---
 
@@ -3907,3 +3907,49 @@ OpenAI text-embedding-3-small (1536 dims, cl100k_base tokenizer). Same model as 
 4. TypeORM entities must NOT include the `embedding` vector column. Python owns vector writes; TypeORM reads via raw SQL when needed (lesson #157).
 5. Async chat: the status-poll endpoint is the ONLY path that advances message state; do not duplicate the polling logic elsewhere.
 6. AI Chat must always silently fall back when no legal context is available. NEVER show users an empty `<legal_context>` block or a "no laws found" warning.
+
+---
+
+## Encryption-at-Rest Utility — CryptoService (shipped 2026-06-16, PR #73)
+
+First encryption-at-rest primitive in the codebase. A standalone, security-focused
+unit of work — the prerequisite for Phase 7.28 ERP credential storage. **Utility
+only — no ERP code, tables, or endpoints** (those land with 7.28). PR #73
+squash-merged to `main` at `b36b3d0`; CI green.
+
+### What shipped
+- **`backend/src/common/utils/crypto.ts`** — `@Injectable() CryptoService`, a GENERIC
+  AES-256-GCM `encrypt(plaintext)` / `decrypt(payload)` for any string (not ERP-specific).
+  - **Self-contained payload** `v1.<base64url(iv)>.<base64url(authTag)>.<base64url(ciphertext)>`
+    — decryption needs only the stored value + the key. The `v1.` prefix reserves room
+    for a future algorithm rotation.
+  - **Random 12-byte IV per call** (`randomBytes(12)` inside `encrypt()`) — never a
+    constant/field/derived value (IV reuse breaks GCM).
+  - **Auth tag verified on decrypt** (`setAuthTag` before `final()`); a tampered payload
+    or wrong key throws and is rethrown loudly — never swallowed.
+  - **Key from `ERP_CREDENTIAL_ENC_KEY` via ConfigService** (no `process.env`, no
+    hardcoded fallback), resolved lazily; SHA-256-derived to exactly 32 bytes.
+    `encrypt`/`decrypt` throw a clear, var-named error when the key is missing or below
+    the 32-char floor. No key material or plaintext in logs or error messages.
+- **`backend/src/app.module.ts`** — Joi: `ERP_CREDENTIAL_ENC_KEY: Joi.string().min(32).optional().allow('')`
+  — optional at boot (the app starts without it, like the other optional integration
+  vars); rejects a non-empty value shorter than 32.
+- **`backend/.env.example`** — documented entry (same-commit rule) with high-entropy
+  generation guidance (`openssl rand -base64 48`) and an explicit anti-passphrase warning.
+- **`crypto.spec.ts`** — 9 tests: round-trip (incl. unicode/empty), random-IV
+  distinctness, tampered-payload rejection, malformed-payload rejection, wrong-key
+  failure, missing-key + short-key errors, non-string guard.
+
+See lesson #169 for the design rationale (the random-IV invariant; why a fast-hashed
+key forces a high-entropy secret).
+
+### Hard rules — never violate
+1. **`ERP_CREDENTIAL_ENC_KEY` MUST be a high-entropy random value** (`openssl rand -base64 48`),
+   NEVER a memorable passphrase. The key is fast-hashed (SHA-256, not a slow KDF), so a
+   guessable passphrase is brute-forceable.
+2. **Rotating the key makes ALL previously-encrypted payloads undecryptable.** A
+   re-encryption migration (decrypt-with-old → encrypt-with-new) is required BEFORE any
+   rotation — never rotate in place.
+3. **Encrypted credential fields are decrypted ONLY inside the worker at use time, and
+   NEVER returned on an API response** (`@Exclude()` on the entity field, same convention
+   as the existing MFA/secret fields).

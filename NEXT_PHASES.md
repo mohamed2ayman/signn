@@ -804,9 +804,9 @@ block schema.
 
 ---
 
-### 7.28 — ERP System Integration (SAP / Oracle / Primavera / Dynamics)
-**Owner:** Ayman + Youssef | **Priority:** 🟡 MEDIUM | **Status:** ❌ Not started
-- Abstract integration layer (`ERP_PROVIDER` env var)
+### 7.28 — ERP System Integration (SAP / Oracle / Primavera / Dynamics) — per-org connector registry, import-only v1
+**Owner:** Ayman + Youssef | **Priority:** 🟡 MEDIUM | **Status:** 🔄 In progress — crypto prerequisite shipped (PR #73, 2026-06-16)
+- Integration layer is a PER-ORG CONNECTOR REGISTRY (vendor→adapter; adapters self-register), resolved at job time from the org's `erp_connections.vendor` row — NOT a single global `ERP_PROVIDER` env var. Different orgs use different ERPs simultaneously (Org A on SAP, Org B on P6), so one global driver cannot express the selection. Adding a new ERP = one adapter file + one registry entry, zero changes to the core sync engine / neutral model / queue / dashboard. (Supersedes the original "Abstract integration layer (`ERP_PROVIDER` env var)" wording — investigation 2026-06-16.)
 - SAP first (Egyptian government + large contractors)
 - Oracle Primavera P6 (most common MENA construction scheduling tool)
 - Microsoft Dynamics 365 (mid-size contractors)
@@ -920,6 +920,16 @@ block schema.
 - **Must also implement Phase 6B.1 visual confidentiality on this portal**
 
 **Success metric:** A project owner receives a secure portal link from their contractor, opens it on their phone, and within 2 minutes sees the status of all subcontracts on their project — without needing a SIGN account.
+
+---
+
+### 7.35 — Encrypt Existing Plaintext Secrets (MFA TOTP + DocuSign RSA)
+**Owner:** Ayman | **Priority:** 🟡 MEDIUM | **Status:** ❌ Not started
+**Depends on:** CryptoService (PR #73, shipped 2026-06-16)
+- Use `CryptoService` (`backend/src/common/utils/crypto.ts`) to encrypt at rest the secrets that are currently stored in plaintext: `users.mfa_totp_secret` (and the `mfa_secret` email-OTP compound value) and the DocuSign RSA private key.
+- Migrate existing stored values (encrypt-in-place data migration over current rows) — requires `ERP_CREDENTIAL_ENC_KEY` configured before the migration runs.
+- Update all read/write paths to encrypt on write and decrypt ONLY at use time inside the worker; never log decrypted values; keep `@Exclude()` on the response path.
+- Note: rotating `ERP_CREDENTIAL_ENC_KEY` later requires a re-encryption migration (see CryptoService hard rules in CLAUDE.md).
 
 ---
 
@@ -1236,13 +1246,14 @@ No new env vars required for existing local dev deployments.
 | — | CONTRACTOR_* Audit | ✅ Audited — removal blocked until 7.18 | A | 2026-06-04 |
 | — | ContractShare Step 1 — dead endpoint + broken email + org-scope fix | ✅ Complete | A | 2026-06-05 |
 | 7.27 | Legal Corpus | ✅ Complete (feature/7-27-legal-corpus, pending push) | A | 2026-06-10 |
-| 7.28 | ERP Integration | ❌ Not started | A+Y | |
+| 7.28 | ERP Integration (per-org connector registry, import-only v1) | 🔄 In progress — crypto prereq shipped (PR #73) | A+Y | 2026-06-16 |
 | 7.29 | Settlement Checkbox | ❌ Not started | Y | |
 | 7.30 | Clause Library | ✅ Complete | A | |
 | 7.31 | Frontend Tests | ⚠️ Partial (44) | Y | |
 | 7.32 | Negotiation History | ❌ Not started | A+Y | |
 | 7.33 | Self-Service Generation | ❌ Not started | Y | |
 | 7.34 | Owner/Insurer Portal | ❌ Not started | Y+A | |
+| 7.35 | Encrypt Plaintext Secrets (MFA TOTP + DocuSign RSA) | ❌ Not started | A | |
 | 6B.1 | Visual Confidentiality | ❌ After Phase 7 | Y | |
 | 6B.2 | Invisible Watermarks | ❌ After Phase 7 | Y | |
 | 8 | AI Migration | ❌ Not started | A+Y | |
