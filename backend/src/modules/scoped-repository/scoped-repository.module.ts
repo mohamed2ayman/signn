@@ -9,6 +9,7 @@ import {
   ContractVersion,
   ContractorResponse,
   DocumentUpload,
+  GuestInvitation,
   NegotiationEvent,
   Notice,
   Obligation,
@@ -27,6 +28,7 @@ import { ClaimScopedRepository } from './claim-scoped.repository';
 import { SubContractScopedRepository } from './subcontract-scoped.repository';
 import { DocumentUploadScopedRepository } from './document-upload-scoped.repository';
 import { NegotiationEventScopedRepository } from './negotiation-event-scoped.repository';
+import { GuestInvitationScopedRepository } from './guest-invitation-scoped.repository';
 
 /**
  * Option B — the scoped-repository module: the data-layer tenancy chokepoint.
@@ -59,6 +61,16 @@ import { NegotiationEventScopedRepository } from './negotiation-event-scoped.rep
  * assertContractInOrg wall (KEPT inline, not consolidated into findInOrg). See
  * docs/option-b-chokepoint-negotiation.md.
  *
+ * Chokepoint migration (2 of 4) adds GuestInvitation — guest-portal's single
+ * request-scoped-with-an-org read: GuestInvitationService.revoke's by-id load,
+ * wired through scopedFindByIdOrThrow under the inline findInOrg wall (KEPT
+ * inline). guest-portal's other bare sites are writes / PUBLIC token-gated paths
+ * (exchange / establish-identity / token-verify) / guest-no-org writes — none is
+ * an org-scoped read, so none routes through the chokepoint (they stay bare with
+ * honest permanent lint-exempt reasons). The viewer-credential surface has NO
+ * bare guest-portal read at all — its contract load delegates to the
+ * findAccessibleContract wall. See docs/option-b-chokepoint-guest-portal.md.
+ *
  * Consumers import THIS module and inject the scoped repositories — they do NOT
  * inject `@InjectRepository(Contract|ContractVersion|…)` for tenancy-scoped
  * loads. The walls (`ContractAccessService`, the S0 interim walls) stay where
@@ -79,6 +91,7 @@ import { NegotiationEventScopedRepository } from './negotiation-event-scoped.rep
       SubContract,
       DocumentUpload,
       NegotiationEvent,
+      GuestInvitation,
     ]),
   ],
   providers: [
@@ -94,6 +107,7 @@ import { NegotiationEventScopedRepository } from './negotiation-event-scoped.rep
     SubContractScopedRepository,
     DocumentUploadScopedRepository,
     NegotiationEventScopedRepository,
+    GuestInvitationScopedRepository,
   ],
   exports: [
     ContractScopedRepository,
@@ -108,6 +122,7 @@ import { NegotiationEventScopedRepository } from './negotiation-event-scoped.rep
     SubContractScopedRepository,
     DocumentUploadScopedRepository,
     NegotiationEventScopedRepository,
+    GuestInvitationScopedRepository,
   ],
 })
 export class ScopedRepositoryModule {}

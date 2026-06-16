@@ -62,7 +62,7 @@ export type InvitationVerifyResult =
 export class InvitationTokenService {
   constructor(
     private readonly config: ConfigService,
-    @InjectRepository(GuestInvitation) // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
+    @InjectRepository(GuestInvitation) // lint-exempt: PUBLIC token-gated path (verify); HMAC-before-DB by-id load, no request org — chokepoint is read-only/org-scoped
     private readonly invitationRepo: Repository<GuestInvitation>,
   ) {}
 
@@ -128,7 +128,7 @@ export class InvitationTokenService {
     }
 
     // ── 5. DB checks ──────────────────────────────────────────────────
-    const invitation = await this.invitationRepo.findOne({ // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
+    const invitation = await this.invitationRepo.findOne({ // lint-exempt: PUBLIC token-gated path (verify); HMAC-before-DB by-id load by token-derived id, no request org — chokepoint is read-only/org-scoped
       where: { id: payload.invitation_id },
     });
     if (!invitation) {

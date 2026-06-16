@@ -9,6 +9,7 @@ import {
 } from '../../database/entities';
 import { ContractsModule } from '../contracts/contracts.module';
 import { AuthModule } from '../auth/auth.module';
+import { ScopedRepositoryModule } from '../scoped-repository/scoped-repository.module';
 
 import { InvitationTokenService } from './services/invitation-token.service';
 import { ViewerCredentialService } from './services/viewer-credential.service';
@@ -52,6 +53,10 @@ import { GuestCommentsController } from './controllers/guest-comments.controller
     ]),
     ContractsModule,
     AuthModule,
+    // Option B chokepoint (migration 2/4): GuestInvitationService.revoke's
+    // by-id read routes through GuestInvitationScopedRepository (layer 2),
+    // under the inline findInOrg wall (layer 1).
+    ScopedRepositoryModule,
   ],
   controllers: [
     GuestInvitationsController,
