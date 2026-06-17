@@ -51,6 +51,7 @@ import { AdminSecurityModule } from './modules/admin-security/admin-security.mod
 import { ComplianceModule } from './modules/compliance/compliance.module';
 import { WaitlistModule } from './modules/waitlist/waitlist.module';
 import { LegalDocumentsModule } from './modules/legal-documents/legal-documents.module';
+import { IntegrationsModule } from './modules/integrations/integrations.module';
 import { TokenBlacklistModule } from './common/services/token-blacklist.module';
 import { dataSourceOptions } from './config/data-source';
 
@@ -142,6 +143,15 @@ import { dataSourceOptions } from './config/data-source';
         // error if encrypt/decrypt is called while it is missing. min(32) is the
         // defensive entropy floor — the key is SHA-256-derived to 32 bytes.
         ERP_CREDENTIAL_ENC_KEY: Joi.string().min(32).optional().allow(''),
+
+        // ── ERP Integration (Phase 7.28) ──────────────────────────
+        // Feature gate for the ERP integration module. OFF by default —
+        // SIGN runs 100% without it. When false, every /erp/* and
+        // /admin/erp/* route 404s (ErpEnabledGuard). The active per-org
+        // connector is resolved at runtime from the connector REGISTRY
+        // (erp_connections.vendor), NOT from any env var — there is
+        // deliberately no active-adapter selector here.
+        ERP_INTEGRATION_ENABLED: Joi.boolean().default(false),
 
         // ── Portfolio Export (Phase 7.17 Prompt 2c) ───────────────
         // HMAC secret for token-gated PDF download links. The bare-HTTP
@@ -288,6 +298,7 @@ import { dataSourceOptions } from './config/data-source';
     ComplianceModule,
     WaitlistModule,
     LegalDocumentsModule,
+    IntegrationsModule,
   ],
   providers: [
     // Global response serializer. Triggers class-transformer `instanceToPlain`

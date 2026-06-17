@@ -163,6 +163,16 @@ export class Obligation {
   @Column({ type: 'varchar', length: 1000, nullable: true })
   evidence_url: string;
 
+  // ─── Phase 7.28 — ERP schedule linkage ────────────────────────────────
+  /**
+   * Reference to an external ERP/scheduling activity (e.g. a Primavera P6
+   * activity id) for early-warning against the live schedule. Stores a
+   * REFERENCE ONLY — schedule data is never copied into SIGN. Nullable;
+   * populated by a future schedule-linkage consumer, not v1 cost import.
+   */
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  external_activity_ref: string | null;
+
   // ─── Phase 7.1 — Per-obligation reminder schedule ─────────────────────
   /**
    * Days-before-due-date at which reminders are sent for THIS obligation.
