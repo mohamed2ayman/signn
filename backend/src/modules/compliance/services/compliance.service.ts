@@ -16,7 +16,6 @@ import {
   ComplianceFindingStatus,
   ComplianceFindingType,
   ComplianceOverallStatus,
-  Contract,
   ContractClause,
   KnowledgeAssetUsage,
   Project,
@@ -26,6 +25,15 @@ import { MeteringService } from '../../metering/services/metering.service';
 import { MeterKey, MeterLedgerStatus } from '../../metering/enums/meter-key.enum';
 import { ComplianceKnowledgeService } from './compliance-knowledge.service';
 import { ComplianceObligationService } from './compliance-obligation.service';
+// Option B — chokepoint migration (compliance finale, 4 of 4): contract-scoped
+// reads route through the data-layer tenancy chokepoint (layer 2) UNDER the
+// existing controller findInOrg walls (layer 1) — two checks, two layers.
+//   - ContractScopedRepository.scopedFindByIdWithRelations → the runCheck
+//     jurisdiction load (parent Contract + project, silent-null base; throws
+//     here only via the caller's own NotFound, preserving prior behaviour).
+//   - ComplianceCheckScopedRepository → listForContract (LIST) + getDetail (by-id).
+import { ContractScopedRepository } from '../../scoped-repository/contract-scoped.repository';
+import { ComplianceCheckScopedRepository } from '../../scoped-repository/compliance-check-scoped.repository';
 
 interface RunCheckOpts {
   contractId: string;
@@ -66,16 +74,17 @@ export class ComplianceService {
   private readonly logger = new Logger(ComplianceService.name);
 
   constructor(
-    @InjectRepository(ComplianceCheck) // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
+    @InjectRepository(ComplianceCheck) // lint-exempt: write path (create/save) + metering-reconcile & pre-wall by-id reads (see re-labelled call sites); request-scoped READS route through checkScoped
     private readonly checkRepo: Repository<ComplianceCheck>,
-    @InjectRepository(ComplianceFinding) // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
+    @InjectRepository(ComplianceFinding) // lint-exempt: write path (insert) + two-step findings read (parent check scope-validated upstream); see re-labelled call sites
     private readonly findingRepo: Repository<ComplianceFinding>,
-    @InjectRepository(Contract) // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
-    private readonly contractRepo: Repository<Contract>,
     @InjectRepository(Project)
     private readonly projectRepo: Repository<Project>,
-    @InjectRepository(ContractClause) // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
+    @InjectRepository(ContractClause) // lint-exempt: aggregation QB (Q3 — clause list); called from runCheck (org-scoped jurisdiction load above) + startObligationExtraction (async reconcile, no request org)
     private readonly contractClauseRepo: Repository<ContractClause>,
+    // Option B chokepoint (compliance finale) — layer 2 under the controller wall.
+    private readonly contractScoped: ContractScopedRepository,
+    private readonly checkScoped: ComplianceCheckScopedRepository,
     // Phase 7.24b — write backlink rows (best-effort, never blocks the check).
     @InjectRepository(KnowledgeAssetUsage)
     private readonly usageRepo: Repository<KnowledgeAssetUsage>,
@@ -117,10 +126,18 @@ export class ComplianceService {
    * needs its own gate.
    */
   async runCheck(opts: RunCheckOpts): Promise<ComplianceCheck> {
-    const contract = await this.contractRepo.findOne({ // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
-      where: { id: opts.contractId },
-      relations: ['project'],
-    });
+    // Layer 2 (Option B chokepoint): the parent Contract + its project hydrate
+    // through the data-layer org gate (scopedFindByIdWithRelations). The
+    // controller wall (assertContractInCallerOrg → findInOrg) already authorised
+    // this contractId for opts.orgId (layer 1); this re-gate is the persona-blind
+    // second layer. A no-org caller cannot own a contract → 404 (matches the
+    // controller's no-org branch and the prior 'Contract not found' shape).
+    if (!opts.orgId) throw new NotFoundException('Contract not found');
+    const contract = await this.contractScoped.scopedFindByIdWithRelations(
+      opts.contractId,
+      opts.orgId,
+      ['project'],
+    );
     if (!contract) throw new NotFoundException('Contract not found');
 
     // ─────────────────────────────────────────────────────────────────────
@@ -180,7 +197,7 @@ export class ComplianceService {
         created_by: opts.userId,
         reservation_id: reservation.reservation_id,
       });
-      saved = await this.checkRepo.save(check); // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
+      saved = await this.checkRepo.save(check); // lint-exempt: write (persist check/finding state); the chokepoint is read-only
 
       // Phase 7.24b — best-effort backlink write (fire-and-forget with
       // catch at caller level, per lesson #114). Never blocks the check.
@@ -202,7 +219,7 @@ export class ComplianceService {
       if (clauses.length === 0) {
         // Synchronous fail path #1 — no clauses to analyse.
         saved.overall_status = ComplianceOverallStatus.FAILED;
-        await this.checkRepo.save(saved); // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
+        await this.checkRepo.save(saved); // lint-exempt: write (persist check/finding state); the chokepoint is read-only
         throw new BadRequestException(
           'Contract has no clauses to analyse — extract clauses before running compliance check',
         );
@@ -225,14 +242,14 @@ export class ComplianceService {
           playbook_knowledge: ctx.playbook_knowledge,
         });
         saved.ai_job_id = dispatch.job_id;
-        await this.checkRepo.save(saved); // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
+        await this.checkRepo.save(saved); // lint-exempt: write (persist check/finding state); the chokepoint is read-only
       } catch (err) {
         // Synchronous fail path #2 — dispatch threw.
         this.logger.error(
           `Failed to dispatch compliance AI job: ${(err as Error).message}`,
         );
         saved.overall_status = ComplianceOverallStatus.FAILED;
-        await this.checkRepo.save(saved); // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
+        await this.checkRepo.save(saved); // lint-exempt: write (persist check/finding state); the chokepoint is read-only
         throw err;
       }
 
@@ -269,7 +286,7 @@ export class ComplianceService {
    * obligation extraction.
    */
   async refreshFromAi(checkId: string): Promise<ComplianceCheck> {
-    const check = await this.checkRepo.findOne({ where: { id: checkId } }); // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
+    const check = await this.checkRepo.findOne({ where: { id: checkId } }); // lint-exempt: metering-reconcile path (async poll, no request org in scope); checkId wall-validated upstream in getOne (getContractIdForCheck → findInOrg)
     if (!check) throw new NotFoundException('Compliance check not found');
 
     // If already completed, nothing to do
@@ -299,7 +316,7 @@ export class ComplianceService {
         await this.startObligationExtraction(check);
       } else if (job.status === 'failed') {
         check.overall_status = ComplianceOverallStatus.FAILED;
-        await this.checkRepo.save(check); // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
+        await this.checkRepo.save(check); // lint-exempt: write (persist check/finding state); the chokepoint is read-only
         // Phase 7.18 Part 2 — TERMINAL FAILURE from the AI side.
         await this.releaseReservationOnFailure(check);
       }
@@ -317,24 +334,36 @@ export class ComplianceService {
           job.result.result.obligations,
         );
         check.obligation_extraction_status = ComplianceExtractionStatus.COMPLETED;
-        await this.checkRepo.save(check); // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
+        await this.checkRepo.save(check); // lint-exempt: write (persist check/finding state); the chokepoint is read-only
       } else if (job.status === 'failed') {
         check.obligation_extraction_status = ComplianceExtractionStatus.FAILED;
-        await this.checkRepo.save(check); // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
+        await this.checkRepo.save(check); // lint-exempt: write (persist check/finding state); the chokepoint is read-only
       }
     }
 
     return (
-      (await this.checkRepo.findOne({ where: { id: check.id } })) ?? check // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
+      (await this.checkRepo.findOne({ where: { id: check.id } })) ?? check // lint-exempt: metering-reconcile path (async poll re-read of the just-loaded check); checkId wall-validated upstream in getOne
     );
   }
 
-  async listForContract(contractId: string): Promise<ComplianceCheck[]> {
-    return this.checkRepo.find({ // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
-      where: { contract_id: contractId },
-      order: { created_at: 'DESC' },
-      take: 50,
-    });
+  /**
+   * List a contract's compliance checks (newest 50). The controller walls the
+   * `:contractId` (layer 1); this routes through the ComplianceCheck scoped
+   * chokepoint (layer 2) — the canonical `check → contract → project → org`
+   * gate independently bounds the rows to `orgId`. `getManyAndCount` is reused
+   * for its `take` support (the org-gated count is discarded; the prior `find`
+   * had no count). The wall guarantees `orgId` is non-null here.
+   */
+  async listForContract(
+    contractId: string,
+    orgId: string,
+  ): Promise<ComplianceCheck[]> {
+    const [rows] = await this.checkScoped.scopedFindAndCount(
+      { contract_id: contractId },
+      orgId,
+      { order: { created_at: 'DESC' }, take: 50 },
+    );
+    return rows;
   }
 
   /**
@@ -349,7 +378,7 @@ export class ComplianceService {
    * "check exists in another org".
    */
   async getContractIdForCheck(checkId: string): Promise<string> {
-    const row = await this.checkRepo.findOne({ // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
+    const row = await this.checkRepo.findOne({ // lint-exempt: pre-wall resolver — resolves contract_id for the controller's findInOrg wall (cannot itself route through a chokepoint that needs the org it is about to resolve)
       where: { id: checkId },
       select: ['id', 'contract_id'],
     });
@@ -359,10 +388,15 @@ export class ComplianceService {
 
   async getDetail(
     checkId: string,
+    orgId: string,
   ): Promise<ComplianceCheck & { findings: ComplianceFinding[] }> {
-    const check = await this.checkRepo.findOne({ where: { id: checkId } }); // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
-    if (!check) throw new NotFoundException('Compliance check not found');
-    const findings = await this.findingRepo.find({ // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
+    // Layer 2 (Option B chokepoint): the by-id check load routes through the
+    // canonical `check → contract → project → org` gate (no-existence-leak 404,
+    // matching the prior 'Compliance check not found'). The controller's
+    // getOne already walled the check's TRUE contract_id (layer 1); the wall
+    // guarantees `orgId` is non-null here.
+    const check = await this.checkScoped.scopedFindByIdOrThrow(checkId, orgId);
+    const findings = await this.findingRepo.find({ // lint-exempt: two-step — findings keyed by the check id just scope-validated on the line above (no grandchild scoped subclass, same posture as the obligation reminder-log list)
       where: { compliance_check_id: checkId },
       order: { severity: 'ASC', layer: 'ASC' },
     });
@@ -488,7 +522,7 @@ export class ComplianceService {
       }),
     );
     if (rows.length > 0) {
-      await this.findingRepo.insert(rows as any); // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
+      await this.findingRepo.insert(rows as any); // lint-exempt: write (persist check/finding state); the chokepoint is read-only
     }
     check.findings_summary = aiResult.summary ?? this.summarize(rows);
     check.overall_status = this.coerceEnum(
@@ -496,7 +530,7 @@ export class ComplianceService {
       ComplianceOverallStatus,
       this.deriveOverall(rows),
     );
-    await this.checkRepo.save(check); // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
+    await this.checkRepo.save(check); // lint-exempt: write (persist check/finding state); the chokepoint is read-only
   }
 
   private async startObligationExtraction(check: ComplianceCheck): Promise<void> {
@@ -508,13 +542,13 @@ export class ComplianceService {
       });
       check.obligation_job_id = dispatch.job_id;
       check.obligation_extraction_status = ComplianceExtractionStatus.RUNNING;
-      await this.checkRepo.save(check); // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
+      await this.checkRepo.save(check); // lint-exempt: write (persist check/finding state); the chokepoint is read-only
     } catch (err) {
       this.logger.error(
         `Failed to dispatch obligation extraction: ${(err as Error).message}`,
       );
       check.obligation_extraction_status = ComplianceExtractionStatus.FAILED;
-      await this.checkRepo.save(check); // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
+      await this.checkRepo.save(check); // lint-exempt: write (persist check/finding state); the chokepoint is read-only
     }
   }
 
@@ -526,7 +560,7 @@ export class ComplianceService {
       document_label: string | null;
     }>
   > {
-    const ccs = await this.contractClauseRepo // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
+    const ccs = await this.contractClauseRepo // lint-exempt: aggregation QB (Q3 — clause list with leftJoinAndSelect); called from runCheck (org-scoped jurisdiction load above) + startObligationExtraction (async reconcile, no request org)
       .createQueryBuilder('cc')
       .leftJoinAndSelect('cc.clause', 'clause')
       .where('cc.contract_id = :contractId', { contractId })
