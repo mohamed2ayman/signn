@@ -58,7 +58,9 @@ describe('findAcrossAllOrgs — escape-hatch fence (request-unreachable)', () =>
   });
 
   it('has exactly ONE production caller — the ObligationReminderProcessor', () => {
-    const rel = callerFiles.map((f) => path.relative(SRC_ROOT, f)).sort();
+    const rel = callerFiles
+      .map((f) => path.relative(SRC_ROOT, f).split(path.sep).join('/'))
+      .sort();
     expect(rel).toEqual([PROCESSOR_REL]);
   });
 
