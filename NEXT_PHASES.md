@@ -933,6 +933,46 @@ block schema.
 
 ---
 
+### 7.36 — ContractClause Chokepoint Migration (Option B remainder)
+
+**Status:** ❌ Not started
+**Depends on:** Option B 4-module chokepoint migration (COMPLETE — negotiation #72 /
+guest-portal #74 / chat #76 / compliance); scopedFindByIdWithRelations base method
+(shipped in the compliance finale)
+
+**Context:** The 4-module chokepoint migration (negotiation/guest-portal/chat/compliance)
+is complete — zero "migration scheduled" annotations remain in those modules. Three areas
+with bare contract-scoped reads remain OUTSIDE that plan, surfaced by the enforcing lint,
+all wall-protected + honestly labeled today:
+- contracts.service.ts — ~9 ContractClause reads
+- document-processing.service.ts — ~5 ContractClause reads
+- compliance's loadClauses aggregation QB (closeable by the same subclass)
+
+No ContractClauseScopedRepository exists yet — that subclass is the unit that closes all three.
+
+**Scope (one recon-then-wire bucket, same model as the 4 modules):**
+- New ContractClauseScopedRepository extending the scoped base — canonical
+  clause → contract → project → org join, allowedFilterKeys per recon, registered in
+  ScopedRepositoryModule.
+- Route the contract-scoped ContractClause by-id/list reads through scopedFind /
+  scopedFindByIdOrThrow / scopedFindAndCount; existing walls stay as defense-in-depth
+  (two layers, never a swap).
+- Reuse scopedFindByIdWithRelations (compliance finale) for any parent-load-with-relations shape.
+- Leave + honestly re-label: writes, aggregation QBs (or wire loadClauses if cleanly
+  contract-scoped), system/no-orgId, public-token reads.
+- Red-before/green-after on real Postgres; live wall-denial assertions; the enforcing lint
+  must stay exit 0; remove "migration scheduled" annotations from genuinely-chokepointed sites.
+
+**Separate adjacent items (do NOT bundle — own buckets):**
+- docusign.service.ts (~8 Contract reads/writes) — assess whether these belong here or their own bucket.
+- ComplianceReportProcessor + ObligationReminderProcessor + learned-baseline.processor →
+  future findAcrossAllOrgs-escape-hatch migration (system paths).
+
+**Definition of done:** ContractClause reads chokepointed; loadClauses resolved; zero
+"migration scheduled" annotations remain in the ContractClause surface; lint exit 0; suite green.
+
+---
+
 ## 🎨 PHASE 6B — Visual Confidentiality & Watermarks
 > These were originally Phase 6.5 and 6.6. Moved here because features in Phase 7 will change the UI — building protection layers before features means rebuilding them after.
 > Do these AFTER Phase 7 feature development is complete.
