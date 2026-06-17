@@ -36,6 +36,7 @@
     "billing": "Facturation",
     "waitlist": "Liste d'attente",
     "accountSettings": "Paramètres du compte",
+    "erpConnections": "Connexions ERP",
     "system": "Système"
   },
   "portal": {
@@ -730,5 +731,117 @@
     "successExternal": "Lien de partage envoyé à {{email}}.",
     "searching": "Recherche en cours…",
     "placeholder": "collègue@entreprise.com"
+  },
+  "erp": {
+    "title": "Connexions ERP",
+    "subtitle": "Connectez votre ERP pour importer les coûts réels et alimenter l'analyse des réclamations et des avenants.",
+    "addConnection": "Ajouter une connexion",
+    "featureOff": "L'intégration ERP n'est pas encore activée pour votre organisation. Contactez votre administrateur pour l'activer.",
+    "loadError": "Impossible de charger les connexions ERP.",
+    "retry": "Réessayer",
+    "saving": "Enregistrement…",
+    "remove": "Retirer",
+    "never": "Jamais",
+    "disabled": "Désactivée",
+    "confirmDelete": "Supprimer la connexion « {{name}} » ? Cette action est irréversible.",
+    "empty": {
+      "title": "Aucune connexion ERP pour l'instant",
+      "subtitle": "Ajoutez une connexion pour commencer à importer les données de coûts de votre ERP."
+    },
+    "col": {
+      "name": "Nom",
+      "vendor": "Fournisseur",
+      "status": "Statut",
+      "lastSync": "Dernière synchronisation",
+      "actions": "Actions"
+    },
+    "status": {
+      "configured": "Configurée",
+      "active": "Active",
+      "error": "Erreur",
+      "disabled": "Désactivée"
+    },
+    "action": {
+      "sync": "Synchroniser",
+      "mappings": "Correspondances"
+    },
+    "vendor": {
+      "mock": "ERP fictif (données de test)",
+      "sap": "SAP (import des coûts)"
+    },
+    "toast": {
+      "created": "Connexion créée.",
+      "updated": "Connexion mise à jour.",
+      "deleted": "Connexion supprimée.",
+      "saveError": "Impossible d'enregistrer la connexion.",
+      "deleteError": "Impossible de supprimer la connexion."
+    },
+    "form": {
+      "createTitle": "Ajouter une connexion ERP",
+      "editTitle": "Modifier la connexion ERP",
+      "name": "Nom de la connexion",
+      "nameRequired": "Le nom de la connexion est requis.",
+      "vendor": "Fournisseur",
+      "skeletonWarning": "Ce connecteur n'est pas encore opérationnel — il s'agit d'un espace réservé conditionnel et les synchronisations échoueront tant qu'il n'est pas activé.",
+      "baseUrl": "URL de base",
+      "baseUrlPlaceholder": "https://erp.example.com",
+      "credentials": "Identifiants",
+      "credentialsConfigured": "Configurés",
+      "credentialsNotConfigured": "Non configurés",
+      "replaceCredentials": "Remplacer les identifiants",
+      "credentialsHint": "Les identifiants sont stockés chiffrés et ne sont plus jamais affichés après l'enregistrement.",
+      "credentialKey": "Champ",
+      "credentialValue": "Valeur",
+      "addCredentialField": "+ Ajouter un champ",
+      "enabled": "Activée"
+    },
+    "mappings": {
+      "title": "Correspondances de champs",
+      "help": "Associez chaque champ ERP à un champ SIGN. Les lignes de coût importées sont construites à partir de ces correspondances.",
+      "loadError": "Impossible de charger les correspondances de champs.",
+      "saved": "Correspondances de champs enregistrées.",
+      "saveError": "Impossible d'enregistrer les correspondances de champs.",
+      "missingRequired": "Champs requis non encore associés : {{fields}}. Les imports ne produiront aucune ligne tant qu'ils ne le sont pas.",
+      "empty": "Aucune correspondance pour l'instant. Ajoutez une ligne pour associer un champ ERP à un champ SIGN.",
+      "sourceField": "Champ ERP",
+      "sourcePlaceholder": "p. ex. cost_center",
+      "targetField": "Champ SIGN",
+      "selectTarget": "Sélectionnez un champ…",
+      "addRow": "+ Ajouter une correspondance"
+    },
+    "targetField": {
+      "cost_code": "Code de coût",
+      "wbs_ref": "Référence WBS",
+      "period": "Période",
+      "amount": "Montant",
+      "currency": "Devise",
+      "description": "Description"
+    },
+    "sync": {
+      "title": "Synchronisation et historique",
+      "help": "Lancez un import maintenant et consultez les synchronisations passées.",
+      "syncNow": "Synchroniser maintenant",
+      "starting": "Démarrage…",
+      "queued": "Synchronisation démarrée.",
+      "alreadyQueued": "Une synchronisation est déjà en cours.",
+      "error": "Impossible de démarrer la synchronisation.",
+      "disabledNotice": "Cette connexion est désactivée — activez-la pour lancer une synchronisation.",
+      "loadError": "Impossible de charger l'historique de synchronisation.",
+      "noJobs": "Aucune synchronisation pour l'instant.",
+      "recordsSummary": "{{imported}} importés / {{processed}} traités · {{failed}} en échec",
+      "col": {
+        "status": "Statut",
+        "records": "Enregistrements",
+        "started": "Démarré",
+        "finished": "Terminé"
+      }
+    },
+    "jobStatus": {
+      "pending": "En attente",
+      "running": "En cours",
+      "success": "Réussi",
+      "partial": "Partiel",
+      "failed": "Échoué"
+    }
   }
 }

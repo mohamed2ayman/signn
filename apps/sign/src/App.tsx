@@ -26,6 +26,7 @@ import ClauseReviewPage from '@/pages/app/ClauseReviewPage';
 import ClausesPage from '@/pages/app/ClausesPage';
 import KnowledgeAssetsPage from '@/pages/app/KnowledgeAssetsPage';
 import ObligationsPage from '@/pages/app/ObligationsPage';
+import ErpConnectionsPage from '@/pages/app/ErpConnectionsPage';
 import ObligationsCalendarPage from '@/pages/app/ObligationsCalendarPage';
 import NotificationsPage from '@/pages/app/NotificationsPage';
 import OnboardingPage from '@/pages/app/OnboardingPage';
@@ -134,6 +135,8 @@ const clientNavItems = [
   { label: 'nav.team', path: '/app/team', icon: '👥' },
   { label: 'nav.store', path: '/app/store', icon: '🛒' },
   { label: 'nav.subscription', path: '/app/settings/subscription', icon: '💳' },
+  // OWNER_ADMIN-only — Sidebar filters by role (others never see the link).
+  { label: 'nav.erpConnections', path: '/app/erp-connections', icon: '🔌', roles: [UserRole.OWNER_ADMIN] },
   { label: 'nav.profile', path: '/app/profile', icon: '👤' },
   { label: 'nav.support', path: '/app/support', icon: '💬' },
 ];
@@ -253,6 +256,15 @@ function App() {
         <Route path="settings/billing" element={<BillingPage />} />
         <Route path="settings/subscription" element={<SubscriptionSettingsPage />} />
         <Route path="approvals" element={<ApprovalsPage />} />
+        {/* OWNER_ADMIN-only — also enforced by RolesGuard + feature gate on the API (7.28). */}
+        <Route
+          path="erp-connections"
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.OWNER_ADMIN]}>
+              <ErpConnectionsPage />
+            </ProtectedRoute>
+          }
+        />
       </Route>
 
       {/* ─── Admin Portal (/admin/*) — top-nav layout (AdminLayout) ─── */}

@@ -132,6 +132,11 @@ const iconMap: Record<string, React.ReactNode> = {
       <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
     </svg>
   ),
+  erpConnections: (
+    <svg className="h-[18px] w-[18px]" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244" />
+    </svg>
+  ),
 };
 
 function getIconKey(label: string): string {
@@ -160,6 +165,7 @@ function getIconKey(label: string): string {
     'nav.operationsReview': 'operationsReview',
     'nav.billing': 'billing',
     'nav.accountSettings': 'accountSettings',
+    'nav.erpConnections': 'erpConnections',
   };
   return mapping[label] || 'dashboard';
 }
