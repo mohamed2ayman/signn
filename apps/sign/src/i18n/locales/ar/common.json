@@ -35,7 +35,8 @@
     "operationsReview": "مراجعة العمليات",
     "auditLog": "سجل التدقيق",
     "billing": "الفواتير",
-    "accountSettings": "إعدادات الحساب"
+    "accountSettings": "إعدادات الحساب",
+    "erpConnections": "اتصالات ERP"
   },
   "portal": {
     "client": "بوابة العميل",
@@ -729,5 +730,117 @@
     "successExternal": "تم إرسال رابط المشاركة إلى {{email}}.",
     "searching": "جارٍ البحث…",
     "placeholder": "زميل@شركة.com"
+  },
+  "erp": {
+    "title": "اتصالات ERP",
+    "subtitle": "اربط نظام ERP الخاص بك لاستيراد بيانات التكلفة الفعلية لتحليل المطالبات والتغييرات.",
+    "addConnection": "إضافة اتصال",
+    "featureOff": "تكامل ERP غير مُفعّل لمؤسستك بعد. تواصل مع المسؤول لتفعيله.",
+    "loadError": "تعذّر تحميل اتصالات ERP.",
+    "retry": "إعادة المحاولة",
+    "saving": "جارٍ الحفظ…",
+    "remove": "إزالة",
+    "never": "أبدًا",
+    "disabled": "مُعطّل",
+    "confirmDelete": "حذف الاتصال \"{{name}}\"؟ لا يمكن التراجع عن هذا الإجراء.",
+    "empty": {
+      "title": "لا توجد اتصالات ERP بعد",
+      "subtitle": "أضِف اتصالاً لبدء استيراد بيانات التكلفة من نظام ERP الخاص بك."
+    },
+    "col": {
+      "name": "الاسم",
+      "vendor": "المزوّد",
+      "status": "الحالة",
+      "lastSync": "آخر مزامنة",
+      "actions": "إجراءات"
+    },
+    "status": {
+      "configured": "مُهيّأ",
+      "active": "نشط",
+      "error": "خطأ",
+      "disabled": "مُعطّل"
+    },
+    "action": {
+      "sync": "مزامنة",
+      "mappings": "التعيينات"
+    },
+    "vendor": {
+      "mock": "ERP تجريبي (بيانات اختبار)",
+      "sap": "SAP (استيراد التكلفة)"
+    },
+    "toast": {
+      "created": "تم إنشاء الاتصال.",
+      "updated": "تم تحديث الاتصال.",
+      "deleted": "تم حذف الاتصال.",
+      "saveError": "تعذّر حفظ الاتصال.",
+      "deleteError": "تعذّر حذف الاتصال."
+    },
+    "form": {
+      "createTitle": "إضافة اتصال ERP",
+      "editTitle": "تعديل اتصال ERP",
+      "name": "اسم الاتصال",
+      "nameRequired": "اسم الاتصال مطلوب.",
+      "vendor": "المزوّد",
+      "skeletonWarning": "هذا الموصّل غير جاهز للعمل بعد — إنه عنصر نائب مشروط، وستفشل المزامنات حتى يتم تفعيله.",
+      "baseUrl": "عنوان URL الأساسي",
+      "baseUrlPlaceholder": "https://erp.example.com",
+      "credentials": "بيانات الاعتماد",
+      "credentialsConfigured": "مُهيّأة",
+      "credentialsNotConfigured": "غير مُهيّأة",
+      "replaceCredentials": "استبدال بيانات الاعتماد",
+      "credentialsHint": "تُخزَّن بيانات الاعتماد مُشفّرة ولا تُعرض مرة أخرى بعد الحفظ.",
+      "credentialKey": "الحقل",
+      "credentialValue": "القيمة",
+      "addCredentialField": "+ إضافة حقل",
+      "enabled": "مُفعّل"
+    },
+    "mappings": {
+      "title": "تعيينات الحقول",
+      "help": "عيّن كل حقل في ERP إلى حقل في SIGN. تُبنى صفوف التكلفة المستوردة من هذه التعيينات.",
+      "loadError": "تعذّر تحميل تعيينات الحقول.",
+      "saved": "تم حفظ تعيينات الحقول.",
+      "saveError": "تعذّر حفظ تعيينات الحقول.",
+      "missingRequired": "حقول مطلوبة لم تُعيّن بعد: {{fields}}. لن تنتج عمليات الاستيراد صفوفًا حتى يتم تعيينها.",
+      "empty": "لا توجد تعيينات بعد. أضِف صفًا لتعيين حقل ERP إلى حقل SIGN.",
+      "sourceField": "حقل ERP",
+      "sourcePlaceholder": "مثال: cost_center",
+      "targetField": "حقل SIGN",
+      "selectTarget": "اختر حقلاً…",
+      "addRow": "+ إضافة تعيين"
+    },
+    "targetField": {
+      "cost_code": "رمز التكلفة",
+      "wbs_ref": "مرجع WBS",
+      "period": "الفترة",
+      "amount": "المبلغ",
+      "currency": "العملة",
+      "description": "الوصف"
+    },
+    "sync": {
+      "title": "المزامنة والسجل",
+      "help": "شغّل عملية استيراد الآن وراجع عمليات المزامنة السابقة.",
+      "syncNow": "مزامنة الآن",
+      "starting": "جارٍ البدء…",
+      "queued": "بدأت المزامنة.",
+      "alreadyQueued": "هناك مزامنة قيد التنفيذ بالفعل.",
+      "error": "تعذّر بدء المزامنة.",
+      "disabledNotice": "هذا الاتصال مُعطّل — فعّله لتشغيل المزامنة.",
+      "loadError": "تعذّر تحميل سجل المزامنة.",
+      "noJobs": "لا توجد عمليات مزامنة بعد.",
+      "recordsSummary": "{{imported}} مستورد / {{processed}} مُعالَج · {{failed}} فاشل",
+      "col": {
+        "status": "الحالة",
+        "records": "السجلات",
+        "started": "بدأت",
+        "finished": "انتهت"
+      }
+    },
+    "jobStatus": {
+      "pending": "قيد الانتظار",
+      "running": "قيد التشغيل",
+      "success": "نجاح",
+      "partial": "جزئي",
+      "failed": "فشل"
+    }
   }
 }

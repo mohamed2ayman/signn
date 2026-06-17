@@ -36,6 +36,7 @@
     "billing": "Billing",
     "waitlist": "Waitlist",
     "accountSettings": "Account Settings",
+    "erpConnections": "ERP Connections",
     "system": "System"
   },
   "portal": {
@@ -723,5 +724,117 @@
     "successExternal": "Share link sent to {{email}}.",
     "searching": "Searching…",
     "placeholder": "colleague@company.com"
+  },
+  "erp": {
+    "title": "ERP Connections",
+    "subtitle": "Connect your ERP to import actual cost data for claims and variation analysis.",
+    "addConnection": "Add connection",
+    "featureOff": "ERP integration is not enabled for your organization yet. Contact your administrator to turn it on.",
+    "loadError": "Couldn't load ERP connections.",
+    "retry": "Retry",
+    "saving": "Saving…",
+    "remove": "Remove",
+    "never": "Never",
+    "disabled": "Disabled",
+    "confirmDelete": "Delete the connection \"{{name}}\"? This cannot be undone.",
+    "empty": {
+      "title": "No ERP connections yet",
+      "subtitle": "Add a connection to start importing cost data from your ERP."
+    },
+    "col": {
+      "name": "Name",
+      "vendor": "Vendor",
+      "status": "Status",
+      "lastSync": "Last sync",
+      "actions": "Actions"
+    },
+    "status": {
+      "configured": "Configured",
+      "active": "Active",
+      "error": "Error",
+      "disabled": "Disabled"
+    },
+    "action": {
+      "sync": "Sync",
+      "mappings": "Mappings"
+    },
+    "vendor": {
+      "mock": "Mock ERP (test data)",
+      "sap": "SAP (cost import)"
+    },
+    "toast": {
+      "created": "Connection created.",
+      "updated": "Connection updated.",
+      "deleted": "Connection deleted.",
+      "saveError": "Couldn't save the connection.",
+      "deleteError": "Couldn't delete the connection."
+    },
+    "form": {
+      "createTitle": "Add ERP connection",
+      "editTitle": "Edit ERP connection",
+      "name": "Connection name",
+      "nameRequired": "Connection name is required.",
+      "vendor": "Vendor",
+      "skeletonWarning": "This connector is not yet operational — it's a prerequisite-gated placeholder and syncs will fail until it's enabled.",
+      "baseUrl": "Base URL",
+      "baseUrlPlaceholder": "https://erp.example.com",
+      "credentials": "Credentials",
+      "credentialsConfigured": "Configured",
+      "credentialsNotConfigured": "Not configured",
+      "replaceCredentials": "Replace credentials",
+      "credentialsHint": "Credentials are stored encrypted and are never shown again after saving.",
+      "credentialKey": "Field",
+      "credentialValue": "Value",
+      "addCredentialField": "+ Add field",
+      "enabled": "Enabled"
+    },
+    "mappings": {
+      "title": "Field mappings",
+      "help": "Map each ERP field to a SIGN field. Imported cost rows are built from these mappings.",
+      "loadError": "Couldn't load field mappings.",
+      "saved": "Field mappings saved.",
+      "saveError": "Couldn't save field mappings.",
+      "missingRequired": "Required fields not yet mapped: {{fields}}. Imports won't produce rows until they are.",
+      "empty": "No mappings yet. Add a row to map an ERP field to a SIGN field.",
+      "sourceField": "ERP field",
+      "sourcePlaceholder": "e.g. cost_center",
+      "targetField": "SIGN field",
+      "selectTarget": "Select a field…",
+      "addRow": "+ Add mapping"
+    },
+    "targetField": {
+      "cost_code": "Cost code",
+      "wbs_ref": "WBS reference",
+      "period": "Period",
+      "amount": "Amount",
+      "currency": "Currency",
+      "description": "Description"
+    },
+    "sync": {
+      "title": "Sync & history",
+      "help": "Run an import now and review past sync runs.",
+      "syncNow": "Sync now",
+      "starting": "Starting…",
+      "queued": "Sync started.",
+      "alreadyQueued": "A sync is already in progress.",
+      "error": "Couldn't start the sync.",
+      "disabledNotice": "This connection is disabled — enable it to run a sync.",
+      "loadError": "Couldn't load sync history.",
+      "noJobs": "No sync runs yet.",
+      "recordsSummary": "{{imported}} imported / {{processed}} processed · {{failed}} failed",
+      "col": {
+        "status": "Status",
+        "records": "Records",
+        "started": "Started",
+        "finished": "Finished"
+      }
+    },
+    "jobStatus": {
+      "pending": "Pending",
+      "running": "Running",
+      "success": "Success",
+      "partial": "Partial",
+      "failed": "Failed"
+    }
   }
 }
