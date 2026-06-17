@@ -37,6 +37,7 @@
     "waitlist": "Waitlist",
     "accountSettings": "Account Settings",
     "erpConnections": "ERP Connections",
+    "erpHealth": "ERP Health",
     "system": "System"
   },
   "portal": {
@@ -835,6 +836,21 @@
       "success": "Success",
       "partial": "Partial",
       "failed": "Failed"
+    },
+    "admin": {
+      "title": "ERP Health",
+      "subtitle": "Cross-tenant monitoring of every organization's ERP connections.",
+      "featureOff": "ERP integration is not enabled on this environment.",
+      "loadError": "Couldn't load ERP connection health.",
+      "empty": "No ERP connections across any organization yet.",
+      "col": {
+        "organization": "Organization",
+        "connection": "Connection",
+        "vendor": "Vendor",
+        "status": "Status",
+        "lastSync": "Last sync",
+        "error": "Error"
+      }
     }
   }
 }
