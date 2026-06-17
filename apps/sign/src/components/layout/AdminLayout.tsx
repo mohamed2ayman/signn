@@ -97,6 +97,9 @@ const ICONS = {
   waitlist: (
     <path d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
   ),
+  erpHealth: (
+    <path d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244" />
+  ),
 } as const;
 
 // ── Nav item model ─────────────────────────────────────────────────────
@@ -128,6 +131,7 @@ const NAV_GROUPS: AdminNavItem[][] = [
     { label: 'nav.analytics', path: '/admin/analytics', icon: ICONS.analytics },
     { label: 'nav.billing',   path: '/admin/billing',   icon: ICONS.billing,   opsHidden: true },
     { label: 'nav.waitlist',  path: '/admin/waitlist',  icon: ICONS.waitlist,  opsHidden: true },
+    { label: 'nav.erpHealth', path: '/admin/erp-health', icon: ICONS.erpHealth, opsHidden: true },
   ],
   // Group 4 — Configuration (pushed to bottom via mt-auto on the group)
   [

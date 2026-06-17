@@ -36,7 +36,8 @@
     "auditLog": "سجل التدقيق",
     "billing": "الفواتير",
     "accountSettings": "إعدادات الحساب",
-    "erpConnections": "اتصالات ERP"
+    "erpConnections": "اتصالات ERP",
+    "erpHealth": "صحة ERP"
   },
   "portal": {
     "client": "بوابة العميل",
@@ -841,6 +842,21 @@
       "success": "نجاح",
       "partial": "جزئي",
       "failed": "فشل"
+    },
+    "admin": {
+      "title": "صحة تكامل ERP",
+      "subtitle": "مراقبة اتصالات ERP عبر جميع المؤسسات.",
+      "featureOff": "تكامل ERP غير مُفعّل في هذه البيئة.",
+      "loadError": "تعذّر تحميل حالة اتصالات ERP.",
+      "empty": "لا توجد اتصالات ERP في أي مؤسسة بعد.",
+      "col": {
+        "organization": "المؤسسة",
+        "connection": "الاتصال",
+        "vendor": "المزوّد",
+        "status": "الحالة",
+        "lastSync": "آخر مزامنة",
+        "error": "الخطأ"
+      }
     }
   }
 }

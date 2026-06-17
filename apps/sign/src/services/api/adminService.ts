@@ -1,5 +1,6 @@
 import api from './axios';
 import { User, KnowledgeAsset, SubscriptionPlan, UserRole, PermissionLevel } from '@/types';
+import type { ErpConnection } from './erpService';
 
 // ─── System Health types ──────────────────────────────────────────────────────
 
@@ -273,6 +274,13 @@ export const adminService = {
     }).then(r => r.data);
     return entries;
   },
+
+  // ─── ERP Health (Phase 7.28 Part 2b) ──────────────────────────────────────────
+  // Cross-tenant, read-only. Returns every org's ERP connection (same shape as
+  // the org-scoped list — credentials are never included). SYSTEM_ADMIN only;
+  // 404s when ERP_INTEGRATION_ENABLED is off.
+  getErpConnections: () =>
+    api.get<ErpConnection[]>('/admin/erp/connections').then(r => r.data),
 };
 
 // ─── System Analytics types ────────────────────────────────────────────────

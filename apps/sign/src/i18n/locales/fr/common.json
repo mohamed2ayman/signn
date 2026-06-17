@@ -37,6 +37,7 @@
     "waitlist": "Liste d'attente",
     "accountSettings": "Paramètres du compte",
     "erpConnections": "Connexions ERP",
+    "erpHealth": "État ERP",
     "system": "Système"
   },
   "portal": {
@@ -842,6 +843,21 @@
       "success": "Réussi",
       "partial": "Partiel",
       "failed": "Échoué"
+    },
+    "admin": {
+      "title": "État ERP",
+      "subtitle": "Supervision inter-organisations des connexions ERP de chaque organisation.",
+      "featureOff": "L'intégration ERP n'est pas activée sur cet environnement.",
+      "loadError": "Impossible de charger l'état des connexions ERP.",
+      "empty": "Aucune connexion ERP dans aucune organisation pour l'instant.",
+      "col": {
+        "organization": "Organisation",
+        "connection": "Connexion",
+        "vendor": "Fournisseur",
+        "status": "Statut",
+        "lastSync": "Dernière synchronisation",
+        "error": "Erreur"
+      }
     }
   }
 }
