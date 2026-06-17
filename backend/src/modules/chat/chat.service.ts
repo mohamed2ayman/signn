@@ -42,11 +42,11 @@ export class ChatService {
   private readonly logger = new Logger(ChatService.name);
 
   constructor(
-    @InjectRepository(ChatSession) // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
+    @InjectRepository(ChatSession) // lint-exempt: chat scopes by user_id/session_id/org_id, NOT contract→org — this repo backs writes + user-scoped reads (no chokepoint candidate)
     private readonly sessionRepo: Repository<ChatSession>,
-    @InjectRepository(ChatMessage) // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
+    @InjectRepository(ChatMessage) // lint-exempt: chat scopes by session_id/user_id, NOT contract→org — this repo backs writes + session-scoped reads (no chokepoint candidate)
     private readonly messageRepo: Repository<ChatMessage>,
-    @InjectRepository(Contract) // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
+    @InjectRepository(Contract) // lint-exempt: backs buildLegalContext's DEFERRED parent-Contract+project jurisdiction load (see below) — same shape export.service/compliance leave bare
     private readonly contractRepo: Repository<Contract>,
     private readonly aiService: AiService,
     private readonly legalDocumentsService: LegalDocumentsService,
@@ -67,7 +67,7 @@ export class ChatService {
   ): Promise<string | null> {
     if (!contractId) return null;
     try {
-      const contract = await this.contractRepo.findOne({ // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
+      const contract = await this.contractRepo.findOne({ // lint-exempt: DEFERRED contract-scoped read — parent Contract+project hydration (jurisdiction only); scopedFindByIdOrThrow throws + no relation hydration, scopedFind collides with the ROOT gate alias 'project'; export.service+compliance leave the identical shape bare; wall-protected upstream (createSession findInOrg) + user-owned session
         where: { id: contractId },
         relations: ['project'],
       });
@@ -120,19 +120,19 @@ export class ChatService {
       org_id: orgId,
       contract_id: contractId || null,
     });
-    return this.sessionRepo.save(session); // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
+    return this.sessionRepo.save(session); // lint-exempt: write (session insert); the scoped chokepoint is read-only
   }
 
   async getSessionMessages(
     sessionId: string,
     userId: string,
   ): Promise<ChatMessage[]> {
-    const session = await this.sessionRepo.findOne({ // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
+    const session = await this.sessionRepo.findOne({ // lint-exempt: user-scoped read (ChatSession by id+user_id ownership); session may be unbound (contract_id null) — not a contract→org read
       where: { id: sessionId, user_id: userId },
     });
     if (!session) throw new NotFoundException('Session not found');
 
-    return this.messageRepo.find({ // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
+    return this.messageRepo.find({ // lint-exempt: session-scoped read (ChatMessage by session_id, owning session already verified) — not a contract→org read
       where: { session_id: sessionId },
       order: { created_at: 'ASC' },
     });
@@ -142,7 +142,7 @@ export class ChatService {
     userId: string,
     contractId: string,
   ): Promise<ChatSession | null> {
-    return this.sessionRepo.findOne({ // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
+    return this.sessionRepo.findOne({ // lint-exempt: user-scoped read (ChatSession by user_id ownership); contract_id is a selector, NOT the tenancy gate; no request org in scope; a contract→org join would wrongly drop the user's own session if its contract changed org
       where: { user_id: userId, contract_id: contractId },
       order: { updated_at: 'DESC' },
     });
@@ -163,13 +163,13 @@ export class ChatService {
     orgId: string,
     message: string,
   ): Promise<{ userMessage: ChatMessage; assistantMessage: ChatMessage }> {
-    const session = await this.sessionRepo.findOne({ // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
+    const session = await this.sessionRepo.findOne({ // lint-exempt: user-scoped read (ChatSession by id+user_id ownership); session may be unbound — not a contract→org read
       where: { id: sessionId, user_id: userId },
     });
     if (!session) throw new NotFoundException('Session not found');
 
     // 1. Persist the user message (terminal).
-    const userMessage = await this.messageRepo.save( // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
+    const userMessage = await this.messageRepo.save( // lint-exempt: write (user message insert); the scoped chokepoint is read-only
       this.messageRepo.create({
         session_id: sessionId,
         contract_id: session.contract_id,
@@ -182,7 +182,7 @@ export class ChatService {
     );
 
     // History for AI context (only completed turns carry usable content).
-    const history = await this.messageRepo.find({ // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
+    const history = await this.messageRepo.find({ // lint-exempt: session-scoped read (ChatMessage history by session_id) — not a contract→org read
       where: { session_id: sessionId },
       order: { created_at: 'ASC' },
     });
@@ -227,7 +227,7 @@ export class ChatService {
     }
 
     // 3. Persist the assistant placeholder (PENDING + job_id, or FAILED).
-    const assistantMessage = await this.messageRepo.save( // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
+    const assistantMessage = await this.messageRepo.save( // lint-exempt: write (assistant placeholder insert); the scoped chokepoint is read-only
       this.messageRepo.create({
         session_id: sessionId,
         contract_id: session.contract_id,
@@ -243,7 +243,7 @@ export class ChatService {
     );
 
     session.updated_at = new Date();
-    await this.sessionRepo.save(session); // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
+    await this.sessionRepo.save(session); // lint-exempt: write (session updated_at touch); the scoped chokepoint is read-only
 
     return { userMessage, assistantMessage };
   }
@@ -261,11 +261,11 @@ export class ChatService {
    * Caller must own the session.
    */
   async getMessageStatus(messageId: string, userId: string): Promise<ChatMessage> {
-    const msg = await this.messageRepo.findOne({ where: { id: messageId } }); // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
+    const msg = await this.messageRepo.findOne({ where: { id: messageId } }); // lint-exempt: by-id read; ownership enforced by the session lookup below — not a contract→org read
     if (!msg) throw new NotFoundException('Message not found');
 
     // Ownership: the caller must own the session this message belongs to.
-    const session = await this.sessionRepo.findOne({ // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
+    const session = await this.sessionRepo.findOne({ // lint-exempt: user-scoped read (ChatSession by id+user_id ownership) — not a contract→org read
       where: { id: msg.session_id, user_id: userId },
     });
     if (!session) throw new NotFoundException('Message not found');
@@ -301,7 +301,7 @@ export class ChatService {
       msg.content = r?.response || r?.content || 'I processed your request.';
       msg.citations = r?.citations || null;
       msg.status = ChatMessageStatus.COMPLETED;
-      return this.messageRepo.save(msg); // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
+      return this.messageRepo.save(msg); // lint-exempt: write (message status→COMPLETED); the scoped chokepoint is read-only
     }
 
     if (job.status === 'failed') {
@@ -310,13 +310,13 @@ export class ChatService {
         typeof job.error === 'string'
           ? job.error
           : 'The AI service failed to process this request.';
-      return this.messageRepo.save(msg); // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
+      return this.messageRepo.save(msg); // lint-exempt: write (message status→FAILED); the scoped chokepoint is read-only
     }
 
     // Still running — mark PROCESSING (visibility), then staleness backstop.
     if (msg.status === ChatMessageStatus.PENDING) {
       msg.status = ChatMessageStatus.PROCESSING;
-      await this.messageRepo.save(msg); // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
+      await this.messageRepo.save(msg); // lint-exempt: write (message status→PROCESSING); the scoped chokepoint is read-only
     }
     return this.failIfStale(msg);
   }
@@ -328,7 +328,7 @@ export class ChatService {
       msg.status = ChatMessageStatus.FAILED;
       msg.error_message =
         'The response timed out. Please try sending your message again.';
-      return this.messageRepo.save(msg); // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
+      return this.messageRepo.save(msg); // lint-exempt: write (stale message→FAILED); the scoped chokepoint is read-only
     }
     return msg;
   }
