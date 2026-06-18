@@ -7,10 +7,12 @@ import {
   ChatSession,
   ChatMessage,
   ChatMessageStatus,
-  Contract,
 } from '../../../database/entities';
 import { AiService } from '../../ai/ai.service';
 import { LegalDocumentsService } from '../../legal-documents/legal-documents.service';
+// Option B chokepoint (compliance finale) — buildLegalContext routes through the
+// scoped ROOT gate now (sessions here are unbound: contract_id null → never hit).
+import { ContractScopedRepository } from '../../scoped-repository/contract-scoped.repository';
 
 /**
  * Phase 7.27 — async chat. sendMessage returns immediately with a PENDING
@@ -30,7 +32,7 @@ describe('ChatService — async send + status advancer', () => {
     create: jest.fn((x) => x),
     save: jest.fn(),
   };
-  const contractRepo = { findOne: jest.fn() };
+  const contractScoped = { scopedFindByIdWithRelations: jest.fn() };
   const aiService = { triggerChat: jest.fn(), getJobStatus: jest.fn() };
   const legalService = { retrieveRelevantChunks: jest.fn() };
 
@@ -48,7 +50,7 @@ describe('ChatService — async send + status advancer', () => {
         ChatService,
         { provide: getRepositoryToken(ChatSession), useValue: sessionRepo },
         { provide: getRepositoryToken(ChatMessage), useValue: messageRepo },
-        { provide: getRepositoryToken(Contract), useValue: contractRepo },
+        { provide: ContractScopedRepository, useValue: contractScoped },
         { provide: AiService, useValue: aiService },
         { provide: LegalDocumentsService, useValue: legalService },
       ],

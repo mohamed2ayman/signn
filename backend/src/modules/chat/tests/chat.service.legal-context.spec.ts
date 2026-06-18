@@ -2,13 +2,12 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 
 import { ChatService } from '../chat.service';
-import {
-  ChatSession,
-  ChatMessage,
-  Contract,
-} from '../../../database/entities';
+import { ChatSession, ChatMessage } from '../../../database/entities';
 import { AiService } from '../../ai/ai.service';
 import { LegalDocumentsService } from '../../legal-documents/legal-documents.service';
+// Option B chokepoint (compliance finale) — buildLegalContext now routes its
+// parent-Contract+project load through the scoped ROOT gate, not a bare repo.
+import { ContractScopedRepository } from '../../scoped-repository/contract-scoped.repository';
 
 /**
  * Phase E — legal-corpus grounding in chat. Verifies the jurisdiction gate
@@ -31,7 +30,8 @@ describe('ChatService — legal-context grounding (Phase E)', () => {
 
   const sessionRepo = { findOne: jest.fn(), save: jest.fn(), create: jest.fn() };
   const messageRepo = { findOne: jest.fn(), find: jest.fn(), save: jest.fn(), create: jest.fn() };
-  const contractRepo = { findOne: jest.fn() };
+  // Option B chokepoint — the scoped ROOT gate replaces the bare Contract repo.
+  const contractScoped = { scopedFindByIdWithRelations: jest.fn() };
   // triggerChat resolves with a direct {response} so sendMessage takes the
   // synchronous branch (no polling delay in the unit test).
   const aiService = {
@@ -65,7 +65,7 @@ describe('ChatService — legal-context grounding (Phase E)', () => {
     messageRepo.save.mockImplementation(async (x) => x);
     messageRepo.find.mockResolvedValue([]);
     sessionRepo.save.mockResolvedValue({});
-    contractRepo.findOne.mockResolvedValue({
+    contractScoped.scopedFindByIdWithRelations.mockResolvedValue({
       id: CONTRACT_ID,
       project: country === undefined ? undefined : { country },
     });
@@ -80,7 +80,7 @@ describe('ChatService — legal-context grounding (Phase E)', () => {
         ChatService,
         { provide: getRepositoryToken(ChatSession), useValue: sessionRepo },
         { provide: getRepositoryToken(ChatMessage), useValue: messageRepo },
-        { provide: getRepositoryToken(Contract), useValue: contractRepo },
+        { provide: ContractScopedRepository, useValue: contractScoped },
         { provide: AiService, useValue: aiService },
         { provide: LegalDocumentsService, useValue: legalService },
       ],
@@ -95,6 +95,14 @@ describe('ChatService — legal-context grounding (Phase E)', () => {
 
     await service.sendMessage(SESSION_ID, USER_ID, ORG_ID, 'force majeure?');
 
+    // Option B chokepoint: the parent-Contract load routes through the scoped
+    // ROOT gate, keyed on the CALLER's org (ORG_ID) — not a bare repo. This is
+    // the cross-module closure of the read chat (3 of 4) deferred to the finale.
+    expect(contractScoped.scopedFindByIdWithRelations).toHaveBeenCalledWith(
+      CONTRACT_ID,
+      ORG_ID,
+      ['project'],
+    );
     expect(legalService.retrieveRelevantChunks).toHaveBeenCalledWith(
       'force majeure?',
       'EG',

@@ -70,13 +70,13 @@ export class ComplianceObligationService {
   };
 
   constructor(
-    @InjectRepository(Obligation) // lint-exempt: two-step hydration (ids validated by scoped load)
+    @InjectRepository(Obligation) // lint-exempt: write (insert in persistFromExtraction / save on the scope-loaded evidence row) + aggregation QBs (Q3 — getPortfolio/getCalendar, org-scoped via contract→project→org)
     private readonly obligationRepo: Repository<Obligation>,
-    @InjectRepository(Contract) // lint-exempt: two-step hydration (ids validated by scoped load)
+    @InjectRepository(Contract) // lint-exempt: async reconcile path (persistFromExtraction, no request org); contract_id comes from the reconciled check (checkId wall-validated upstream in getOne)
     private readonly contractRepo: Repository<Contract>,
-    @InjectRepository(ObligationAssignee) // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
+    @InjectRepository(ObligationAssignee) // lint-exempt: two-step read (parent obligation scope-validated upstream via obligationScoped) + writes; ObligationAssignee is a grandchild — no scoped subclass (S2c plan)
     private readonly assigneeRepo: Repository<ObligationAssignee>,
-    @InjectRepository(ObligationReminderLog) // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
+    @InjectRepository(ObligationReminderLog) // lint-exempt: two-step read (parent obligation scope-validated upstream) ; ObligationReminderLog is a grandchild — no scoped subclass (S2c plan)
     private readonly reminderLogRepo: Repository<ObligationReminderLog>,
     // S2c-2 — data-layer tenancy load before assignee/evidence mutations.
     private readonly obligationScoped: ObligationScopedRepository,
@@ -91,7 +91,7 @@ export class ComplianceObligationService {
     if (!Array.isArray(rawObligations) || rawObligations.length === 0) {
       return 0;
     }
-    const contract = await this.contractRepo.findOne({ // lint-exempt: two-step hydration (ids validated by scoped load)
+    const contract = await this.contractRepo.findOne({ // lint-exempt: async reconcile path (no request org); contract_id from the reconciled check.contract_id (checkId wall-validated upstream in getOne)
       where: { id: check.contract_id },
     });
     if (!contract) {
@@ -129,7 +129,7 @@ export class ComplianceObligationService {
     });
 
     if (rows.length === 0) return 0;
-    await this.obligationRepo.insert(rows as any); // lint-exempt: wall-protected (findInOrg) — row validated before write
+    await this.obligationRepo.insert(rows as any); // lint-exempt: write (bulk insert, async reconcile path — persistFromExtraction); the chokepoint is read-only
     return rows.length;
   }
 
@@ -151,7 +151,7 @@ export class ComplianceObligationService {
   ): Promise<ObligationAssignee> {
     // SCOPED LOAD (tenancy) — cross-org → 404, no existence leak.
     await this.obligationScoped.scopedFindByIdOrThrow(obligationId, orgId);
-    const existing = await this.assigneeRepo.findOne({ // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
+    const existing = await this.assigneeRepo.findOne({ // lint-exempt: two-step read — obligation_id scope-validated by obligationScoped.scopedFindByIdOrThrow on the line above
       where: { obligation_id: obligationId, user_id: userId },
     });
     if (existing) {
@@ -164,7 +164,7 @@ export class ComplianceObligationService {
       user_id: userId,
       assigned_by: assignedBy,
     });
-    return this.assigneeRepo.save(assignee); // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
+    return this.assigneeRepo.save(assignee); // lint-exempt: write (assignee insert, obligation scope-validated upstream); the chokepoint is read-only
   }
 
   /**
@@ -181,7 +181,7 @@ export class ComplianceObligationService {
   ): Promise<void> {
     // SCOPED LOAD (tenancy) — cross-org → 404, no existence leak.
     await this.obligationScoped.scopedFindByIdOrThrow(obligationId, orgId);
-    const result = await this.assigneeRepo.delete({ // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
+    const result = await this.assigneeRepo.delete({ // lint-exempt: write (assignee delete, obligation scope-validated upstream); the chokepoint is read-only
       obligation_id: obligationId,
       user_id: userId,
     });
@@ -207,7 +207,7 @@ export class ComplianceObligationService {
       orgId,
     );
     o.evidence_url = evidenceUrl;
-    return this.obligationRepo.save(o); // lint-exempt: wall-protected (findInOrg) — row validated before write
+    return this.obligationRepo.save(o); // lint-exempt: write (save on the scope-loaded row from obligationScoped.scopedFindByIdOrThrow above); the chokepoint is read-only
   }
 
   // ─── Phase 7.2-C — Reminder history ──────────────────────────────────────
@@ -218,7 +218,7 @@ export class ComplianceObligationService {
    * needed.
    */
   async getReminderLogs(obligationId: string): Promise<ObligationReminderLog[]> {
-    return this.reminderLogRepo.find({ // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
+    return this.reminderLogRepo.find({ // lint-exempt: two-step read — the controller scope-validates the parent obligation (loadObligationInContract → obligationScoped) before calling this; reminder logs keyed by the validated obligation id
       where: { obligation_id: obligationId },
       order: { sent_at: 'DESC' },
     });

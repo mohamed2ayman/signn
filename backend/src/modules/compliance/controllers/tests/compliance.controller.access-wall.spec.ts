@@ -178,8 +178,11 @@ describe('ComplianceController — cross-tenant access wall (PR #42 class)', () 
 
       const result = await controller.list('contract-in-a', userInOrgA);
       expect(result).toEqual([{ id: 'check-1' }]);
+      // Option B chokepoint (compliance finale): the org is threaded so the
+      // scoped LIST read inside listForContract re-gates by it (layer 2).
       expect(compliance.listForContract).toHaveBeenCalledWith(
         'contract-in-a',
+        ORG_A,
       );
     });
   });
@@ -325,10 +328,13 @@ describe('ComplianceController — cross-tenant access wall (PR #42 class)', () 
         userInOrgA,
       );
 
+      // Option B chokepoint (compliance finale): the org is threaded so the
+      // scoped by-id finding load inside updateStatus re-gates by it (layer 2).
       expect(findings.updateStatus).toHaveBeenCalledWith(
         'finding-1',
         ComplianceFindingStatus.ACKNOWLEDGED,
         userInOrgA.id,
+        ORG_A,
       );
       expect(result).toMatchObject({ id: 'finding-1' });
     });

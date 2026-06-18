@@ -3,6 +3,8 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 
 import {
   Claim,
+  ComplianceCheck,
+  ComplianceFinding,
   Contract,
   ContractApprover,
   ContractComment,
@@ -29,6 +31,8 @@ import { SubContractScopedRepository } from './subcontract-scoped.repository';
 import { DocumentUploadScopedRepository } from './document-upload-scoped.repository';
 import { NegotiationEventScopedRepository } from './negotiation-event-scoped.repository';
 import { GuestInvitationScopedRepository } from './guest-invitation-scoped.repository';
+import { ComplianceCheckScopedRepository } from './compliance-check-scoped.repository';
+import { ComplianceFindingScopedRepository } from './compliance-finding-scoped.repository';
 
 /**
  * Option B — the scoped-repository module: the data-layer tenancy chokepoint.
@@ -71,6 +75,25 @@ import { GuestInvitationScopedRepository } from './guest-invitation-scoped.repos
  * bare guest-portal read at all — its contract load delegates to the
  * findAccessibleContract wall. See docs/option-b-chokepoint-guest-portal.md.
  *
+ * Chokepoint migration (3 of 4) — chat — wired NOTHING: chat's session/message
+ * reads scope by user_id/session_id (NOT contract→org) and stay bare. It DEFERRED
+ * one read (buildLegalContext, a parent-Contract+project jurisdiction load) to the
+ * compliance finale, which has the identical shape.
+ *
+ * Chokepoint migration (4 of 4 — the FINALE) adds ComplianceCheck +
+ * ComplianceFinding. ComplianceCheck (direct contract_id) backs the wired LIST
+ * read (ComplianceService.listForContract → scopedFindAndCount) and the by-id
+ * reads behind the controller wall (ComplianceService.getDetail +
+ * ComplianceReportService.request → scopedFindByIdOrThrow). ComplianceFinding
+ * (transitive via the check) backs ComplianceFindingService.updateStatus's by-id
+ * load. The finale also added the base's silent-null scopedFindByIdWithRelations
+ * so BOTH compliance's jurisdiction load (ComplianceService.runCheck) AND chat's
+ * now-un-deferred buildLegalContext route their parent-Contract+project hydration
+ * through the SAME ROOT gate. Compliance's metering-reconcile reads (refreshFromAi),
+ * pre-wall resolvers (getContractIdFor*), the BullMQ ComplianceReportProcessor, and
+ * the PUBLIC mark-met token path stay bare with honest lint-exempt reasons. See
+ * docs/option-b-chokepoint-compliance.md.
+ *
  * Consumers import THIS module and inject the scoped repositories — they do NOT
  * inject `@InjectRepository(Contract|ContractVersion|…)` for tenancy-scoped
  * loads. The walls (`ContractAccessService`, the S0 interim walls) stay where
@@ -92,6 +115,8 @@ import { GuestInvitationScopedRepository } from './guest-invitation-scoped.repos
       DocumentUpload,
       NegotiationEvent,
       GuestInvitation,
+      ComplianceCheck,
+      ComplianceFinding,
     ]),
   ],
   providers: [
@@ -108,6 +133,8 @@ import { GuestInvitationScopedRepository } from './guest-invitation-scoped.repos
     DocumentUploadScopedRepository,
     NegotiationEventScopedRepository,
     GuestInvitationScopedRepository,
+    ComplianceCheckScopedRepository,
+    ComplianceFindingScopedRepository,
   ],
   exports: [
     ContractScopedRepository,
@@ -123,6 +150,8 @@ import { GuestInvitationScopedRepository } from './guest-invitation-scoped.repos
     DocumentUploadScopedRepository,
     NegotiationEventScopedRepository,
     GuestInvitationScopedRepository,
+    ComplianceCheckScopedRepository,
+    ComplianceFindingScopedRepository,
   ],
 })
 export class ScopedRepositoryModule {}

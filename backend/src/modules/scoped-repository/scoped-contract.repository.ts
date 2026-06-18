@@ -164,6 +164,51 @@ export abstract class ScopedContractRepository<T extends ObjectLiteral> {
     return entity;
   }
 
+  // ── BY-ID WITH HYDRATED RELATIONS (silent-null parent load) ─────────────
+
+  /**
+   * Load the entity by id, scoped to `orgId`, with the named single-level
+   * `relations` HYDRATED onto the returned row. Returns `null` on a miss —
+   * NEVER throws. This is the SILENT-NULL by-id-with-relations shape a
+   * best-effort PARENT load needs: compliance's jurisdiction derivation
+   * (`compliance.service.runCheck`) and chat's `buildLegalContext` both load
+   * the parent Contract + its `project` purely to read `project.country`,
+   * falling back silently when the row is absent / out-of-org. The caller
+   * decides whether `null` becomes a 404 (compliance does;
+   * `buildLegalContext` returns null → no legal context).
+   *
+   * Chokepoint-migration finale (4 of 4) added this so BOTH the compliance
+   * jurisdiction load AND chat's deferred `buildLegalContext` (handed forward
+   * by the chat bucket) route through the SAME data-layer gate. It is the
+   * minimal, ADDITIVE realisation of the parent-load fix: it touches NOTHING
+   * existing — no re-alias of the load-bearing ROOT gate, no allowlist
+   * change, no existing spec — so it cannot change behaviour for any current
+   * ContractScopedRepository caller.
+   *
+   * The org gate is the SAME {@link buildScopedQuery} every other by-id method
+   * uses — `project.organization_id = :orgId` is always applied, there is NO
+   * orgId-override. Each relation is hydrated with a DISTINCT `rel_<name>`
+   * join alias so it can NEVER collide with the subclass's gate-join alias:
+   * the Contract ROOT's gate join is literally `project`, which would collide
+   * with hydrating the `project` relation under its own name. The alias string
+   * is internal — TypeORM maps each relation onto the entity by metadata, not
+   * by alias — so `rel_project` hydrates `contract.project` correctly. The
+   * `relations` identifiers remain code-controlled literals at the call site
+   * (same posture as scopedFind's `relations`), so this is NOT a caller-driven
+   * filter surface and does not touch {@link allowedFilterKeys}.
+   */
+  async scopedFindByIdWithRelations(
+    id: string,
+    orgId: string,
+    relations: string[],
+  ): Promise<T | null> {
+    const qb = this.buildScopedQuery(id, orgId);
+    for (const relation of relations) {
+      qb.leftJoinAndSelect(`${this.entityAlias}.${relation}`, `rel_${relation}`);
+    }
+    return qb.getOne();
+  }
+
   // ── SCOPED LIST (Ayman B spec Q3 — add a scoped list method) ────────────
 
   /**

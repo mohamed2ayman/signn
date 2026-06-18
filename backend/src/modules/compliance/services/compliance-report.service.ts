@@ -6,16 +6,22 @@ import { Repository } from 'typeorm';
 import { Queue } from 'bull';
 import * as crypto from 'crypto';
 import {
-  ComplianceCheck,
   ComplianceReportJob,
   ComplianceReportStatus,
   ComplianceReportType,
 } from '../../../database/entities';
+// Option B — chokepoint migration (compliance finale): request() loads the
+// parent ComplianceCheck through the data-layer tenancy chokepoint (canonical
+// check→contract→project→org) BEFORE queuing the report job — UNDER the
+// controller's findInOrg wall. Two checks, two layers.
+import { ComplianceCheckScopedRepository } from '../../scoped-repository/compliance-check-scoped.repository';
 
 export interface RequestReportInput {
   checkId: string;
   reportType: ComplianceReportType;
   userId: string;
+  /** Caller's org (wall-proven); re-gates the check load at the data layer. */
+  orgId: string;
 }
 
 export interface ReportRequestResult {
@@ -39,17 +45,21 @@ export class ComplianceReportService {
   private readonly logger = new Logger(ComplianceReportService.name);
 
   constructor(
-    @InjectRepository(ComplianceCheck) // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
-    private readonly checkRepo: Repository<ComplianceCheck>,
-    @InjectRepository(ComplianceReportJob) // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
+    @InjectRepository(ComplianceReportJob) // lint-exempt: write path (create/save/update report jobs) + PUBLIC token-gated download read (findByToken) + dead-code findById; ComplianceReportJob has no request-scoped org READ — it is reached only after the parent check is wall+scope-validated
     private readonly jobRepo: Repository<ComplianceReportJob>,
     @InjectQueue('compliance-jobs') private readonly queue: Queue,
     private readonly config: ConfigService,
+    // Option B chokepoint (compliance finale) — layer 2 under the controller wall.
+    private readonly checkScoped: ComplianceCheckScopedRepository,
   ) {}
 
   async request(input: RequestReportInput): Promise<ComplianceReportJob> {
-    const check = await this.checkRepo.findOne({ where: { id: input.checkId } }); // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
-    if (!check) throw new NotFoundException('Compliance check not found');
+    // Layer 2 (Option B chokepoint): the parent check load routes through the
+    // canonical `check → contract → project → org` gate (no-existence-leak 404,
+    // matching the prior 'Compliance check not found'). The controller walled
+    // the check's TRUE contract_id (layer 1, via getContractIdForCheck →
+    // findInOrg); the wall guarantees `input.orgId` is non-null.
+    await this.checkScoped.scopedFindByIdOrThrow(input.checkId, input.orgId);
 
     const job = this.jobRepo.create({
       compliance_check_id: input.checkId,
@@ -57,7 +67,7 @@ export class ComplianceReportService {
       status: ComplianceReportStatus.PENDING,
       requested_by: input.userId,
     });
-    const saved = await this.jobRepo.save(job); // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
+    const saved = await this.jobRepo.save(job); // lint-exempt: write (persist report-job state); the chokepoint is read-only
 
     await this.queue.add(
       'render-report',
@@ -77,12 +87,12 @@ export class ComplianceReportService {
   }
 
   async findById(id: string): Promise<ComplianceReportJob | null> {
-    return this.jobRepo.findOne({ where: { id } }); // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
+    return this.jobRepo.findOne({ where: { id } }); // lint-exempt: dead code (no caller); flagged for removal
   }
 
   async findByToken(token: string): Promise<ComplianceReportJob | null> {
     if (!token) return null;
-    const job = await this.jobRepo.findOne({ where: { download_token: token } }); // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
+    const job = await this.jobRepo.findOne({ where: { download_token: token } }); // lint-exempt: PUBLIC token-gated download read (no JWT, ComplianceReportDownloadController); the HMAC download_token IS the gate — not an org-scoped read
     if (!job) return null;
     if (!job.expires_at || job.expires_at < new Date()) return null;
     return job;
@@ -91,7 +101,7 @@ export class ComplianceReportService {
   // ─── Used by the processor ────────────────────────────────
 
   async markRendering(jobId: string): Promise<void> {
-    await this.jobRepo.update(jobId, { // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
+    await this.jobRepo.update(jobId, { // lint-exempt: write (persist report-job state); the chokepoint is read-only
       status: ComplianceReportStatus.RENDERING,
     });
   }
@@ -102,7 +112,7 @@ export class ComplianceReportService {
     token: string,
     expiresAt: Date,
   ): Promise<void> {
-    await this.jobRepo.update(jobId, { // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
+    await this.jobRepo.update(jobId, { // lint-exempt: write (persist report-job state); the chokepoint is read-only
       status: ComplianceReportStatus.EMAILED,
       file_path: filePath,
       download_token: token,
@@ -112,7 +122,7 @@ export class ComplianceReportService {
   }
 
   async markFailed(jobId: string, error: string): Promise<void> {
-    await this.jobRepo.update(jobId, { // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
+    await this.jobRepo.update(jobId, { // lint-exempt: write (persist report-job state); the chokepoint is read-only
       status: ComplianceReportStatus.FAILED,
       error_message: error,
     });

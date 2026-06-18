@@ -6,11 +6,16 @@ import {
   ChatMessage,
   ChatMessageRole,
   ChatMessageStatus,
-  Contract,
 } from '../../database/entities';
 import { AiService } from '../ai/ai.service';
 import { LegalDocumentsService } from '../legal-documents/legal-documents.service';
 import { ALLOWED_JURISDICTIONS } from '../legal-documents/dto/create-legal-document.dto';
+// Option B — chokepoint migration (compliance finale, 4 of 4) CLOSES the read
+// chat (3 of 4) DEFERRED: buildLegalContext's parent-Contract+project jurisdiction
+// load now routes through the SAME ROOT data-layer gate the compliance finale
+// added (scopedFindByIdWithRelations — silent-null, project hydrated). This is the
+// one cross-module edit the finale was scoped to make.
+import { ContractScopedRepository } from '../scoped-repository/contract-scoped.repository';
 
 /** Number of legal-corpus passages to retrieve per chat question (Phase E). */
 const LEGAL_TOP_K = 5;
@@ -46,10 +51,11 @@ export class ChatService {
     private readonly sessionRepo: Repository<ChatSession>,
     @InjectRepository(ChatMessage) // lint-exempt: chat scopes by session_id/user_id, NOT contract→org — this repo backs writes + session-scoped reads (no chokepoint candidate)
     private readonly messageRepo: Repository<ChatMessage>,
-    @InjectRepository(Contract) // lint-exempt: backs buildLegalContext's DEFERRED parent-Contract+project jurisdiction load (see below) — same shape export.service/compliance leave bare
-    private readonly contractRepo: Repository<Contract>,
     private readonly aiService: AiService,
     private readonly legalDocumentsService: LegalDocumentsService,
+    // Option B chokepoint (compliance finale) — buildLegalContext's parent
+    // Contract+project load routes through this ROOT gate (layer 2).
+    private readonly contractScoped: ContractScopedRepository,
   ) {}
 
   /**
@@ -58,19 +64,30 @@ export class ChatService {
    * and format them as a <legal_context> block for the chat prompt.
    *
    * Returns null (silent fallback) when: the session has no contract, the
-   * project has no country, the country isn't in the supported allowlist, or
-   * retrieval returns zero chunks. Never throws — chat must proceed regardless.
+   * contract is not in the caller's org, the project has no country, the country
+   * isn't in the supported allowlist, or retrieval returns zero chunks. Never
+   * throws — chat must proceed regardless.
+   *
+   * Option B chokepoint (compliance finale): the parent Contract + its project
+   * hydrate through ContractScopedRepository.scopedFindByIdWithRelations — the
+   * SAME silent-null ROOT gate compliance's jurisdiction load uses. The org gate
+   * is the caller's own `orgId` (the sendMessage JWT org); an out-of-org contract
+   * resolves to null → no legal context (the safe best-effort fallback). This
+   * tightens the prior bare load, which applied NO org filter when deriving
+   * jurisdiction.
    */
   private async buildLegalContext(
     contractId: string | null,
+    orgId: string,
     message: string,
   ): Promise<string | null> {
     if (!contractId) return null;
     try {
-      const contract = await this.contractRepo.findOne({ // lint-exempt: DEFERRED contract-scoped read — parent Contract+project hydration (jurisdiction only); scopedFindByIdOrThrow throws + no relation hydration, scopedFind collides with the ROOT gate alias 'project'; export.service+compliance leave the identical shape bare; wall-protected upstream (createSession findInOrg) + user-owned session
-        where: { id: contractId },
-        relations: ['project'],
-      });
+      const contract = await this.contractScoped.scopedFindByIdWithRelations(
+        contractId,
+        orgId,
+        ['project'],
+      );
       // Project.country is a free-text display name ("Egypt") or ISO code;
       // map it to a supported corpus jurisdiction (EG/AE/SA/QA/UK) or bail.
       const jurisdiction = resolveJurisdiction(contract?.project?.country);
@@ -194,8 +211,11 @@ export class ChatService {
       }));
 
     // Phase E — legal-corpus grounding (silent fallback on no-country/no-chunks).
+    // orgId (the caller's JWT org) is the data-layer tenancy gate for the
+    // parent-Contract jurisdiction load inside buildLegalContext.
     const legalContext = await this.buildLegalContext(
       session.contract_id,
+      orgId,
       message,
     );
 

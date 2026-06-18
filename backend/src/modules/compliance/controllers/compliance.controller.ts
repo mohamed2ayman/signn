@@ -94,7 +94,9 @@ export class ComplianceController {
     @CurrentUser() user: User,
   ) {
     await this.assertContractInCallerOrg(contractId, user);
-    return this.compliance.listForContract(contractId);
+    // Wall passed (layer 1) → the org is non-null; the scoped list read inside
+    // listForContract re-gates by it (layer 2).
+    return this.compliance.listForContract(contractId, user.organization_id);
   }
 
   @Get(':checkId')
@@ -110,9 +112,12 @@ export class ComplianceController {
     await this.assertContractInCallerOrg(ownerContractId, user);
 
     // Refresh from AI on every read so the frontend's polling has work to
-    // do (preserved behaviour).
+    // do (preserved behaviour). refreshFromAi is the async metering-reconcile
+    // path — it stays bare (no org threaded), gated by the wall above.
     await this.compliance.refreshFromAi(checkId);
-    return this.compliance.getDetail(checkId);
+    // getDetail re-gates the by-id check load through the scoped chokepoint
+    // (layer 2) using the wall-proven org.
+    return this.compliance.getDetail(checkId, user.organization_id);
   }
 
   @Post(':checkId/report')
@@ -129,6 +134,7 @@ export class ComplianceController {
       checkId,
       reportType: ComplianceReportType.COMPLIANCE_SUMMARY,
       userId: user.id,
+      orgId: user.organization_id,
     });
     return { job_id: job.id, message: 'Report queued', email: user.email };
   }
@@ -147,6 +153,7 @@ export class ComplianceController {
       checkId,
       reportType: ComplianceReportType.JURISDICTION_CONFLICT,
       userId: user.id,
+      orgId: user.organization_id,
     });
     return { job_id: job.id, message: 'Report queued', email: user.email };
   }
@@ -165,6 +172,7 @@ export class ComplianceController {
       checkId,
       reportType: ComplianceReportType.OBLIGATIONS_REPORT,
       userId: user.id,
+      orgId: user.organization_id,
     });
     return { job_id: job.id, message: 'Report queued', email: user.email };
   }
@@ -181,7 +189,14 @@ export class ComplianceController {
     );
     await this.assertContractInCallerOrg(ownerContractId, user);
 
-    return this.findings.updateStatus(findingId, body.status, user.id);
+    // Wall passed (layer 1) → org non-null; updateStatus re-gates the by-id
+    // finding load through the scoped chokepoint (layer 2).
+    return this.findings.updateStatus(
+      findingId,
+      body.status,
+      user.id,
+      user.organization_id,
+    );
   }
 }
 
