@@ -25,6 +25,20 @@ export enum ErpConnectionStatus {
 }
 
 /**
+ * Phase 7.28 v1.1 — operator/system hold, distinct from the customer `enabled`
+ * switch and the engine `status` health field.
+ *   none               no hold — operability depends only on `enabled`.
+ *   operator_suspended  a SYSTEM_ADMIN suspended it manually (clearable only by an operator).
+ *   auto_suspended      the circuit-breaker suspended it (actor = SYSTEM; clearable only by an operator).
+ * The customer can NEVER clear a non-`none` hold.
+ */
+export enum ErpOperatorHoldState {
+  NONE = 'none',
+  OPERATOR_SUSPENDED = 'operator_suspended',
+  AUTO_SUSPENDED = 'auto_suspended',
+}
+
+/**
  * Phase 7.28 — a per-org ERP connection.
  *
  * `vendor` is a plain string validated against the connector registry (NOT a DB
@@ -85,6 +99,31 @@ export class ErpConnection {
 
   @Column({ type: 'text', nullable: true })
   error_message: string | null;
+
+  // ─── Phase 7.28 v1.1 — operator/system hold ───────────────────────────────
+  /** Operator/system suspension hold. Customer-pause lives on `enabled`. */
+  @Column({
+    type: 'enum',
+    enum: ErpOperatorHoldState,
+    enumName: 'erp_operator_hold_enum',
+    default: ErpOperatorHoldState.NONE,
+  })
+  operator_hold_state: ErpOperatorHoldState;
+
+  /** Required reason for the current hold (null when none). */
+  @Column({ type: 'text', nullable: true })
+  hold_reason: string | null;
+
+  /** The SYSTEM_ADMIN who placed the hold. NULL when auto_suspended (actor = SYSTEM). */
+  @Column({ type: 'uuid', nullable: true })
+  hold_by_user_id: string | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  hold_at: Date | null;
+
+  /** Circuit-breaker counter — incremented on a failed sync/force-check, reset on success. */
+  @Column({ type: 'int', default: 0 })
+  consecutive_failures: number;
 
   @OneToMany(() => ErpFieldMapping, (m) => m.connection)
   field_mappings: ErpFieldMapping[];

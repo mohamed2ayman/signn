@@ -106,6 +106,18 @@ export interface IErpConnector {
    * as FAILED with the thrown message.
    */
   importCostData(ctx: ErpConnectorContext): Promise<ErpRawCostRecord[]>;
+
+  /**
+   * Phase 7.28 v1.1 — operator force-check probe. A SIDE-EFFECTING READ: it
+   * makes a real outbound call with the customer's credentials (consuming their
+   * ERP rate limit) and reports reachability/health. It MUST NOT write cost data
+   * — never reuse importCostData for this. Runs server-side in the worker only.
+   *
+   * Returns `{ ok: true }` when the connection is healthy, `{ ok: false, detail }`
+   * for a soft failure. Skeleton adapters throw (prerequisite-gated) — the worker
+   * treats a throw as a failed check.
+   */
+  healthCheck(ctx: ErpConnectorContext): Promise<{ ok: boolean; detail?: string }>;
 }
 
 /**

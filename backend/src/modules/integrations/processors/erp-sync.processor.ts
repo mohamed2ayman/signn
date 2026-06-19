@@ -7,6 +7,10 @@ interface RunSyncJob {
   job_id: string;
 }
 
+interface ForceCheckJob {
+  connection_id: string;
+}
+
 /**
  * Phase 7.28 — ERP sync queue processor.
  *
@@ -26,5 +30,12 @@ export class ErpSyncProcessor {
     const jobId = job.data.job_id;
     this.logger.log(`Running ERP sync jobId=${jobId}`);
     await this.sync.executeJob(jobId);
+  }
+
+  @Process({ name: 'force-check', concurrency: 1 })
+  async handleForceCheck(job: Job<ForceCheckJob>): Promise<void> {
+    const connectionId = job.data.connection_id;
+    this.logger.log(`Running ERP force-check conn=${connectionId}`);
+    await this.sync.executeForceCheck(connectionId);
   }
 }

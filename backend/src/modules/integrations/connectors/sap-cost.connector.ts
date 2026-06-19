@@ -49,4 +49,15 @@ export class SapCostConnector implements IErpConnector {
         'known gaps before enabling.',
     );
   }
+
+  async healthCheck(
+    _ctx: ErpConnectorContext,
+  ): Promise<{ ok: boolean; detail?: string }> {
+    // Prerequisite-gated like importCostData — a force-check on a SAP
+    // connection fails until the connector is real.
+    throw new Error(
+      'SapCostConnector is not yet operational: force-check is unavailable ' +
+        'until the SAP connector is implemented.',
+    );
+  }
 }

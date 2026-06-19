@@ -343,3 +343,86 @@ export function operationsReviewNeededEmail(data: {
   `;
   return baseEmailLayout(content, { preheader: `[${data.urgency.toUpperCase()}] ${entityLabels[data.entityType]} review needed` });
 }
+
+/**
+ * Phase 7.28 v1.1 — ERP connection suspended (by an operator or the
+ * circuit-breaker). Sent to the org's OWNER_ADMIN(s).
+ */
+export function erpConnectionSuspendedEmail(data: {
+  connectionName: string;
+  vendor: string;
+  reason: string;
+  automatic: boolean;
+  connectionsLink: string;
+}): string {
+  const connectionName = escapeHtml(data.connectionName);
+  const vendor = escapeHtml(data.vendor);
+  const reason = escapeHtml(data.reason);
+  const how = data.automatic
+    ? 'automatically suspended by the platform after repeated sync failures'
+    : 'suspended by SIGN Operations';
+  const content = `
+    ${heading('ERP Connection Suspended')}
+    ${paragraph(`Your ERP connection has been ${how}. While suspended, it will not sync. Only SIGN Operations can lift this hold.`)}
+    ${infoBlock([
+      ['Connection', connectionName],
+      ['Vendor', vendor],
+      ['Reason', reason],
+    ])}
+    ${ctaButton('View ERP Connections', data.connectionsLink)}
+    ${smallNote('If you believe this is in error, contact SIGN support.')}
+  `;
+  return baseEmailLayout(content, { preheader: `ERP connection "${connectionName}" suspended` });
+}
+
+/**
+ * Phase 7.28 v1.1 — ERP connection hold lifted by an operator.
+ */
+export function erpConnectionRestoredEmail(data: {
+  connectionName: string;
+  vendor: string;
+  reason: string;
+  connectionsLink: string;
+}): string {
+  const connectionName = escapeHtml(data.connectionName);
+  const vendor = escapeHtml(data.vendor);
+  const reason = escapeHtml(data.reason);
+  const content = `
+    ${heading('ERP Connection Restored')}
+    ${paragraph('The operations hold on your ERP connection has been lifted. If the connection is enabled, it can sync again.')}
+    ${infoBlock([
+      ['Connection', connectionName],
+      ['Vendor', vendor],
+      ['Note', reason],
+    ])}
+    ${ctaButton('View ERP Connections', data.connectionsLink)}
+  `;
+  return baseEmailLayout(content, { preheader: `ERP connection "${connectionName}" restored` });
+}
+
+/**
+ * Phase 7.28 v1.1 — ERP connection REMOVED by platform operations. Distinct
+ * from "suspended": the connection is gone and must be rebuilt to resume syncing.
+ */
+export function erpConnectionRemovedEmail(data: {
+  connectionName: string;
+  vendor: string;
+  reason: string;
+  connectionsLink: string;
+}): string {
+  const connectionName = escapeHtml(data.connectionName);
+  const vendor = escapeHtml(data.vendor);
+  const reason = escapeHtml(data.reason);
+  const content = `
+    ${heading('ERP Connection Removed')}
+    ${paragraph('Your ERP connection has been removed by SIGN Operations. It no longer exists — to resume syncing you will need to set up a new connection.')}
+    ${infoBlock([
+      ['Connection', connectionName],
+      ['Vendor', vendor],
+      ['Reason', reason],
+    ])}
+    ${ctaButton('Set Up ERP Connections', data.connectionsLink)}
+    ${smallNote('If you believe this is in error, contact SIGN support.')}
+  `;
+  return baseEmailLayout(content, { preheader: `ERP connection "${connectionName}" removed` });
+}

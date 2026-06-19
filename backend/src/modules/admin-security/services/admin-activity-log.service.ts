@@ -40,6 +40,7 @@ export interface AdminActivityPage {
 const ADMIN_ACTION_PREFIXES = [
   'security.',
   'admin.',
+  'erp.', // Phase 7.28 v1.1 — operator ERP connection control events
   'plan.',
   'user.',
   'org.',
