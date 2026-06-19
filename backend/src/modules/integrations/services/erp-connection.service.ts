@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Inject,
   Injectable,
   Logger,
@@ -12,7 +13,7 @@ import { Queue } from 'bull';
 import { randomUUID } from 'crypto';
 
 import { CryptoService } from '../../../common/utils/crypto';
-import { ErpConnection } from '../entities/erp-connection.entity';
+import { ErpConnection, ErpOperatorHoldState } from '../entities/erp-connection.entity';
 import { ErpFieldMapping } from '../entities/erp-field-mapping.entity';
 import { ErpSyncJob, ErpSyncJobStatus } from '../entities/erp-sync-job.entity';
 import {
@@ -39,6 +40,13 @@ export interface ErpConnectionResponse {
   capabilities_snapshot: ErpConnection['capabilities_snapshot'];
   enabled: boolean;
   status: string;
+  // Phase 7.28 v1.1 — operator hold surfaced so the customer UI can show the
+  // blocked toggle + reason. `hold_by_user_id` is intentionally NOT exposed to
+  // the customer (an internal operator id); operator-vs-auto is conveyed by the
+  // state value.
+  operator_hold_state: ErpOperatorHoldState;
+  hold_reason: string | null;
+  hold_at: Date | null;
   last_sync_at: Date | null;
   error_message: string | null;
   has_credentials: boolean;
@@ -124,6 +132,18 @@ export class ErpConnectionService {
   ): Promise<ErpConnectionResponse> {
     const row = await this.loadOwned(orgId, id);
 
+    // Operator hold: the customer can NEVER re-enable a connection on an
+    // operator/auto hold, and can never touch the hold itself. Disabling
+    // (enabled=false) their own connection stays allowed.
+    if (
+      dto.enabled === true &&
+      row.operator_hold_state !== ErpOperatorHoldState.NONE
+    ) {
+      throw new ForbiddenException(
+        'This connection has been suspended by operations and cannot be re-enabled. Contact SIGN support.',
+      );
+    }
+
     if (dto.name !== undefined) row.name = dto.name;
     if (dto.base_url !== undefined) row.base_url = dto.base_url;
     if (dto.enabled !== undefined) row.enabled = dto.enabled;
@@ -197,6 +217,12 @@ export class ErpConnectionService {
   ): Promise<{ jobId: string; reused: boolean }> {
     const conn = await this.loadOwned(orgId, id);
 
+    // Operability = enabled AND no operator/auto hold.
+    if (conn.operator_hold_state !== ErpOperatorHoldState.NONE) {
+      throw new ForbiddenException(
+        'This connection has been suspended by operations and cannot sync.',
+      );
+    }
     if (!conn.enabled) {
       throw new BadRequestException('Connection is disabled.');
     }
@@ -331,6 +357,9 @@ export class ErpConnectionService {
       capabilities_snapshot: row.capabilities_snapshot,
       enabled: row.enabled,
       status: row.status,
+      operator_hold_state: row.operator_hold_state,
+      hold_reason: row.hold_reason,
+      hold_at: row.hold_at,
       last_sync_at: row.last_sync_at,
       error_message: row.error_message,
       has_credentials: !!row.credentials_encrypted,

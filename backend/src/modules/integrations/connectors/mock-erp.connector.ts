@@ -72,4 +72,11 @@ export class MockErpConnector implements IErpConnector {
       },
     ];
   }
+
+  async healthCheck(
+    _ctx: ErpConnectorContext,
+  ): Promise<{ ok: boolean; detail?: string }> {
+    // Fixture connector is always reachable — no network, no credentials.
+    return { ok: true };
+  }
 }

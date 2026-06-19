@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 
@@ -14,6 +15,13 @@ import {
   IErpConnectorRegistry,
 } from '../connectors/erp-connector.interface';
 import { mapRawToNeutral, NeutralCostRecord } from './erp-cost-mapper';
+import { ErpAdminService } from './erp-admin.service';
+
+/** Result of a force-check probe (for the processor + tests). */
+export interface ForceCheckResult {
+  ok: boolean;
+  detail?: string;
+}
 
 /** Outcome of one job execution (returned for tests + processor logging). */
 export interface ExecuteResult {
@@ -53,6 +61,8 @@ export class ErpSyncService {
     private readonly crypto: CryptoService,
     @InjectDataSource()
     private readonly dataSource: DataSource,
+    private readonly config: ConfigService,
+    private readonly erpAdmin: ErpAdminService,
   ) {}
 
   /**
@@ -106,6 +116,7 @@ export class ErpSyncService {
         last_sync_at: new Date(),
         status: ErpConnectionStatus.ACTIVE,
         error_message: null,
+        consecutive_failures: 0, // success resets the circuit-breaker counter
       });
       this.logger.log(
         `ERP sync ${jobId} ${finalStatus}: processed=${result.processed} imported=${result.imported} failed=${result.failed}`,
@@ -123,6 +134,7 @@ export class ErpSyncService {
         status: ErpConnectionStatus.ERROR,
         error_message: message,
       });
+      await this.registerFailure(job.connection_id, message);
       this.logger.error(`ERP sync ${jobId} FAILED: ${message}`);
       return {
         status: ErpSyncJobStatus.FAILED,
@@ -131,6 +143,88 @@ export class ErpSyncService {
         failed: 0,
         ran: true,
       };
+    }
+  }
+
+  /**
+   * Phase 7.28 v1.1 — operator force-check (worker side). Makes a real outbound
+   * call via the connector's healthCheck with credentials decrypted ONLY here.
+   * Updates the connection's status/error_message; a failed check increments the
+   * circuit-breaker counter (and may trip it). Never writes cost data.
+   */
+  async executeForceCheck(connectionId: string): Promise<ForceCheckResult> {
+    const conn = await this.connRepo.findOne({ where: { id: connectionId } });
+    if (!conn) {
+      this.logger.warn(`ERP force-check: connection ${connectionId} not found — no-op`);
+      return { ok: false, detail: 'connection not found' };
+    }
+
+    try {
+      const connector = this.registry.resolve(conn.vendor);
+      const ctx: ErpConnectorContext = {
+        connectionId: conn.id,
+        organizationId: conn.organization_id,
+        baseUrl: conn.base_url,
+        credentials: this.decryptCredentials(conn.credentials_encrypted),
+        domain: ErpSyncDomain.COST,
+      };
+      const result = await connector.healthCheck(ctx);
+      if (result.ok) {
+        await this.connRepo.update(conn.id, {
+          status: ErpConnectionStatus.ACTIVE,
+          error_message: null,
+          consecutive_failures: 0,
+        });
+        this.logger.log(`ERP force-check OK conn=${conn.id}`);
+        return result;
+      }
+      const detail = result.detail ?? 'Health check reported not ok';
+      await this.connRepo.update(conn.id, {
+        status: ErpConnectionStatus.ERROR,
+        error_message: detail,
+      });
+      await this.registerFailure(conn.id, detail);
+      return { ok: false, detail };
+    } catch (err) {
+      const message = this.safeError(err);
+      await this.connRepo.update(conn.id, {
+        status: ErpConnectionStatus.ERROR,
+        error_message: message,
+      });
+      await this.registerFailure(conn.id, message);
+      this.logger.warn(`ERP force-check FAILED conn=${conn.id}: ${message}`);
+      return { ok: false, detail: message };
+    }
+  }
+
+  /**
+   * Circuit-breaker: atomically increment the connection's consecutive-failure
+   * counter; if it crosses the configured threshold (and the breaker is enabled),
+   * auto-suspend via the shared system path (actor = SYSTEM).
+   */
+  private async registerFailure(
+    connectionId: string,
+    message: string,
+  ): Promise<void> {
+    const res = await this.dataSource.query(
+      `UPDATE erp_connections
+       SET consecutive_failures = consecutive_failures + 1
+       WHERE id = $1
+       RETURNING consecutive_failures`,
+      [connectionId],
+    );
+    const rows = this.readReturningRows(res);
+    const count = rows.length ? Number(rows[0].consecutive_failures) : 0;
+
+    if (!this.config.get<boolean>('ERP_CIRCUIT_BREAKER_ENABLED', true)) return;
+    const threshold = Number(
+      this.config.get<number>('ERP_CIRCUIT_BREAKER_THRESHOLD', 5),
+    );
+    if (count >= threshold) {
+      await this.erpAdmin.autoSuspend(
+        connectionId,
+        `Auto-suspended after ${count} consecutive failures (threshold ${threshold}). Last error: ${message}`,
+      );
     }
   }
 

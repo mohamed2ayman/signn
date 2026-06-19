@@ -48,6 +48,17 @@ export const SECURITY_EVENT_TYPES = {
   PORTFOLIO_EXPORT_DOWNLOAD_NOT_FOUND: 'security.portfolio_export.download.not_found',
   PORTFOLIO_EXPORT_DOWNLOAD_INVALID_SIGNATURE: 'security.portfolio_export.download.invalid_signature',
   PORTFOLIO_EXPORT_DOWNLOAD_MALFORMED: 'security.portfolio_export.download.malformed',
+  /**
+   * Phase 7.28 v1.1 — operator/system ERP connection control. Written to
+   * audit_logs.action with entity_type='erp_connection'. The `erp.` prefix is
+   * registered in AdminActivityLogService so these surface in the admin feed.
+   * `auto_suspended` carries actor_id = null (actor = SYSTEM / circuit-breaker).
+   */
+  ERP_CONNECTION_SUSPENDED: 'erp.connection.suspended',
+  ERP_CONNECTION_UNSUSPENDED: 'erp.connection.unsuspended',
+  ERP_CONNECTION_FORCE_CHECK: 'erp.connection.force_check',
+  ERP_CONNECTION_DELETED: 'erp.connection.deleted',
+  ERP_CONNECTION_AUTO_SUSPENDED: 'erp.connection.auto_suspended',
 } as const;
 
 export type SecurityEventType =

@@ -152,6 +152,12 @@ import { dataSourceOptions } from './config/data-source';
         // (erp_connections.vendor), NOT from any env var — there is
         // deliberately no active-adapter selector here.
         ERP_INTEGRATION_ENABLED: Joi.boolean().default(false),
+        // Phase 7.28 v1.1 — circuit-breaker: auto-suspend a connection after
+        // ERP_CIRCUIT_BREAKER_THRESHOLD consecutive sync/force-check failures,
+        // when ERP_CIRCUIT_BREAKER_ENABLED is true. Per-connection overrides
+        // are deferred to the entitlement task.
+        ERP_CIRCUIT_BREAKER_ENABLED: Joi.boolean().default(true),
+        ERP_CIRCUIT_BREAKER_THRESHOLD: Joi.number().integer().min(1).default(5),
 
         // ── Portfolio Export (Phase 7.17 Prompt 2c) ───────────────
         // HMAC secret for token-gated PDF download links. The bare-HTTP

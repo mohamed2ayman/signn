@@ -4,6 +4,9 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { BullModule } from '@nestjs/bull';
 
 import { CryptoService } from '../../common/utils/crypto';
+import { User } from '../../database/entities';
+import { NotificationsModule } from '../notifications/notifications.module';
+import { AdminSecurityModule } from '../admin-security/admin-security.module';
 import { ErpConnection } from './entities/erp-connection.entity';
 import { ErpFieldMapping } from './entities/erp-field-mapping.entity';
 import { ErpSyncJob } from './entities/erp-sync-job.entity';
@@ -17,6 +20,7 @@ import { MockErpConnector } from './connectors/mock-erp.connector';
 import { SapCostConnector } from './connectors/sap-cost.connector';
 import { ErpConnectionService } from './services/erp-connection.service';
 import { ErpSyncService } from './services/erp-sync.service';
+import { ErpAdminService } from './services/erp-admin.service';
 import { ErpSyncProcessor } from './processors/erp-sync.processor';
 import { ErpEnabledGuard } from './guards/erp-enabled.guard';
 import { ErpConnectionsController } from './controllers/erp-connections.controller';
@@ -45,8 +49,11 @@ import { AdminErpController } from './controllers/admin-erp.controller';
       ErpFieldMapping,
       ErpSyncJob,
       ErpCostRecord,
+      User, // Phase 7.28 v1.1 — OWNER_ADMIN lookup for suspension notifications
     ]),
     BullModule.registerQueue({ name: 'erp-sync-jobs' }),
+    NotificationsModule, // exports NotificationDispatchService
+    AdminSecurityModule, // exports SecurityEventService (immutable audit)
   ],
   controllers: [ErpConnectionsController, AdminErpController],
   providers: [
@@ -62,10 +69,11 @@ import { AdminErpController } from './controllers/admin-erp.controller';
     // ── Core engine + façade ──
     ErpConnectionService,
     ErpSyncService,
+    ErpAdminService,
     ErpSyncProcessor,
     ErpEnabledGuard,
     CryptoService,
   ],
-  exports: [ErpConnectionService, ErpSyncService, ERP_CONNECTOR_REGISTRY],
+  exports: [ErpConnectionService, ErpSyncService, ErpAdminService, ERP_CONNECTOR_REGISTRY],
 })
 export class IntegrationsModule {}
