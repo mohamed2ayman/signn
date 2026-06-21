@@ -870,10 +870,27 @@
         "auto_suspended": "Suspendu automatiquement"
       },
       "action": {
-        "suspend": { "button": "Suspendre", "title": "Suspendre la connexion ERP", "confirm": "Suspendre" },
-        "unsuspend": { "button": "Réactiver", "title": "Lever la suspension", "confirm": "Lever la suspension" },
-        "forceCheck": { "button": "Vérifier", "title": "Vérifier la connexion", "confirm": "Lancer la vérification" },
-        "delete": { "button": "Supprimer", "title": "Supprimer la connexion ERP", "confirm": "Supprimer définitivement", "requiresHold": "Suspendez la connexion avant de pouvoir la supprimer." }
+        "suspend": {
+          "button": "Suspendre",
+          "title": "Suspendre la connexion ERP",
+          "confirm": "Suspendre"
+        },
+        "unsuspend": {
+          "button": "Réactiver",
+          "title": "Lever la suspension",
+          "confirm": "Lever la suspension"
+        },
+        "forceCheck": {
+          "button": "Vérifier",
+          "title": "Vérifier la connexion",
+          "confirm": "Lancer la vérification"
+        },
+        "delete": {
+          "button": "Supprimer",
+          "title": "Supprimer la connexion ERP",
+          "confirm": "Supprimer définitivement",
+          "requiresHold": "Suspendez la connexion avant de pouvoir la supprimer."
+        }
       },
       "modal": {
         "reasonLabel": "Motif",
@@ -952,7 +969,11 @@
         "sessionExpired": "Votre session invité a expiré. Rechargez la page pour commenter à nouveau.",
         "throttled": "Trop de commentaires en peu de temps. Veuillez patienter un instant.",
         "generic": "Impossible de publier votre commentaire. Veuillez réessayer."
-      }
+      },
+      "teamBadge": "Équipe SIGN",
+      "loading": "Chargement de la conversation…",
+      "loadError": "Impossible de charger la conversation.",
+      "retry": "Réessayer"
     },
     "errorScreen": {
       "reload": "Recharger",

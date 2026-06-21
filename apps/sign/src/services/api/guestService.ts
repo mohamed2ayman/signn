@@ -25,16 +25,35 @@ export interface GuestIdentity {
   resume: GuestIdentityResume;
 }
 
+/**
+ * Scrubbed POST-comment response. The backend deliberately returns only these
+ * least-privilege fields (no is_internal_note / user_id / is_resolved /
+ * parent_comment_id). The author label is supplied locally (the poster is the
+ * guest). `user_id` is optional only so the resume-intent seed can carry it.
+ */
 export interface GuestComment {
   id: string;
   contract_id: string;
   contract_clause_id?: string | null;
-  parent_comment_id?: string | null;
-  user_id: string;
+  user_id?: string;
   content: string;
-  is_resolved?: boolean;
   created_at: string;
-  updated_at?: string;
+}
+
+/**
+ * Scrubbed comment projection from the guest-visible comments GET. Mirrors the
+ * backend `GuestVisibleComment` — author display name + a guest-vs-team flag
+ * ONLY (no email / role / account_type). Internal SIGN-team notes are never
+ * included (server-side whitelist).
+ */
+export interface GuestVisibleComment {
+  id: string;
+  contract_id: string;
+  contract_clause_id: string | null;
+  content: string;
+  created_at: string;
+  author_name: string;
+  author_role: 'GUEST' | 'TEAM';
 }
 
 export interface CreatedGuestInvitation {
@@ -103,6 +122,25 @@ export async function postGuestComment(
   const { data } = await guestHttp.post<GuestComment>(
     `/guest/contracts/${contractId}/comments`,
     body,
+    { headers: { Authorization: `Bearer ${guestJwt}` } },
+  );
+  return data;
+}
+
+/**
+ * Read the guest-VISIBLE conversation on the bound contract (the guest's own
+ * comments + SIGN-team replies explicitly marked guest-visible), persisted
+ * across sessions. Sends `Authorization: Bearer <guest_jwt>` on the isolated
+ * client — same credential isolation as `postGuestComment`. Requires an
+ * established guest identity (the guest JWT), so it is only callable
+ * post-identity. Internal SIGN-team notes are filtered server-side.
+ */
+export async function getGuestComments(
+  contractId: string,
+  guestJwt: string,
+): Promise<GuestVisibleComment[]> {
+  const { data } = await guestHttp.get<GuestVisibleComment[]>(
+    `/guest/contracts/${contractId}/comments`,
     { headers: { Authorization: `Bearer ${guestJwt}` } },
   );
   return data;

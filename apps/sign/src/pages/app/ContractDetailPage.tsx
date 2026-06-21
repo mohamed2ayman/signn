@@ -269,6 +269,10 @@ export default function ContractDetailPage() {
   const [snapshotVersion, setSnapshotVersion] = useState<ContractVersion | null>(null);
   const [showAddClause, setShowAddClause] = useState(false);
   const [newComment, setNewComment] = useState('');
+  // Guest Portal: when checked, this comment is shared with the external guest
+  // on the contract. Default OFF = internal (fail-closed) — only explicitly
+  // shared comments reach a guest.
+  const [commentVisibleToGuest, setCommentVisibleToGuest] = useState(false);
   const [selectedClauseId, setSelectedClauseId] = useState<string | null>(null);
 
   // Comment edit / delete state
@@ -456,10 +460,12 @@ export default function ContractDetailPage() {
       await contractService.addComment(id, {
         content: newComment,
         contract_clause_id: selectedClauseId || undefined,
+        is_internal_note: !commentVisibleToGuest,
       });
       const updatedComments = await contractService.getComments(id);
       setComments(updatedComments);
       setNewComment('');
+      setCommentVisibleToGuest(false);
     } catch (err) {
       console.error('Failed to add comment:', err);
     }
@@ -1471,13 +1477,24 @@ export default function ContractDetailPage() {
               rows={3}
             />
             <div className="mt-3 flex items-center justify-between">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-3">
                 {selectedClauseId && (
                   <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-0.5 text-xs text-primary">
                     Linked to clause
                     <button onClick={() => setSelectedClauseId(null)} className="ml-1 hover:text-primary-700">&times;</button>
                   </span>
                 )}
+                {/* Guest Portal: explicitly share this comment with the external
+                    guest (fail-closed — off = internal). */}
+                <label className="inline-flex items-center gap-1.5 text-xs text-gray-600" title="Share this comment with the external guest on this contract. Off keeps it internal to your team.">
+                  <input
+                    type="checkbox"
+                    checked={commentVisibleToGuest}
+                    onChange={(e) => setCommentVisibleToGuest(e.target.checked)}
+                    className="h-3.5 w-3.5 rounded border-gray-300 text-primary focus:ring-primary/30"
+                  />
+                  Visible to guest
+                </label>
               </div>
               <button
                 onClick={handleAddComment}

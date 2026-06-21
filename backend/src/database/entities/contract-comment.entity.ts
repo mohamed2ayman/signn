@@ -44,6 +44,18 @@ export class ContractComment {
   @Column({ type: 'boolean', default: false })
   is_resolved: boolean;
 
+  /**
+   * Guest-visibility boundary (Guest Portal comments-list, feature #1).
+   * FAIL-CLOSED: defaults to TRUE (internal). A comment is shown to an
+   * external guest ONLY when this is `false`. Guest-authored comments are
+   * written with `false` (a guest always sees their own comments); managing
+   * comments default to internal and must be explicitly marked guest-visible.
+   * The guest GET is a whitelist on `is_internal_note = false`; the managing
+   * GET is unfiltered (org members see everything).
+   */
+  @Column({ type: 'boolean', default: true })
+  is_internal_note: boolean;
+
   @Column({ type: 'uuid', nullable: true })
   parent_comment_id: string;
 

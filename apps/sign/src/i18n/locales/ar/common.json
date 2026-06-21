@@ -869,10 +869,27 @@
         "auto_suspended": "مُعلّق تلقائيًا"
       },
       "action": {
-        "suspend": { "button": "تعليق", "title": "تعليق اتصال ERP", "confirm": "تعليق" },
-        "unsuspend": { "button": "إلغاء التعليق", "title": "رفع تعليق العمليات", "confirm": "رفع التعليق" },
-        "forceCheck": { "button": "فحص فوري", "title": "فحص الاتصال فوريًا", "confirm": "تشغيل الفحص" },
-        "delete": { "button": "حذف", "title": "حذف اتصال ERP", "confirm": "حذف نهائيًا", "requiresHold": "يجب تعليق الاتصال قبل حذفه." }
+        "suspend": {
+          "button": "تعليق",
+          "title": "تعليق اتصال ERP",
+          "confirm": "تعليق"
+        },
+        "unsuspend": {
+          "button": "إلغاء التعليق",
+          "title": "رفع تعليق العمليات",
+          "confirm": "رفع التعليق"
+        },
+        "forceCheck": {
+          "button": "فحص فوري",
+          "title": "فحص الاتصال فوريًا",
+          "confirm": "تشغيل الفحص"
+        },
+        "delete": {
+          "button": "حذف",
+          "title": "حذف اتصال ERP",
+          "confirm": "حذف نهائيًا",
+          "requiresHold": "يجب تعليق الاتصال قبل حذفه."
+        }
       },
       "modal": {
         "reasonLabel": "السبب",
@@ -951,7 +968,11 @@
         "sessionExpired": "انتهت صلاحية جلسة الضيف الخاصة بك. أعِد تحميل الصفحة للتعليق مرة أخرى.",
         "throttled": "عدد كبير من التعليقات في وقت قصير. يُرجى الانتظار قليلًا.",
         "generic": "تعذّر نشر تعليقك. يُرجى المحاولة مرة أخرى."
-      }
+      },
+      "teamBadge": "فريق SIGN",
+      "loading": "جارٍ تحميل المحادثة…",
+      "loadError": "تعذّر تحميل المحادثة.",
+      "retry": "إعادة المحاولة"
     },
     "errorScreen": {
       "reload": "إعادة التحميل",

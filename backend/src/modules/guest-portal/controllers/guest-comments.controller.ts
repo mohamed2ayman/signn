@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   ForbiddenException,
+  Get,
   HttpCode,
   HttpStatus,
   Param,
@@ -44,6 +45,26 @@ import { GuestCommentDraftDto } from '../dto/establish-identity.dto';
 export class GuestCommentsController {
   constructor(private readonly invitations: GuestInvitationService) {}
 
+  /**
+   * Guest Portal comments-list (feature #1) — the guest-VISIBLE conversation
+   * on their bound contract (their comments + SIGN-team replies explicitly
+   * marked guest-visible). Guarded identically to the POST: a standard JWT
+   * with account_type=GUEST only; the contract scope is walled inside the
+   * service to the guest's binding (404 otherwise). Internal SIGN-team notes
+   * are never returned (service-level whitelist), and the author projection
+   * is scrubbed (display name + guest/team flag only).
+   */
+  @Get(':id/comments')
+  async listComments(
+    @Param('id', ParseUUIDPipe) contractId: string,
+    @CurrentUser() user: any,
+  ) {
+    if (user?.account_type !== AccountType.GUEST) {
+      throw new ForbiddenException('Guest comment endpoint requires a guest identity');
+    }
+    return this.invitations.readGuestVisibleComments(contractId, user.id);
+  }
+
   @Post(':id/comments')
   @HttpCode(HttpStatus.CREATED)
   async addComment(
@@ -62,12 +83,24 @@ export class GuestCommentsController {
       throw new BadRequestException('Comment content is required');
     }
 
-    return this.invitations.writeGuestComment(
+    const created = await this.invitations.writeGuestComment(
       contractId,
       user.id,
       dto.content,
       dto.contract_clause_id,
       dto.parent_comment_id,
     );
+
+    // Scrub the response to least-privilege fields. The raw ContractComment
+    // entity carries is_internal_note / user_id / is_resolved / parent_comment_id
+    // — none of which a guest should ever receive. The guest UI supplies the
+    // author label locally (the poster is always this guest).
+    return {
+      id: created.id,
+      contract_id: created.contract_id,
+      contract_clause_id: created.contract_clause_id ?? null,
+      content: created.content,
+      created_at: created.created_at,
+    };
   }
 }

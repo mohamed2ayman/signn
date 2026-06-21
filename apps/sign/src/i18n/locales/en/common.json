@@ -863,10 +863,27 @@
         "auto_suspended": "Auto-suspended"
       },
       "action": {
-        "suspend": { "button": "Suspend", "title": "Suspend ERP connection", "confirm": "Suspend" },
-        "unsuspend": { "button": "Unsuspend", "title": "Lift operations hold", "confirm": "Lift hold" },
-        "forceCheck": { "button": "Force-check", "title": "Force-check connection", "confirm": "Run check" },
-        "delete": { "button": "Delete", "title": "Delete ERP connection", "confirm": "Delete permanently", "requiresHold": "Suspend the connection before it can be deleted." }
+        "suspend": {
+          "button": "Suspend",
+          "title": "Suspend ERP connection",
+          "confirm": "Suspend"
+        },
+        "unsuspend": {
+          "button": "Unsuspend",
+          "title": "Lift operations hold",
+          "confirm": "Lift hold"
+        },
+        "forceCheck": {
+          "button": "Force-check",
+          "title": "Force-check connection",
+          "confirm": "Run check"
+        },
+        "delete": {
+          "button": "Delete",
+          "title": "Delete ERP connection",
+          "confirm": "Delete permanently",
+          "requiresHold": "Suspend the connection before it can be deleted."
+        }
       },
       "modal": {
         "reasonLabel": "Reason",
@@ -945,7 +962,11 @@
         "sessionExpired": "Your guest session expired. Reload the page to comment again.",
         "throttled": "Too many comments in a short time. Please wait a moment.",
         "generic": "Could not post your comment. Please try again."
-      }
+      },
+      "teamBadge": "SIGN Team",
+      "loading": "Loading conversation…",
+      "loadError": "Could not load the conversation.",
+      "retry": "Retry"
     },
     "errorScreen": {
       "reload": "Reload",

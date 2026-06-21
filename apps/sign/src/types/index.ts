@@ -878,6 +878,9 @@ export interface ContractComment {
   user_id: string;
   content: string;
   is_resolved: boolean;
+  // Guest-visibility flag. The managing GET returns it; the guest GET never
+  // does (guests receive a scrubbed projection). false = shared with the guest.
+  is_internal_note?: boolean;
   parent_comment_id: string | null;
   created_at: string;
   updated_at: string;
