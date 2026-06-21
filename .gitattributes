@@ -1,0 +1,39 @@
+# Cross-platform line-ending normalization — SIGN + MANAGEX monorepo.
+#
+# Policy: every text file is stored as LF in the repository AND checked out as
+# LF, regardless of the contributor's OS. This prevents the CRLF-on-Linux
+# failures documented in lessons.md #15 (a CRLF `docker-entrypoint.sh` crashed
+# the backend container with `/usr/bin/env: 'bash\r': No such file or directory`)
+# and the CRLF warnings Windows contributors see on commit.
+
+# Default: auto-detect text vs binary; for text, normalize to LF in the repo
+# and force LF in the working tree on every platform.
+* text=auto eol=lf
+
+# --- Shell scripts MUST be LF ---
+# CRLF here breaks the Linux Docker entrypoint (lessons.md #15). Forced as text
+# so detection can never misclassify them.
+*.sh text eol=lf
+
+# --- Binary files: never normalize line endings, never diff as text ---
+# Images
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.webp binary
+*.ico  binary
+# Documents
+*.pdf  binary
+# Office Open XML (zip-based) documents
+*.docx binary
+*.xlsx binary
+*.pptx binary
+# Fonts
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
+*.otf   binary
+# Archives
+*.zip binary
+*.gz  binary
