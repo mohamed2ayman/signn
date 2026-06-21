@@ -1,5 +1,5 @@
 # SIGN Platform — Development Roadmap
-> Last updated: 2026-06-21 (Phase 7.28 ERP Integration shipped end-to-end — v1 + v1.1; new follow-on tasks 7.37–7.41 added)
+> Last updated: 2026-06-21 (Phase 7.35 — mfa_totp_secret encrypted at rest via CryptoService, PR #88. Prior same day: Phase 7.28 ERP Integration shipped end-to-end — v1 + v1.1; new follow-on tasks 7.37–7.41 added)
 > Next review: When 7.5-7.8 are cleared; 9.2 AWS setup planning starts
 > Maintained by: Ayman & Youssef
 > Market: Arabic, English, French (Middle East + Global)
@@ -938,13 +938,23 @@ block schema.
 
 ---
 
-### 7.35 — Encrypt Existing Plaintext Secrets (MFA TOTP + DocuSign RSA)
-**Owner:** Ayman | **Priority:** 🟡 MEDIUM | **Status:** ❌ Not started
+### ✅ 7.35 — Encrypt MFA TOTP Secret at Rest — COMPLETE
+**Owner:** Ayman | **Priority:** 🟡 MEDIUM | **Status:** ✅ Complete (PR #88) — shipped 2026-06-21
 **Depends on:** CryptoService (PR #73, shipped 2026-06-16)
-- Use `CryptoService` (`backend/src/common/utils/crypto.ts`) to encrypt at rest the secrets that are currently stored in plaintext: `users.mfa_totp_secret` (and the `mfa_secret` email-OTP compound value) and the DocuSign RSA private key.
-- Migrate existing stored values (encrypt-in-place data migration over current rows) — requires `ERP_CREDENTIAL_ENC_KEY` configured before the migration runs.
-- Update all read/write paths to encrypt on write and decrypt ONLY at use time inside the worker; never log decrypted values; keep `@Exclude()` on the response path.
-- Note: rotating `ERP_CREDENTIAL_ENC_KEY` later requires a re-encryption migration (see CryptoService hard rules in CLAUDE.md).
+
+**What shipped:**
+- `users.mfa_totp_secret` is now encrypted at rest via `CryptoService` (`backend/src/common/utils/crypto.ts`), **reusing `ERP_CREDENTIAL_ENC_KEY`** (no new key/env var).
+- **Dual-read anti-lockout helper** (`AuthService.decryptTotp`): a stored value is decrypted only when it starts with the `v1.` ciphertext marker; anything else is treated as legacy plaintext and used as-is — so reads never throw regardless of code-deploy vs data-migration ordering. Both read paths (`verifyMfa` login, `enableMfaTotp` enroll-confirm) go through it; `setupMfaTotp` encrypts on write but still returns the plaintext secret to the client for the QR/manual entry.
+- **Forward-only idempotent migration `1759000000001`**: selects only `mfa_totp_secret NOT LIKE 'v1.%'` (re-runnable / half-run-safe), encrypts via the same `CryptoService` (no AES reimplemented in SQL), and **throws before any UPDATE if the key is missing (zero rows modified)**; `down()` is a no-op (reverting at-rest encryption is a security regression).
+- **Shared `CryptoModule`** (`backend/src/common/crypto/`) extracted: both `AuthModule` and `IntegrationsModule` now consume `CryptoService` from it (ERP behaviour unchanged).
+- Hard-fail (no silent plaintext): TOTP enrollment throws if the key is absent.
+- See lesson #172 (live-auth secret → encryption-at-rest without lockout).
+
+**Scoped OUT (and why):**
+- **DocuSign RSA private key** — it is an **env var** (`DOCUSIGN_RSA_PRIVATE_KEY`, read via ConfigService in `docusign.service.ts`), NOT a DB-at-rest value, so `CryptoService` does not apply. Belongs to **deployment secrets management (Phase 9.2 — AWS Secrets Manager)**.
+- **`mfa_secret`** (email-OTP compound `bcrypt(otp)|timestamp`) and **`mfa_recovery_codes`** — already one-way **hashed**, not recoverable secrets; encrypting them adds nothing.
+
+> **⚠️ DEPLOYMENT PREREQUISITE:** `ERP_CREDENTIAL_ENC_KEY` is now **functionally required for MFA enrollment in every environment** — staging/prod MUST set it before this ships, or TOTP enrollment hard-fails AND the `1759000000001` migration refuses to run (throws, zero rows modified). It is already set in dev and documented in `.env.example`.
 
 ---
 
@@ -1168,6 +1178,8 @@ No new env vars required for existing local dev deployments.
 - ECS or EC2 for containers, VPC security groups, automated backups (7-day retention)
 - Production secrets in AWS Secrets Manager
 - Replace `JWT_REFRESH_SECRET` placeholder with cryptographically random value
+- **DocuSign RSA private key (`DOCUSIGN_RSA_PRIVATE_KEY`)** — deferred here from Phase 7.35: it is an env secret (not DB-at-rest), so it belongs in the secrets manager, not `CryptoService`. Store it in AWS Secrets Manager with PEM newlines preserved.
+- Ensure `ERP_CREDENTIAL_ENC_KEY` (encrypts ERP credentials AND MFA TOTP secrets — Phase 7.28 / 7.35) is set in the secrets manager as a high-entropy random value; a re-encryption migration is required before any rotation.
 
 ---
 
@@ -1349,7 +1361,7 @@ No new env vars required for existing local dev deployments.
 | 7.32 | Negotiation History | ❌ Not started | A+Y | |
 | 7.33 | Self-Service Generation | ❌ Not started | Y | |
 | 7.34 | Owner/Insurer Portal | ❌ Not started | Y+A | |
-| 7.35 | Encrypt Plaintext Secrets (MFA TOTP + DocuSign RSA) | ❌ Not started | A | |
+| 7.35 | Encrypt MFA TOTP Secret at Rest (DocuSign key → Phase 9.2) | ✅ Complete (PR #88) | A | 2026-06-21 |
 | 7.37 | ERP Feature Entitlement (per-package + per-org) | ❌ Not started | A | |
 | 7.38 | Working SAP Cost Adapter | ❌ Not started | A | |
 | 7.39 | ERP Export Direction (push to ERP) | ❌ Not started | A | |
