@@ -9,7 +9,7 @@ import ConfidenceBadge from '@/components/common/ConfidenceBadge';
  * the bullet marker appears on the RIGHT side for Arabic text.
  * All other lines render as plain paragraphs with dir="auto".
  */
-function ClauseContentDisplay({
+export function ClauseContentDisplay({
   content,
   isExpanded,
   isRejected,
@@ -136,7 +136,7 @@ const REVIEW_BG_COLORS: Record<string, string> = {
   [ClauseReviewStatus.REJECTED]: 'bg-red-50/30',
 };
 
-const CLAUSE_TYPE_LABELS: Record<string, string> = {
+export const CLAUSE_TYPE_LABELS: Record<string, string> = {
   general: 'General',
   payment: 'Payment',
   liability: 'Liability',

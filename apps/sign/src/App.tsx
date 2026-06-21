@@ -72,6 +72,9 @@ import CommunicationPreferencesPage from '@/pages/app/CommunicationPreferencesPa
 import ContractorDashboardPage from '@/pages/contractor/ContractorDashboardPage';
 import AcceptPartyInvitationPage from '@/pages/contractor/AcceptInvitationPage';
 
+// Guest Portal — external invited-party viewer (public, token-gated)
+import GuestViewerPage from '@/pages/guest/GuestViewerPage';
+
 // Legal pages (public)
 import LegalHubPage from '@/pages/legal/LegalHubPage';
 import TermsPage from '@/pages/legal/TermsPage';
@@ -212,6 +215,14 @@ function App() {
 
       {/* Public guest invitation route (no auth) */}
       <Route path="/invitation/accept" element={<AcceptPartyInvitationPage />} />
+
+      {/* ─── Guest Portal viewer (/guest/*) — PUBLIC, token-gated ─── */}
+      {/* External invited counterparty: no password to view. The viewer reads
+          via an isolated client (Authorization: Viewer <token>); progressive
+          identity (set a password to comment) happens inside the page. Kept
+          entirely separate from the legacy /contractor/* role stub. */}
+      <Route path="/guest/invitation/:token" element={<GuestViewerPage />} />
+      <Route path="/guest/view" element={<GuestViewerPage />} />
 
       {/* ─── Client Portal (/app/*) ─── */}
       <Route

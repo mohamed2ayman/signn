@@ -852,5 +852,98 @@
         "error": "Error"
       }
     }
+  },
+  "guest": {
+    "readOnlyBadge": "Read-only guest view",
+    "poweredBy": "Powered by",
+    "loading": "Loading shared contract…",
+    "contractView": {
+      "firstParty": "First party",
+      "secondParty": "Second party",
+      "clauses": "Clauses",
+      "noClauses": "This contract has no extracted clauses yet.",
+      "watermark": "Read-only · Guest"
+    },
+    "clause": {
+      "showMore": "Show more",
+      "showLess": "Show less"
+    },
+    "commentCta": {
+      "title": "Want to comment on this contract?",
+      "body": "Set a password to leave attributed comments. Your access stays limited to this contract.",
+      "button": "Set a password to comment"
+    },
+    "identity": {
+      "title": "Set a password to comment",
+      "subtitle": "You'll get a guest identity limited to this contract.",
+      "subtitleEmail": "You'll get a guest identity for {{email}}, limited to this contract.",
+      "firstName": "First name",
+      "lastName": "Last name",
+      "optional": "(optional)",
+      "password": "Password",
+      "passwordHint": "At least 12 characters, with an uppercase letter, a number, and a special character.",
+      "confirmPassword": "Confirm password",
+      "cancel": "Cancel",
+      "submit": "Create guest identity",
+      "submitting": "Setting up…",
+      "success": "You can now comment on this contract.",
+      "errors": {
+        "weakPassword": "Password must be at least 12 characters and include an uppercase letter, a number, and a special character.",
+        "mismatch": "Passwords do not match.",
+        "invalid": "This invitation is no longer valid. Ask the sender for a fresh link.",
+        "conflict": "An account already exists for this invitation, and the password did not match. Use the original password, or contact the sender.",
+        "throttled": "Too many attempts. Please wait a minute and try again.",
+        "generic": "Could not set your password just now. Please try again."
+      },
+      "blocked": {
+        "title": "This invitation cannot be used to set up access",
+        "body": "It can no longer be used to set up commenting access — it may already have been used, or it may have expired. If you already set up access, reopen your original invitation link; otherwise, contact the person who invited you.",
+        "dismiss": "Got it"
+      }
+    },
+    "comments": {
+      "heading": "Comments",
+      "placeholder": "Add a comment on this contract…",
+      "post": "Post comment",
+      "posting": "Posting…",
+      "empty": "No comments yet. Be the first to comment.",
+      "badge": "Guest",
+      "defaultName": "Guest",
+      "seedContent": "(your comment)",
+      "success": "Comment posted.",
+      "errors": {
+        "sessionExpired": "Your guest session expired. Reload the page to comment again.",
+        "throttled": "Too many comments in a short time. Please wait a moment.",
+        "generic": "Could not post your comment. Please try again."
+      }
+    },
+    "errorScreen": {
+      "reload": "Reload",
+      "learnMore": "Learn about SIGN",
+      "noToken": {
+        "title": "Missing invitation link",
+        "body": "This page needs a valid invitation link. Please open the link from your invitation email."
+      },
+      "invalid": {
+        "title": "This invitation link is invalid or has expired",
+        "body": "The link may have been mistyped, already used up, or revoked. Ask the sender for a fresh invitation."
+      },
+      "expired": {
+        "title": "Your viewing session expired",
+        "body": "For security, guest viewing sessions are short-lived. Reload to start a new session from the same link."
+      },
+      "notFound": {
+        "title": "This invitation link is invalid or has expired",
+        "body": "The link may have been mistyped, already used up, or revoked. Ask the sender for a fresh invitation."
+      },
+      "throttled": {
+        "title": "Too many attempts",
+        "body": "You have opened this link a few times in quick succession. Please wait a minute and try again."
+      },
+      "unknown": {
+        "title": "Something went wrong",
+        "body": "We could not load this shared contract just now. Please try again in a moment."
+      }
+    }
   }
 }
