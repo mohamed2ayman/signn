@@ -12,6 +12,8 @@ import api from './axios';
 export type ErpSyncDirection = 'import' | 'export';
 export type ErpSyncDomain = 'cost' | 'schedule' | 'milestones' | 'payment_terms';
 export type ErpConnectionStatus = 'configured' | 'active' | 'error' | 'disabled';
+/** Phase 7.28 v1.1 — operator/system hold (distinct from the customer `enabled` switch). */
+export type ErpOperatorHoldState = 'none' | 'operator_suspended' | 'auto_suspended';
 export type ErpSyncJobStatus =
   | 'pending'
   | 'running'
@@ -38,6 +40,16 @@ export interface ErpConnection {
   capabilities_snapshot: ErpCapabilities | null;
   enabled: boolean;
   status: ErpConnectionStatus;
+  // Phase 7.28 v1.1 — operator hold (present on both customer + admin list
+  // responses). `hold_by_user_id` is NOT on the list response by design.
+  operator_hold_state: ErpOperatorHoldState;
+  hold_reason: string | null;
+  hold_at: string | null;
+  // Admin-list-only (Phase 7.28 v1.1 Part B). Resolved operator identity for the
+  // ERP Health dashboard; absent on the customer-facing response.
+  hold_by_user_id?: string | null;
+  hold_by_name?: string | null;
+  hold_by_email?: string | null;
   last_sync_at: string | null;
   error_message: string | null;
   /** Write-only credential indicator — the API NEVER returns the value. */

@@ -15,7 +15,6 @@ import { Roles } from '../../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { UserRole } from '../../../database/entities';
 import { ErpEnabledGuard } from '../guards/erp-enabled.guard';
-import { ErpConnectionService } from '../services/erp-connection.service';
 import { ErpAdminService } from '../services/erp-admin.service';
 import { ErpOperatorReasonDto } from '../dto/operator-reason.dto';
 
@@ -33,14 +32,11 @@ import { ErpOperatorReasonDto } from '../dto/operator-reason.dto';
 @UseGuards(JwtAuthGuard, RolesGuard, ErpEnabledGuard)
 @Roles(UserRole.SYSTEM_ADMIN)
 export class AdminErpController {
-  constructor(
-    private readonly service: ErpConnectionService,
-    private readonly admin: ErpAdminService,
-  ) {}
+  constructor(private readonly admin: ErpAdminService) {}
 
   @Get('connections')
   listConnections() {
-    return this.service.adminListConnections();
+    return this.admin.listConnections();
   }
 
   @Post('connections/:id/suspend')

@@ -855,8 +855,38 @@
         "connection": "Connexion",
         "vendor": "Fournisseur",
         "status": "Statut",
+        "hold": "Suspension opérateur",
         "lastSync": "Dernière synchronisation",
-        "error": "Erreur"
+        "error": "Erreur",
+        "actions": "Actions"
+      },
+      "heldAt": "Suspendu le",
+      "suspendedBy": "Suspendu par",
+      "systemActor": "Système",
+      "unknownOperator": "Inconnu",
+      "holdState": {
+        "none": "—",
+        "operator_suspended": "Suspendu par l'opérateur",
+        "auto_suspended": "Suspendu automatiquement"
+      },
+      "action": {
+        "suspend": { "button": "Suspendre", "title": "Suspendre la connexion ERP", "confirm": "Suspendre" },
+        "unsuspend": { "button": "Réactiver", "title": "Lever la suspension", "confirm": "Lever la suspension" },
+        "forceCheck": { "button": "Vérifier", "title": "Vérifier la connexion", "confirm": "Lancer la vérification" },
+        "delete": { "button": "Supprimer", "title": "Supprimer la connexion ERP", "confirm": "Supprimer définitivement", "requiresHold": "Suspendez la connexion avant de pouvoir la supprimer." }
+      },
+      "modal": {
+        "reasonLabel": "Motif",
+        "reasonPlaceholder": "Pourquoi effectuez-vous cette action ? (enregistré dans le journal d'audit)",
+        "deleteWarning": "Cela supprime définitivement la connexion et ses données importées. Le client est notifié et devra la reconfigurer pour reprendre la synchronisation.",
+        "deleteConfirmCheckbox": "Je comprends que cela supprime définitivement la connexion."
+      },
+      "toast": {
+        "suspended": "Connexion suspendue.",
+        "unsuspended": "Suspension levée.",
+        "forceCheckRequested": "Vérification demandée.",
+        "deleted": "Connexion supprimée.",
+        "actionError": "Échec de l'action. Veuillez réessayer."
       }
     }
   }

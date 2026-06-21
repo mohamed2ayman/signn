@@ -1,9 +1,17 @@
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import toast from 'react-hot-toast';
 import { adminService } from '@/services/api/adminService';
 import type { ErpConnection } from '@/services/api/erpService';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
-import { CONNECTION_STATUS_BADGE } from '@/components/erp/erpConstants';
+import {
+  CONNECTION_STATUS_BADGE,
+  OPERATOR_HOLD_BADGE,
+} from '@/components/erp/erpConstants';
+import ErpAdminActionModal, {
+  type ErpAdminAction,
+} from '@/components/erp/ErpAdminActionModal';
 
 /** Stable Latin-numeral timestamp (lesson #137), matching Part 2a. */
 function formatDateTime(iso: string | null, fallback: string): string {
@@ -15,16 +23,37 @@ function formatDateTime(iso: string | null, fallback: string): string {
 }
 
 /**
- * Phase 7.28 Part 2b — SYSTEM_ADMIN cross-tenant "ERP Health" dashboard.
+ * Display the operator who placed the hold: their name/email for a manual
+ * suspend, "System" for an auto-suspend, "—" when not held. (`hold_by_user_id`
+ * may be null for a manual hold if the operator's user row was later deleted.)
+ */
+function suspendedBy(conn: ErpConnection, t: (k: string) => string): string {
+  if (conn.operator_hold_state === 'none') return '—';
+  if (conn.operator_hold_state === 'auto_suspended') return t('erp.admin.systemActor');
+  return conn.hold_by_name || conn.hold_by_email || t('erp.admin.unknownOperator');
+}
+
+const TOAST_KEY: Record<ErpAdminAction, string> = {
+  suspend: 'suspended',
+  unsuspend: 'unsuspended',
+  'force-check': 'forceCheckRequested',
+  delete: 'deleted',
+};
+
+/**
+ * Phase 7.28 v1.1 Part B — SYSTEM_ADMIN cross-tenant "ERP Health" dashboard.
  *
- * READ-ONLY monitoring of every org's ERP connection (org, vendor, status, last
- * sync, error) from GET /admin/erp/connections. No mutation actions, nothing
- * credential-related. Mirrors AdminWaitlistPage (React Query, three states,
- * admin service layer). Feature-gated: a 404 (ERP off) renders a graceful
- * notice instead of crashing, consistent with Part 2a.
+ * Extends the Part 2b read-only monitor with operator ACTIONS against the Part A
+ * endpoints: suspend (when no hold), unsuspend (when held), force-check (always),
+ * and a guarded delete (only when held, with a second confirm). Every action
+ * requires a reason and refetches on success. Feature-off (404) stays graceful.
  */
 export default function AdminErpHealthPage() {
   const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const [modal, setModal] = useState<{ action: ErpAdminAction; conn: ErpConnection } | null>(
+    null,
+  );
 
   const { data: connections = [], isLoading, isError, error } = useQuery<ErpConnection[]>({
     queryKey: ['admin', 'erp-health'],
@@ -32,12 +61,34 @@ export default function AdminErpHealthPage() {
     retry: 1,
   });
 
+  const actionMutation = useMutation({
+    mutationFn: ({ action, id, reason }: { action: ErpAdminAction; id: string; reason: string }) => {
+      switch (action) {
+        case 'suspend':
+          return adminService.suspendErpConnection(id, reason);
+        case 'unsuspend':
+          return adminService.unsuspendErpConnection(id, reason);
+        case 'force-check':
+          return adminService.forceCheckErpConnection(id, reason);
+        case 'delete':
+          return adminService.deleteErpConnection(id, reason);
+      }
+    },
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'erp-health'] });
+      toast.success(t(`erp.admin.toast.${TOAST_KEY[vars.action]}`));
+      setModal(null);
+    },
+    onError: () => toast.error(t('erp.admin.toast.actionError')),
+  });
+
   const featureOff =
     isError && (error as { response?: { status?: number } })?.response?.status === 404;
 
+  const open = (action: ErpAdminAction, conn: ErpConnection) => setModal({ action, conn });
+
   return (
     <div className="p-6 space-y-6">
-      {/* Header */}
       <div>
         <h1 className="text-xl font-semibold text-gray-900">{t('erp.admin.title')}</h1>
         <p className="mt-1 text-sm text-gray-500">{t('erp.admin.subtitle')}</p>
@@ -67,66 +118,114 @@ export default function AdminErpHealthPage() {
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
-                  {t('erp.admin.col.organization')}
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
-                  {t('erp.admin.col.connection')}
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
-                  {t('erp.admin.col.vendor')}
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
-                  {t('erp.admin.col.status')}
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
-                  {t('erp.admin.col.lastSync')}
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
-                  {t('erp.admin.col.error')}
-                </th>
+                {['organization', 'connection', 'vendor', 'status', 'hold', 'lastSync', 'actions'].map((c) => (
+                  <th key={c} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
+                    {t(`erp.admin.col.${c}`)}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 bg-white">
-              {connections.map((conn) => (
-                <tr key={conn.id} className="hover:bg-gray-50 transition-colors">
-                  <td
-                    className="px-4 py-3 text-sm text-gray-700"
-                    dir="auto"
-                    style={{ unicodeBidi: 'plaintext' }}
-                  >
-                    {conn.organization_id}
-                  </td>
-                  <td
-                    className="px-4 py-3 text-sm font-medium text-gray-800"
-                    dir="auto"
-                    style={{ unicodeBidi: 'plaintext' }}
-                  >
-                    {conn.name}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-700">{conn.vendor}</td>
-                  <td className="px-4 py-3">
-                    <span
-                      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${CONNECTION_STATUS_BADGE[conn.status]}`}
-                    >
-                      {t(`erp.status.${conn.status}`)}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-500" dir="ltr">
-                    {formatDateTime(conn.last_sync_at, t('erp.never'))}
-                  </td>
-                  <td
-                    className="px-4 py-3 text-sm text-red-600"
-                    dir="auto"
-                    style={{ unicodeBidi: 'plaintext' }}
-                  >
-                    {conn.error_message || <span className="text-gray-300">—</span>}
-                  </td>
-                </tr>
-              ))}
+              {connections.map((conn) => {
+                const held = conn.operator_hold_state !== 'none';
+                return (
+                  <tr key={conn.id} className="hover:bg-gray-50 transition-colors align-top">
+                    <td className="px-4 py-3 text-sm text-gray-700" dir="auto" style={{ unicodeBidi: 'plaintext' }}>
+                      {conn.organization_id}
+                    </td>
+                    <td className="px-4 py-3 text-sm font-medium text-gray-800" dir="auto" style={{ unicodeBidi: 'plaintext' }}>
+                      {conn.name}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-700">{conn.vendor}</td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${CONNECTION_STATUS_BADGE[conn.status]}`}>
+                        {t(`erp.status.${conn.status}`)}
+                      </span>
+                      {conn.error_message && (
+                        <p className="mt-1 text-xs text-red-600" dir="auto" style={{ unicodeBidi: 'plaintext' }}>
+                          {conn.error_message}
+                        </p>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${OPERATOR_HOLD_BADGE[conn.operator_hold_state]}`}>
+                        {t(`erp.admin.holdState.${conn.operator_hold_state}`)}
+                      </span>
+                      {held && (
+                        <div className="mt-1 space-y-0.5">
+                          {conn.hold_reason && (
+                            <p className="text-xs text-gray-600" dir="auto" style={{ unicodeBidi: 'plaintext' }}>
+                              {conn.hold_reason}
+                            </p>
+                          )}
+                          <p className="text-xs text-gray-500" dir="auto" style={{ unicodeBidi: 'plaintext' }}>
+                            {t('erp.admin.suspendedBy')}: {suspendedBy(conn, t)}
+                          </p>
+                          <p className="text-xs text-gray-400" dir="ltr">
+                            {t('erp.admin.heldAt')}: {formatDateTime(conn.hold_at, '—')}
+                          </p>
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-500" dir="ltr">
+                      {formatDateTime(conn.last_sync_at, t('erp.never'))}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-wrap gap-2">
+                        {held ? (
+                          <button
+                            type="button"
+                            onClick={() => open('unsuspend', conn)}
+                            className="rounded-md border border-gray-200 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                          >
+                            {t('erp.admin.action.unsuspend.button')}
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => open('suspend', conn)}
+                            className="rounded-md border border-gray-200 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                          >
+                            {t('erp.admin.action.suspend.button')}
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => open('force-check', conn)}
+                          className="rounded-md border border-gray-200 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                        >
+                          {t('erp.admin.action.forceCheck.button')}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => open('delete', conn)}
+                          disabled={!held}
+                          title={!held ? t('erp.admin.action.delete.requiresHold') : undefined}
+                          className="rounded-md border border-gray-200 px-2.5 py-1 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          {t('erp.admin.action.delete.button')}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
+      )}
+
+      {modal && (
+        <ErpAdminActionModal
+          isOpen
+          onClose={() => setModal(null)}
+          action={modal.action}
+          connectionName={modal.conn.name}
+          isPending={actionMutation.isPending}
+          onConfirm={(reason) =>
+            actionMutation.mutate({ action: modal.action, id: modal.conn.id, reason })
+          }
+        />
       )}
     </div>
   );

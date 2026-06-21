@@ -7,7 +7,7 @@ import {
 import { InjectQueue } from '@nestjs/bull';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { Queue } from 'bull';
 
 import { User, UserRole, NotificationType } from '../../../database/entities';
@@ -35,6 +35,10 @@ export interface ErpAdminConnectionResponse {
   operator_hold_state: ErpOperatorHoldState;
   hold_reason: string | null;
   hold_by_user_id: string | null;
+  /** Resolved operator identity (Phase 7.28 v1.1 Part B). Null for auto-suspended
+   * (actor = SYSTEM), for no hold, or if the operator's user row is gone. */
+  hold_by_name: string | null;
+  hold_by_email: string | null;
   hold_at: Date | null;
   consecutive_failures: number;
   last_sync_at: Date | null;
@@ -369,7 +373,41 @@ export class ErpAdminService {
     }
   }
 
-  private toAdminResponse(conn: ErpConnection): ErpAdminConnectionResponse {
+  /**
+   * Cross-tenant admin list (Phase 7.28 v1.1 Part B). Returns the ADMIN response
+   * shape (with hold_by_user_id) and resolves the operator identity (name/email)
+   * via a single batch lookup. SYSTEM_ADMIN-gated cross-tenant path (finding #0;
+   * ERP is org-scoped, not contract-scoped — no tenant-repo violation).
+   */
+  async listConnections(): Promise<ErpAdminConnectionResponse[]> {
+    const rows = await this.connRepo.find({ order: { created_at: 'DESC' } });
+
+    const holderIds = [
+      ...new Set(
+        rows.map((r) => r.hold_by_user_id).filter((id): id is string => !!id),
+      ),
+    ];
+    const holders = holderIds.length
+      ? await this.userRepo.find({ where: { id: In(holderIds) } })
+      : [];
+    const byId = new Map(holders.map((u) => [u.id, u]));
+
+    return rows.map((r) => {
+      const u = r.hold_by_user_id ? byId.get(r.hold_by_user_id) : undefined;
+      const name = u
+        ? `${u.first_name ?? ''} ${u.last_name ?? ''}`.trim() || null
+        : null;
+      return this.toAdminResponse(r, { name, email: u?.email ?? null });
+    });
+  }
+
+  private toAdminResponse(
+    conn: ErpConnection,
+    holder: { name: string | null; email: string | null } = {
+      name: null,
+      email: null,
+    },
+  ): ErpAdminConnectionResponse {
     return {
       id: conn.id,
       organization_id: conn.organization_id,
@@ -380,6 +418,8 @@ export class ErpAdminService {
       operator_hold_state: conn.operator_hold_state,
       hold_reason: conn.hold_reason,
       hold_by_user_id: conn.hold_by_user_id,
+      hold_by_name: holder.name,
+      hold_by_email: holder.email,
       hold_at: conn.hold_at,
       consecutive_failures: conn.consecutive_failures,
       last_sync_at: conn.last_sync_at,
