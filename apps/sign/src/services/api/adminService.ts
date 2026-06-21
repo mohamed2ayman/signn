@@ -281,6 +281,18 @@ export const adminService = {
   // 404s when ERP_INTEGRATION_ENABLED is off.
   getErpConnections: () =>
     api.get<ErpConnection[]>('/admin/erp/connections').then(r => r.data),
+
+  // ─── ERP operator actions (Phase 7.28 v1.1 Part A endpoints) ──────────────────
+  // SYSTEM_ADMIN only; every action requires a reason (backend rejects empty).
+  suspendErpConnection: (id: string, reason: string) =>
+    api.post(`/admin/erp/connections/${id}/suspend`, { reason }).then(r => r.data),
+  unsuspendErpConnection: (id: string, reason: string) =>
+    api.post(`/admin/erp/connections/${id}/unsuspend`, { reason }).then(r => r.data),
+  forceCheckErpConnection: (id: string, reason: string) =>
+    api.post(`/admin/erp/connections/${id}/force-check`, { reason }).then(r => r.data),
+  deleteErpConnection: (id: string, reason: string) =>
+    // DELETE with a body — axios needs `data` for delete payloads.
+    api.delete(`/admin/erp/connections/${id}`, { data: { reason } }).then(r => r.data),
 };
 
 // ─── System Analytics types ────────────────────────────────────────────────

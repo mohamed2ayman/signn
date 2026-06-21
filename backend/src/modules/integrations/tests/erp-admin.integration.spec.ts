@@ -192,6 +192,31 @@ describeReal('ERP operator control + circuit-breaker (real Postgres)', () => {
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
+  it('admin list resolves the operator identity (name for manual, null for auto/none)', async () => {
+    // Manual suspend by the actor → name resolved from the user row.
+    const manual = await makeConn('MOCK');
+    await admin.suspend(manual.id, actorId, 'manual hold');
+    // Auto-suspend (actor = SYSTEM, hold_by_user_id null).
+    const auto = await makeConn('SAP');
+    await admin.autoSuspend(auto.id, 'auto hold');
+    // No hold.
+    const none = await makeConn('MOCK');
+
+    const list = await admin.listConnections();
+    const byId = Object.fromEntries(list.map((c) => [c.id, c]));
+
+    expect(byId[manual.id].hold_by_user_id).toBe(actorId);
+    expect(byId[manual.id].hold_by_name).toBe('Erp AdminTest'); // first + last from the fixture
+    expect(byId[manual.id].hold_by_email).toContain('@test.local');
+
+    expect(byId[auto.id].operator_hold_state).toBe(ErpOperatorHoldState.AUTO_SUSPENDED);
+    expect(byId[auto.id].hold_by_user_id).toBeNull();
+    expect(byId[auto.id].hold_by_name).toBeNull();
+
+    expect(byId[none.id].hold_by_user_id).toBeNull();
+    expect(byId[none.id].hold_by_name).toBeNull();
+  });
+
   it('guarded delete: rejected without a hold, allowed once held', async () => {
     const conn = await makeConn('MOCK');
     await expect(admin.remove(conn.id, actorId, 'cleanup')).rejects.toBeInstanceOf(

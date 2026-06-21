@@ -277,12 +277,9 @@ export class ErpConnectionService {
     });
   }
 
-  // ─── Admin (SYSTEM_ADMIN) cross-tenant health view ───────────────────────
-
-  async adminListConnections(): Promise<ErpConnectionResponse[]> {
-    const rows = await this.connRepo.find({ order: { created_at: 'DESC' } });
-    return rows.map((r) => this.toResponse(r));
-  }
+  // Phase 7.28 v1.1 Part B — the SYSTEM_ADMIN cross-tenant list moved to
+  // ErpAdminService.listConnections() (it returns the admin response shape with
+  // resolved operator identity). The customer-facing methods above are unchanged.
 
   // ─── Internals ───────────────────────────────────────────────────────────
 

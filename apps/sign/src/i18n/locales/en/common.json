@@ -848,8 +848,38 @@
         "connection": "Connection",
         "vendor": "Vendor",
         "status": "Status",
+        "hold": "Operator hold",
         "lastSync": "Last sync",
-        "error": "Error"
+        "error": "Error",
+        "actions": "Actions"
+      },
+      "heldAt": "Held at",
+      "suspendedBy": "Suspended by",
+      "systemActor": "System",
+      "unknownOperator": "Unknown",
+      "holdState": {
+        "none": "—",
+        "operator_suspended": "Operator-suspended",
+        "auto_suspended": "Auto-suspended"
+      },
+      "action": {
+        "suspend": { "button": "Suspend", "title": "Suspend ERP connection", "confirm": "Suspend" },
+        "unsuspend": { "button": "Unsuspend", "title": "Lift operations hold", "confirm": "Lift hold" },
+        "forceCheck": { "button": "Force-check", "title": "Force-check connection", "confirm": "Run check" },
+        "delete": { "button": "Delete", "title": "Delete ERP connection", "confirm": "Delete permanently", "requiresHold": "Suspend the connection before it can be deleted." }
+      },
+      "modal": {
+        "reasonLabel": "Reason",
+        "reasonPlaceholder": "Why are you taking this action? (recorded in the audit log)",
+        "deleteWarning": "This permanently removes the connection and its imported data. The customer is notified and must set it up again to resume syncing.",
+        "deleteConfirmCheckbox": "I understand this permanently removes the connection."
+      },
+      "toast": {
+        "suspended": "Connection suspended.",
+        "unsuspended": "Operations hold lifted.",
+        "forceCheckRequested": "Force-check requested.",
+        "deleted": "Connection deleted.",
+        "actionError": "Action failed. Please try again."
       }
     }
   }

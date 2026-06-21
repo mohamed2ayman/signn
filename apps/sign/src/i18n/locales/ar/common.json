@@ -854,8 +854,38 @@
         "connection": "الاتصال",
         "vendor": "المزوّد",
         "status": "الحالة",
+        "hold": "تعليق المشغّل",
         "lastSync": "آخر مزامنة",
-        "error": "الخطأ"
+        "error": "الخطأ",
+        "actions": "إجراءات"
+      },
+      "heldAt": "تم التعليق في",
+      "suspendedBy": "مُعلّق بواسطة",
+      "systemActor": "النظام",
+      "unknownOperator": "غير معروف",
+      "holdState": {
+        "none": "—",
+        "operator_suspended": "مُعلّق بواسطة المشغّل",
+        "auto_suspended": "مُعلّق تلقائيًا"
+      },
+      "action": {
+        "suspend": { "button": "تعليق", "title": "تعليق اتصال ERP", "confirm": "تعليق" },
+        "unsuspend": { "button": "إلغاء التعليق", "title": "رفع تعليق العمليات", "confirm": "رفع التعليق" },
+        "forceCheck": { "button": "فحص فوري", "title": "فحص الاتصال فوريًا", "confirm": "تشغيل الفحص" },
+        "delete": { "button": "حذف", "title": "حذف اتصال ERP", "confirm": "حذف نهائيًا", "requiresHold": "يجب تعليق الاتصال قبل حذفه." }
+      },
+      "modal": {
+        "reasonLabel": "السبب",
+        "reasonPlaceholder": "لماذا تتخذ هذا الإجراء؟ (يُسجَّل في سجل التدقيق)",
+        "deleteWarning": "هذا يزيل الاتصال وبياناته المستوردة نهائيًا. يتم إشعار العميل وعليه إعداده من جديد لاستئناف المزامنة.",
+        "deleteConfirmCheckbox": "أفهم أن هذا يزيل الاتصال نهائيًا."
+      },
+      "toast": {
+        "suspended": "تم تعليق الاتصال.",
+        "unsuspended": "تم رفع تعليق العمليات.",
+        "forceCheckRequested": "تم طلب الفحص الفوري.",
+        "deleted": "تم حذف الاتصال.",
+        "actionError": "فشل الإجراء. حاول مرة أخرى."
       }
     }
   }

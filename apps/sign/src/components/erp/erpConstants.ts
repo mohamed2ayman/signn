@@ -67,3 +67,13 @@ export const JOB_STATUS_BADGE: Record<ErpSyncJobStatus, string> = {
 
 /** A job is still in flight (drives polling) when pending or running. */
 export const ACTIVE_JOB_STATUSES: ErpSyncJobStatus[] = ['pending', 'running'];
+
+/**
+ * Phase 7.28 v1.1 — operator-hold badge styling. Operator vs auto must read
+ * distinctly (red vs amber); `none` is muted (no hold).
+ */
+export const OPERATOR_HOLD_BADGE: Record<string, string> = {
+  none: 'bg-gray-100 text-gray-400',
+  operator_suspended: 'bg-red-100 text-red-700',
+  auto_suspended: 'bg-amber-100 text-amber-800',
+};
