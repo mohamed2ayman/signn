@@ -48,8 +48,8 @@ interface AdminSeed {
   organization_name?: string; // only for non-system-admin
 }
 
-function buildAdminUsers(): AdminSeed[] {
-  return [
+export function buildAdminUsers(): AdminSeed[] {
+  const users: AdminSeed[] = [
     {
       email: 'youssef141162@gmail.com',
       password: requireSeedPassword('SEED_ADMIN_PASSWORD_1'),
@@ -72,6 +72,25 @@ function buildAdminUsers(): AdminSeed[] {
       role: UserRole.SYSTEM_ADMIN,
     },
   ];
+
+  // OPT-IN dev/test account: a seeded OWNER_ADMIN attached to its own org so the
+  // Client Portal (incl. /app/erp-connections) can be exercised without manual
+  // registration. Appended ONLY when SEED_OWNER_ADMIN_PASSWORD is provided —
+  // absent/empty leaves seeding behaviour identical to before (the 3
+  // SYSTEM_ADMINs), so a missing var NEVER throws or aborts the other seeds.
+  // When provided, requireSeedPassword enforces the same min-12 rule (no fallback).
+  if (process.env.SEED_OWNER_ADMIN_PASSWORD?.trim()) {
+    users.push({
+      email: 'owner@sign.com',
+      password: requireSeedPassword('SEED_OWNER_ADMIN_PASSWORD'),
+      first_name: 'Owner',
+      last_name: 'Admin',
+      role: UserRole.OWNER_ADMIN,
+      organization_name: 'SIGN Test Organization',
+    });
+  }
+
+  return users;
 }
 
 export async function seedAdminUsers(dataSource: DataSource): Promise<void> {

@@ -193,6 +193,8 @@ import { dataSourceOptions } from './config/data-source';
         SEED_ADMIN_PASSWORD_1: Joi.string().min(12).optional(),
         SEED_ADMIN_PASSWORD_2: Joi.string().min(12).optional(),
         SEED_ADMIN_PASSWORD_3: Joi.string().min(12).optional(),
+        // Optional opt-in: when set (min 12), seeds the owner@sign.com OWNER_ADMIN test user.
+        SEED_OWNER_ADMIN_PASSWORD: Joi.string().min(12).optional(),
 
       }),
       validationOptions: {
