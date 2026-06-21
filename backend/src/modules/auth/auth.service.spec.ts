@@ -7,8 +7,10 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
+import { authenticator } from 'otplib';
 
 import { AuthService } from './auth.service';
+import { CryptoService } from '../../common/utils/crypto';
 import {
   User,
   UserRole,
@@ -138,6 +140,13 @@ const mockTokenBlacklistService = {
   isBlacklisted: jest.fn().mockResolvedValue(false),
 };
 
+// Phase 7.35 — a REAL CryptoService with a known test key so the MFA TOTP
+// encrypt/decrypt round-trip actually runs (not mocked). Key must be >= 32 chars.
+const TEST_ENC_KEY = 'auth-spec-mfa-totp-test-key-0123456789';
+const testCryptoService = new CryptoService({
+  get: (k: string) => (k === 'ERP_CREDENTIAL_ENC_KEY' ? TEST_ENC_KEY : undefined),
+} as unknown as ConstructorParameters<typeof CryptoService>[0]);
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Test suite
 // ─────────────────────────────────────────────────────────────────────────────
@@ -184,6 +193,7 @@ describe('AuthService', () => {
         { provide: UserAgentService,                        useValue: mockUserAgentService },
         { provide: SecurityEventService,                    useValue: mockSecurityEventService },
         { provide: TokenBlacklistService,                   useValue: mockTokenBlacklistService },
+        { provide: CryptoService,                           useValue: testCryptoService },
       ],
     }).compile();
 
@@ -250,6 +260,84 @@ describe('AuthService', () => {
       mockUserRepository.findOne.mockResolvedValue({ ...MOCK_USER, locked_until: lockedUntil });
       await expect(service.login(validDto))
         .rejects.toThrow(ForbiddenException);
+    });
+  });
+
+  // ─── Phase 7.35 — MFA TOTP secret encryption-at-rest ───────────────────────
+
+  describe('MFA TOTP secret encryption-at-rest (Phase 7.35)', () => {
+    it('setupMfaTotp stores a v1.-encrypted secret but returns the plaintext to the client', async () => {
+      mockUserRepository.findOne.mockResolvedValue({ ...MOCK_USER });
+
+      const result = await service.setupMfaTotp(MOCK_USER.id as string);
+
+      // The value persisted to the DB is the encrypted payload, NOT raw base32.
+      const stored = mockUserRepository.update.mock.calls[0][1].mfa_totp_secret as string;
+      expect(stored.startsWith('v1.')).toBe(true);
+
+      // The response still carries the plaintext secret (for QR / manual entry)...
+      expect(result.secret).toBeDefined();
+      expect(result.secret.startsWith('v1.')).toBe(false);
+      // ...and the stored payload decrypts back to exactly that plaintext.
+      expect(testCryptoService.decrypt(stored)).toBe(result.secret);
+    });
+
+    it('verifyMfa succeeds against an ENCRYPTED stored TOTP secret', async () => {
+      const secret = authenticator.generateSecret();
+      const token = authenticator.generate(secret);
+      mockUserRepository.findOne.mockResolvedValue({
+        ...MOCK_USER,
+        mfa_enabled: true,
+        mfa_method: 'totp',
+        mfa_totp_secret: testCryptoService.encrypt(secret),
+      });
+
+      const result = await service.verifyMfa({ email: MOCK_USER.email as string, otp_code: token });
+      expect(result).toHaveProperty('access_token');
+    });
+
+    it('enableMfaTotp succeeds against an ENCRYPTED stored TOTP secret', async () => {
+      const secret = authenticator.generateSecret();
+      const token = authenticator.generate(secret);
+      mockUserRepository.findOne.mockResolvedValue({
+        ...MOCK_USER,
+        mfa_totp_secret: testCryptoService.encrypt(secret),
+      });
+
+      const result = await service.enableMfaTotp(MOCK_USER.id as string, token);
+      expect(result).toHaveProperty('recovery_codes');
+      expect(mockUserRepository.update).toHaveBeenCalledWith(
+        MOCK_USER.id,
+        expect.objectContaining({ mfa_enabled: true, mfa_method: 'totp' }),
+      );
+    });
+
+    // ── Anti-lockout: dual-read must accept LEGACY PLAINTEXT (no v1. prefix) ──
+
+    it('verifyMfa ALSO succeeds against a LEGACY PLAINTEXT stored TOTP secret', async () => {
+      const secret = authenticator.generateSecret();
+      const token = authenticator.generate(secret);
+      mockUserRepository.findOne.mockResolvedValue({
+        ...MOCK_USER,
+        mfa_enabled: true,
+        mfa_method: 'totp',
+        mfa_totp_secret: secret, // raw plaintext — pre-migration row
+      });
+
+      const result = await service.verifyMfa({ email: MOCK_USER.email as string, otp_code: token });
+      expect(result).toHaveProperty('access_token');
+    });
+
+    it('enableMfaTotp ALSO succeeds against a LEGACY PLAINTEXT stored TOTP secret', async () => {
+      const secret = authenticator.generateSecret();
+      const token = authenticator.generate(secret);
+      mockUserRepository.findOne.mockResolvedValue({
+        ...MOCK_USER,
+        mfa_totp_secret: secret, // raw plaintext — pre-migration row
+      });
+
+      const result = await service.enableMfaTotp(MOCK_USER.id as string, token);
+      expect(result).toHaveProperty('recovery_codes');
     });
   });
 });

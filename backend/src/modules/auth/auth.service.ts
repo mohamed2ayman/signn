@@ -34,6 +34,7 @@ import { UserAgentService } from '../admin-security/services/user-agent.service'
 import { SecurityEventService } from '../admin-security/services/security-event.service';
 import { SECURITY_EVENT_TYPES } from '../../common/enums/security-event-types';
 import { TokenBlacklistService } from '../../common/services/token-blacklist.service';
+import { CryptoService } from '../../common/utils/crypto';
 import { baseEmailLayout } from '../notifications/templates/base-layout';
 import {
   RegisterDto,
@@ -88,7 +89,31 @@ export class AuthService {
     private readonly ua: UserAgentService,
     private readonly securityEvents: SecurityEventService,
     private readonly tokenBlacklist: TokenBlacklistService,
+    private readonly cryptoService: CryptoService,
   ) {}
+
+  // ─── Phase 7.35 — MFA TOTP secret encryption-at-rest helpers ────────────────
+
+  /**
+   * Encrypt a TOTP secret for at-rest storage (AES-256-GCM via CryptoService).
+   * Hard-fails (throws) if `ERP_CREDENTIAL_ENC_KEY` is missing/short — never
+   * stores plaintext silently.
+   */
+  private encryptTotp(plain: string): string {
+    return this.cryptoService.encrypt(plain);
+  }
+
+  /**
+   * Dual-read a stored TOTP secret — the anti-lockout control.
+   *
+   * A value WITHOUT the CryptoService `v1.` prefix is LEGACY PLAINTEXT (a row
+   * not yet converted by the 1759000000001 migration) and is returned as-is; a
+   * `v1.` value is decrypted. This makes the read path tolerant of BOTH states,
+   * so reads never throw regardless of code-deploy vs data-migration ordering.
+   */
+  private decryptTotp(stored: string): string {
+    return stored.startsWith('v1.') ? this.cryptoService.decrypt(stored) : stored;
+  }
 
   /**
    * Phase 7.18 bucket 1b-ii — issue a JWT pair for a freshly-minted
@@ -550,7 +575,7 @@ export class AuthService {
       }
       const isValid = authenticator.verify({
         token: dto.otp_code,
-        secret: user.mfa_totp_secret,
+        secret: this.decryptTotp(user.mfa_totp_secret),
       });
       if (!isValid) {
         throw new UnauthorizedException(GENERIC_ERROR);
@@ -695,9 +720,11 @@ export class AuthService {
     const appName = 'SIGN Platform';
     const otpauthUri = authenticator.keyuri(user.email, appName, secret);
 
-    // Store secret temporarily (will be confirmed on enable)
+    // Store secret temporarily (will be confirmed on enable). Encrypted at rest
+    // (Phase 7.35); the plaintext `secret` is still returned below for the QR /
+    // manual-entry — only the DB value is encrypted.
     await this.userRepository.update(userId, {
-      mfa_totp_secret: secret,
+      mfa_totp_secret: this.encryptTotp(secret),
     });
 
     // Generate QR code as data URL
@@ -723,7 +750,7 @@ export class AuthService {
     // Verify the TOTP code to confirm the user has scanned it correctly
     const isValid = authenticator.verify({
       token: totpCode,
-      secret: user.mfa_totp_secret,
+      secret: this.decryptTotp(user.mfa_totp_secret),
     });
     if (!isValid) {
       throw new BadRequestException(

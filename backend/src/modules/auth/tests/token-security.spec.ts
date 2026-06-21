@@ -23,6 +23,7 @@ import { GeoLookupService } from '../../admin-security/services/geo-lookup.servi
 import { UserAgentService } from '../../admin-security/services/user-agent.service';
 import { SecurityEventService } from '../../admin-security/services/security-event.service';
 import { TokenBlacklistService } from '../../../common/services/token-blacklist.service';
+import { CryptoService } from '../../../common/utils/crypto';
 import { SECURITY_EVENT_TYPES } from '../../../common/enums/security-event-types';
 
 /**
@@ -240,6 +241,9 @@ describe('AuthService — Phase 4.2 token security', () => {
         { provide: UserAgentService,                             useValue: mockUa },
         { provide: SecurityEventService,                         useValue: mockSecurityEventService },
         { provide: TokenBlacklistService,                        useValue: mockTokenBlacklist },
+        // Phase 7.35 — AuthService now depends on CryptoService (MFA TOTP at rest).
+        // These tests don't exercise TOTP, but DI requires the provider.
+        { provide: CryptoService,                                useValue: { encrypt: jest.fn(), decrypt: jest.fn() } },
       ],
     }).compile();
 

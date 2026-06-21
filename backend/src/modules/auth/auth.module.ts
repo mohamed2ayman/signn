@@ -16,6 +16,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
 import { UsersModule } from '../users/users.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { AdminSecurityModule } from '../admin-security/admin-security.module';
+import { CryptoModule } from '../../common/crypto/crypto.module';
 
 @Module({
   imports: [
@@ -41,6 +42,7 @@ import { AdminSecurityModule } from '../admin-security/admin-security.module';
     UsersModule,
     NotificationsModule,
     AdminSecurityModule,
+    CryptoModule, // exports CryptoService (encrypt MFA TOTP secret at rest, Phase 7.35)
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy],

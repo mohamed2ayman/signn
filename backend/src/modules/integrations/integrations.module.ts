@@ -3,7 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { BullModule } from '@nestjs/bull';
 
-import { CryptoService } from '../../common/utils/crypto';
+import { CryptoModule } from '../../common/crypto/crypto.module';
 import { User } from '../../database/entities';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { AdminSecurityModule } from '../admin-security/admin-security.module';
@@ -54,6 +54,7 @@ import { AdminErpController } from './controllers/admin-erp.controller';
     BullModule.registerQueue({ name: 'erp-sync-jobs' }),
     NotificationsModule, // exports NotificationDispatchService
     AdminSecurityModule, // exports SecurityEventService (immutable audit)
+    CryptoModule, // exports CryptoService (encrypt ERP credentials at rest)
   ],
   controllers: [ErpConnectionsController, AdminErpController],
   providers: [
@@ -72,7 +73,6 @@ import { AdminErpController } from './controllers/admin-erp.controller';
     ErpAdminService,
     ErpSyncProcessor,
     ErpEnabledGuard,
-    CryptoService,
   ],
   exports: [ErpConnectionService, ErpSyncService, ErpAdminService, ERP_CONNECTOR_REGISTRY],
 })
