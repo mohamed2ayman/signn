@@ -889,5 +889,98 @@
         "actionError": "Échec de l'action. Veuillez réessayer."
       }
     }
+  },
+  "guest": {
+    "readOnlyBadge": "Vue invité en lecture seule",
+    "poweredBy": "Propulsé par",
+    "loading": "Chargement du contrat partagé…",
+    "contractView": {
+      "firstParty": "Première partie",
+      "secondParty": "Deuxième partie",
+      "clauses": "Clauses",
+      "noClauses": "Aucune clause n'a encore été extraite de ce contrat.",
+      "watermark": "Lecture seule · Invité"
+    },
+    "clause": {
+      "showMore": "Afficher plus",
+      "showLess": "Afficher moins"
+    },
+    "commentCta": {
+      "title": "Vous souhaitez commenter ce contrat ?",
+      "body": "Définissez un mot de passe pour laisser des commentaires nominatifs. Votre accès reste limité à ce contrat.",
+      "button": "Définir un mot de passe pour commenter"
+    },
+    "identity": {
+      "title": "Définir un mot de passe pour commenter",
+      "subtitle": "Vous obtiendrez une identité invité limitée à ce contrat.",
+      "subtitleEmail": "Vous obtiendrez une identité invité pour {{email}}, limitée à ce contrat.",
+      "firstName": "Prénom",
+      "lastName": "Nom",
+      "optional": "(facultatif)",
+      "password": "Mot de passe",
+      "passwordHint": "Au moins 12 caractères, comprenant une lettre majuscule, un chiffre et un caractère spécial.",
+      "confirmPassword": "Confirmer le mot de passe",
+      "cancel": "Annuler",
+      "submit": "Créer l'identité invité",
+      "submitting": "Configuration en cours…",
+      "success": "Vous pouvez désormais commenter ce contrat.",
+      "errors": {
+        "weakPassword": "Le mot de passe doit comporter au moins 12 caractères et inclure une lettre majuscule, un chiffre et un caractère spécial.",
+        "mismatch": "Les mots de passe ne correspondent pas.",
+        "invalid": "Cette invitation n'est plus valable. Demandez un nouveau lien à l'expéditeur.",
+        "conflict": "Un compte existe déjà pour cette invitation, et le mot de passe ne correspond pas. Utilisez le mot de passe initial ou contactez l'expéditeur.",
+        "throttled": "Trop de tentatives. Veuillez patienter une minute et réessayer.",
+        "generic": "Impossible de définir votre mot de passe pour le moment. Veuillez réessayer."
+      },
+      "blocked": {
+        "title": "Cette invitation ne peut pas être utilisée pour configurer l'accès",
+        "body": "Elle ne peut plus servir à configurer l'accès aux commentaires — elle a peut-être déjà été utilisée ou a expiré. Si vous avez déjà configuré votre accès, rouvrez votre lien d'invitation d'origine ; sinon, contactez la personne qui vous a invité.",
+        "dismiss": "Compris"
+      }
+    },
+    "comments": {
+      "heading": "Commentaires",
+      "placeholder": "Ajouter un commentaire sur ce contrat…",
+      "post": "Publier le commentaire",
+      "posting": "Publication en cours…",
+      "empty": "Aucun commentaire pour l'instant. Soyez le premier à commenter.",
+      "badge": "Invité",
+      "defaultName": "Invité",
+      "seedContent": "(votre commentaire)",
+      "success": "Commentaire publié.",
+      "errors": {
+        "sessionExpired": "Votre session invité a expiré. Rechargez la page pour commenter à nouveau.",
+        "throttled": "Trop de commentaires en peu de temps. Veuillez patienter un instant.",
+        "generic": "Impossible de publier votre commentaire. Veuillez réessayer."
+      }
+    },
+    "errorScreen": {
+      "reload": "Recharger",
+      "learnMore": "En savoir plus sur SIGN",
+      "noToken": {
+        "title": "Lien d'invitation manquant",
+        "body": "Cette page nécessite un lien d'invitation valide. Veuillez ouvrir le lien figurant dans votre e-mail d'invitation."
+      },
+      "invalid": {
+        "title": "Ce lien d'invitation est invalide ou a expiré",
+        "body": "Le lien a peut-être été mal saisi, déjà utilisé ou révoqué. Demandez une nouvelle invitation à l'expéditeur."
+      },
+      "expired": {
+        "title": "Votre session de consultation a expiré",
+        "body": "Pour des raisons de sécurité, les sessions de consultation invité sont de courte durée. Rechargez la page pour démarrer une nouvelle session à partir du même lien."
+      },
+      "notFound": {
+        "title": "Ce lien d'invitation est invalide ou a expiré",
+        "body": "Le lien a peut-être été mal saisi, déjà utilisé ou révoqué. Demandez une nouvelle invitation à l'expéditeur."
+      },
+      "throttled": {
+        "title": "Trop de tentatives",
+        "body": "Vous avez ouvert ce lien plusieurs fois en peu de temps. Veuillez patienter une minute et réessayer."
+      },
+      "unknown": {
+        "title": "Une erreur est survenue",
+        "body": "Nous n'avons pas pu charger ce contrat partagé pour le moment. Veuillez réessayer dans un instant."
+      }
+    }
   }
 }
