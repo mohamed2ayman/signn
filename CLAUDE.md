@@ -1,7 +1,7 @@
 # CLAUDE.md — Project Intelligence File
 > Read this entire file at the start of every Claude Code session before touching any code.
 > This file is the single source of truth for all architectural decisions, rules, and context.
-> Last updated: 2026-06-16 (Encryption-at-rest `CryptoService` shipped — PR #73 squash-merged to `main` at `b36b3d0` — AES-256-GCM util at `backend/src/common/utils/crypto.ts`, the first encryption-at-rest primitive; key `ERP_CREDENTIAL_ENC_KEY` (Joi `string().min(32).optional().allow('')`), SHA-256-derived to 32 bytes, random IV per call, auth-tag-verified. New bottom-of-file "Encryption-at-Rest Utility — CryptoService" section; lesson #169; 7.28 reframed to a per-org connector registry (import-only v1); new task 7.35 to encrypt the existing plaintext MFA TOTP + DocuSign RSA secrets. Prior 2026-06-10: Phase 7.27 Legal Corpus shipped end-to-end (local branch `feature/7-27-legal-corpus`, pending push/merge) — country-agnostic `legal_documents`/`legal_document_chunks`/`legal_sources` schema with pgvector HNSW; full ingestion pipeline (StorageService → text extraction with a force-OCR branch for broken-font PDFs → NFKC + optional Arabic visual→logical reversal → tiktoken-capped article-boundary chunking → OpenAI text-embedding-3-small → bulk vector write), jurisdiction-scoped retrieval, and AI Chat wired as the first consumer with async polling. Per-source flags `is_visual_order`/`force_ocr` handle per-country quirks; Egyptian Tax Authority seeded (force_ocr=true). Phase D verified GREEN on Egyptian Civil Code 131/1948; Phase E + async chat verified GREEN via UI (Arabic force-majeure → grounded answer citing Civil Code Articles 215/217/373). New bottom-of-file "Phase 7.27 — Legal Corpus (shipped 2026-06-10)" section; lessons #153–#167. Prior: Phase 7.18 Part 2 shipped — managing-user compliance run is the FIRST wired metering consumer. PR #49 squash-merged at `49f785f` on top of engine PR #46 (`9200f38`). Async reconcile shape: reserve in-request behind the #45 access wall, commit/release in `refreshFromAi` + both synchronous fail paths, sweeper backstop for never-polled runs; `reservation_id` on `compliance_checks` via additive migration `1754000000001`; four ops-search log signals (`metering.compliance.{committed_after_release|released_after_terminal|commit_error|release_error}`); engine code UNTOUCHED. Rule 9 parenthetical updated. New bottom-of-file "Phase 7.18 Part 2 — Compliance metering consumer" section. Staging gate (G.1–G.7) reframed as a **Phase 9 release-gate, NOT a merge-gate** — runbook stays in `docs/metering-part2-staging-gate.md`. NO new lessons added — substantive Part 2 lessons (TTL-vs-p99, sweeper-at-scale) need real load, deferred to Phase 9. ContractShare Step 1 deprecation shipped — dead public token endpoint removed, broken external email path removed, cross-tenant info disclosure in `getSharesByContract()` fixed, frontend external sharing gated with "coming soon" message. Lesson #152. Phase 7.18 metering engine primitive shipped — commit `dc31bb6` on `feat/metering-primitive-7.18`. Schema + allowance resolver + MeteringService authority (reserve/commit/release) + dangling-reserve sweeper + READ COMMITTED startup invariant. 20 real-Postgres concurrency + precedence tests; full backend suite 430/430. ENGINE ONLY — no consumer wiring (Part 2). See "Metering Engine Invariants — Phase 7.18 (shipped 2026-06-04)" section at the bottom; new ARCHITECTURE RULES Rule 9 is the spine pointer. Lessons #148–#150 capture the engine-earned discipline (TypeORM 0.3 `[rows, rowCount]` shape, read-then-write transitions, existence-check-then-insert idempotency race). Phase 7.26 shipped — Track A complete. 12 missing i18n keys added across EN and AR locales; FR was already structurally complete. Track B (legal page localization) deferred pending legal team translated content. Phase 7.25 fully documented (PR #41). **CRITICAL** — Phase 3.4 compliance PDF reports + Phase 4 ExportService contract PDFs are CURRENTLY BROKEN by the same pdfmake v0.1 require pattern 2c just fixed; see Critical Known Bugs + lesson #142, HIGH priority. Internal Contract Sharing fix shipped (PR #44) — cross-tenant bug in `createShare()` fixed + ProjectMember creation + notification dispatch + org-member autocomplete.)
+> Last updated: 2026-06-21 (Phase 7.28 ERP Integration shipped end-to-end — v1 + v1.1, PRs #79–#83. Per-org connector registry (vendor→adapter via Symbol DI), neutral cost model (`erp_cost_records`), Bull-queue sync (import-only), Mock + SAP-skeleton adapters; Client Portal "ERP Connections" screen + Admin "ERP Health" dashboard; v1.1 operator control (suspend/unsuspend/force-check/guarded-delete), actor-tracked hold state machine (`operator_suspended` vs `auto_suspended`), automatic consecutive-failure circuit-breaker, reason-required immutable audit + OWNER_ADMIN notification, "who suspended" on the admin list. Feature-flagged OFF by default (`ERP_INTEGRATION_ENABLED`); migrations `1757000000001` + `1758000000001`. New bottom-of-file "ERP Integration — Phase 7.28 (shipped, v1 + v1.1)" section; lessons #170–#171; NEXT_PHASES 7.28 marked complete + new follow-on tasks 7.37–7.41 added. Prior 2026-06-16: Encryption-at-rest `CryptoService` shipped — PR #73 squash-merged to `main` at `b36b3d0` — AES-256-GCM util at `backend/src/common/utils/crypto.ts`, the first encryption-at-rest primitive; key `ERP_CREDENTIAL_ENC_KEY` (Joi `string().min(32).optional().allow('')`), SHA-256-derived to 32 bytes, random IV per call, auth-tag-verified. New bottom-of-file "Encryption-at-Rest Utility — CryptoService" section; lesson #169; 7.28 reframed to a per-org connector registry (import-only v1); new task 7.35 to encrypt the existing plaintext MFA TOTP + DocuSign RSA secrets. Prior 2026-06-10: Phase 7.27 Legal Corpus shipped end-to-end (local branch `feature/7-27-legal-corpus`, pending push/merge) — country-agnostic `legal_documents`/`legal_document_chunks`/`legal_sources` schema with pgvector HNSW; full ingestion pipeline (StorageService → text extraction with a force-OCR branch for broken-font PDFs → NFKC + optional Arabic visual→logical reversal → tiktoken-capped article-boundary chunking → OpenAI text-embedding-3-small → bulk vector write), jurisdiction-scoped retrieval, and AI Chat wired as the first consumer with async polling. Per-source flags `is_visual_order`/`force_ocr` handle per-country quirks; Egyptian Tax Authority seeded (force_ocr=true). Phase D verified GREEN on Egyptian Civil Code 131/1948; Phase E + async chat verified GREEN via UI (Arabic force-majeure → grounded answer citing Civil Code Articles 215/217/373). New bottom-of-file "Phase 7.27 — Legal Corpus (shipped 2026-06-10)" section; lessons #153–#167. Prior: Phase 7.18 Part 2 shipped — managing-user compliance run is the FIRST wired metering consumer. PR #49 squash-merged at `49f785f` on top of engine PR #46 (`9200f38`). Async reconcile shape: reserve in-request behind the #45 access wall, commit/release in `refreshFromAi` + both synchronous fail paths, sweeper backstop for never-polled runs; `reservation_id` on `compliance_checks` via additive migration `1754000000001`; four ops-search log signals (`metering.compliance.{committed_after_release|released_after_terminal|commit_error|release_error}`); engine code UNTOUCHED. Rule 9 parenthetical updated. New bottom-of-file "Phase 7.18 Part 2 — Compliance metering consumer" section. Staging gate (G.1–G.7) reframed as a **Phase 9 release-gate, NOT a merge-gate** — runbook stays in `docs/metering-part2-staging-gate.md`. NO new lessons added — substantive Part 2 lessons (TTL-vs-p99, sweeper-at-scale) need real load, deferred to Phase 9. ContractShare Step 1 deprecation shipped — dead public token endpoint removed, broken external email path removed, cross-tenant info disclosure in `getSharesByContract()` fixed, frontend external sharing gated with "coming soon" message. Lesson #152. Phase 7.18 metering engine primitive shipped — commit `dc31bb6` on `feat/metering-primitive-7.18`. Schema + allowance resolver + MeteringService authority (reserve/commit/release) + dangling-reserve sweeper + READ COMMITTED startup invariant. 20 real-Postgres concurrency + precedence tests; full backend suite 430/430. ENGINE ONLY — no consumer wiring (Part 2). See "Metering Engine Invariants — Phase 7.18 (shipped 2026-06-04)" section at the bottom; new ARCHITECTURE RULES Rule 9 is the spine pointer. Lessons #148–#150 capture the engine-earned discipline (TypeORM 0.3 `[rows, rowCount]` shape, read-then-write transitions, existence-check-then-insert idempotency race). Phase 7.26 shipped — Track A complete. 12 missing i18n keys added across EN and AR locales; FR was already structurally complete. Track B (legal page localization) deferred pending legal team translated content. Phase 7.25 fully documented (PR #41). **CRITICAL** — Phase 3.4 compliance PDF reports + Phase 4 ExportService contract PDFs are CURRENTLY BROKEN by the same pdfmake v0.1 require pattern 2c just fixed; see Critical Known Bugs + lesson #142, HIGH priority. Internal Contract Sharing fix shipped (PR #44) — cross-tenant bug in `createShare()` fixed + ProjectMember creation + notification dispatch + org-member autocomplete.)
 
 ---
 
@@ -3953,3 +3953,74 @@ key forces a high-entropy secret).
 3. **Encrypted credential fields are decrypted ONLY inside the worker at use time, and
    NEVER returned on an API response** (`@Exclude()` on the entity field, same convention
    as the existing MFA/secret fields).
+
+---
+
+## ERP Integration — Phase 7.28 (shipped, v1 + v1.1)
+
+Per-org ERP integration (SAP / Oracle Primavera / Dynamics), import-only in v1.
+Shipped end-to-end across PRs #73 (CryptoService prereq) · #79 (Part 1 backend) ·
+#80 (Part 2a Client Portal) · #81 (Part 2b Admin Health) · #82 (v1.1 Part A
+operator-control backend + circuit-breaker) · #83 (v1.1 Part B admin UI +
+"who suspended"). Migrations `1757000000001-AddErpIntegration` (base) +
+`1758000000001-AddErpOperatorControl` (operator-hold state machine). Module:
+`backend/src/modules/integrations/`.
+
+### Architecture
+- **Per-org connector registry** — vendors map to adapters via Symbol DI tokens
+  (`ERP_CONNECTOR_REGISTRY` / `ERP_CONNECTORS`, `useFactory`; lesson #113). The adapter
+  is resolved at job time from the org's `erp_connections.vendor` row — NOT a global
+  `ERP_PROVIDER` env var. Different orgs run different ERPs simultaneously. Adding a new
+  ERP = one adapter file + one registry entry, zero core-engine changes.
+- **Capability descriptors** — each adapter declares what it supports (import cost,
+  export, health-check, field auto-discover); unsupported capabilities are flagged, not
+  silently no-op'd. Mock adapter (dev/test) + SAP cost skeleton (capability-flagged,
+  real API calls deferred to task 7.38).
+- **Neutral cost model** (`erp_cost_records`) — vendor-agnostic; per-connection field
+  mapping translates each ERP's raw field names into the neutral shape.
+- **Sync via Bull queue** — async, import-only. Credentials encrypted at rest
+  (CryptoService), decrypted ONLY inside the worker, never returned on any API response.
+- **Operator-hold state machine** — `operator_hold_state`: `none` →
+  `operator_suspended` (set by a SYSTEM_ADMIN) vs `auto_suspended` (set by the
+  circuit-breaker). Tracks `hold_reason`, `hold_by_user_id` (FK users SET NULL; null for
+  auto-holds), `hold_at`. The customer-facing response exposes the state/reason/at but
+  NEVER `hold_by_user_id`; the admin list resolves the operator's name/email via a single
+  batched user lookup ("who suspended").
+- **Circuit-breaker** — consecutive-failure model. `consecutive_failures` increments on
+  each failed check and resets to 0 on success; at the threshold the connection is
+  auto-suspended (`auto_suspended`, actor = SYSTEM).
+- **Operator control surface** (`/admin/erp/*`, SYSTEM_ADMIN) — suspend / unsuspend /
+  force-check / guarded-delete (delete rejected unless the connection is on hold). Every
+  action is reason-required, immutably audited (state + audit in one transaction via
+  `SecurityEventService.recordAtomic`), and the target org's OWNER_ADMINs are notified
+  (suspend / restore / remove — email + in-app). On remove, recipients are resolved
+  BEFORE the hard delete and dispatched AFTER it commits (lesson #171).
+
+### Env vars
+- `ERP_INTEGRATION_ENABLED` (default **false**) — master flag; OFF hides every ERP route
+  (customer + admin) behind `ErpEnabledGuard`.
+- `ERP_CIRCUIT_BREAKER_ENABLED` (default **true**) — toggles the auto-suspend breaker.
+- `ERP_CIRCUIT_BREAKER_THRESHOLD` (default **5**) — consecutive failures before auto-suspend.
+- `ERP_CREDENTIAL_ENC_KEY` — the CryptoService key used to encrypt connection credentials
+  (see the CryptoService section above; must be high-entropy random).
+
+### Hard rules — never violate
+1. **Operators govern PERMISSION TO OPERATE; customers own identity / config /
+   credentials / data.** Operators never see, enter, or edit a customer's credentials, and
+   never trigger a sync on a customer's behalf as if they were the customer. Operator
+   power is limited to suspend / unsuspend / force-check (a health probe, no cost write) /
+   guarded-delete.
+2. **Every operator action is reason-required + immutably audited + customer-notified.**
+   The reason DTO is mandatory; the audit row and the state change are written in one
+   transaction; the target org's OWNER_ADMINs are notified best-effort (never roll back
+   the action on a notify failure — lesson #114 / #171).
+3. **The customer cannot clear an operator/auto hold.** A held connection
+   (`operator_suspended` or `auto_suspended`) rejects the customer's `enabled=true` /
+   trigger-sync with a `ForbiddenException`. Only a SYSTEM_ADMIN unsuspend (or a
+   successful force-check resetting the breaker) lifts a hold.
+4. **ERP connections are org-scoped, NOT contract-scoped** — they carry
+   `organization_id` directly, so they are outside the Option B contract chokepoint.
+   Cross-tenant SYSTEM_ADMIN authority is made safe by role-gate + reason-required audit
+   (the `admin-organizations` precedent), not a repository wall. Verify with the
+   contract-repo lint gate (exit 0, no exemption needed) before assuming the chokepoint
+   applies. See lessons #170 and #171.
