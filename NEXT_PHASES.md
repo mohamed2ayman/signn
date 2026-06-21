@@ -1,5 +1,5 @@
 # SIGN Platform — Development Roadmap
-> Last updated: 2026-06-04
+> Last updated: 2026-06-21 (Phase 7.28 ERP Integration shipped end-to-end — v1 + v1.1; new follow-on tasks 7.37–7.41 added)
 > Next review: When 7.5-7.8 are cleared; 9.2 AWS setup planning starts
 > Maintained by: Ayman & Youssef
 > Market: Arabic, English, French (Middle East + Global)
@@ -804,15 +804,30 @@ block schema.
 
 ---
 
-### 7.28 — ERP System Integration (SAP / Oracle / Primavera / Dynamics) — per-org connector registry, import-only v1
-**Owner:** Ayman + Youssef | **Priority:** 🟡 MEDIUM | **Status:** 🔄 In progress — crypto prerequisite shipped (PR #73, 2026-06-16)
-- Integration layer is a PER-ORG CONNECTOR REGISTRY (vendor→adapter; adapters self-register), resolved at job time from the org's `erp_connections.vendor` row — NOT a single global `ERP_PROVIDER` env var. Different orgs use different ERPs simultaneously (Org A on SAP, Org B on P6), so one global driver cannot express the selection. Adding a new ERP = one adapter file + one registry entry, zero changes to the core sync engine / neutral model / queue / dashboard. (Supersedes the original "Abstract integration layer (`ERP_PROVIDER` env var)" wording — investigation 2026-06-16.)
-- SAP first (Egyptian government + large contractors)
-- Oracle Primavera P6 (most common MENA construction scheduling tool)
-- Microsoft Dynamics 365 (mid-size contractors)
-- Export milestones/payment terms to ERP project schedules
-- Import cost data from ERP for claims and variation analysis
-- ERP sync status dashboard in admin portal
+### ✅ 7.28 — ERP System Integration (SAP / Oracle / Primavera / Dynamics) — per-org connector registry, import-only — COMPLETE (v1 + v1.1)
+**Owner:** Ayman + Youssef | **Priority:** 🟡 MEDIUM | **Status:** ✅ Complete (v1 + v1.1) — shipped 2026-06-21
+**PRs:** #73 (CryptoService prereq) · #75 (docs) · #79 (Part 1 backend) · #80 (Part 2a Client Portal) · #81 (Part 2b Admin Health) · #82 (v1.1 Part A operator-control backend + circuit-breaker) · #83 (v1.1 Part B admin UI + "who suspended")
+**Migrations:** `1757000000001-AddErpIntegration` (ERP base) · `1758000000001-AddErpOperatorControl` (operator-hold state machine)
+**Feature flag:** OFF by default — `ERP_INTEGRATION_ENABLED` must be `true` to expose any ERP route (customer or admin).
+
+**What shipped (v1 — backend + both screens):**
+- PER-ORG CONNECTOR REGISTRY (vendor→adapter via Symbol DI tokens; adapters self-register), resolved at job time from the org's `erp_connections.vendor` row — NOT a single global `ERP_PROVIDER` env var. Different orgs use different ERPs simultaneously (Org A on SAP, Org B on P6). Adding a new ERP = one adapter file + one registry entry, zero changes to the core sync engine / neutral model / queue / dashboard.
+- Neutral cost model (`erp_cost_records`) — vendor-agnostic; per-connection field mapping translates each ERP's raw field names into the neutral shape.
+- Sync engine + Bull queue (async, import-only v1). Credentials encrypted at rest (CryptoService), decrypted ONLY inside the worker, never returned on any API response.
+- Adapters: Mock (dev/test) + SAP cost skeleton (capability-flagged; real API calls deferred — see 7.38).
+- Client Portal "ERP Connections" screen (Part 2a) — customer owns identity/config/credentials/field-mapping; enable/disable + trigger sync.
+- Admin "ERP Health" dashboard (Part 2b) — SYSTEM_ADMIN cross-tenant read of every org's connection state.
+
+**What shipped (v1.1 — operator control + resilience):**
+- Operator actions: suspend / unsuspend / force-check / guarded-delete (delete rejected unless the connection is on hold).
+- Actor-tracked hold state machine: `none` → `operator_suspended` (a SYSTEM_ADMIN) vs `auto_suspended` (the circuit-breaker). The customer can re-enable ONLY a connection that is not held.
+- Automatic circuit-breaker — consecutive-failure model (`ERP_CIRCUIT_BREAKER_ENABLED`, `ERP_CIRCUIT_BREAKER_THRESHOLD`); auto-suspends at the threshold, resets the counter on a successful check.
+- Every operator action is reason-required, immutably audited (state + audit written in one transaction), and the target org's OWNER_ADMINs are notified (suspend/restore/remove — email + in-app). Delete resolves recipients BEFORE the hard delete and dispatches AFTER it commits (lesson #171).
+- "Who suspended" surfaced on the admin list — the operator's name/email (or "System" for auto-holds) resolved via a single batched user lookup; the customer-facing response NEVER exposes `hold_by_user_id`.
+
+**Cross-tenant safety:** ERP connections are org-scoped (carry `organization_id` directly), so they are NOT behind the Option B contract chokepoint. SYSTEM_ADMIN cross-tenant authority is made safe by role-gate + reason-required immutable audit (the `admin-organizations` precedent), verified by the contract-repo lint gate (exit 0, no exemption needed). See lesson #170.
+
+**Remaining follow-ons:** 7.37 (entitlement) · 7.38 (working SAP adapter) · 7.39 (export direction) · 7.40 (schedule-linkage consumer) · 7.41 (mapping auto-discover). Task 7.35 (encrypt legacy plaintext secrets) reuses the same CryptoService.
 
 ---
 
@@ -970,6 +985,47 @@ No ContractClauseScopedRepository exists yet — that subclass is the unit that 
 
 **Definition of done:** ContractClause reads chokepointed; loadClauses resolved; zero
 "migration scheduled" annotations remain in the ContractClause surface; lint exit 0; suite green.
+
+---
+
+### 7.37 — ERP Feature Entitlement (per-package + per-org on/off)
+**Owner:** Ayman | **Priority:** 🟡 MEDIUM | **Status:** ❌ Not started
+**Depends on:** 7.28 ✅ (ERP Integration v1 + v1.1)
+- Add a second operator layer ABOVE connection control: entitlement decides WHETHER an org may use ERP integration at all (per subscription package + per-org override) — distinct from connection control (suspend/unsuspend a specific live connection).
+- Two clean layers: entitlement ("may this org have ERP at all?") vs connection control ("is this org's existing connection allowed to operate right now?").
+- Surfaces in the admin portal; gates the Client Portal "ERP Connections" screen behind the entitlement, not just the `ERP_INTEGRATION_ENABLED` global flag.
+
+---
+
+### 7.38 — Working SAP Cost Adapter
+**Owner:** Ayman | **Priority:** 🟡 MEDIUM | **Status:** ❌ Not started
+**Depends on:** 7.28 ✅ · live SAP credentials + deployment
+- Replace the SAP cost skeleton (capability-flagged, currently throws) with real SAP API calls returning live cost data into the neutral `erp_cost_records` model.
+- Needs live SAP creds and a deployed environment to exercise end-to-end; the registry / queue / model / dashboard need zero changes (one adapter file).
+
+---
+
+### 7.39 — ERP Export Direction (push to ERP)
+**Owner:** Ayman | **Priority:** 🟢 LOW | **Status:** ❌ Not started
+**Depends on:** 7.28 ✅
+- The import-only counterpart: push milestones / payment terms FROM SIGN INTO the ERP project schedule.
+- Currently a capability-flagged skeleton on the connector interface; build the real export path + per-vendor mapping.
+
+---
+
+### 7.40 — ERP Schedule-Linkage Consumer
+**Owner:** Ayman | **Priority:** 🟢 LOW | **Status:** ❌ Not started
+**Depends on:** 7.28 ✅ · 7.1 ✅ (Obligations)
+- The `obligations.external_activity_ref` column already exists; build the consumer that uses it for early-warning (link an obligation to an ERP schedule activity and surface slippage).
+- Column is shipped; only the consumer is missing.
+
+---
+
+### 7.41 — ERP Mapping Field Auto-Discover
+**Owner:** Ayman | **Priority:** 🟢 LOW | **Status:** ❌ Not started
+**Depends on:** 7.28 ✅
+- Let customers pick ERP field names from a discovered list (introspect the connected ERP) instead of hand-typing field names in the connection's mapping config.
+- Reduces mapping errors; depends on each adapter exposing a "list available fields" capability.
 
 ---
 
@@ -1286,7 +1342,7 @@ No new env vars required for existing local dev deployments.
 | — | CONTRACTOR_* Audit | ✅ Audited — removal blocked until 7.18 | A | 2026-06-04 |
 | — | ContractShare Step 1 — dead endpoint + broken email + org-scope fix | ✅ Complete | A | 2026-06-05 |
 | 7.27 | Legal Corpus | ✅ Complete (feature/7-27-legal-corpus, pending push) | A | 2026-06-10 |
-| 7.28 | ERP Integration (per-org connector registry, import-only v1) | 🔄 In progress — crypto prereq shipped (PR #73) | A+Y | 2026-06-16 |
+| 7.28 | ERP Integration (per-org connector registry, import-only; + v1.1 operator control) | ✅ Complete (v1 + v1.1, PRs #79–#83) | A+Y | 2026-06-21 |
 | 7.29 | Settlement Checkbox | ❌ Not started | Y | |
 | 7.30 | Clause Library | ✅ Complete | A | |
 | 7.31 | Frontend Tests | ⚠️ Partial (44) | Y | |
@@ -1294,6 +1350,11 @@ No new env vars required for existing local dev deployments.
 | 7.33 | Self-Service Generation | ❌ Not started | Y | |
 | 7.34 | Owner/Insurer Portal | ❌ Not started | Y+A | |
 | 7.35 | Encrypt Plaintext Secrets (MFA TOTP + DocuSign RSA) | ❌ Not started | A | |
+| 7.37 | ERP Feature Entitlement (per-package + per-org) | ❌ Not started | A | |
+| 7.38 | Working SAP Cost Adapter | ❌ Not started | A | |
+| 7.39 | ERP Export Direction (push to ERP) | ❌ Not started | A | |
+| 7.40 | ERP Schedule-Linkage Consumer | ❌ Not started | A | |
+| 7.41 | ERP Mapping Field Auto-Discover | ❌ Not started | A | |
 | 6B.1 | Visual Confidentiality | ❌ After Phase 7 | Y | |
 | 6B.2 | Invisible Watermarks | ❌ After Phase 7 | Y | |
 | 8 | AI Migration | ❌ Not started | A+Y | |
