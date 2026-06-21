@@ -7,6 +7,9 @@ import { randomUUID } from 'crypto';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 
 import { CryptoService } from '../../../common/utils/crypto';
+import { SecurityEventService } from '../../admin-security/services/security-event.service';
+import { NotificationDispatchService } from '../../notifications/notification-dispatch.service';
+import { User } from '../../../database/entities';
 import { ErpConnection } from '../entities/erp-connection.entity';
 import { ErpFieldMapping } from '../entities/erp-field-mapping.entity';
 import { ErpSyncJob } from '../entities/erp-sync-job.entity';
@@ -22,6 +25,7 @@ import {
 } from '../connectors/erp-connector.interface';
 import { ErpConnectionService } from '../services/erp-connection.service';
 import { ErpSyncService } from '../services/erp-sync.service';
+import { ErpAdminService } from '../services/erp-admin.service';
 import { ErpSyncJobStatus } from '../entities/erp-sync-job.entity';
 
 // ─── CI-skip guard (LOUD) ─────────────────────────────────────────────────
@@ -79,11 +83,18 @@ describeReal('ERP sync engine (real Postgres)', () => {
           ErpFieldMapping,
           ErpSyncJob,
           ErpCostRecord,
+          User, // ErpAdminService.userRepo (resolves "who suspended")
         ]),
       ],
       providers: [
         ErpConnectionService,
         ErpSyncService,
+        // ErpSyncService depends on ErpAdminService (v1.1 circuit-breaker
+        // auto-suspend). ErpAdminService needs the User repo (above),
+        // SecurityEventService (real — DataSource-only), the erp-sync queue
+        // (mocked below), and NotificationDispatchService (mocked below).
+        ErpAdminService,
+        SecurityEventService,
         CryptoService,
         MockErpConnector,
         SapCostConnector,
@@ -93,6 +104,9 @@ describeReal('ERP sync engine (real Postgres)', () => {
           inject: [MockErpConnector, SapCostConnector],
         },
         { provide: ERP_CONNECTOR_REGISTRY, useClass: ErpConnectorRegistry },
+        // Mock dispatch (no Redis email queue) — never fires in these tests
+        // (failure threshold isn't crossed), but required for DI.
+        { provide: NotificationDispatchService, useValue: { dispatch: jest.fn() } },
         // Mock queue — call executeJob() directly; no Redis, no processor race.
         { provide: getQueueToken('erp-sync-jobs'), useValue: { add: jest.fn() } },
       ],
@@ -116,6 +130,12 @@ describeReal('ERP sync engine (real Postgres)', () => {
 
   afterAll(async () => {
     if (dataSource?.isInitialized) {
+      // Defensive: a tripped circuit-breaker would write an audit row (none of
+      // these tests cross the threshold, but clean first to satisfy the FK).
+      await dataSource.query(
+        `DELETE FROM audit_logs WHERE organization_id = ANY($1)`,
+        [[orgId, orgBId]],
+      );
       // Cascade removes connections → mappings, jobs, cost records.
       await dataSource.query(
         `DELETE FROM erp_connections WHERE organization_id = ANY($1)`,
