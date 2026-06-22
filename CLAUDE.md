@@ -607,7 +607,7 @@ All work is local development only.
 3. **Guest Portal is a stub** — treat `/contractor/*` as not built. Needs full planning session before building.
 4. **~~No automated tests~~** — resolved in Phase 2: 49 tests across all 3 services (33 backend, 8 frontend, 8 AI pipeline). Backend count now 87 as of Phase 7.4 (PR #29).
 5. **~~No CI pipeline~~** — resolved in Phase 2: GitHub Actions CI runs on every push and PR to main (3 parallel jobs).
-6. **🔴 HIGH PRIORITY — Compliance + Export PDF services are CURRENTLY BROKEN** (discovered Phase 7.17 Prompt 2c). `backend/src/modules/compliance/services/pdf-report.service.ts` and `backend/src/modules/export/export.service.ts` both use the `require('pdfmake')` + `new PdfPrinter(...)` pattern from pdfmake v0.1.x. The installed version is `pdfmake@0.3.7` where the main export is an INSTANCE, not a class. Both services WILL throw `TypeError: PdfPrinter is not a constructor` the moment they are triggered end-to-end. Shipped features (Phase 3.4 compliance reports — COMPLIANCE_SUMMARY / OBLIGATIONS_REPORT / JURISDICTION_CONFLICT — and ExportService's contract-PDF endpoint) currently DO NOT WORK. Mechanically-identical fix proven for 2c renderer in commit `d4dc54a`: `require('pdfmake/js/Printer').default` + `require('pdfmake/js/URLResolver').default` + `await printer.createPdfKitDocument(...)`. Each service gets its OWN small PR. Do NOT file as housekeeping — this is production-breaking known state with a cheap, urgent fix. See lesson #142.
+6. **🔴 HIGH PRIORITY — Compliance PDF service still BROKEN; Export PDF service FIXED (PR #92)** (discovered Phase 7.17 Prompt 2c). `backend/src/modules/compliance/services/pdf-report.service.ts` STILL uses the `require('pdfmake')` + `new PdfPrinter(...)` pattern from pdfmake v0.1.x. The installed version is `pdfmake@0.3.7` where the main export is an INSTANCE, not a class, so it WILL throw `TypeError: PdfPrinter is not a constructor` the moment it is triggered end-to-end — the shipped Phase 3.4 compliance reports (COMPLIANCE_SUMMARY / OBLIGATIONS_REPORT / JURISDICTION_CONFLICT) currently DO NOT WORK. **`backend/src/modules/export/export.service.ts` is now FIXED (PR #92, merged `46eb075`)** — its render method is the now-async `createPdfBuffer()` (formerly the broken `toBuffer()`), rebuilt on the 0.3.x pattern (`require('pdfmake/js/Printer').default` + `require('pdfmake/js/URLResolver').default` + `new URLResolver(null)` + `await printer.createPdfKitDocument(...)`), with a no-mock `%PDF` integration test; ExportService's contract-PDF endpoint works again. The remaining compliance fix is mechanically identical (proven for the 2c renderer in commit `d4dc54a`) and gets its OWN small PR. Do NOT file as housekeeping — this is production-breaking known state with a cheap, urgent fix. See lesson #142.
 
 ### Local Development Workarounds (before deployment)
 | Integration | Free Local Workaround |
@@ -641,7 +641,7 @@ All work is local development only.
 | # | Issue | Severity | Fix | Reference |
 |---|-------|----------|-----|-----------|
 | 1 | `compliance/services/pdf-report.service.ts` uses broken pdfmake v0.1 require pattern — `TypeError: PdfPrinter is not a constructor` on first trigger. Phase 3.4 compliance reports do not work end-to-end. | **HIGH** | Mirror the fix from Phase 7.17 Prompt 2c renderer commit `d4dc54a`: `require('pdfmake/js/Printer').default` + `require('pdfmake/js/URLResolver').default` + `await printer.createPdfKitDocument(...)` + add a no-mock renderer integration test (`%PDF` magic + `%%EOF`). Own small PR. ~30 min. | Lesson #142 |
-| 2 | `export/export.service.ts` uses the same broken pdfmake v0.1 require pattern — ExportService contract-PDF endpoint does not work end-to-end. | **HIGH** | Same fix as issue #1, separate small PR. | Lesson #142 |
+| 2 | ~~`export/export.service.ts` uses the same broken pdfmake v0.1 require pattern — ExportService contract-PDF endpoint does not work end-to-end.~~ **RESOLVED — PR #92 (`46eb075`).** | ✅ Done | Render method rebuilt as the async `createPdfBuffer()` on the pdfmake 0.3.x pattern + no-mock `%PDF` test; endpoint works end-to-end. Mirrored 2c fix `d4dc54a`. | Lesson #142 |
 
 ---
 
@@ -3001,7 +3001,9 @@ proof: 2.1KB valid `%PDF` / `%%EOF` buffer for the sparse-data shape.
 The same broken pattern lives in `pdf-report.service.ts` (compliance) and
 `export.service.ts` (contract export). Both are SHIPPED but currently
 broken end-to-end — see Critical Known Bugs #6 + Outstanding Issues + lesson
-#142. HIGH priority small-PR fixes; do not file as housekeeping.
+#142. HIGH priority small-PR fixes; do not file as housekeeping. **(Update: the
+`export.service.ts` half was fixed in PR #92, `46eb075`; only the compliance
+`pdf-report.service.ts` half remains.)**
 
 ### New lessons (added in Bucket 5)
 
