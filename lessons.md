@@ -5083,6 +5083,16 @@ Bucket 3).
 
 ## 142. Compliance + Export PDF Services Use The Same Broken pdfmake v0.1 Require Pattern — KNOWN-BROKEN Production State, HIGH PRIORITY FIX
 
+> **STATUS UPDATE (2026-06-22, PR #92):** The **export half is FIXED**.
+> `export.service.ts` now renders via the pdfmake 0.3.x pattern
+> (`require('pdfmake/js/Printer').default` + `require('pdfmake/js/URLResolver').default`
+> + `new URLResolver(null)` + `await printer.createPdfKitDocument(...)`) in its
+> now-async `createPdfBuffer()` method (formerly the broken `toBuffer()`), with a
+> no-mock `%PDF` integration test — mirroring the 2c renderer fix `d4dc54a`.
+> **Only `compliance/services/pdf-report.service.ts` remains broken** — that fix is
+> its own separate small PR. The historical record of the bug (both services) is
+> preserved below unchanged.
+
 **State of the bug.** The following two services use the
 `require('pdfmake')` + `new PdfPrinter(...)` pattern from pdfmake v0.1.x.
 The installed version is `pdfmake@0.3.7` where the main export is an
@@ -5094,8 +5104,10 @@ end-to-end:
   at line ~542. The shipped compliance-report flow (Phase 3.4:
   COMPLIANCE_SUMMARY / OBLIGATIONS_REPORT / JURISDICTION_CONFLICT) goes
   through this method.
-- `backend/src/modules/export/export.service.ts` — `toBuffer()` at line ~316.
-  The shipped contract-PDF export goes through this method.
+- `backend/src/modules/export/export.service.ts` — **FIXED (PR #92).** The render
+  method is now the async `createPdfBuffer()` (formerly `toBuffer()`), rebuilt on
+  the pdfmake 0.3.x pattern. The shipped contract-PDF export goes through this
+  method, which now works end-to-end.
 
 Both features are SHIPPED but have evidently never been triggered end-to-end
 at runtime in dev (otherwise this same `TypeError` would have surfaced when
