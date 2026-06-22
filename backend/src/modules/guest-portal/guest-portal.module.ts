@@ -10,6 +10,10 @@ import {
 import { ContractsModule } from '../contracts/contracts.module';
 import { AuthModule } from '../auth/auth.module';
 import { ScopedRepositoryModule } from '../scoped-repository/scoped-repository.module';
+// Feature #3 — Guest Watermarked Download reuses ExportService.generateContractPdf
+// (ExportModule exports it) to render the same contract PDF the managing path
+// renders, plus a server-built watermark stamp.
+import { ExportModule } from '../export/export.module';
 
 import { InvitationTokenService } from './services/invitation-token.service';
 import { ViewerCredentialService } from './services/viewer-credential.service';
@@ -20,6 +24,7 @@ import { GuestInvitationsController } from './controllers/guest-invitations.cont
 import { PublicGuestInvitationController } from './controllers/public-guest-invitation.controller';
 import { ViewerPortalController } from './controllers/viewer-portal.controller';
 import { GuestCommentsController } from './controllers/guest-comments.controller';
+import { GuestDownloadController } from './controllers/guest-download.controller';
 
 /**
  * Phase 7.18 — Guest Portal module.
@@ -57,12 +62,14 @@ import { GuestCommentsController } from './controllers/guest-comments.controller
     // by-id read routes through GuestInvitationScopedRepository (layer 2),
     // under the inline findInOrg wall (layer 1).
     ScopedRepositoryModule,
+    ExportModule,
   ],
   controllers: [
     GuestInvitationsController,
     PublicGuestInvitationController,
     ViewerPortalController,
     GuestCommentsController,
+    GuestDownloadController,
   ],
   providers: [
     InvitationTokenService,

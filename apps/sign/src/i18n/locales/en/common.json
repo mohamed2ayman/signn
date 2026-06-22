@@ -909,7 +909,10 @@
       "secondParty": "Second party",
       "clauses": "Clauses",
       "noClauses": "This contract has no extracted clauses yet.",
-      "watermark": "Read-only · Guest"
+      "watermark": "Read-only · Guest",
+      "download": "Download PDF",
+      "downloading": "Preparing…",
+      "downloadError": "Couldn't download the PDF. Please try again."
     },
     "clause": {
       "showMore": "Show more",

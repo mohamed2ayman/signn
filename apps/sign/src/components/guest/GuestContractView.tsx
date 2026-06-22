@@ -1,13 +1,45 @@
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { Contract } from '@/types';
 import GuestClauseCard from './GuestClauseCard';
+import { downloadGuestContractPdf } from '@/services/api/guestService';
 
-/** Read-only contract header + clause list for the Guest Portal viewer. */
-export default function GuestContractView({ contract }: { contract: Contract }) {
+/**
+ * Read-only contract header + clause list for the Guest Portal viewer.
+ *
+ * `guestJwt` is present ONLY once the guest has established a durable identity
+ * (Path B). The watermarked-download affordance is gated on it: a passwordless
+ * viewer (Path A) has no `guestJwt` and sees no Download button — consistent
+ * with the backend route, which requires account_type=GUEST.
+ */
+export default function GuestContractView({
+  contract,
+  guestJwt,
+}: {
+  contract: Contract;
+  guestJwt?: string | null;
+}) {
   const { t } = useTranslation();
+  const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState(false);
   const clauses = [...(contract.contract_clauses ?? [])].sort(
     (a, b) => (a.order_index ?? 0) - (b.order_index ?? 0),
   );
+
+  const handleDownload = async () => {
+    if (!guestJwt || downloading) return;
+    setDownloading(true);
+    setDownloadError(false);
+    try {
+      await downloadGuestContractPdf(contract.id, guestJwt);
+    } catch {
+      // No-leak error — never surface status/identity, mirror the viewer's
+      // generic error handling.
+      setDownloadError(true);
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   return (
     <div>
@@ -75,13 +107,46 @@ export default function GuestContractView({ contract }: { contract: Contract }) 
         </div>
 
         <div className="relative z-10">
-          <div className="mb-3 flex items-center justify-between">
+          <div className="mb-3 flex items-center justify-between gap-3">
             <h2 className="text-sm font-semibold text-gray-700">
               {t('guest.contractView.clauses')}
               <span className="ml-2 rounded-full bg-gray-100 px-2 py-0.5 text-xs font-normal text-gray-500">
                 {clauses.length}
               </span>
             </h2>
+            {guestJwt && (
+              <div className="flex flex-col items-end">
+                <button
+                  type="button"
+                  onClick={handleDownload}
+                  disabled={downloading}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-primary/30 bg-white px-3 py-1.5 text-xs font-medium text-primary transition-colors hover:bg-primary/[0.06] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <svg
+                    aria-hidden="true"
+                    className="h-3.5 w-3.5"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"
+                    />
+                  </svg>
+                  {downloading
+                    ? t('guest.contractView.downloading')
+                    : t('guest.contractView.download')}
+                </button>
+                {downloadError && (
+                  <span className="mt-1 text-[11px] text-red-500" dir="auto">
+                    {t('guest.contractView.downloadError')}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
 
           {clauses.length === 0 ? (

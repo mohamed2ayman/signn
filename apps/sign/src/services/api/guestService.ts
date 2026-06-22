@@ -146,6 +146,36 @@ export async function getGuestComments(
   return data;
 }
 
+/**
+ * Download a watermarked PDF of the bound contract as the established guest
+ * (Feature #3 — visible deterrent). Sends `Authorization: Bearer <guest_jwt>`
+ * explicitly on the isolated client (same credential isolation as
+ * `postGuestComment`) and streams the PDF blob to a file.
+ *
+ * Requires an established guest identity — the backend route is
+ * account_type=GUEST + binding-gated, and the watermark stamp (guest email +
+ * timestamp) is built ENTIRELY server-side from the authenticated principal,
+ * never from anything sent here.
+ */
+export async function downloadGuestContractPdf(
+  contractId: string,
+  guestJwt: string,
+): Promise<void> {
+  const response = await guestHttp.get(`/guest/contracts/${contractId}/pdf`, {
+    headers: { Authorization: `Bearer ${guestJwt}` },
+    responseType: 'blob',
+  });
+  const blob = new Blob([response.data], { type: 'application/pdf' });
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.setAttribute('download', `contract-${contractId}.pdf`);
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(url);
+}
+
 // ─── MANAGING USER (for completeness — uses the normal authenticated client) ─
 
 export interface CreateGuestInvitationInput {
