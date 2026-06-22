@@ -336,31 +336,54 @@ export class ExportService {
     return this.createPdfBuffer(docDefinition);
   }
 
-  private createPdfBuffer(docDefinition: TDocumentDefinitions): Promise<Buffer> {
-    return new Promise((resolve, reject) => {
-      try {
-        // Use dynamic import for pdfmake (CommonJS module)
-        const PdfPrinter = require('pdfmake');
-        const printer = new PdfPrinter({
+  private async createPdfBuffer(
+    docDefinition: TDocumentDefinitions,
+  ): Promise<Buffer> {
+    try {
+      // pdfmake v0.3.x setup. Three things diverge from the legacy v0.1.x
+      // pattern (`require('pdfmake')` + `new PdfPrinter(...)` + synchronous
+      // `createPdfKitDocument`), which crashes with
+      // `TypeError: PdfPrinter is not a constructor` on pdfmake@0.3+.
+      // Mirrors the proven fix in portfolio-export-renderer.service.ts
+      // (commit d4dc54a):
+      //   1. `require('pdfmake')` returns an INSTANCE; the Node-side
+      //      PdfPrinter constructor lives at `pdfmake/js/Printer` `.default`.
+      //   2. The constructor signature is `(fontDescriptors, virtualfs,
+      //      urlResolver)`. Without a URLResolver, render throws
+      //      `Cannot read properties of undefined (reading 'resolve')` even
+      //      for URL-less docs. pdfmake ships it at `pdfmake/js/URLResolver`;
+      //      `new URLResolver(null)` disables URL fetching while providing
+      //      the `resolved()` method Printer awaits during render.
+      //   3. `createPdfKitDocument` now returns Promise<pdfkitDoc>; await it
+      //      before attaching the stream listeners.
+      const PdfPrinter = require('pdfmake/js/Printer').default;
+      const URLResolver = require('pdfmake/js/URLResolver').default;
+
+      const printer = new PdfPrinter(
+        {
           Helvetica: {
             normal: 'Helvetica',
             bold: 'Helvetica-Bold',
             italics: 'Helvetica-Oblique',
             bolditalics: 'Helvetica-BoldOblique',
           },
-        });
+        },
+        undefined,
+        new URLResolver(null),
+      );
 
-        const pdfDoc = printer.createPdfKitDocument(docDefinition);
+      const pdfDoc = await printer.createPdfKitDocument(docDefinition);
+
+      return await new Promise<Buffer>((resolve, reject) => {
         const chunks: Buffer[] = [];
-
         pdfDoc.on('data', (chunk: Buffer) => chunks.push(chunk));
         pdfDoc.on('end', () => resolve(Buffer.concat(chunks)));
         pdfDoc.on('error', (err: Error) => reject(err));
         pdfDoc.end();
-      } catch (error) {
-        this.logger.error('Failed to generate PDF', error);
-        reject(error);
-      }
-    });
+      });
+    } catch (error) {
+      this.logger.error('Failed to generate PDF', error);
+      throw error;
+    }
   }
 }
