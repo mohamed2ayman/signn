@@ -61,7 +61,7 @@ export const contractService = {
   getComments: (contractId: string, clauseId?: string) =>
     api.get<ContractComment[]>(`/contracts/${contractId}/comments`, { params: clauseId ? { clause_id: clauseId } : undefined }).then(r => r.data),
 
-  addComment: (contractId: string, data: { content: string; contract_clause_id?: string; parent_comment_id?: string }) =>
+  addComment: (contractId: string, data: { content: string; contract_clause_id?: string; parent_comment_id?: string; is_internal_note?: boolean }) =>
     api.post<ContractComment>(`/contracts/${contractId}/comments`, data).then(r => r.data),
 
   resolveComment: (contractId: string, commentId: string) =>

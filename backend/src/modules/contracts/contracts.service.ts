@@ -903,6 +903,9 @@ export class ContractsService {
       user_id: userId,
       content: dto.content,
       parent_comment_id: dto.parent_comment_id,
+      // Fail-closed: a managing comment is internal unless the author explicitly
+      // marks it guest-visible. Only `is_internal_note = false` reaches a guest.
+      is_internal_note: dto.is_internal_note ?? true,
     });
 
     const saved = await this.contractCommentRepository.save(comment); // lint-exempt: wall-protected (findInOrg) — row validated before write

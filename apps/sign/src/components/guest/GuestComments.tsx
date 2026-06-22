@@ -1,17 +1,27 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'react-hot-toast';
 import axios from 'axios';
-import { postGuestComment, type GuestComment } from '@/services/api/guestService';
+import {
+  getGuestComments,
+  postGuestComment,
+  type GuestComment,
+  type GuestVisibleComment,
+} from '@/services/api/guestService';
 
 const MAX_LEN = 10000;
 
+type ListState = 'loading' | 'ready' | 'error';
+
 /**
- * Guest comments section — visible ONLY after identity is established.
+ * Guest comments section — visible ONLY after identity is established (the GET
+ * and POST both need the guest JWT).
  *
- * The backend exposes no GET for guest comments, so this lists what the guest
- * posts during the session (seeded with any comment created at identity time).
- * Posting uses the explicit Bearer guest JWT via the isolated client.
+ * On mount it loads the persisted, guest-VISIBLE conversation on the bound
+ * contract: the guest's own comments AND SIGN-team replies explicitly marked
+ * guest-visible. Internal SIGN-team notes are filtered out server-side and
+ * never reach here. Each comment is tagged guest-vs-team so the recipient can
+ * tell who they're hearing from. Newly-posted comments append to the list.
  */
 export default function GuestComments({
   contractId,
@@ -27,9 +37,41 @@ export default function GuestComments({
   onSessionExpired?: () => void;
 }) {
   const { t } = useTranslation();
-  const [comments, setComments] = useState<GuestComment[]>(initialComments);
+
+  // Optimistic seed from any resume-intent comment, mapped to the visible
+  // shape. The on-mount fetch is the source of truth and replaces it.
+  const [comments, setComments] = useState<GuestVisibleComment[]>(() =>
+    initialComments.map((c) => ({
+      id: c.id,
+      contract_id: c.contract_id,
+      contract_clause_id: c.contract_clause_id ?? null,
+      content: c.content,
+      created_at: c.created_at,
+      author_name: guestName,
+      author_role: 'GUEST' as const,
+    })),
+  );
+  const [listState, setListState] = useState<ListState>('loading');
   const [content, setContent] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  const load = useCallback(async () => {
+    setListState('loading');
+    try {
+      const data = await getGuestComments(contractId, guestJwt);
+      setComments(data);
+      setListState('ready');
+    } catch (err) {
+      const status = axios.isAxiosError(err) ? err.response?.status : undefined;
+      setListState('error');
+      // Guest JWT (15-min access) lapsed — let the page drop back to read-only.
+      if (status === 401) onSessionExpired?.();
+    }
+  }, [contractId, guestJwt, onSessionExpired]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   const submit = async () => {
     const text = content.trim();
@@ -37,8 +79,23 @@ export default function GuestComments({
     setSubmitting(true);
     try {
       const created = await postGuestComment(contractId, guestJwt, { content: text });
-      setComments((prev) => [created, ...prev]);
+      // The poster is always the guest → map the raw POST response to the
+      // visible shape locally and append (conversation order, newest at bottom).
+      setComments((prev) => [
+        ...prev,
+        {
+          id: created.id,
+          contract_id: created.contract_id,
+          contract_clause_id: created.contract_clause_id ?? null,
+          content: created.content,
+          created_at: created.created_at,
+          author_name: guestName,
+          author_role: 'GUEST',
+        },
+      ]);
       setContent('');
+      // A successful post means the list is live even if the initial GET failed.
+      setListState('ready');
       toast.success(t('guest.comments.success'));
     } catch (err) {
       const status = axios.isAxiosError(err) ? err.response?.status : undefined;
@@ -94,32 +151,66 @@ export default function GuestComments({
           </div>
         </div>
 
-        {/* List */}
-        {comments.length === 0 ? (
+        {/* Conversation */}
+        {listState === 'loading' ? (
+          <p className="py-4 text-center text-sm text-gray-400">
+            {t('guest.comments.loading')}
+          </p>
+        ) : listState === 'error' && comments.length === 0 ? (
+          <p className="py-4 text-center text-sm text-gray-500">
+            {t('guest.comments.loadError')}{' '}
+            <button
+              type="button"
+              onClick={load}
+              className="font-medium text-primary underline hover:text-primary-700"
+            >
+              {t('guest.comments.retry')}
+            </button>
+          </p>
+        ) : comments.length === 0 ? (
           <p className="py-4 text-center text-sm text-gray-400">
             {t('guest.comments.empty')}
           </p>
         ) : (
           <ul className="space-y-3">
-            {comments.map((c) => (
-              <li key={c.id} className="rounded-lg border border-gray-100 bg-gray-50/60 p-3">
-                <div className="mb-1 flex items-center gap-2">
-                  <span className="text-xs font-medium text-gray-700" dir="auto">
-                    {guestName}
-                  </span>
-                  <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
-                    {t('guest.comments.badge')}
-                  </span>
-                </div>
-                <p
-                  className="text-sm text-gray-700"
-                  dir="auto"
-                  style={{ unicodeBidi: 'plaintext', overflowWrap: 'anywhere' }}
+            {comments.map((c) => {
+              const isTeam = c.author_role === 'TEAM';
+              return (
+                <li
+                  key={c.id}
+                  className={`rounded-lg border border-gray-100 p-3 ${
+                    isTeam
+                      ? 'border-l-4 border-l-navy-400 bg-navy-50/40'
+                      : 'border-l-4 border-l-primary bg-gray-50/60'
+                  }`}
                 >
-                  {c.content}
-                </p>
-              </li>
-            ))}
+                  <div className="mb-1 flex flex-wrap items-center gap-2">
+                    <span className="text-xs font-medium text-gray-700" dir="auto">
+                      {c.author_name}
+                    </span>
+                    <span
+                      className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+                        isTeam
+                          ? 'bg-navy-100 text-navy-700'
+                          : 'bg-primary/10 text-primary'
+                      }`}
+                    >
+                      {isTeam ? t('guest.comments.teamBadge') : t('guest.comments.badge')}
+                    </span>
+                    <span className="text-[10px] text-gray-400">
+                      {new Date(c.created_at).toLocaleString()}
+                    </span>
+                  </div>
+                  <p
+                    className="text-sm text-gray-700"
+                    dir="auto"
+                    style={{ unicodeBidi: 'plaintext', overflowWrap: 'anywhere' }}
+                  >
+                    {c.content}
+                  </p>
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>

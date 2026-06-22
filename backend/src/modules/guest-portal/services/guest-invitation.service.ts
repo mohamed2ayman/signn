@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   Logger,
@@ -37,6 +38,21 @@ import { ViewerCredentialService } from './viewer-credential.service';
  * contract without taking a runtime dep on AuthService internals.
  */
 const BCRYPT_SALT_ROUNDS = 12;
+
+/**
+ * Scrubbed comment projection returned to an external guest. Deliberately
+ * carries ONLY what the guest UI renders — never the raw author User
+ * (no email / role / account_type). `author_role` is the guest-vs-team flag.
+ */
+export interface GuestVisibleComment {
+  id: string;
+  contract_id: string;
+  contract_clause_id: string | null;
+  content: string;
+  created_at: Date;
+  author_name: string;
+  author_role: 'GUEST' | 'TEAM';
+}
 
 /**
  * Phase 7.18 bucket 1b-i — orchestration for the guest-invitation flow.
@@ -507,14 +523,121 @@ export class GuestInvitationService {
     });
 
     const commentRepo = this.dataSource.getRepository(ContractComment); // lint-exempt: guest WRITE (comment insert) walled by findAccessibleContract; guest has no org — chokepoint is read-only/org-scoped
+
+    // Fail-closed parent check. A guest may only reply within a thread the guest
+    // can actually see: the parent MUST exist, belong to THIS contract, and be
+    // guest-visible (is_internal_note = false). This stops a guest from
+    // threading off an INTERNAL note — which would otherwise create a
+    // guest-visible reply whose lineage points at content they can never read,
+    // and is the only way a guest could probe an internal comment's UUID. The
+    // generic 400 is a non-oracle (no distinction between "missing", "other
+    // contract", or "internal").
+    if (parentCommentId) {
+      const parent = await commentRepo.findOne({
+        where: { id: parentCommentId },
+      });
+      if (
+        !parent ||
+        parent.contract_id !== contractId ||
+        parent.is_internal_note !== false
+      ) {
+        throw new BadRequestException('Invalid parent comment');
+      }
+    }
+
     const comment = commentRepo.create({
       contract_id: contractId,
       contract_clause_id: contractClauseId,
       user_id: guestUserId,
       content,
       parent_comment_id: parentCommentId,
+      // A guest's own comment is always guest-visible (they wrote it) — never an
+      // internal note. This is what lets the guest see it again next session.
+      is_internal_note: false,
     });
     return commentRepo.save(comment);
+  }
+
+  /**
+   * Guest Portal comments-list (feature #1) — read the guest-VISIBLE
+   * conversation on the guest's bound contract.
+   *
+   * Used by GET /guest/contracts/:id/comments (an upgraded guest with a
+   * standard JWT carrying account_type=GUEST).
+   *
+   * SECURITY — two independent guards, both required:
+   *   1. Tenancy: ContractAccessService.findAccessibleContract walls the guest
+   *      to their binding (404 on any other contract) — identical to the write
+   *      path, so a guest can ONLY read their own contract's comments.
+   *   2. Visibility: a WHITELIST filter `is_internal_note = false`. Internal
+   *      SIGN-team notes (the fail-closed default) are NEVER returned.
+   *
+   * The projection is SCRUBBED to exactly what the UI renders — author display
+   * name + a guest-vs-team flag. The raw `User` (email / role / account_type)
+   * is never selected, so no author PII leaks to the external counterparty.
+   * Ordered chronologically (created_at ASC) so it reads as a conversation.
+   */
+  async readGuestVisibleComments(
+    contractId: string,
+    guestUserId: string,
+  ): Promise<GuestVisibleComment[]> {
+    const userRepo = this.dataSource.getRepository(User);
+    const guest = await userRepo.findOne({ where: { id: guestUserId } });
+    if (!guest) {
+      throw new NotFoundException('Contract not found');
+    }
+    // Authority check — throws 404 if guest is not bound to this contract.
+    await this.contractAccess.findAccessibleContract(contractId, {
+      id: guest.id,
+      organization_id: guest.organization_id ?? null,
+      role: guest.role,
+      account_type: guest.account_type,
+    });
+
+    const commentRepo = this.dataSource.getRepository(ContractComment); // lint-exempt: guest READ (visibility-whitelist) walled by findAccessibleContract; guest has no org — chokepoint is org-scoped
+    const rows = await commentRepo
+      .createQueryBuilder('comment')
+      .innerJoin('comment.user', 'author')
+      .select('comment.id', 'id')
+      .addSelect('comment.contract_id', 'contract_id')
+      .addSelect('comment.contract_clause_id', 'contract_clause_id')
+      .addSelect('comment.content', 'content')
+      .addSelect('comment.created_at', 'created_at')
+      .addSelect('author.first_name', 'first_name')
+      .addSelect('author.last_name', 'last_name')
+      .addSelect('author.account_type', 'account_type')
+      .where('comment.contract_id = :contractId', { contractId })
+      .andWhere('comment.is_internal_note = :visible', { visible: false })
+      .orderBy('comment.created_at', 'ASC')
+      .getRawMany<{
+        id: string;
+        contract_id: string;
+        contract_clause_id: string | null;
+        content: string;
+        created_at: Date;
+        first_name: string | null;
+        last_name: string | null;
+        account_type: AccountType;
+      }>();
+
+    // NOTE — `parent_comment_id` is deliberately NOT projected. The guest UI is
+    // a flat chronological conversation, and omitting it removes the only way a
+    // guest could observe the UUID of an internal note that a managing-user
+    // reply happens to thread off. Re-add only with per-row parent-visibility
+    // handling if threaded display is ever needed.
+    return rows.map((r) => {
+      const isGuest = r.account_type === AccountType.GUEST;
+      const name = [r.first_name, r.last_name].filter(Boolean).join(' ').trim();
+      return {
+        id: r.id,
+        contract_id: r.contract_id,
+        contract_clause_id: r.contract_clause_id ?? null,
+        content: r.content,
+        created_at: r.created_at,
+        author_name: name || (isGuest ? 'Guest' : 'SIGN Team'),
+        author_role: isGuest ? 'GUEST' : 'TEAM',
+      };
+    });
   }
 
   private inviteTtlDays(): number {
