@@ -40,9 +40,21 @@ export class ExportService {
   ) {}
 
   /**
-   * Generate a full contract PDF with clauses
+   * Generate a full contract PDF with clauses.
+   *
+   * `watermarkText` is OPTIONAL and caller-supplied. When present, a visible
+   * diagonal watermark carrying that exact string is stamped on EVERY page via
+   * pdfmake's native top-level `watermark` property (auto per-page). When
+   * absent — the managing-user export path (ExportController) — the document is
+   * rendered WITHOUT a watermark, byte-for-byte as before. The service NEVER
+   * constructs the stamp itself: identity construction stays at the
+   * authenticated boundary (the guest download route builds the stamp from the
+   * server-side principal). See the Guest Watermarked Download feature.
    */
-  async generateContractPdf(contractId: string): Promise<Buffer> {
+  async generateContractPdf(
+    contractId: string,
+    watermarkText?: string,
+  ): Promise<Buffer> {
     const contract = await this.contractRepository.findOne({ // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
       where: { id: contractId },
       relations: [
@@ -115,6 +127,20 @@ export class ExportService {
         ],
       }),
     };
+
+    // Visible deterrent watermark — applied ONLY when the caller supplies a
+    // stamp (the guest download path). pdfmake renders a top-level `watermark`
+    // diagonally on EVERY page automatically (LayoutBuilder.addWatermark). The
+    // managing-user export path passes no text → no `watermark` key → output is
+    // unchanged. Grey + opacity 0.3 keeps the contract legible underneath.
+    if (watermarkText) {
+      docDefinition.watermark = {
+        text: watermarkText,
+        color: '#9CA3AF',
+        opacity: 0.3,
+        bold: true,
+      };
+    }
 
     return this.createPdfBuffer(docDefinition);
   }

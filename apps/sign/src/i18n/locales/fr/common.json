@@ -916,7 +916,10 @@
       "secondParty": "Deuxième partie",
       "clauses": "Clauses",
       "noClauses": "Aucune clause n'a encore été extraite de ce contrat.",
-      "watermark": "Lecture seule · Invité"
+      "watermark": "Lecture seule · Invité",
+      "download": "Télécharger le PDF",
+      "downloading": "Préparation…",
+      "downloadError": "Échec du téléchargement du PDF. Veuillez réessayer."
     },
     "clause": {
       "showMore": "Afficher plus",

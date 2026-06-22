@@ -915,7 +915,10 @@
       "secondParty": "الطرف الثاني",
       "clauses": "البنود",
       "noClauses": "لا توجد بنود مُستخرَجة لهذا العقد بعد.",
-      "watermark": "للاطلاع فقط · ضيف"
+      "watermark": "للاطلاع فقط · ضيف",
+      "download": "تنزيل PDF",
+      "downloading": "جارٍ التحضير…",
+      "downloadError": "تعذّر تنزيل ملف PDF. يرجى المحاولة مرة أخرى."
     },
     "clause": {
       "showMore": "عرض المزيد",

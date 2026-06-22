@@ -159,7 +159,7 @@ export default function GuestViewerPage() {
 
       {phase === 'ready' && contract && (
         <>
-          <GuestContractView contract={contract} />
+          <GuestContractView contract={contract} guestJwt={guestJwt} />
 
           <section className="mt-8">
             {!guestUser ? (
