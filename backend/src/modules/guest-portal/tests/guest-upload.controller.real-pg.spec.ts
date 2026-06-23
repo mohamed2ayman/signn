@@ -149,9 +149,11 @@ describeReal('GuestUploadController / GuestUploadService (real Postgres)', () =>
     );
   };
 
-  /** Count today's GUEST uploads on the bound contract (UTC day). */
+  const utcToday = () => new Date().toISOString().slice(0, 10);
+
+  /** Count today's persisted GUEST upload artifacts on the bound contract. */
   const countGuestUploadsToday = async (): Promise<number> => {
-    const utcDay = new Date().toISOString().slice(0, 10);
+    const utcDay = utcToday();
     const dayStart = new Date(`${utcDay}T00:00:00.000Z`).toISOString();
     const dayEnd = new Date(
       new Date(`${utcDay}T00:00:00.000Z`).getTime() + 86400000,
@@ -164,6 +166,34 @@ describeReal('GuestUploadController / GuestUploadService (real Postgres)', () =>
       [contractBoundId, dayStart, dayEnd],
     );
     return Number(rows[0]?.c ?? 0);
+  };
+
+  /** Read the daily-cap counter row for the bound contract (today). */
+  const readDailyCount = async (): Promise<number> => {
+    const rows = await dataSource.query(
+      `SELECT count FROM guest_upload_daily_counts
+        WHERE contract_id = $1 AND day = $2`,
+      [contractBoundId, utcToday()],
+    );
+    return rows.length ? Number(rows[0].count) : 0;
+  };
+
+  /** Seed the daily-cap counter row for the bound contract (today) to n. */
+  const seedDailyCount = async (n: number): Promise<void> => {
+    await dataSource.query(
+      `INSERT INTO guest_upload_daily_counts (contract_id, day, count)
+            VALUES ($1, $2, $3)
+       ON CONFLICT (contract_id, day) DO UPDATE SET count = $3`,
+      [contractBoundId, utcToday(), n],
+    );
+  };
+
+  /** Clear the daily-cap counter rows for both fixture contracts. */
+  const clearDailyCounts = async (): Promise<void> => {
+    await dataSource.query(
+      `DELETE FROM guest_upload_daily_counts WHERE contract_id = ANY($1)`,
+      [[contractBoundId, contractUnboundId]],
+    );
   };
 
   beforeAll(async () => {
@@ -243,6 +273,7 @@ describeReal('GuestUploadController / GuestUploadService (real Postgres)', () =>
         `DELETE FROM document_uploads WHERE contract_id = ANY($1)`,
         [[contractBoundId, contractUnboundId]],
       );
+      await clearDailyCounts();
       await dataSource.query(`DELETE FROM guest_contract_access WHERE id = $1`, [bindingId]);
       await dataSource.query(`DELETE FROM contracts WHERE id = ANY($1)`, [
         [contractBoundId, contractUnboundId],
@@ -260,11 +291,12 @@ describeReal('GuestUploadController / GuestUploadService (real Postgres)', () =>
     injectedUser = GUEST_PRINCIPAL();
     uploadAndProcessMock.mockClear();
     dispatchMock.mockClear();
-    // Clean any uploads so each test's daily count starts from a known state.
+    // Reset uploads + the daily-cap counter so each test starts known.
     await dataSource.query(
       `DELETE FROM document_uploads WHERE contract_id = ANY($1)`,
       [[contractBoundId, contractUnboundId]],
     );
+    await clearDailyCounts();
   });
 
   // ─── GREEN: bound guest uploads a valid PDF to its own contract ────────
@@ -366,17 +398,8 @@ describeReal('GuestUploadController / GuestUploadService (real Postgres)', () =>
 
   // ─── RED + NOTIFY: 6th upload in a UTC day → 429 + host notified ───────
   it('RED — at daily cap (6th in a day) → 429 quota error + host OWNER_ADMIN notified, NOT silent, NOT accepted', async () => {
-    // Pre-seed 5 GUEST uploads today on the bound contract.
-    for (let i = 0; i < 5; i++) {
-      const id = randomUUID();
-      await dataSource.query(
-        `INSERT INTO document_uploads
-           (id, contract_id, organization_id, file_url, file_name,
-            processing_status, uploaded_by)
-         VALUES ($1, $2, $3, $4, $5, 'UPLOADED', $6)`,
-        [id, contractBoundId, orgId, `http://x/${id}.pdf`, `${id}.pdf`, guestUserId],
-      );
-    }
+    // The contract has already hit the cap today.
+    await seedDailyCount(5);
     uploadAndProcessMock.mockClear();
     dispatchMock.mockClear();
 
@@ -391,9 +414,10 @@ describeReal('GuestUploadController / GuestUploadService (real Postgres)', () =>
     const capTitles = dispatchMock.mock.calls.map((c) => c[0].title);
     expect(capTitles).toContain('Guest reached daily upload limit');
     expect(dispatchMock.mock.calls.some((c) => c[0].userId === ownerUserId)).toBe(true);
-    // Not accepted: no new upload.
+    // Not accepted: no new upload, counter unchanged at the cap.
     expect(uploadAndProcessMock).not.toHaveBeenCalled();
-    expect(await countGuestUploadsToday()).toBe(5);
+    expect(await readDailyCount()).toBe(5);
+    expect(await countGuestUploadsToday()).toBe(0);
   });
 
   // ─── CONCURRENCY PROOF: 6 concurrent → EXACTLY 5 succeed ───────────────
@@ -428,7 +452,9 @@ describeReal('GuestUploadController / GuestUploadService (real Postgres)', () =>
     const status = rejected[0].reason?.getStatus?.();
     expect(status).toBe(429);
     expect(rejected[0].reason?.getResponse?.()?.error).toBe('GUEST_UPLOAD_DAILY_LIMIT');
-    // Exactly 5 rows persisted — the advisory lock serialized count-and-create.
+    // The atomic conditional UPSERT-counter serialized the claims: exactly 5
+    // slots claimed and exactly 5 upload artifacts persisted, never 6.
+    expect(await readDailyCount()).toBe(5);
     expect(await countGuestUploadsToday()).toBe(5);
   });
 });

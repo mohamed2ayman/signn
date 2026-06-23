@@ -37,10 +37,15 @@ import { NotificationDispatchService } from '../../notifications/notification-di
  *      No bare-repo access — everything goes through the access service.
  *   2. RACE-SAFE DAILY CAP — 5 guest uploads/day PER CONTRACT (UTC day),
  *      enforced at this route layer because the metering engine has no per-day
- *      window. The count-and-create is serialized by a per-(contract, day)
- *      transaction-scoped advisory lock so two concurrent "6th" uploads can
- *      NEVER both pass (closes the TOCTOU hole without SERIALIZABLE retries —
- *      consistent with the engine's READ COMMITTED requirement).
+ *      window. Gated by a SINGLE atomic conditional UPSERT against the
+ *      `guest_upload_daily_counts` counter row — the same shape as the metering
+ *      engine's reserve gate (Rule 9 Invariant 2: a hot single-row counter uses
+ *      an atomic conditional UPDATE, NOT a held lock). The row lock lives only
+ *      for that statement, so NOTHING is locked across the heavy upload work
+ *      (storage + metering sub-transaction + AI dispatch) — closing the TOCTOU
+ *      hole with no SERIALIZABLE retries AND no held-lock-across-extra-pool-
+ *      connections deadlock. A claimed slot is released if the upload throws
+ *      before a document lands (fail-safe toward over-denial).
  *   3. SUBJECT = HOST ORG — the metering subject is derived
  *      contract → project → organization_id (the inviting org), never the
  *      guest's null org. Here we read it off the contract the binding wall
@@ -111,64 +116,27 @@ export class GuestUploadService {
       throw new NotFoundException('Contract not found');
     }
 
-    // (2) RACE-SAFE DAILY CAP + UPLOAD.
-    // The advisory lock serializes concurrent guest uploads for THIS
-    // (contract, UTC-day). The lock is held from the count through
-    // `uploadAndProcess` (which commits the counted document_uploads row on
-    // its own pool connection) until this outer transaction commits — so a
-    // concurrent "6th" upload blocks on the lock, then counts the now-5 rows
-    // and is capped. The outer transaction itself writes nothing; it exists
-    // purely as the mutex + the read snapshot.
-    const now = new Date();
-    const utcDay = now.toISOString().slice(0, 10); // 'YYYY-MM-DD' (UTC)
-    const dayStart = new Date(`${utcDay}T00:00:00.000Z`);
-    const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
-    const lockKey = `guest_upload:${contractId}:${utcDay}`;
+    // (2) RACE-SAFE DAILY CAP — atomic conditional UPSERT-counter.
+    //
+    // One statement decides the cap: INSERT count=1 on the day's first upload;
+    // on conflict, increment ONLY while still under the cap. 0 rows returned ⇒
+    // the cap is reached for this contract today. Two concurrent "6th" uploads
+    // serialize on the row lock (held for the statement only) and exactly one
+    // can win — closing the TOCTOU hole. Crucially, NO lock is held across the
+    // heavy `uploadAndProcess` below, so there is no pool-starvation deadlock
+    // (the upload checks out its own pool connections + makes an AI HTTP call).
+    const utcDay = new Date().toISOString().slice(0, 10); // 'YYYY-MM-DD' (UTC)
+    const claim: Array<{ count: number }> = await this.dataSource.query(
+      `INSERT INTO guest_upload_daily_counts (contract_id, day, count)
+            VALUES ($1, $2, 1)
+       ON CONFLICT (contract_id, day) DO UPDATE
+            SET count = guest_upload_daily_counts.count + 1, updated_at = now()
+          WHERE guest_upload_daily_counts.count < $3
+       RETURNING count`,
+      [contractId, utcDay, GuestUploadService.GUEST_DAILY_UPLOAD_CAP],
+    );
 
-    const result = await this.dataSource.transaction(async (manager) => {
-      // Transaction-scoped advisory lock — released automatically on
-      // commit/rollback. hashtextextended → bigint matches the
-      // pg_advisory_xact_lock(bigint) signature.
-      await manager.query(
-        'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
-        [lockKey],
-      );
-
-      // Count today's GUEST uploads on this contract. `document_uploads` has
-      // no guest-distinguishing column, so the guest-ness is resolved via the
-      // uploader's account_type. This counts all guests' uploads on the
-      // contract (the cap is per-contract, not per-guest).
-      const rows: Array<{ c: number | string }> = await manager.query(
-        `SELECT count(*)::int AS c
-           FROM document_uploads du
-           JOIN users u ON u.id = du.uploaded_by
-          WHERE du.contract_id = $1
-            AND u.account_type = 'GUEST'
-            AND du.created_at >= $2
-            AND du.created_at < $3`,
-        [contractId, dayStart.toISOString(), dayEnd.toISOString()],
-      );
-      const used = Number(rows[0]?.c ?? 0);
-
-      if (used >= GuestUploadService.GUEST_DAILY_UPLOAD_CAP) {
-        return { capped: true as const };
-      }
-
-      // Under cap → run the real upload + extraction lifecycle, charged to
-      // the SEPARATE guest meter. `uploadAndProcess` runs its own
-      // reserve/commit/release on other pool connections; its committed
-      // document_uploads row is what the next waiter will count.
-      const doc = await this.documentProcessing.uploadAndProcess(
-        contractId,
-        file,
-        guest.id,
-        hostOrgId,
-        { account_type: 'GUEST', meterKey: MeterKey.GUEST_UPLOAD },
-      );
-      return { capped: false as const, doc };
-    });
-
-    if (result.capped) {
+    if (claim.length === 0) {
       // AT LIMIT — notify the host org (best-effort) and return a clear,
       // non-leaky quota error to the guest. NOT a silent 403.
       await this.notifyHostDailyCapHit(contract, guest);
@@ -185,17 +153,66 @@ export class GuestUploadService {
       );
     }
 
+    // Slot claimed → run the real upload + extraction lifecycle OUTSIDE any
+    // lock, charged to the SEPARATE guest meter (subject = host org). If it
+    // throws before a document lands, release the claimed slot so a failed
+    // attempt doesn't burn the day's quota.
+    let doc: {
+      id: string;
+      file_name: string;
+      original_name: string | null;
+      processing_status: string;
+      created_at: Date;
+    };
+    try {
+      doc = await this.documentProcessing.uploadAndProcess(
+        contractId,
+        file,
+        guest.id,
+        hostOrgId,
+        { account_type: 'GUEST', meterKey: MeterKey.GUEST_UPLOAD },
+      );
+    } catch (err) {
+      await this.releaseDailySlot(contractId, utcDay);
+      throw err;
+    }
+
     // ON SUCCESS — notify the managing party (net-new: the managing upload
     // path is silent today). Best-effort; never blocks the upload.
-    await this.notifyManagingOnUpload(contract, guest, result.doc.id);
+    await this.notifyManagingOnUpload(contract, guest, doc.id);
 
     return {
-      id: result.doc.id,
-      file_name: result.doc.file_name,
-      original_name: result.doc.original_name ?? null,
-      processing_status: result.doc.processing_status,
-      created_at: result.doc.created_at,
+      id: doc.id,
+      file_name: doc.file_name,
+      original_name: doc.original_name ?? null,
+      processing_status: doc.processing_status,
+      created_at: doc.created_at,
     };
+  }
+
+  /**
+   * Best-effort release of a claimed daily-cap slot when the upload throws
+   * before a document lands. Never throws — a lost slot fails safe toward
+   * over-denial, and the CHECK(count >= 0) + `count > 0` guard prevent
+   * underflow.
+   */
+  private async releaseDailySlot(
+    contractId: string,
+    utcDay: string,
+  ): Promise<void> {
+    try {
+      await this.dataSource.query(
+        `UPDATE guest_upload_daily_counts
+            SET count = count - 1, updated_at = now()
+          WHERE contract_id = $1 AND day = $2 AND count > 0`,
+        [contractId, utcDay],
+      );
+    } catch (err) {
+      this.logger.error(
+        `Failed to release guest daily-cap slot for contract ${contractId} ` +
+          `day ${utcDay}: ${(err as Error).message}`,
+      );
+    }
   }
 
   /**
