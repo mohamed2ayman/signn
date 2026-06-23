@@ -1,8 +1,15 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { Contract } from '@/types';
 import GuestClauseCard from './GuestClauseCard';
-import { downloadGuestContractPdf } from '@/services/api/guestService';
+import {
+  downloadGuestContractPdf,
+  uploadGuestContractVersion,
+} from '@/services/api/guestService';
+
+const UPLOAD_ACCEPT = '.pdf,.docx,.doc';
+const UPLOAD_MAX_MB = 50;
+const UPLOAD_EXTS = ['.pdf', '.docx', '.doc'];
 
 /**
  * Read-only contract header + clause list for the Guest Portal viewer.
@@ -22,6 +29,10 @@ export default function GuestContractView({
   const { t } = useTranslation();
   const [downloading, setDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadDone, setUploadDone] = useState(false);
   const clauses = [...(contract.contract_clauses ?? [])].sort(
     (a, b) => (a.order_index ?? 0) - (b.order_index ?? 0),
   );
@@ -38,6 +49,54 @@ export default function GuestContractView({
       setDownloadError(true);
     } finally {
       setDownloading(false);
+    }
+  };
+
+  const handleUploadClick = () => {
+    if (!guestJwt || uploading) return;
+    setUploadError(null);
+    setUploadDone(false);
+    fileInputRef.current?.click();
+  };
+
+  const handleFileSelected = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = e.target.files?.[0];
+    // Reset so re-picking the same file later still fires onChange.
+    e.target.value = '';
+    if (!file || !guestJwt) return;
+
+    // Client-side guard (the server is authoritative — ext+MIME+magic-bytes).
+    const lower = file.name.toLowerCase();
+    if (!UPLOAD_EXTS.some((x) => lower.endsWith(x))) {
+      setUploadError(t('guest.upload.errorType'));
+      return;
+    }
+    if (file.size > UPLOAD_MAX_MB * 1024 * 1024) {
+      setUploadError(t('guest.upload.errorSize', { size: UPLOAD_MAX_MB }));
+      return;
+    }
+
+    setUploading(true);
+    setUploadError(null);
+    setUploadDone(false);
+    try {
+      await uploadGuestContractVersion(contract.id, guestJwt, file);
+      setUploadDone(true);
+    } catch (err: any) {
+      const status = err?.response?.status;
+      const code = err?.response?.data?.error;
+      if (status === 429 && code === 'GUEST_UPLOAD_DAILY_LIMIT') {
+        setUploadError(t('guest.upload.errorDailyLimit'));
+      } else if (status === 429) {
+        setUploadError(t('guest.upload.errorRateLimited'));
+      } else {
+        // No-leak generic error — never surface status/identity.
+        setUploadError(t('guest.upload.error'));
+      }
+    } finally {
+      setUploading(false);
     }
   };
 
@@ -115,33 +174,86 @@ export default function GuestContractView({
               </span>
             </h2>
             {guestJwt && (
-              <div className="flex flex-col items-end">
-                <button
-                  type="button"
-                  onClick={handleDownload}
-                  disabled={downloading}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-primary/30 bg-white px-3 py-1.5 text-xs font-medium text-primary transition-colors hover:bg-primary/[0.06] disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  <svg
-                    aria-hidden="true"
-                    className="h-3.5 w-3.5"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                    strokeWidth={2}
+              <div className="flex flex-col items-end gap-1.5">
+                <div className="flex items-center gap-2">
+                  {/* Upload new version (Path-B gated) */}
+                  <button
+                    type="button"
+                    onClick={handleUploadClick}
+                    disabled={uploading}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/[0.04] px-3 py-1.5 text-xs font-medium text-primary transition-colors hover:bg-primary/[0.1] disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"
-                    />
-                  </svg>
-                  {downloading
-                    ? t('guest.contractView.downloading')
-                    : t('guest.contractView.download')}
-                </button>
+                    <svg
+                      aria-hidden="true"
+                      className="h-3.5 w-3.5"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M12 21V9m0 0l-4 4m4-4l4 4M4 7V5a2 2 0 012-2h12a2 2 0 012 2v2"
+                      />
+                    </svg>
+                    {uploading
+                      ? t('guest.upload.uploading')
+                      : t('guest.upload.button')}
+                  </button>
+                  {/* Watermarked download (Feature #3) */}
+                  <button
+                    type="button"
+                    onClick={handleDownload}
+                    disabled={downloading}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-primary/30 bg-white px-3 py-1.5 text-xs font-medium text-primary transition-colors hover:bg-primary/[0.06] disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <svg
+                      aria-hidden="true"
+                      className="h-3.5 w-3.5"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"
+                      />
+                    </svg>
+                    {downloading
+                      ? t('guest.contractView.downloading')
+                      : t('guest.contractView.download')}
+                  </button>
+                </div>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept={UPLOAD_ACCEPT}
+                  className="hidden"
+                  onChange={handleFileSelected}
+                />
+                {uploadDone && (
+                  <span
+                    className="text-[11px] text-emerald-600"
+                    dir="auto"
+                    role="status"
+                  >
+                    {t('guest.upload.success')}
+                  </span>
+                )}
+                {uploadError && (
+                  <span
+                    className="text-[11px] text-red-500"
+                    dir="auto"
+                    role="alert"
+                  >
+                    {uploadError}
+                  </span>
+                )}
                 {downloadError && (
-                  <span className="mt-1 text-[11px] text-red-500" dir="auto">
+                  <span className="text-[11px] text-red-500" dir="auto">
                     {t('guest.contractView.downloadError')}
                   </span>
                 )}

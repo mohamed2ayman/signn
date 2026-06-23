@@ -112,6 +112,16 @@ export class DocumentProcessingService {
        * guest-invitation.service.ts:445).
        */
       account_type?: MeteringCaller['account_type'];
+      /**
+       * Feature #4 — which meter to charge. Defaults to UPLOAD_EXTRACTION so
+       * the managing-user path (`POST /contracts/:contractId/documents`) is
+       * byte-identical to before. The guest upload path passes
+       * MeterKey.GUEST_UPLOAD so guest usage is charged to a SEPARATE meter
+       * (capped/attributed independently; never consumes the host's managing
+       * upload_extraction quota). Subject is still the host org either way —
+       * the resolver derives contract → project → organization_id.
+       */
+      meterKey?: MeterKey;
     },
   ): Promise<DocumentUpload> {
     // Tenant-isolation Tier 1 — replace the bare `findOne({ id: contractId })`
@@ -146,12 +156,17 @@ export class DocumentProcessingService {
         jwt_organization_id: orgId,
         account_type: options?.account_type ?? 'MANAGING',
       },
-      meterKey: MeterKey.UPLOAD_EXTRACTION,
+      meterKey: options?.meterKey ?? MeterKey.UPLOAD_EXTRACTION,
       amount: 1,
       idempotencyKey: randomUUID(),
       contractId,
       actorRef: userId,
-      metadata: { route: 'POST /contracts/:contractId/documents' },
+      metadata: {
+        route:
+          options?.meterKey === MeterKey.GUEST_UPLOAD
+            ? 'POST /guest/contracts/:id/documents'
+            : 'POST /contracts/:contractId/documents',
+      },
     });
 
     // From this point on, any throw BEFORE the doc row is persisted with

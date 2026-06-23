@@ -21,6 +21,10 @@ export const THROTTLER_NAMES = [
   'portfolio_export',
   // Phase 7.18 bucket 1b-i — public guest-invitation exchange endpoint.
   'guest_invite_exchange',
+  // Feature #4 — guest upload of a new contract version (JWT-gated, Path-B).
+  // Network-layer BURST protection, separate from the 5/day-per-contract
+  // daily quota enforced in GuestUploadService.
+  'guest_upload',
 ] as const;
 
 export type ThrottlerName = (typeof THROTTLER_NAMES)[number];

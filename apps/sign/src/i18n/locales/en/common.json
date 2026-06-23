@@ -914,6 +914,16 @@
       "downloading": "Preparing…",
       "downloadError": "Couldn't download the PDF. Please try again."
     },
+    "upload": {
+      "button": "Upload new version",
+      "uploading": "Uploading…",
+      "success": "New version uploaded — it's being processed.",
+      "error": "Couldn't upload the file. Please try again.",
+      "errorType": "Only PDF or Word documents are accepted.",
+      "errorSize": "File exceeds the {{size}}MB limit.",
+      "errorDailyLimit": "Daily upload limit reached. Please try again tomorrow.",
+      "errorRateLimited": "Too many uploads right now. Please wait a moment and try again."
+    },
     "clause": {
       "showMore": "Show more",
       "showLess": "Show less"

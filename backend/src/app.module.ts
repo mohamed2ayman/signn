@@ -258,6 +258,13 @@ import { dataSourceOptions } from './config/data-source';
           // InvitationTokenService.verify is the primary defense; the
           // throttle is a secondary cap on the public surface.
           { name: 'guest_invite_exchange', ttl: 900_000, limit: 10 },
+          // Feature #4 — guest upload of a new contract version. BURST
+          // protection only (NOT the daily cap — that is 5/day-per-contract,
+          // enforced in GuestUploadService via an advisory-lock count). An
+          // upload is a heavier, AI-pipeline-triggering action than a token
+          // exchange, so it is stricter than guest_invite_exchange: 5/15min/IP
+          // (mirrors portfolio_export's abuse-mitigation shape).
+          { name: 'guest_upload', ttl: 900_000, limit: 5 },
         ],
       }),
     }),

@@ -477,10 +477,15 @@ export class GuestInvitationService {
         return { kind: GuestIntentKind.SIGN, route: `/contracts/${contractId}/sign` };
       }
       case GuestIntentKind.UPLOAD: {
-        // TODO(upload-bucket, depends: metering): allow a guest to upload
-        // a new version of the contract subject to ops-configurable
-        // per-org quota. Until the metering primitive lands, surface the
-        // route and stop here.
+        // Feature #4 — guest upload of a new contract version is now LIVE at
+        // `POST /guest/contracts/:id/documents` (GuestUploadController +
+        // GuestUploadService: magic-bytes, race-safe 5/day-per-contract cap,
+        // the separate `guest_upload` billing meter, host + managing
+        // notifications). The actual upload is a multipart action that the
+        // establish-identity intent cannot carry (no file buffer in scope
+        // here), so resumption hands the now-authenticated guest the route to
+        // the viewer's upload affordance, where they pick the file and POST
+        // it. No work to do inline — just the route hint.
         return { kind: GuestIntentKind.UPLOAD, route: `/contracts/${contractId}/upload` };
       }
       default:
