@@ -1,7 +1,7 @@
 # CLAUDE.md — Project Intelligence File
 > Read this entire file at the start of every Claude Code session before touching any code.
 > This file is the single source of truth for all architectural decisions, rules, and context.
-> Last updated: 2026-06-21 (Phase 7.35 — `users.mfa_totp_secret` encrypted at rest via CryptoService, PR #88 squash-merged to `main` at `7c1e914`. Reuses `ERP_CREDENTIAL_ENC_KEY` (no new key/env); shared `CryptoModule` (`common/crypto/`) now feeds BOTH AuthModule + IntegrationsModule; encrypt-on-write in `setupMfaTotp` (still returns plaintext for the QR), decrypt-at-use in `verifyMfa`/`enableMfaTotp` via the version-prefixed dual-read `decryptTotp` (anti-lockout); forward-only idempotent migration `1759000000001` (`NOT LIKE 'v1.%'`, throws + zero rows if key missing). Scoped OUT: DocuSign RSA key (env var → Phase 9.2 secrets manager), `mfa_secret` + `mfa_recovery_codes` (already hashed). DEPLOYMENT: `ERP_CREDENTIAL_ENC_KEY` is now functionally required for MFA enrollment in every env. Updated CryptoService section (Consumers + hard rules); lesson #172; NEXT_PHASES 7.35 marked complete + DocuSign deferred to 9.2. Prior same day: Phase 7.28 ERP Integration shipped end-to-end — v1 + v1.1, PRs #79–#83. Per-org connector registry (vendor→adapter via Symbol DI), neutral cost model (`erp_cost_records`), Bull-queue sync (import-only), Mock + SAP-skeleton adapters; Client Portal "ERP Connections" screen + Admin "ERP Health" dashboard; v1.1 operator control (suspend/unsuspend/force-check/guarded-delete), actor-tracked hold state machine (`operator_suspended` vs `auto_suspended`), automatic consecutive-failure circuit-breaker, reason-required immutable audit + OWNER_ADMIN notification, "who suspended" on the admin list. Feature-flagged OFF by default (`ERP_INTEGRATION_ENABLED`); migrations `1757000000001` + `1758000000001`. New bottom-of-file "ERP Integration — Phase 7.28 (shipped, v1 + v1.1)" section; lessons #170–#171; NEXT_PHASES 7.28 marked complete + new follow-on tasks 7.37–7.41 added. Prior 2026-06-16: Encryption-at-rest `CryptoService` shipped — PR #73 squash-merged to `main` at `b36b3d0` — AES-256-GCM util at `backend/src/common/utils/crypto.ts`, the first encryption-at-rest primitive; key `ERP_CREDENTIAL_ENC_KEY` (Joi `string().min(32).optional().allow('')`), SHA-256-derived to 32 bytes, random IV per call, auth-tag-verified. New bottom-of-file "Encryption-at-Rest Utility — CryptoService" section; lesson #169; 7.28 reframed to a per-org connector registry (import-only v1); new task 7.35 to encrypt the existing plaintext MFA TOTP + DocuSign RSA secrets. Prior 2026-06-10: Phase 7.27 Legal Corpus shipped end-to-end (local branch `feature/7-27-legal-corpus`, pending push/merge) — country-agnostic `legal_documents`/`legal_document_chunks`/`legal_sources` schema with pgvector HNSW; full ingestion pipeline (StorageService → text extraction with a force-OCR branch for broken-font PDFs → NFKC + optional Arabic visual→logical reversal → tiktoken-capped article-boundary chunking → OpenAI text-embedding-3-small → bulk vector write), jurisdiction-scoped retrieval, and AI Chat wired as the first consumer with async polling. Per-source flags `is_visual_order`/`force_ocr` handle per-country quirks; Egyptian Tax Authority seeded (force_ocr=true). Phase D verified GREEN on Egyptian Civil Code 131/1948; Phase E + async chat verified GREEN via UI (Arabic force-majeure → grounded answer citing Civil Code Articles 215/217/373). New bottom-of-file "Phase 7.27 — Legal Corpus (shipped 2026-06-10)" section; lessons #153–#167. Prior: Phase 7.18 Part 2 shipped — managing-user compliance run is the FIRST wired metering consumer. PR #49 squash-merged at `49f785f` on top of engine PR #46 (`9200f38`). Async reconcile shape: reserve in-request behind the #45 access wall, commit/release in `refreshFromAi` + both synchronous fail paths, sweeper backstop for never-polled runs; `reservation_id` on `compliance_checks` via additive migration `1754000000001`; four ops-search log signals (`metering.compliance.{committed_after_release|released_after_terminal|commit_error|release_error}`); engine code UNTOUCHED. Rule 9 parenthetical updated. New bottom-of-file "Phase 7.18 Part 2 — Compliance metering consumer" section. Staging gate (G.1–G.7) reframed as a **Phase 9 release-gate, NOT a merge-gate** — runbook stays in `docs/metering-part2-staging-gate.md`. NO new lessons added — substantive Part 2 lessons (TTL-vs-p99, sweeper-at-scale) need real load, deferred to Phase 9. ContractShare Step 1 deprecation shipped — dead public token endpoint removed, broken external email path removed, cross-tenant info disclosure in `getSharesByContract()` fixed, frontend external sharing gated with "coming soon" message. Lesson #152. Phase 7.18 metering engine primitive shipped — commit `dc31bb6` on `feat/metering-primitive-7.18`. Schema + allowance resolver + MeteringService authority (reserve/commit/release) + dangling-reserve sweeper + READ COMMITTED startup invariant. 20 real-Postgres concurrency + precedence tests; full backend suite 430/430. ENGINE ONLY — no consumer wiring (Part 2). See "Metering Engine Invariants — Phase 7.18 (shipped 2026-06-04)" section at the bottom; new ARCHITECTURE RULES Rule 9 is the spine pointer. Lessons #148–#150 capture the engine-earned discipline (TypeORM 0.3 `[rows, rowCount]` shape, read-then-write transitions, existence-check-then-insert idempotency race). Phase 7.26 shipped — Track A complete. 12 missing i18n keys added across EN and AR locales; FR was already structurally complete. Track B (legal page localization) deferred pending legal team translated content. Phase 7.25 fully documented (PR #41). **CRITICAL** — Phase 3.4 compliance PDF reports + Phase 4 ExportService contract PDFs are CURRENTLY BROKEN by the same pdfmake v0.1 require pattern 2c just fixed; see Critical Known Bugs + lesson #142, HIGH priority. Internal Contract Sharing fix shipped (PR #44) — cross-tenant bug in `createShare()` fixed + ProjectMember creation + notification dispatch + org-member autocomplete.)
+> Last updated: 2026-06-24 (Arabic PDF rendering — Acrobat-strict fix, PR #97 squash-merged to `main` at `f3f1c5f`. Real-world Arabic contract exports crashed Adobe Acrobat (CTJPEGReader / Font Capture access violations) AND rendered the footer as garbled Latin — one root cause: pdfkit's fontkit subset has `sfntVersion = 'true'` (Apple TTF magic, not standard 0x00010000) + missing OpenType-required tables (`cmap` / `name` / `post` / `OS/2`), which lenient validators (qpdf, fontTools, Chrome) accept but Acrobat strict-rejects. Fix: module-init monkey-patch on pdfkit's internal `EmbeddedFont.embed` swaps the subset for the FULL Amiri TTF + writes a `/CIDToGIDMap` stream from `fontkit.Subset.glyphs[]` so content-stream subset gids round-trip to the correct full-font glyphs; pure-Latin chrome (footer, brand, English labels) routes to PDF base-14 Helvetica (no embedding, no fontkit subset, no Acrobat strict risk). Scoped to `export.service.ts` + `portfolio-export-renderer.service.ts`; compliance separately tracked as PR-A in NEXT_PHASES 7.43 (still v0.1 pdfmake pattern + latent Arabic-tofu gap, neither addressed by this PR). See lessons #174–#176 and the new bottom-of-file "Arabic PDF Rendering — Acrobat-Strict Fix (shipped 2026-06-24)" section. Prior 2026-06-21: Phase 7.35 — `users.mfa_totp_secret` encrypted at rest via CryptoService, PR #88 squash-merged to `main` at `7c1e914`. Reuses `ERP_CREDENTIAL_ENC_KEY` (no new key/env); shared `CryptoModule` (`common/crypto/`) now feeds BOTH AuthModule + IntegrationsModule; encrypt-on-write in `setupMfaTotp` (still returns plaintext for the QR), decrypt-at-use in `verifyMfa`/`enableMfaTotp` via the version-prefixed dual-read `decryptTotp` (anti-lockout); forward-only idempotent migration `1759000000001` (`NOT LIKE 'v1.%'`, throws + zero rows if key missing). Scoped OUT: DocuSign RSA key (env var → Phase 9.2 secrets manager), `mfa_secret` + `mfa_recovery_codes` (already hashed). DEPLOYMENT: `ERP_CREDENTIAL_ENC_KEY` is now functionally required for MFA enrollment in every env. Updated CryptoService section (Consumers + hard rules); lesson #172; NEXT_PHASES 7.35 marked complete + DocuSign deferred to 9.2. Prior same day: Phase 7.28 ERP Integration shipped end-to-end — v1 + v1.1, PRs #79–#83. Per-org connector registry (vendor→adapter via Symbol DI), neutral cost model (`erp_cost_records`), Bull-queue sync (import-only), Mock + SAP-skeleton adapters; Client Portal "ERP Connections" screen + Admin "ERP Health" dashboard; v1.1 operator control (suspend/unsuspend/force-check/guarded-delete), actor-tracked hold state machine (`operator_suspended` vs `auto_suspended`), automatic consecutive-failure circuit-breaker, reason-required immutable audit + OWNER_ADMIN notification, "who suspended" on the admin list. Feature-flagged OFF by default (`ERP_INTEGRATION_ENABLED`); migrations `1757000000001` + `1758000000001`. New bottom-of-file "ERP Integration — Phase 7.28 (shipped, v1 + v1.1)" section; lessons #170–#171; NEXT_PHASES 7.28 marked complete + new follow-on tasks 7.37–7.41 added. Prior 2026-06-16: Encryption-at-rest `CryptoService` shipped — PR #73 squash-merged to `main` at `b36b3d0` — AES-256-GCM util at `backend/src/common/utils/crypto.ts`, the first encryption-at-rest primitive; key `ERP_CREDENTIAL_ENC_KEY` (Joi `string().min(32).optional().allow('')`), SHA-256-derived to 32 bytes, random IV per call, auth-tag-verified. New bottom-of-file "Encryption-at-Rest Utility — CryptoService" section; lesson #169; 7.28 reframed to a per-org connector registry (import-only v1); new task 7.35 to encrypt the existing plaintext MFA TOTP + DocuSign RSA secrets. Prior 2026-06-10: Phase 7.27 Legal Corpus shipped end-to-end (local branch `feature/7-27-legal-corpus`, pending push/merge) — country-agnostic `legal_documents`/`legal_document_chunks`/`legal_sources` schema with pgvector HNSW; full ingestion pipeline (StorageService → text extraction with a force-OCR branch for broken-font PDFs → NFKC + optional Arabic visual→logical reversal → tiktoken-capped article-boundary chunking → OpenAI text-embedding-3-small → bulk vector write), jurisdiction-scoped retrieval, and AI Chat wired as the first consumer with async polling. Per-source flags `is_visual_order`/`force_ocr` handle per-country quirks; Egyptian Tax Authority seeded (force_ocr=true). Phase D verified GREEN on Egyptian Civil Code 131/1948; Phase E + async chat verified GREEN via UI (Arabic force-majeure → grounded answer citing Civil Code Articles 215/217/373). New bottom-of-file "Phase 7.27 — Legal Corpus (shipped 2026-06-10)" section; lessons #153–#167. Prior: Phase 7.18 Part 2 shipped — managing-user compliance run is the FIRST wired metering consumer. PR #49 squash-merged at `49f785f` on top of engine PR #46 (`9200f38`). Async reconcile shape: reserve in-request behind the #45 access wall, commit/release in `refreshFromAi` + both synchronous fail paths, sweeper backstop for never-polled runs; `reservation_id` on `compliance_checks` via additive migration `1754000000001`; four ops-search log signals (`metering.compliance.{committed_after_release|released_after_terminal|commit_error|release_error}`); engine code UNTOUCHED. Rule 9 parenthetical updated. New bottom-of-file "Phase 7.18 Part 2 — Compliance metering consumer" section. Staging gate (G.1–G.7) reframed as a **Phase 9 release-gate, NOT a merge-gate** — runbook stays in `docs/metering-part2-staging-gate.md`. NO new lessons added — substantive Part 2 lessons (TTL-vs-p99, sweeper-at-scale) need real load, deferred to Phase 9. ContractShare Step 1 deprecation shipped — dead public token endpoint removed, broken external email path removed, cross-tenant info disclosure in `getSharesByContract()` fixed, frontend external sharing gated with "coming soon" message. Lesson #152. Phase 7.18 metering engine primitive shipped — commit `dc31bb6` on `feat/metering-primitive-7.18`. Schema + allowance resolver + MeteringService authority (reserve/commit/release) + dangling-reserve sweeper + READ COMMITTED startup invariant. 20 real-Postgres concurrency + precedence tests; full backend suite 430/430. ENGINE ONLY — no consumer wiring (Part 2). See "Metering Engine Invariants — Phase 7.18 (shipped 2026-06-04)" section at the bottom; new ARCHITECTURE RULES Rule 9 is the spine pointer. Lessons #148–#150 capture the engine-earned discipline (TypeORM 0.3 `[rows, rowCount]` shape, read-then-write transitions, existence-check-then-insert idempotency race). Phase 7.26 shipped — Track A complete. 12 missing i18n keys added across EN and AR locales; FR was already structurally complete. Track B (legal page localization) deferred pending legal team translated content. Phase 7.25 fully documented (PR #41). **CRITICAL** — Phase 3.4 compliance PDF reports + Phase 4 ExportService contract PDFs are CURRENTLY BROKEN by the same pdfmake v0.1 require pattern 2c just fixed; see Critical Known Bugs + lesson #142, HIGH priority. Internal Contract Sharing fix shipped (PR #44) — cross-tenant bug in `createShare()` fixed + ProjectMember creation + notification dispatch + org-member autocomplete.)
 
 ---
 
@@ -616,7 +616,7 @@ All work is local development only.
 3. **Guest Portal is a stub** — treat `/contractor/*` as not built. Needs full planning session before building.
 4. **~~No automated tests~~** — resolved in Phase 2: 49 tests across all 3 services (33 backend, 8 frontend, 8 AI pipeline). Backend count now 87 as of Phase 7.4 (PR #29).
 5. **~~No CI pipeline~~** — resolved in Phase 2: GitHub Actions CI runs on every push and PR to main (3 parallel jobs).
-6. **🔴 HIGH PRIORITY — Compliance PDF service still BROKEN; Export PDF service FIXED (PR #92)** (discovered Phase 7.17 Prompt 2c). `backend/src/modules/compliance/services/pdf-report.service.ts` STILL uses the `require('pdfmake')` + `new PdfPrinter(...)` pattern from pdfmake v0.1.x. The installed version is `pdfmake@0.3.7` where the main export is an INSTANCE, not a class, so it WILL throw `TypeError: PdfPrinter is not a constructor` the moment it is triggered end-to-end — the shipped Phase 3.4 compliance reports (COMPLIANCE_SUMMARY / OBLIGATIONS_REPORT / JURISDICTION_CONFLICT) currently DO NOT WORK. **`backend/src/modules/export/export.service.ts` is now FIXED (PR #92, merged `46eb075`)** — its render method is the now-async `createPdfBuffer()` (formerly the broken `toBuffer()`), rebuilt on the 0.3.x pattern (`require('pdfmake/js/Printer').default` + `require('pdfmake/js/URLResolver').default` + `new URLResolver(null)` + `await printer.createPdfKitDocument(...)`), with a no-mock `%PDF` integration test; ExportService's contract-PDF endpoint works again. The remaining compliance fix is mechanically identical (proven for the 2c renderer in commit `d4dc54a`) and gets its OWN small PR. Do NOT file as housekeeping — this is production-breaking known state with a cheap, urgent fix. See lesson #142.
+6. **🔴 HIGH PRIORITY — Compliance PDF service still BROKEN; Export PDF service FIXED (PR #92) + Acrobat-strict crash class CLOSED for export + portfolio (PR #97)** (originally discovered Phase 7.17 Prompt 2c; Acrobat-strict crash surfaced 2026-06-24). `backend/src/modules/compliance/services/pdf-report.service.ts` STILL uses the `require('pdfmake')` + `new PdfPrinter(...)` pattern from pdfmake v0.1.x. The installed version is `pdfmake@0.3.7` where the main export is an INSTANCE, not a class, so it WILL throw `TypeError: PdfPrinter is not a constructor` the moment it is triggered end-to-end — the shipped Phase 3.4 compliance reports (COMPLIANCE_SUMMARY / OBLIGATIONS_REPORT / JURISDICTION_CONFLICT) currently DO NOT WORK. **`backend/src/modules/export/export.service.ts` was fixed by PR #92 (`46eb075`)** for the pdfmake-0.3.x API, and **PR #97 (`f3f1c5f`) closed the separate Acrobat-strict Arabic-rendering class** (full Amiri embed + `/CIDToGIDMap` stream + pure-Latin chrome routed to base-14 Helvetica) for both `export.service.ts` and `portfolio-export-renderer.service.ts`. **Compliance is immune to BOTH PR #97 classes** (it registers only Helvetica, never embeds Amiri — so it can neither crash from the Acrobat-strict subset issue nor produce a garbled Latin footer), but two compliance gaps remain separately open: (a) the v0.1 require pattern (above) and (b) a latent **Arabic-tofu** rendering gap — Arabic content fed into compliance PDFs (obligation descriptions / jurisdiction names / contract titles in Arabic) renders as Helvetica `.notdef` boxes because the service never wires the `pdf-arabic.ts` helper. PR-A (NEXT_PHASES 7.43) is scoped to fix BOTH compliance gaps in one mechanically-small PR: mirror PR #92's 0.3.x pattern + wire `pdf-arabic.ts` for Arabic safety. Do NOT file as housekeeping — production-breaking + latent tofu, cheap urgent fix. See lessons #142 + #174.
 
 ### Local Development Workarounds (before deployment)
 | Integration | Free Local Workaround |
@@ -649,8 +649,9 @@ All work is local development only.
 ### Outstanding Issues (not yet fixed — do not build on top of these)
 | # | Issue | Severity | Fix | Reference |
 |---|-------|----------|-----|-----------|
-| 1 | `compliance/services/pdf-report.service.ts` uses broken pdfmake v0.1 require pattern — `TypeError: PdfPrinter is not a constructor` on first trigger. Phase 3.4 compliance reports do not work end-to-end. | **HIGH** | Mirror the fix from Phase 7.17 Prompt 2c renderer commit `d4dc54a`: `require('pdfmake/js/Printer').default` + `require('pdfmake/js/URLResolver').default` + `await printer.createPdfKitDocument(...)` + add a no-mock renderer integration test (`%PDF` magic + `%%EOF`). Own small PR. ~30 min. | Lesson #142 |
+| 1 | `compliance/services/pdf-report.service.ts` uses broken pdfmake v0.1 require pattern — `TypeError: PdfPrinter is not a constructor` on first trigger. Phase 3.4 compliance reports do not work end-to-end. **Plus** a latent Arabic-tofu gap: the service registers only Helvetica (no Amiri, no `pdf-arabic.ts` helper) — any Arabic content (obligation description, jurisdiction name, contract title) renders as `.notdef` boxes. No crash, no garble; just missing glyphs. | **HIGH** | Single PR-A (tracked in NEXT_PHASES 7.43): (a) mirror PR #92's pdfmake-0.3.x pattern (`require('pdfmake/js/Printer').default` + `require('pdfmake/js/URLResolver').default` + `await printer.createPdfKitDocument(...)`) + add a no-mock renderer integration test (`%PDF` magic + `%%EOF`); (b) wire `backend/src/common/utils/pdf-arabic.ts` (`arabicFontDescriptors` + `arabicVfs` + `emitArabicParagraph` + `arabicHeadingText`) and flip `defaultStyle` to Helvetica — exactly as PR #97 did for export + portfolio. The PR #97 helper's monkey-patches install globally at first import, so compliance benefits from the full-Amiri-embed + `/CIDToGIDMap` fix automatically once the helper is imported. ~1 hour. | Lessons #142 + #174 |
 | 2 | ~~`export/export.service.ts` uses the same broken pdfmake v0.1 require pattern — ExportService contract-PDF endpoint does not work end-to-end.~~ **RESOLVED — PR #92 (`46eb075`).** | ✅ Done | Render method rebuilt as the async `createPdfBuffer()` on the pdfmake 0.3.x pattern + no-mock `%PDF` test; endpoint works end-to-end. Mirrored 2c fix `d4dc54a`. | Lesson #142 |
+| 3 | ~~`export/export.service.ts` + `portfolio-export-renderer.service.ts`: Acrobat-strict crash on Arabic PDFs (CTJPEGReader / Font Capture access violation) + garbled Latin footer.~~ **RESOLVED — PR #97 (`f3f1c5f`).** | ✅ Done | Full Amiri TTF embedded via pdfkit `EmbeddedFont.embed` monkey-patch (sfntVersion 0x00010000 + all 15 tables) + `/CIDToGIDMap` stream from `fontkit.Subset.glyphs[]` so content-stream subset gids resolve to correct full-Amiri glyphs; pure-Latin chrome routed to base-14 Helvetica (no fontkit subset, no Acrobat strict risk). RED-first font-validity test guards regression; CI qpdf assertion gated behind `spawnSync('qpdf','--version')` presence probe (commit `3c595db`). Visual-verified in real Acrobat. | Lessons #174 + #175 + #176 |
 
 ---
 
@@ -4054,3 +4055,110 @@ operator-control backend + circuit-breaker) · #83 (v1.1 Part B admin UI +
    (the `admin-organizations` precedent), not a repository wall. Verify with the
    contract-repo lint gate (exit 0, no exemption needed) before assuming the chokepoint
    applies. See lessons #170 and #171.
+
+---
+
+## Arabic PDF Rendering — Acrobat-Strict Fix (shipped 2026-06-24, PR #97)
+
+Closes two long-standing real-world Arabic export failures that lenient
+validators (qpdf, fontTools, Chrome's PDF viewer) all missed: an Adobe Acrobat
+crash (`EXCEPTION_ACCESS_VIOLATION` in CTJPEGReader / Font Capture) and a
+garbled-Latin footer ("Įeįerated by Sİıį PlatĲorĳ") that turned out to be the
+same root cause surfacing in a different subsystem. PR #97 squash-merged to
+`main` at `f3f1c5f`. Visual verification in real Acrobat passed.
+
+### Root cause
+
+pdfkit's default font-embedding pipeline routes through `fontkit.TTFSubset.encode()`,
+which produces a minimal subset with:
+- `sfntVersion = 'true'` (Apple TrueType magic, NOT the standard 0x00010000
+  Windows/OpenType magic)
+- Only 7 tables present (head, hhea, loca, maxp, prep, glyf, hmtx) — MISSING
+  the OpenType-required `cmap`, `name`, `post`, `OS/2`
+
+Lenient parsers accept this. Adobe Acrobat strict-parses the FontFile2 and either
+crashes outright (memory corruption surfaces in whichever subsystem Acrobat
+runs next — often the imaging path → CTJPEGReader) or renders glyph data
+with wrong indexing (the garbled Latin footer was the same defect surfacing as
+wrong glyphs, not a crash). One root cause, two symptoms.
+
+### Fix shape (two layers, both required)
+
+1. **Full Amiri embed via a module-init monkey-patch.** Two IIFEs at the top of
+   `backend/src/common/utils/pdf-arabic.ts` install patches on pdfkit's
+   prototypes the first time the helper is imported. The embed patch finds
+   the internal `EmbeddedFont` class via a throwaway probe and wraps its
+   `embed()` method. For fonts whose `postscriptName ∈ {Amiri-Regular,
+   Amiri-Bold}` (the `FULL_EMBED_BUFFERS` map):
+   - Swap `subset.encode()`'s output for the FULL Amiri TTF buffer
+     (sfntVersion 0x00010000 + all 15 tables — Acrobat-valid).
+   - Replace pdfkit's `/CIDToGIDMap = /Identity` with a STREAM built from
+     `fontkit.Subset.glyphs[]` — content-stream subset gids round-trip to
+     the correct full-Amiri glyphs (verified: 24 distinct shaped Arabic
+     glyphs match the full Amiri outlines byte-for-byte).
+
+2. **Route pure-Latin chrome to PDF base-14 Helvetica.** Each PDF generator's
+   `defaultStyle` flipped from `{ font: 'Amiri' }` to `{ font: 'Helvetica' }`
+   so the footer, brand line, page numbers, and English meta labels render
+   via pdfkit's base-14 Type1 AFM path (Helvetica + `/WinAnsiEncoding`).
+   Helvetica is NEVER embedded (base-14 is referenced by name), so it never
+   goes through `EmbeddedFont` and is structurally immune to the
+   Acrobat-strict crash class. `emitArabicParagraph` explicitly tags
+   Arabic-script inlines `font: 'Amiri'` and Latin sub-runs inside an
+   Arabic-bearing line `font: 'Helvetica'`.
+
+### Patch install trigger — IMPORTANT for new PDF code
+
+- The two monkey-patches install at the moment `pdf-arabic.ts` is first
+  `require`/`import`ed in the Node.js process.
+- Once installed, they live on `pdfkit.PDFDocument.prototype` and
+  `EmbeddedFont.prototype` — **shared by every pdfkit consumer in the
+  process**.
+- Currently `pdf-arabic.ts` is imported by `ExportService` and
+  `PortfolioExportRendererService`, both providers in `AppModule`. They
+  instantiate during NestJS boot, BEFORE the HTTP server listens — so the
+  patches are in place for the lifetime of the running process.
+- **The embed patch is gated** at runtime on `font.postscriptName ∈
+  FULL_EMBED_BUFFERS` — only Amiri-Regular and Amiri-Bold trigger it. Any
+  other font (including Helvetica, which doesn't go through `EmbeddedFont`
+  at all) is untouched.
+- **Practical implication for compliance + future PDF code:** because the
+  patches are GLOBAL in the process, compliance PDFs (when PR-A wires the
+  helper) automatically inherit the Acrobat-strict-safe Amiri embed. No
+  per-service wiring needed beyond importing the helper somewhere in the
+  module graph.
+
+### Hard rules — never violate
+
+1. **`backend/src/common/utils/pdf-arabic.ts` is the single source of truth
+   for the Amiri embed + monkey-patches.** Do NOT add a second `EmbeddedFont`
+   monkey-patch elsewhere in the codebase — the install gate is keyed on a
+   single boolean flag and a parallel patch would race the install or
+   silently no-op. If a future PDF generator needs the Acrobat-strict-safe
+   Amiri embed, import the helper (or any module that transitively imports
+   it) somewhere in its module graph; the patches install on first
+   `require`.
+2. **Never use `Intl.NumberFormat('ar-EG', ...)` for PDF numeric content.**
+   See lesson #137 — financial figures + counts in MENA construction
+   contracts use Latin numerals + ISO currency codes. The Arabic helper does
+   NOT auto-localize digits.
+3. **Routing rule: Arabic-script inlines carry `font: 'Amiri'`; pure-Latin
+   runs (including Latin sub-runs inside an Arabic-bearing line) carry
+   `font: 'Helvetica'`.** The `defaultStyle: { font: 'Helvetica' }` is the
+   backstop — the explicit per-inline `font` keys are the contract. A new
+   PDF section that drops the explicit Arabic-path `font: 'Amiri'` will
+   render Arabic through Helvetica = `.notdef` tofu.
+4. **Do NOT add a new entry to `FULL_EMBED_BUFFERS` without verifying the
+   font's `sfntVersion` is already 0x00010000 + all 10 required OpenType
+   tables are present.** The patch's correctness depends on the SOURCE TTF
+   being Acrobat-valid; adding an Apple-TTF-flavored font would re-introduce
+   the exact bug PR #97 fixed.
+5. **The qpdf external check in `export.service.arabic.spec.ts` MUST stay
+   gated behind `spawnSync('qpdf','--version')` ENOENT detection** — see
+   lesson #176. CI runners and dev hosts without qpdf installed must not
+   false-fail.
+6. **Visual verification is the canonical gate for PDF-rendering changes.**
+   qpdf / fontTools / Chrome's PDF viewer all said "clean" while real
+   Acrobat crashed — see lesson #175. Any PR touching the PDF rendering
+   pipeline must include a real-Acrobat eye-test, not just an in-container
+   tool check.

@@ -1,5 +1,5 @@
 # SIGN Platform — Development Roadmap
-> Last updated: 2026-06-21 (Phase 7.35 — mfa_totp_secret encrypted at rest via CryptoService, PR #88. Prior same day: Phase 7.28 ERP Integration shipped end-to-end — v1 + v1.1; new follow-on tasks 7.37–7.41 added)
+> Last updated: 2026-06-24 (7.42 — Arabic PDF rendering Acrobat-strict fix shipped, PR #97 squash-merged at `f3f1c5f`; 7.43 added — Compliance PDF Rebuild + Arabic Support (PR-A) as the consolidated follow-on. Prior 2026-06-21: Phase 7.35 — mfa_totp_secret encrypted at rest via CryptoService, PR #88. Prior same day: Phase 7.28 ERP Integration shipped end-to-end — v1 + v1.1; follow-on tasks 7.37–7.41 added)
 > Next review: When 7.5-7.8 are cleared; 9.2 AWS setup planning starts
 > Maintained by: Ayman & Youssef
 > Market: Arabic, English, French (Middle East + Global)
@@ -1039,6 +1039,38 @@ No ContractClauseScopedRepository exists yet — that subclass is the unit that 
 
 ---
 
+### ✅ 7.42 — Arabic PDF Rendering (Acrobat-Strict Fix) — COMPLETE (PR #97)
+**Owner:** Ayman | **Priority:** ✅ DONE | **Status:** Shipped 2026-06-24
+**Depends on:** None (closes a real-world bug surfaced via the Muhlbauer Arabic contract)
+- Closes the Acrobat crash (`EXCEPTION_ACCESS_VIOLATION` in CTJPEGReader / Font Capture) on real-world Arabic contract exports.
+- Closes the garbled-Latin-footer regression (`Įeįerated by Sİıį PlatĲorĳ`) on the same exports — same root cause surfacing as wrong glyph indexing instead of a crash.
+- Root cause: pdfkit's `fontkit.TTFSubset.encode()` produces a minimal subset with non-standard `sfntVersion 'true'` + only 7 tables — Acrobat strict-rejects this; qpdf / fontTools / Chrome accept it.
+- Fix:
+  - Full Amiri TTF embedded via a module-init monkey-patch on pdfkit's `EmbeddedFont.embed` (full sfntVersion 0x00010000 + all 15 tables).
+  - `/CIDToGIDMap` stream built from `fontkit.Subset.glyphs[]` so content-stream subset gids round-trip to the original full-Amiri glyphs (0 outline mismatches end-to-end).
+  - All pure-Latin chrome (footer, brand, English labels) routed to PDF base-14 Helvetica (Type1 /WinAnsiEncoding, no embedding, no fontkit subset, no Acrobat strict risk).
+- Scope of the fix: `export.service.ts` (contract PDF / risk report / contract summary) + `portfolio-export-renderer.service.ts`. Compliance was OUT of scope (separately broken; consolidated into 7.43 below).
+- New central helper: `backend/src/common/utils/pdf-arabic.ts` (1103 lines) — owns Amiri loading + per-script-run emission + bracket mirror swap + whole-line `/ActualText` sentinels + the two pdfkit monkey-patches. The patches install at first import and are globally effective for the rest of the process lifetime (idempotent, postscriptName-gated, fail-safe on missing pdfkit).
+- Trade-off: PDF size grows ~500 KB per Arabic export. Accepted for Acrobat correctness. Latin-only PDFs unaffected.
+- Regression guard: RED-first font-validity test in `export.service.arabic.spec.ts` asserts every embedded FontFile2 has standard sfntVersion + all 10 OpenType-required tables.
+- CI-portability follow-up (commit `3c595db` on the same PR): qpdf `--check` external assertion gated behind a `spawnSync('qpdf','--version')` ENOENT presence probe — CI runners without qpdf installed no longer false-fail.
+- Verified in real Acrobat: no crash, Arabic letter joining + brackets + mixed Arabic/Latin/digit content all correct, copy/paste returns logical text, footer reads correctly.
+- New lessons: #174 (Acrobat-strict subset rejection + the fix shape), #175 (in-container tools disagree with the real reader — trust the real reader), #176 (gate external-binary test deps behind presence detection).
+
+---
+
+### 7.43 — Compliance PDF Rebuild + Arabic Support (PR-A)
+**Owner:** Ayman | **Priority:** 🟠 HIGH | **Status:** ❌ Not started
+**Depends on:** 7.42 ✅ (the `pdf-arabic.ts` helper that PR #97 introduced)
+- Single small consolidated PR that closes TWO compliance gaps:
+  - **(a) pdfmake 0.3.x migration** — `backend/src/modules/compliance/services/pdf-report.service.ts` still uses the legacy v0.1 `require('pdfmake')` + `new PdfPrinter(...)` pattern; throws `TypeError: PdfPrinter is not a constructor` on first end-to-end trigger. Phase 3.4 compliance reports (COMPLIANCE_SUMMARY / OBLIGATIONS_REPORT / JURISDICTION_CONFLICT) do not work end-to-end. Mechanically mirror PR #92's export-service fix: `require('pdfmake/js/Printer').default` + `require('pdfmake/js/URLResolver').default` + `new URLResolver(null)` + `await printer.createPdfKitDocument(...)` in an async `toBuffer()`. Add a no-mock `%PDF` integration test (lesson #140).
+  - **(b) Arabic-tofu latent gap** — compliance currently registers only Helvetica (no Amiri, no `pdf-arabic.ts` wiring). Any Arabic content fed into a compliance PDF (Arabic obligation description, Arabic jurisdiction name, Arabic contract title) renders as Helvetica `.notdef` boxes — no crash, no garble, just missing glyphs. Wire `arabicFontDescriptors()` + `arabicVfs` into the PdfPrinter call, wrap Arabic-bearing fields with `emitArabicParagraph` / `arabicHeadingText`, and keep `defaultStyle: { font: 'Helvetica' }` exactly as PR #97 did. The PR #97 monkey-patches install globally at first import of the helper, so compliance automatically inherits the Acrobat-strict-safe Amiri embed once it imports the helper anywhere in its module graph — no per-service wiring beyond the import.
+- Add an Arabic-rendering regression test for compliance (real pdfmake — no mock; assert Amiri + Helvetica both in font dict; assert `%PDF` magic + `%%EOF`).
+- ~1 hour of work; mechanical follow-on. Do NOT file as housekeeping — this is production-broken (a) + latent tofu (b).
+- See CLAUDE.md Outstanding Issues #1 + lessons #142 + #174.
+
+---
+
 ## 🎨 PHASE 6B — Visual Confidentiality & Watermarks
 > These were originally Phase 6.5 and 6.6. Moved here because features in Phase 7 will change the UI — building protection layers before features means rebuilding them after.
 > Do these AFTER Phase 7 feature development is complete.
@@ -1367,6 +1399,8 @@ No new env vars required for existing local dev deployments.
 | 7.39 | ERP Export Direction (push to ERP) | ❌ Not started | A | |
 | 7.40 | ERP Schedule-Linkage Consumer | ❌ Not started | A | |
 | 7.41 | ERP Mapping Field Auto-Discover | ❌ Not started | A | |
+| 7.42 | Arabic PDF Rendering — Acrobat-Strict Fix | ✅ Complete (PR #97) | A | 2026-06-24 |
+| 7.43 | Compliance PDF Rebuild + Arabic Support (PR-A) | ❌ Not started | A | |
 | 6B.1 | Visual Confidentiality | ❌ After Phase 7 | Y | |
 | 6B.2 | Invisible Watermarks | ❌ After Phase 7 | Y | |
 | 8 | AI Migration | ❌ Not started | A+Y | |
