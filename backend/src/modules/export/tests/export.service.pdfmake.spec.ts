@@ -45,7 +45,7 @@ describe('ExportService.createPdfBuffer (real pdfmake — no mock)', () => {
       styles: {
         title: { fontSize: 18, bold: true },
       },
-      defaultStyle: { font: 'Helvetica' },
+      defaultStyle: { font: 'Amiri' },
     };
 
     const buffer = await renderPdf(service, docDefinition);
@@ -85,7 +85,7 @@ describe('ExportService.createPdfBuffer (real pdfmake — no mock)', () => {
         },
       ],
       styles: { title: { fontSize: 18, bold: true } },
-      defaultStyle: { font: 'Helvetica' },
+      defaultStyle: { font: 'Amiri' },
     };
 
     const buffer = await renderPdf(service, docDefinition);
