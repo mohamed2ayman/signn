@@ -15,6 +15,19 @@ import { ObligationScopedRepository } from '../scoped-repository/obligation-scop
 // (canonical risk→contract→project→org), replacing the bare RiskAnalysis
 // repository. The controller's findInOrg wall STAYS in front — two layers.
 import { RiskScopedRepository } from '../scoped-repository/risk-scoped.repository';
+// Arabic PDF rendering: Option A — pre-measure + pre-wrap so each visual
+// line reaches fontkit as one paragraph for correct UAX #9 bidi (cross-word
+// word order). Latin paragraphs short-circuit to identity in the helper, so
+// existing Latin output is unaffected. See pdf-arabic.ts banner for the
+// full diagnosis and architecture.
+import {
+  emitArabicParagraph,
+  arabicHeadingText,
+  arabicFontDescriptors,
+  arabicVfs,
+  EXPORT_BODY_WIDTH_PT,
+  tableCellWidthFallback,
+} from '../../common/utils/pdf-arabic';
 
 // pdfmake types - use any for flexibility since pdfmake types vary by version
 type TDocumentDefinitions = any;
@@ -62,24 +75,37 @@ export class ExportService {
 
     const clauseContent: Content[] = clauses.map((cc, i) => {
       const clause = cc.clause;
+      const sectionNum = cc.section_number || String(i + 1);
+      const titleSource = clause?.title || 'Untitled Clause';
+      const bodyText = clause?.content || '';
+      // arabicHeadingText emits "٣. title" for Arabic titles (Arabic-Indic
+      // digit + period + title, NO word reversal — fontkit handles bidi).
+      // emitArabicParagraph then routes through the Option-A pre-wrap +
+      // noWrap-stack pipeline for Arabic content; Latin passes through
+      // unchanged as a single text node.
+      const titleText = arabicHeadingText(sectionNum, titleSource);
       return [
-        {
-          text: `${cc.section_number || `${i + 1}`}. ${clause?.title || 'Untitled Clause'}`,
+        emitArabicParagraph(titleText, 12, EXPORT_BODY_WIDTH_PT, true, {
           style: 'clauseTitle',
           margin: [0, 16, 0, 4] as [number, number, number, number],
-        },
-        {
-          text: clause?.content || '',
+        }),
+        emitArabicParagraph(bodyText, 10, EXPORT_BODY_WIDTH_PT, false, {
           style: 'body',
           margin: [0, 0, 0, 8] as [number, number, number, number],
-        },
+        }),
       ];
     }).flat();
 
+    const projectName = contract.project?.name || 'N/A';
+    // Half-body width for the 2-col meta blocks. Minus 4pt safety absorbs the
+    // tiny gap pdfmake leaves between '*' columns.
+    const META_COLUMN_WIDTH_PT = EXPORT_BODY_WIDTH_PT / 2 - 4;
     const docDefinition: TDocumentDefinitions = {
       content: [
         { text: 'Sign Platform', style: 'brand', margin: [0, 0, 0, 4] as [number, number, number, number] },
-        { text: contract.name, style: 'title' },
+        emitArabicParagraph(contract.name, 22, EXPORT_BODY_WIDTH_PT, true, {
+          style: 'title',
+        }),
         {
           columns: [
             { text: `Type: ${contract.contract_type}`, style: 'meta', width: '*' },
@@ -89,7 +115,7 @@ export class ExportService {
         },
         {
           columns: [
-            { text: `Project: ${contract.project?.name || 'N/A'}`, style: 'meta', width: '*' },
+            { ...emitArabicParagraph(`Project: ${projectName}`, 10, META_COLUMN_WIDTH_PT, false, { style: 'meta' }), width: '*' },
             { text: `Created: ${new Date(contract.created_at).toLocaleDateString()}`, style: 'meta', width: '*' },
           ],
           margin: [0, 4, 0, 16] as [number, number, number, number],
@@ -102,10 +128,17 @@ export class ExportService {
         brand: { fontSize: 10, color: BRAND_COLOR, bold: true },
         title: { fontSize: 22, bold: true, color: DARK_COLOR },
         sectionTitle: { fontSize: 16, bold: true, color: DARK_COLOR },
-        clauseTitle: { fontSize: 12, bold: true, color: '#1F2937' },
-        meta: { fontSize: 10, color: '#6B7280' },
-        body: { fontSize: 10, color: '#374151', lineHeight: 1.5 },
+        clauseTitle: { fontSize: 12, bold: true, color: '#1F2937', lineHeight: 1.3 },
+        meta: { fontSize: 10, color: '#6B7280', lineHeight: 1.3 },
+        body: { fontSize: 10, color: '#374151', lineHeight: 1.3 },
       },
+      // Helvetica = PDF base-14, NO embedding. Acrobat-strict fix
+      // (2026-06-24): pure-Latin chrome (footer, page numbers, brand,
+      // meta labels) renders via Helvetica's built-in AFM path,
+      // bypassing the Amiri-subset path that triggered Acrobat
+      // CTJPEGReader/Font Capture crashes on real contract exports.
+      // Arabic content opts back into Amiri inside `emitArabicParagraph`
+      // (Arabic inlines carry explicit `font: 'Amiri'`).
       defaultStyle: { font: 'Helvetica' },
       pageMargins: [40, 40, 40, 60] as [number, number, number, number],
       footer: (currentPage: number, pageCount: number) => ({
@@ -153,25 +186,38 @@ export class ExportService {
         { text: 'Description', style: 'tableHeader' },
         { text: 'Recommendation', style: 'tableHeader' },
       ],
-      ...risks.map((r) => [
-        { text: r.risk_category, style: 'tableCell' },
-        {
-          text: r.risk_level,
-          style: 'tableCell',
-          color: r.risk_level === 'HIGH' ? '#DC2626' : r.risk_level === 'MEDIUM' ? '#D97706' : '#059669',
-          bold: true,
-        },
-        { text: r.description || '', style: 'tableCell' },
-        { text: r.recommendation || 'N/A', style: 'tableCell' },
-      ]),
+      ...risks.map((r) => {
+        const desc = r.description || '';
+        const rec = r.recommendation || 'N/A';
+        // 4-col risk table ['auto', 'auto', '*', '*'] — use the conservative
+        // ¼-of-body fallback per the v1 plan.
+        const cellWidth = tableCellWidthFallback(EXPORT_BODY_WIDTH_PT, 4);
+        return [
+          emitArabicParagraph(r.risk_category, 9, cellWidth, false, { style: 'tableCell' }),
+          {
+            text: r.risk_level,
+            style: 'tableCell',
+            color: r.risk_level === 'HIGH' ? '#DC2626' : r.risk_level === 'MEDIUM' ? '#D97706' : '#059669',
+            bold: true,
+          },
+          emitArabicParagraph(desc, 9, cellWidth, false, { style: 'tableCell' }),
+          emitArabicParagraph(rec, 9, cellWidth, false, { style: 'tableCell' }),
+        ];
+      }),
     ];
 
     const docDefinition: TDocumentDefinitions = {
       content: [
         { text: 'Sign Platform', style: 'brand', margin: [0, 0, 0, 4] as [number, number, number, number] },
         { text: 'Risk Analysis Report', style: 'title' },
-        { text: `Contract: ${contract.name}`, style: 'meta', margin: [0, 8, 0, 4] as [number, number, number, number] },
-        { text: `Project: ${contract.project?.name || 'N/A'}`, style: 'meta', margin: [0, 0, 0, 16] as [number, number, number, number] },
+        emitArabicParagraph(`Contract: ${contract.name}`, 10, EXPORT_BODY_WIDTH_PT, false, {
+          style: 'meta',
+          margin: [0, 8, 0, 4] as [number, number, number, number],
+        }),
+        emitArabicParagraph(`Project: ${contract.project?.name || 'N/A'}`, 10, EXPORT_BODY_WIDTH_PT, false, {
+          style: 'meta',
+          margin: [0, 0, 0, 16] as [number, number, number, number],
+        }),
         {
           columns: [
             { text: `High: ${highCount}`, style: 'riskHigh', alignment: 'center' as const, width: '*' },
@@ -206,14 +252,21 @@ export class ExportService {
         brand: { fontSize: 10, color: BRAND_COLOR, bold: true },
         title: { fontSize: 22, bold: true, color: DARK_COLOR },
         sectionTitle: { fontSize: 16, bold: true, color: DARK_COLOR },
-        meta: { fontSize: 10, color: '#6B7280' },
-        body: { fontSize: 10, color: '#374151', lineHeight: 1.5 },
+        meta: { fontSize: 10, color: '#6B7280', lineHeight: 1.3 },
+        body: { fontSize: 10, color: '#374151', lineHeight: 1.3 },
         riskHigh: { fontSize: 14, bold: true, color: '#DC2626' },
         riskMedium: { fontSize: 14, bold: true, color: '#D97706' },
         riskLow: { fontSize: 14, bold: true, color: '#059669' },
         tableHeader: { fontSize: 9, bold: true, color: '#374151', fillColor: '#F9FAFB' },
-        tableCell: { fontSize: 9, color: '#4B5563' },
+        tableCell: { fontSize: 9, color: '#4B5563', lineHeight: 1.3 },
       },
+      // Helvetica = PDF base-14, NO embedding. Acrobat-strict fix
+      // (2026-06-24): pure-Latin chrome (footer, page numbers, brand,
+      // meta labels) renders via Helvetica's built-in AFM path,
+      // bypassing the Amiri-subset path that triggered Acrobat
+      // CTJPEGReader/Font Capture crashes on real contract exports.
+      // Arabic content opts back into Amiri inside `emitArabicParagraph`
+      // (Arabic inlines carry explicit `font: 'Amiri'`).
       defaultStyle: { font: 'Helvetica' },
       pageMargins: [40, 40, 40, 60] as [number, number, number, number],
       footer: (currentPage: number, pageCount: number) => ({
@@ -292,19 +345,24 @@ export class ExportService {
     }
 
     // PDF
+    // 2-col summary table cell width — body/2 minus padding safety.
+    const summaryCellWidth = tableCellWidthFallback(EXPORT_BODY_WIDTH_PT, 2);
     const docDefinition: TDocumentDefinitions = {
       content: [
         { text: 'Sign Platform', style: 'brand', margin: [0, 0, 0, 4] as [number, number, number, number] },
         { text: 'Contract Summary', style: 'title' },
-        { text: `${contract.name}`, style: 'subtitle', margin: [0, 4, 0, 16] as [number, number, number, number] },
+        emitArabicParagraph(contract.name, 14, EXPORT_BODY_WIDTH_PT, false, {
+          style: 'subtitle',
+          margin: [0, 4, 0, 16] as [number, number, number, number],
+        }),
         {
           table: {
             widths: ['*', '*'],
             body: [
-              [{ text: 'Type', style: 'label' }, { text: contract.contract_type, style: 'value' }],
-              [{ text: 'Status', style: 'label' }, { text: contract.status, style: 'value' }],
-              [{ text: 'Project', style: 'label' }, { text: summary.contract.project, style: 'value' }],
-              [{ text: 'Created By', style: 'label' }, { text: summary.contract.creator, style: 'value' }],
+              [{ text: 'Type', style: 'label' }, emitArabicParagraph(contract.contract_type, 10, summaryCellWidth, false, { style: 'value' })],
+              [{ text: 'Status', style: 'label' }, emitArabicParagraph(contract.status, 10, summaryCellWidth, false, { style: 'value' })],
+              [{ text: 'Project', style: 'label' }, emitArabicParagraph(summary.contract.project, 10, summaryCellWidth, false, { style: 'value' })],
+              [{ text: 'Created By', style: 'label' }, emitArabicParagraph(summary.contract.creator, 10, summaryCellWidth, false, { style: 'value' })],
               [{ text: 'Clauses', style: 'label' }, { text: `${summary.statistics.total_clauses}`, style: 'value' }],
               [{ text: 'Risks (H/M/L)', style: 'label' }, { text: `${summary.statistics.high_risks} / ${summary.statistics.medium_risks} / ${summary.statistics.low_risks}`, style: 'value' }],
               [{ text: 'Obligations', style: 'label' }, { text: `${summary.statistics.total_obligations}`, style: 'value' }],
@@ -325,10 +383,17 @@ export class ExportService {
       styles: {
         brand: { fontSize: 10, color: BRAND_COLOR, bold: true },
         title: { fontSize: 22, bold: true, color: DARK_COLOR },
-        subtitle: { fontSize: 14, color: '#6B7280' },
-        label: { fontSize: 10, bold: true, color: '#374151' },
-        value: { fontSize: 10, color: '#6B7280' },
+        subtitle: { fontSize: 14, color: '#6B7280', lineHeight: 1.3 },
+        label: { fontSize: 10, bold: true, color: '#374151', lineHeight: 1.3 },
+        value: { fontSize: 10, color: '#6B7280', lineHeight: 1.3 },
       },
+      // Helvetica = PDF base-14, NO embedding. Acrobat-strict fix
+      // (2026-06-24): pure-Latin chrome (footer, page numbers, brand,
+      // meta labels) renders via Helvetica's built-in AFM path,
+      // bypassing the Amiri-subset path that triggered Acrobat
+      // CTJPEGReader/Font Capture crashes on real contract exports.
+      // Arabic content opts back into Amiri inside `emitArabicParagraph`
+      // (Arabic inlines carry explicit `font: 'Amiri'`).
       defaultStyle: { font: 'Helvetica' },
       pageMargins: [40, 40, 40, 60] as [number, number, number, number],
     };
@@ -359,16 +424,16 @@ export class ExportService {
       const PdfPrinter = require('pdfmake/js/Printer').default;
       const URLResolver = require('pdfmake/js/URLResolver').default;
 
+      // Amiri (OFL-1.1, embedded under backend/assets/fonts/) replaces the
+      // base-14 Helvetica that had ZERO Arabic glyphs and was the root cause
+      // of the mojibake bug on contract PDFs containing Arabic. The 2nd arg
+      // (was `undefined`) is now the FontVfs adapter — pdfmake calls
+      // `.existsSync()` + `.readFileSync()` on it to load the TTF buffers.
+      // Each text node going through prepareArabicText() arrives in visual
+      // order; pdfmake draws it left-to-right exactly as given.
       const printer = new PdfPrinter(
-        {
-          Helvetica: {
-            normal: 'Helvetica',
-            bold: 'Helvetica-Bold',
-            italics: 'Helvetica-Oblique',
-            bolditalics: 'Helvetica-BoldOblique',
-          },
-        },
-        undefined,
+        arabicFontDescriptors(),
+        arabicVfs(),
         new URLResolver(null),
       );
 

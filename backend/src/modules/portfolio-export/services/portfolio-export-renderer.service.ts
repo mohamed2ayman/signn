@@ -1,5 +1,17 @@
 import { Injectable, Logger } from '@nestjs/common';
 import * as crypto from 'crypto';
+// Arabic PDF rendering: Option A — pre-measure + pre-wrap. Multi-line
+// Arabic content is emitted as a stack of noWrap text nodes so fontkit
+// gets each line as one paragraph (correct UAX #9 bidi for word order +
+// digit anchoring). Latin content passes through identity in the helper.
+// See pdf-arabic.ts banner for the full diagnosis and architecture.
+import {
+  emitArabicParagraph,
+  arabicFontDescriptors,
+  arabicVfs,
+  PORTFOLIO_BODY_WIDTH_PT,
+  tableCellWidthFallback,
+} from '../../../common/utils/pdf-arabic';
 
 // pdfmake types are loose — match the convention from PdfReportService.
 type DocDef = any;
@@ -22,7 +34,11 @@ const BRAND = {
  * allowed, edit/copy/annotate denied). Diverges in:
  *   - content sections (one per portfolio widget rather than the
  *     compliance findings layers)
- *   - EN-only labels (D5 — Arabic glyph wall in pdfmake deferred to v2)
+ *   - EN-only labels and section headings (our own copy). User-supplied
+ *     text (org / project / requester names, project_name in the per-project
+ *     widgets) flows through the shared `pdf-arabic` helper which shapes +
+ *     bidi-reorders Arabic codepoints under the embedded Amiri font (the
+ *     prior "Arabic glyph wall deferred to v2" note is now resolved).
  *   - Latin numerals + ISO currency codes everywhere (#137) including
  *     the cover page, KPI table, value-per-currency rows, and any
  *     count cell — never `Intl.NumberFormat('ar-EG', ...)`.
@@ -123,7 +139,10 @@ export class PortfolioExportRendererService {
       content: cover,
       pageSize: 'A4',
       pageMargins: [50, 60, 50, 80] as [number, number, number, number],
-      defaultStyle: { font: 'Helvetica', fontSize: 10, color: BRAND.dark },
+      // Helvetica default — PDF base-14 (no embedding). Pure-Latin chrome
+      // inherits this; Arabic runs opt back into Amiri inside
+      // `emitArabicParagraph`. Acrobat-strict fix (2026-06-24).
+      defaultStyle: { font: 'Helvetica', fontSize: 10, color: BRAND.dark, lineHeight: 1.3 },
       header: () => null,
       background: (_currentPage: number, pageSize: any) => ({
         canvas: this.watermarkCanvas(pageSize.width, pageSize.height),
@@ -381,16 +400,15 @@ export class PortfolioExportRendererService {
       const PdfPrinter = require('pdfmake/js/Printer').default;
       const URLResolver = require('pdfmake/js/URLResolver').default;
 
+      // Amiri (OFL-1.1, embedded under backend/assets/fonts/) replaces the
+      // base-14 Helvetica that has ZERO Arabic glyphs. Project names, org
+      // names, and requester names can all be Arabic; without this every
+      // such codepoint would silently render as .notdef. The 2nd arg (was
+      // `undefined`) is now the FontVfs adapter — pdfmake calls
+      // `.existsSync()` + `.readFileSync()` on it to load the TTF buffers.
       const printer = new PdfPrinter(
-        {
-          Helvetica: {
-            normal: 'Helvetica',
-            bold: 'Helvetica-Bold',
-            italics: 'Helvetica-Oblique',
-            bolditalics: 'Helvetica-BoldOblique',
-          },
-        },
-        undefined,
+        arabicFontDescriptors(),
+        arabicVfs(),
         // Null access policy disables URL fetching (we never embed
         // external URLs in the portfolio PDF) but provides the
         // `resolved()` method Printer expects to await.
@@ -452,7 +470,11 @@ function sectionHeading(text: string) {
 }
 
 function paragraph(text: string) {
-  return { text, fontSize: 10, color: BRAND.dark, margin: [0, 4, 0, 0] };
+  return emitArabicParagraph(text, 10, PORTFOLIO_BODY_WIDTH_PT, false, {
+    fontSize: 10,
+    color: BRAND.dark,
+    margin: [0, 4, 0, 0],
+  });
 }
 
 function coverLabel(text: string) {
@@ -460,7 +482,14 @@ function coverLabel(text: string) {
 }
 
 function coverValue(text: string) {
-  return { text, fontSize: 11, color: BRAND.dark, margin: [0, 6, 0, 0] };
+  // Cover-page values appear in a 2-col label/value table — use half-body
+  // minus padding safety for the available width.
+  const coverCellWidth = tableCellWidthFallback(PORTFOLIO_BODY_WIDTH_PT, 2);
+  return emitArabicParagraph(text, 11, coverCellWidth, false, {
+    fontSize: 11,
+    color: BRAND.dark,
+    margin: [0, 6, 0, 0],
+  });
 }
 
 function statBlock(label: string, value: string, color: string) {
@@ -479,7 +508,16 @@ function tableHeader(text: string) {
 }
 
 function tableCell(text: string) {
-  return { text, fontSize: 10, color: BRAND.dark, margin: [0, 4, 0, 4] };
+  // Portfolio tables vary in column count (2, 3, 4) — use the narrowest
+  // case (4-column) as a conservative fallback so Arabic content never
+  // overflows. v1: documented in the helper banner as the first edge case
+  // to harden if multi-line wrap inside wider cells looks too narrow.
+  const cellWidth = tableCellWidthFallback(PORTFOLIO_BODY_WIDTH_PT, 4);
+  return emitArabicParagraph(text, 10, cellWidth, false, {
+    fontSize: 10,
+    color: BRAND.dark,
+    margin: [0, 4, 0, 4],
+  });
 }
 
 function table(body: any[], widths: any[]) {
