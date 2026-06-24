@@ -1217,26 +1217,53 @@ describe('ExportService — Option A architectural regression guards', () => {
       defaultStyle: { font: 'Amiri' },
     });
 
-    // (1) qpdf --check returns 0 ("no syntax or stream encoding errors").
+    // (1) qpdf --check returns 0 ("no syntax or stream encoding
+    // errors") — but ONLY when qpdf is actually on PATH. CI's
+    // ubuntu-latest runner has no qpdf installed and the workflow
+    // does not provision one; this assertion would false-fail there
+    // from a missing binary, not from a real PDF defect. Detection
+    // uses spawnSync WITHOUT a shell so a missing binary surfaces
+    // as a real `error.code === 'ENOENT'` on BOTH Linux and Windows
+    // (execSync goes through the shell on Windows and would lose
+    // the ENOENT signal in shell-wrapped "not recognized" text).
+    //
+    // When qpdf IS present we still HARD-FAIL on any real
+    // qpdf-reported problem — the original assertion runs unchanged.
+    // The skip is reserved EXCLUSIVELY for the binary-missing case.
+    // In-process invariants (2)–(4) below ALWAYS run regardless.
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { execSync } = require('child_process');
+    const { execSync, spawnSync } = require('child_process');
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const fsmod = require('fs');
     const tmpPath = '/tmp/structural-validity-test.pdf';
     fsmod.writeFileSync(tmpPath, buf);
-    let qpdfOut = '';
-    let qpdfFailed = false;
-    try {
-      qpdfOut = execSync('qpdf --check ' + tmpPath, {
-        encoding: 'utf8',
-        stdio: ['pipe', 'pipe', 'pipe'],
-      });
-    } catch (e: unknown) {
-      qpdfFailed = true;
-      qpdfOut = String(e);
+    const probe = spawnSync('qpdf', ['--version'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    const qpdfMissing =
+      Boolean(probe.error) &&
+      (probe.error as { code?: string }).code === 'ENOENT';
+    if (qpdfMissing) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        'qpdf not found on PATH — skipping external --check; in-process invariants still enforced',
+      );
+    } else {
+      let qpdfOut = '';
+      let qpdfFailed = false;
+      try {
+        qpdfOut = execSync('qpdf --check ' + tmpPath, {
+          encoding: 'utf8',
+          stdio: ['pipe', 'pipe', 'pipe'],
+        });
+      } catch (e: unknown) {
+        qpdfFailed = true;
+        qpdfOut = String(e);
+      }
+      expect(qpdfFailed).toBe(false);
+      expect(qpdfOut).toContain('No syntax or stream encoding errors');
     }
-    expect(qpdfFailed).toBe(false);
-    expect(qpdfOut).toContain('No syntax or stream encoding errors');
 
     // (2) Per-content-stream operator balance — every stream's BDC count
     // equals its EMC count, final depth is zero on EVERY counter, max
