@@ -1,17 +1,22 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 
 import GuestContractView from '@/components/guest/GuestContractView';
-import { downloadGuestContractPdf } from '@/services/api/guestService';
+import {
+  downloadGuestContractPdf,
+  uploadGuestContractVersion,
+} from '@/services/api/guestService';
 import type { Contract } from '@/types';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (k: string) => k,
+    t: (k: string, opts?: Record<string, unknown>) =>
+      opts ? `${k}:${JSON.stringify(opts)}` : k,
     i18n: { language: 'en', changeLanguage: vi.fn() },
   }),
 }));
 vi.mock('@/services/api/guestService', () => ({
   downloadGuestContractPdf: vi.fn(),
+  uploadGuestContractVersion: vi.fn(),
 }));
 // Isolate from the clause card (not under test here).
 vi.mock('@/components/guest/GuestClauseCard', () => ({ default: () => null }));
@@ -58,6 +63,75 @@ describe('GuestContractView — guest watermarked download button', () => {
 
     await waitFor(() =>
       expect(screen.getByText('guest.contractView.downloadError')).toBeInTheDocument(),
+    );
+  });
+});
+
+describe('GuestContractView — guest upload new version affordance (Feature #4)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const fileInput = (container: HTMLElement) =>
+    container.querySelector('input[type="file"]') as HTMLInputElement;
+
+  it('does NOT render the upload button for a passwordless viewer (no guestJwt)', () => {
+    render(<GuestContractView contract={CONTRACT} />);
+    expect(screen.queryByText('guest.upload.button')).not.toBeInTheDocument();
+  });
+
+  it('renders the upload button once identity is established (guestJwt present)', () => {
+    render(<GuestContractView contract={CONTRACT} guestJwt="guest-jwt" />);
+    expect(screen.getByText('guest.upload.button')).toBeInTheDocument();
+  });
+
+  it('uploads a valid file with the contract id and guest JWT, then shows success', async () => {
+    vi.mocked(uploadGuestContractVersion).mockResolvedValue({
+      id: 'd-1',
+      file_name: 'd-1.pdf',
+      original_name: 'revised.pdf',
+      processing_status: 'UPLOADED',
+      created_at: '2026-06-23T00:00:00.000Z',
+    });
+    const { container } = render(
+      <GuestContractView contract={CONTRACT} guestJwt="guest-jwt" />,
+    );
+    const file = new File(['%PDF-1.4'], 'revised.pdf', { type: 'application/pdf' });
+    fireEvent.change(fileInput(container), { target: { files: [file] } });
+
+    await waitFor(() =>
+      expect(uploadGuestContractVersion).toHaveBeenCalledWith('c-1', 'guest-jwt', file),
+    );
+    await waitFor(() =>
+      expect(screen.getByText('guest.upload.success')).toBeInTheDocument(),
+    );
+  });
+
+  it('rejects a wrong-type file client-side without calling the API', async () => {
+    const { container } = render(
+      <GuestContractView contract={CONTRACT} guestJwt="guest-jwt" />,
+    );
+    const bad = new File(['x'], 'evil.exe', { type: 'application/octet-stream' });
+    fireEvent.change(fileInput(container), { target: { files: [bad] } });
+
+    await waitFor(() =>
+      expect(screen.getByText('guest.upload.errorType')).toBeInTheDocument(),
+    );
+    expect(uploadGuestContractVersion).not.toHaveBeenCalled();
+  });
+
+  it('shows the daily-limit message on a 429 GUEST_UPLOAD_DAILY_LIMIT response', async () => {
+    vi.mocked(uploadGuestContractVersion).mockRejectedValue({
+      response: { status: 429, data: { error: 'GUEST_UPLOAD_DAILY_LIMIT' } },
+    });
+    const { container } = render(
+      <GuestContractView contract={CONTRACT} guestJwt="guest-jwt" />,
+    );
+    const file = new File(['%PDF-1.4'], 'revised.pdf', { type: 'application/pdf' });
+    fireEvent.change(fileInput(container), { target: { files: [file] } });
+
+    await waitFor(() =>
+      expect(screen.getByText('guest.upload.errorDailyLimit')).toBeInTheDocument(),
     );
   });
 });

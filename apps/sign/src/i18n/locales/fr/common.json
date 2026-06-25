@@ -921,6 +921,16 @@
       "downloading": "Préparation…",
       "downloadError": "Échec du téléchargement du PDF. Veuillez réessayer."
     },
+    "upload": {
+      "button": "Téléverser une nouvelle version",
+      "uploading": "Téléversement…",
+      "success": "Nouvelle version téléversée — en cours de traitement.",
+      "error": "Échec du téléversement du fichier. Veuillez réessayer.",
+      "errorType": "Seuls les documents PDF ou Word sont acceptés.",
+      "errorSize": "Le fichier dépasse la limite de {{size}} Mo.",
+      "errorDailyLimit": "Limite de téléversement quotidienne atteinte. Veuillez réessayer demain.",
+      "errorRateLimited": "Trop de téléversements pour le moment. Veuillez patienter un instant puis réessayer."
+    },
     "clause": {
       "showMore": "Afficher plus",
       "showLess": "Afficher moins"

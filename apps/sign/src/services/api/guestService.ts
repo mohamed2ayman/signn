@@ -176,6 +176,47 @@ export async function downloadGuestContractPdf(
   window.URL.revokeObjectURL(url);
 }
 
+/** Scrubbed created-document shape returned by the guest upload route. */
+export interface GuestUploadedVersion {
+  id: string;
+  file_name: string;
+  original_name: string | null;
+  processing_status: string;
+  created_at: string;
+}
+
+/**
+ * Upload a revised contract version as the established guest (Feature #4).
+ *
+ * Multipart POST on the isolated client. `guestHttp` defaults to
+ * `application/json`, so we override `Content-Type: multipart/form-data` for
+ * THIS request only, alongside an explicit `Authorization: Bearer <guest_jwt>`
+ * (same credential isolation as `postGuestComment` — the guest JWT is never
+ * written to the app store). The file lands as a new document on the bound
+ * contract and re-runs AI extraction (metered against the host org's separate
+ * guest meter, subject to a 5/day-per-contract cap — the backend returns
+ * 429 `{ error: 'GUEST_UPLOAD_DAILY_LIMIT' }` at the limit).
+ */
+export async function uploadGuestContractVersion(
+  contractId: string,
+  guestJwt: string,
+  file: File,
+): Promise<GuestUploadedVersion> {
+  const fd = new FormData();
+  fd.append('file', file);
+  const { data } = await guestHttp.post<GuestUploadedVersion>(
+    `/guest/contracts/${contractId}/documents`,
+    fd,
+    {
+      headers: {
+        Authorization: `Bearer ${guestJwt}`,
+        'Content-Type': 'multipart/form-data',
+      },
+    },
+  );
+  return data;
+}
+
 // ─── MANAGING USER (for completeness — uses the normal authenticated client) ─
 
 export interface CreateGuestInvitationInput {

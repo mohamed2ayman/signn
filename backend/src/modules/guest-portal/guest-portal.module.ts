@@ -14,10 +14,18 @@ import { ScopedRepositoryModule } from '../scoped-repository/scoped-repository.m
 // (ExportModule exports it) to render the same contract PDF the managing path
 // renders, plus a server-built watermark stamp.
 import { ExportModule } from '../export/export.module';
+// Feature #4 — Guest upload of a new contract version reuses
+// DocumentProcessingService.uploadAndProcess (DocumentProcessingModule exports
+// it) for the storage + metering + extraction lifecycle, and
+// NotificationDispatchService (NotificationsModule) for the managing-party
+// upload notice + the host at-limit notice.
+import { DocumentProcessingModule } from '../document-processing/document-processing.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 import { InvitationTokenService } from './services/invitation-token.service';
 import { ViewerCredentialService } from './services/viewer-credential.service';
 import { GuestInvitationService } from './services/guest-invitation.service';
+import { GuestUploadService } from './services/guest-upload.service';
 import { ViewerCredentialGuard } from './guards/viewer-credential.guard';
 
 import { GuestInvitationsController } from './controllers/guest-invitations.controller';
@@ -25,6 +33,7 @@ import { PublicGuestInvitationController } from './controllers/public-guest-invi
 import { ViewerPortalController } from './controllers/viewer-portal.controller';
 import { GuestCommentsController } from './controllers/guest-comments.controller';
 import { GuestDownloadController } from './controllers/guest-download.controller';
+import { GuestUploadController } from './controllers/guest-upload.controller';
 
 /**
  * Phase 7.18 — Guest Portal module.
@@ -63,6 +72,8 @@ import { GuestDownloadController } from './controllers/guest-download.controller
     // under the inline findInOrg wall (layer 1).
     ScopedRepositoryModule,
     ExportModule,
+    DocumentProcessingModule,
+    NotificationsModule,
   ],
   controllers: [
     GuestInvitationsController,
@@ -70,11 +81,13 @@ import { GuestDownloadController } from './controllers/guest-download.controller
     ViewerPortalController,
     GuestCommentsController,
     GuestDownloadController,
+    GuestUploadController,
   ],
   providers: [
     InvitationTokenService,
     ViewerCredentialService,
     GuestInvitationService,
+    GuestUploadService,
     ViewerCredentialGuard,
   ],
 })

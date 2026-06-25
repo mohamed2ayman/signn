@@ -27,6 +27,16 @@ export enum MeterKey {
   // and finalize-review charges `finalize_review`, not `risk`. `RISK` stays
   // in the enum as RESERVED; do NOT remove it.
   FINALIZE_REVIEW = 'finalize_review',
+  // Feature #4 — guest upload of a new contract version. A SEPARATE meter
+  // from `upload_extraction` so a guest's metered usage is capped/attributed
+  // independently and does NOT consume the host's managing upload quota.
+  // BILLING/ATTRIBUTION only: the 5/day-per-contract daily cap is enforced
+  // at the route layer (advisory-lock count-and-create), NOT by this meter —
+  // the metering engine has no daily window (see metering-resolver
+  // computeWindowKey). ADDITIVE enum value only; the engine treats it exactly
+  // like upload_extraction (per_contract / closed). The matching PG
+  // `meter_key_enum` ALTER TYPE ADD VALUE lands in migration 1761000000001.
+  GUEST_UPLOAD = 'guest_upload',
 }
 
 export enum MeterWindowType {
