@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import GuestContractView from '@/components/guest/GuestContractView';
 import {
   downloadGuestContractPdf,
+  getGuestDocumentStatus,
   uploadGuestContractVersion,
 } from '@/services/api/guestService';
 import type { Contract } from '@/types';
@@ -17,6 +18,7 @@ vi.mock('react-i18next', () => ({
 vi.mock('@/services/api/guestService', () => ({
   downloadGuestContractPdf: vi.fn(),
   uploadGuestContractVersion: vi.fn(),
+  getGuestDocumentStatus: vi.fn(),
 }));
 // Isolate from the clause card (not under test here).
 vi.mock('@/components/guest/GuestClauseCard', () => ({ default: () => null }));
@@ -85,13 +87,24 @@ describe('GuestContractView — guest upload new version affordance (Feature #4)
     expect(screen.getByText('guest.upload.button')).toBeInTheDocument();
   });
 
-  it('uploads a valid file with the contract id and guest JWT, then shows success', async () => {
+  it('uploads a valid file, then drives the live status surface to "submitted for review"', async () => {
     vi.mocked(uploadGuestContractVersion).mockResolvedValue({
       id: 'd-1',
       file_name: 'd-1.pdf',
       original_name: 'revised.pdf',
       processing_status: 'UPLOADED',
       created_at: '2026-06-23T00:00:00.000Z',
+    });
+    // The status poll resolves terminal-success → the surface shows the
+    // "submitted for review" message (NOT the proposed clauses).
+    vi.mocked(getGuestDocumentStatus).mockResolvedValue({
+      id: 'd-1',
+      processing_status: 'CLAUSES_EXTRACTED',
+      quality_flags: null,
+      error_message: null,
+      page_count: 2,
+      created_at: '2026-06-23T00:00:00.000Z',
+      updated_at: '2026-06-23T00:00:05.000Z',
     });
     const { container } = render(
       <GuestContractView contract={CONTRACT} guestJwt="guest-jwt" />,
@@ -102,8 +115,15 @@ describe('GuestContractView — guest upload new version affordance (Feature #4)
     await waitFor(() =>
       expect(uploadGuestContractVersion).toHaveBeenCalledWith('c-1', 'guest-jwt', file),
     );
+    // The live status surface polls the guest status endpoint and lands on the
+    // "submitted for review" terminal message.
     await waitFor(() =>
-      expect(screen.getByText('guest.upload.success')).toBeInTheDocument(),
+      expect(getGuestDocumentStatus).toHaveBeenCalledWith('c-1', 'guest-jwt', 'd-1'),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByText('guest.uploadStatus.submittedTitle'),
+      ).toBeInTheDocument(),
     );
   });
 

@@ -56,6 +56,9 @@ describe('DocumentProcessingService — Tier 2 READ access wall', () => {
       { reserve: jest.fn(), commit: jest.fn(), release: jest.fn() } as any,
       // Option B — S2f scoped chokepoint (only getDocuments uses it).
       documentScoped,
+      // Guest extraction completion (Slice 1) — userRepository (last ctor arg);
+      // these read paths never reach the advance core, so it is never invoked.
+      { findOne: jest.fn().mockResolvedValue({ account_type: 'MANAGING' }) } as any,
     );
   }
 

@@ -22,6 +22,7 @@ import NoticesTab from '@/components/notices/NoticesTab';
 import SubContractsTab from '@/components/subcontracts/SubContractsTab';
 import ComplianceTab from '@/components/contracts/ComplianceTab';
 import ObligationsTab from '@/components/contracts/ObligationsTab';
+import GuestProposedVersionsPanel from '@/components/contracts/GuestProposedVersionsPanel';
 import { documentProcessingService } from '@/services/api/documentProcessingService';
 import { useDocumentProcessing } from '@/hooks/useDocumentProcessing';
 import ProcessingStatusCard from '@/components/common/ProcessingStatusCard';
@@ -1269,6 +1270,12 @@ export default function ContractDetailPage() {
           </div>
         </div>
       )}
+
+      {/* Host-v1 (Slice 1) — guest-submitted new versions + their proposed
+          clauses. Self-contained: renders nothing unless a bound guest has
+          submitted a version. Gives finished guest uploads a persistent home
+          (they leave the "Analyzing Documents" banner once terminal). */}
+      {id && <GuestProposedVersionsPanel contractId={id} />}
 
       {/* Tabs */}
       <div className="border-b border-gray-200">

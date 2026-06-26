@@ -187,6 +187,13 @@
     "viewObligations": "Voir les obligations"
   },
   "contract": {
+    "proposedVersions": {
+      "title": "Versions soumises par l'invité",
+      "subtitle": "Nouvelles versions du contrat téléversées par l'invité, avec les clauses extraites de chacune. En lecture seule pour l'instant.",
+      "byGuest": "Téléversé par l'invité",
+      "clauseCount": "{{count}} clauses proposées",
+      "reviewOnlyNote": "Lecture seule — accepter, rejeter et fusionner arrivent bientôt."
+    },
     "title": "Contrat",
     "titlePlural": "Contrats",
     "createNew": "Créer un nouveau contrat",
@@ -908,6 +915,17 @@
     }
   },
   "guest": {
+    "uploadStatus": {
+      "processingTitle": "Traitement de votre nouvelle version…",
+      "processingHint": "Nous extrayons les clauses de la version que vous avez téléversée.",
+      "submittedTitle": "Nouvelle version soumise pour examen",
+      "submittedHint": "Votre version a été envoyée au propriétaire du contrat pour examen — il verra vos clauses proposées. Elle ne remplace pas le contrat que vous consultez.",
+      "failedTitle": "Le fichier n'a pas pu être traité",
+      "failedHint": "Une erreur s'est produite lors du traitement de votre version. Veuillez réessayer de la téléverser.",
+      "reviewTitle": "Qualité de numérisation trop faible",
+      "reviewHint": "Nous n'avons pas pu lire cette numérisation de manière fiable. Veuillez téléverser une copie plus nette.",
+      "reupload": "Téléverser à nouveau"
+    },
     "readOnlyBadge": "Vue invité en lecture seule",
     "poweredBy": "Propulsé par",
     "loading": "Chargement du contrat partagé…",

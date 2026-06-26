@@ -8,6 +8,7 @@ import {
   Contract,
   RiskAnalysis,
   RiskCategory,
+  User,
 } from '../../database/entities';
 import { DocumentProcessingController } from './document-processing.controller';
 import { DocumentProcessingService } from './document-processing.service';
@@ -43,6 +44,9 @@ import { ScopedRepositoryModule } from '../scoped-repository/scoped-repository.m
       // risk_category against the active taxonomy. Unknown → falls back
       // to 'Uncategorized' + audit log.
       RiskCategory,
+      // Guest extraction completion (Slice 1) — read the uploader's
+      // account_type so the advance core decides proposed-vs-live intrinsically.
+      User,
     ]),
     StorageModule,
     AiModule,

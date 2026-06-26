@@ -108,7 +108,16 @@ export class ContractAccessService {
       .leftJoinAndSelect('contract.creator', 'creator')
       .leftJoinAndSelect('contract.approver', 'approver')
       .leftJoinAndSelect('contract.project', 'project')
-      .leftJoinAndSelect('contract.contract_clauses', 'contract_clauses')
+      // Option C — exclude guest-PROPOSED clauses from the host's canonical
+      // read. The filter lives in the JOIN ON-clause (not WHERE) so this stays
+      // a LEFT JOIN: a contract with only proposed clauses is still returned,
+      // just with the proposed pile omitted. Proposed clauses surface ONLY via
+      // the host-v1 "proposed clauses" read.
+      .leftJoinAndSelect(
+        'contract.contract_clauses',
+        'contract_clauses',
+        'contract_clauses.is_proposed = false',
+      )
       .leftJoinAndSelect('contract_clauses.clause', 'clause')
       .where('contract.id = :id', { id: contractId })
       .andWhere('project.organization_id = :orgId', { orgId })
@@ -119,6 +128,27 @@ export class ContractAccessService {
     }
 
     return this.scrubAndSort(contract);
+  }
+
+  /**
+   * Lightweight guest BINDING assertion (1a). Throws NotFoundException (404 —
+   * never 403, no existence leak) unless a `guest_contract_access` row binds
+   * this user to this specific contract. Same binding check as `findForGuest`
+   * but WITHOUT the heavy contract+clauses load — the right shape for a status
+   * poll that fires every ~2s. The contract-level scope rule still holds: a
+   * sibling contract in the same project is denied unless it carries its own
+   * binding row.
+   */
+  async assertGuestContractAccess(
+    contractId: string,
+    userId: string,
+  ): Promise<void> {
+    const binding = await this.guestAccessRepository.findOne({
+      where: { user_id: userId, contract_id: contractId },
+    });
+    if (!binding) {
+      throw new NotFoundException('Contract not found');
+    }
   }
 
   /**
@@ -168,7 +198,15 @@ export class ContractAccessService {
       .leftJoinAndSelect('contract.creator', 'creator')
       .leftJoinAndSelect('contract.approver', 'approver')
       .leftJoinAndSelect('contract.project', 'project')
-      .leftJoinAndSelect('contract.contract_clauses', 'contract_clauses')
+      // Option C — the guest viewer (and viewer-credential) clause read MUST
+      // also exclude proposed clauses: a guest never sees the proposed pile
+      // replace the contract they're viewing. JOIN ON-clause keeps it a LEFT
+      // JOIN (contract still returned if it has only proposed clauses).
+      .leftJoinAndSelect(
+        'contract.contract_clauses',
+        'contract_clauses',
+        'contract_clauses.is_proposed = false',
+      )
       .leftJoinAndSelect('contract_clauses.clause', 'clause')
       .where('contract.id = :id', { id: contractId })
       .getOne();

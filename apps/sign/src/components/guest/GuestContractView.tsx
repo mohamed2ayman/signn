@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { Contract } from '@/types';
 import GuestClauseCard from './GuestClauseCard';
+import GuestUploadStatus from './GuestUploadStatus';
 import {
   downloadGuestContractPdf,
   uploadGuestContractVersion,
@@ -32,7 +33,11 @@ export default function GuestContractView({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
-  const [uploadDone, setUploadDone] = useState(false);
+  // The guest's just-uploaded new version (drives the live status surface).
+  const [uploadedDoc, setUploadedDoc] = useState<{
+    id: string;
+    name: string | null;
+  } | null>(null);
   const clauses = [...(contract.contract_clauses ?? [])].sort(
     (a, b) => (a.order_index ?? 0) - (b.order_index ?? 0),
   );
@@ -55,7 +60,7 @@ export default function GuestContractView({
   const handleUploadClick = () => {
     if (!guestJwt || uploading) return;
     setUploadError(null);
-    setUploadDone(false);
+    setUploadedDoc(null);
     fileInputRef.current?.click();
   };
 
@@ -80,10 +85,10 @@ export default function GuestContractView({
 
     setUploading(true);
     setUploadError(null);
-    setUploadDone(false);
+    setUploadedDoc(null);
     try {
-      await uploadGuestContractVersion(contract.id, guestJwt, file);
-      setUploadDone(true);
+      const res = await uploadGuestContractVersion(contract.id, guestJwt, file);
+      setUploadedDoc({ id: res.id, name: res.original_name ?? res.file_name });
     } catch (err: any) {
       const status = err?.response?.status;
       const code = err?.response?.data?.error;
@@ -234,15 +239,6 @@ export default function GuestContractView({
                   className="hidden"
                   onChange={handleFileSelected}
                 />
-                {uploadDone && (
-                  <span
-                    className="text-[11px] text-emerald-600"
-                    dir="auto"
-                    role="status"
-                  >
-                    {t('guest.upload.success')}
-                  </span>
-                )}
                 {uploadError && (
                   <span
                     className="text-[11px] text-red-500"
@@ -260,6 +256,26 @@ export default function GuestContractView({
               </div>
             )}
           </div>
+
+          {/* Live status of the just-uploaded new version (Slice 1). It is the
+              ONLY thing that drives the extraction forward for a guest upload.
+              On success it says "submitted for review" — the proposed clauses
+              are for the HOST to review and never replace the contract the guest
+              is viewing (the clause list below stays the host's canonical set). */}
+          {guestJwt && uploadedDoc && (
+            <div className="mb-4">
+              <GuestUploadStatus
+                contractId={contract.id}
+                guestJwt={guestJwt}
+                docId={uploadedDoc.id}
+                fileName={uploadedDoc.name}
+                onReupload={() => {
+                  setUploadedDoc(null);
+                  handleUploadClick();
+                }}
+              />
+            </div>
+          )}
 
           {clauses.length === 0 ? (
             <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-10 text-center text-sm text-gray-400">

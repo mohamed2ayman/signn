@@ -62,6 +62,9 @@ describe('DocumentProcessingService.updateExtractedText — tenancy (S2f, two la
       { reserve: jest.fn(), commit: jest.fn(), release: jest.fn() } as any,
       // Option B — S2f scoped chokepoint (the by-id LOAD layer).
       documentScoped,
+      // Guest extraction completion (Slice 1) — userRepository (last ctor arg);
+      // updateExtractedText never reaches the advance core, so it is never invoked.
+      { findOne: jest.fn().mockResolvedValue({ account_type: 'MANAGING' }) } as any,
     );
   }
 

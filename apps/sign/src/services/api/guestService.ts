@@ -217,6 +217,44 @@ export async function uploadGuestContractVersion(
   return data;
 }
 
+/**
+ * Sanitized document status returned by the guest status poll. Mirrors the
+ * backend GuestStatusController projection — NEVER the full entity (no host
+ * org_id / reservation_id / extracted_text leak to the guest).
+ */
+export interface GuestDocumentStatus {
+  id: string;
+  processing_status: string;
+  quality_flags: string[] | null;
+  error_message: string | null;
+  page_count: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * Poll the extraction status of a guest's OWN new-version upload (Slice 1).
+ *
+ * This is the guest sibling of the managing
+ * `GET /contracts/:id/documents/:docId/status` route. It is the ONLY thing that
+ * drives the extraction pipeline forward for a guest upload — the managing route
+ * is walled by the org and a guest's null org can never pass it. Walled by the
+ * guest CONTRACT BINDING + ownership of the doc (404 on any mismatch — no
+ * existence leak). Sends `Authorization: Bearer <guest_jwt>` explicitly on the
+ * isolated client (same credential isolation as `postGuestComment`).
+ */
+export async function getGuestDocumentStatus(
+  contractId: string,
+  guestJwt: string,
+  docId: string,
+): Promise<GuestDocumentStatus> {
+  const { data } = await guestHttp.get<GuestDocumentStatus>(
+    `/guest/contracts/${contractId}/documents/${docId}/status`,
+    { headers: { Authorization: `Bearer ${guestJwt}` } },
+  );
+  return data;
+}
+
 // ─── MANAGING USER (for completeness — uses the normal authenticated client) ─
 
 export interface CreateGuestInvitationInput {

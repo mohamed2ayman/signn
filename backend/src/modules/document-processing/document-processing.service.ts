@@ -7,6 +7,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { randomUUID } from 'crypto';
 import {
+  AccountType,
   AuditLog,
   DocumentUpload,
   DocumentProcessingStatus,
@@ -18,6 +19,7 @@ import {
   RiskAnalysis,
   RiskCategory,
   RiskLevel,
+  User,
 } from '../../database/entities';
 import { StorageService, UploadedFile } from '../storage/storage.service';
 import { AiService } from '../ai/ai.service';
@@ -87,6 +89,16 @@ export class DocumentProcessingService {
     // request-scoped DocumentUpload reads (getDocuments + updateExtractedText).
     // Required dependency (house style); provided via ScopedRepositoryModule.
     private readonly documentScoped: DocumentUploadScopedRepository,
+    // Guest extraction completion (Slice 1) — appended LAST to preserve the
+    // existing positional constructor order for direct-construction unit tests.
+    // Used ONLY to read the uploader's account_type so the extraction-advance
+    // core can decide, INTRINSICALLY from the document, whether this is a guest
+    // upload (→ proposed clauses, no party-backfill). Deriving it from the doc
+    // (not the calling endpoint) closes the race where a host polling a guest's
+    // in-progress doc via the managing status route would otherwise write LIVE
+    // clauses + backfill.
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
   ) {}
 
   /**
@@ -281,9 +293,97 @@ export class DocumentProcessingService {
     }
     // Tenant wall — walk doc → contract → org. Throws 404 if the doc's
     // contract belongs to another org. Mirrors the reprocess pattern
-    // shipped in Tier 1.
+    // shipped in Tier 1. MANAGING wall — UNCHANGED.
     await this.contractAccess.findInOrg(doc.contract_id, orgId);
 
+    return this.advanceDocumentState(doc);
+  }
+
+  /**
+   * Guest sibling of pollAndAdvance — drives the SAME extraction-advance core
+   * for a bound guest's own new-version upload, walled by the guest CONTRACT
+   * BINDING (`guest_contract_access`) instead of `findInOrg`.
+   *
+   * The managing status route (`GET /contracts/:contractId/documents/:docId/status`)
+   * is UNTOUCHED — it keeps its `findInOrg` wall. This is an additive guest
+   * path; it never loosens the managing wall.
+   *
+   * Three 404-on-mismatch gates (no existence leak):
+   *   (a) the doc must exist;
+   *   (b) `:docId` must belong to `:contractId` AND be THIS guest's own upload
+   *       (`uploaded_by === guestUserId`) — a guest can only drive a document
+   *       they uploaded via the guest path, never the host's original doc nor
+   *       another guest's;
+   *   (c) the guest must be bound to `:contractId` via `guest_contract_access`.
+   *
+   * The proposed-vs-live + party-backfill behaviour is NOT decided here — it is
+   * INTRINSIC to the document (derived from the uploader's account_type inside
+   * advanceDocumentState). A guest-uploaded doc ALWAYS writes proposed clauses
+   * and never backfills, no matter which route drives it. That closes the race
+   * where a host polling a guest's in-progress doc via the managing status
+   * route would otherwise write LIVE clauses + party-backfill.
+   *
+   * The metering COMMIT on terminal success happens inside the shared core
+   * (commitReservationOnSuccess, keyed on doc.reservation_id) — so a guest run
+   * that reaches CLAUSES_EXTRACTED commits the GUEST_UPLOAD reservation instead
+   * of leaving it to be swept/refunded.
+   */
+  async pollAndAdvanceForGuest(
+    docId: string,
+    contractId: string,
+    guestUserId: string,
+  ): Promise<DocumentUpload> {
+    const doc = await this.documentUploadRepository.findOne({ // lint-exempt: wall-protected (guest binding); chokepoint migration scheduled
+      where: { id: docId },
+    });
+
+    // (a) doc existence; (b) URL coherence + guest ownership. All 404 — a
+    // guest learns nothing about documents outside their own upload.
+    if (
+      !doc ||
+      doc.contract_id !== contractId ||
+      doc.uploaded_by !== guestUserId
+    ) {
+      throw new NotFoundException('Document not found');
+    }
+
+    // (c) BINDING WALL — the guest must hold a guest_contract_access row for
+    // this contract. Lightweight (no contract load) for the ~2s status poll.
+    await this.contractAccess.assertGuestContractAccess(contractId, guestUserId);
+
+    return this.advanceDocumentState(doc);
+  }
+
+  /**
+   * Is this document a GUEST upload? Derived from the uploader's account_type,
+   * so the proposed-vs-live decision is intrinsic to the document and identical
+   * no matter which route (managing status poll or guest status poll) drives
+   * the advance. A GUEST account can only ever upload via the guest path to a
+   * bound contract, so account_type=GUEST is the precise discriminator.
+   */
+  private async isGuestUploadedDoc(doc: DocumentUpload): Promise<boolean> {
+    const uploader = await this.userRepository.findOne({
+      where: { id: doc.uploaded_by },
+      select: ['id', 'account_type'],
+    });
+    return uploader?.account_type === AccountType.GUEST;
+  }
+
+  /**
+   * Shared extraction-advance core. Runs AFTER the caller's access wall has
+   * authorized the doc (findInOrg for managing, binding + ownership for guest).
+   * Polls the current job and advances the pipeline one step, owning the
+   * terminal metering commit/release.
+   *
+   * The ONLY behavioural divergence — whether extracted clauses are the Option-C
+   * "proposed" set and whether the parent contract's party fields may be
+   * backfilled — is derived from the DOCUMENT (isGuestUploadedDoc), NOT from the
+   * calling endpoint. So a guest-uploaded doc is always treated as a guest
+   * upload even if a host's managing poll happens to drive it.
+   */
+  private async advanceDocumentState(
+    doc: DocumentUpload,
+  ): Promise<DocumentUpload> {
     if (
       doc.processing_status === DocumentProcessingStatus.CLAUSES_EXTRACTED ||
       doc.processing_status === DocumentProcessingStatus.FAILED ||
@@ -316,6 +416,10 @@ export class DocumentProcessingService {
       return doc;
     }
 
+    // Intrinsic to the document, not the caller: a guest upload writes proposed
+    // clauses and never backfills the parent contract's party fields.
+    const isGuestUpload = await this.isGuestUploadedDoc(doc);
+
     // Job completed — advance pipeline
     if (doc.processing_status === DocumentProcessingStatus.EXTRACTING_TEXT) {
       // Text extraction complete
@@ -339,7 +443,7 @@ export class DocumentProcessingService {
       // to preview what was captured).
       if (qualityFlags.length > 0) {
         this.logger.warn(
-          `[pollAndAdvance] Poor scan quality detected for document ${doc.id}: [${qualityFlags.join(', ')}]. ` +
+          `[advanceDocumentState] Poor scan quality detected for document ${doc.id}: [${qualityFlags.join(', ')}]. ` +
           `Setting status to HUMAN_REVIEW_RECOMMENDED.`,
         );
         doc.processing_status = DocumentProcessingStatus.HUMAN_REVIEW_RECOMMENDED;
@@ -359,10 +463,12 @@ export class DocumentProcessingService {
       doc.processing_job_id = null;
       await this.documentUploadRepository.save(doc); // lint-exempt: S2f-deferred (metering-entangled, walled)
 
-      // Extract party names if the text contains contract party markers
+      // Extract party names if the text contains contract party markers.
+      // SUPPRESSED for guest uploads: a guest must NEVER mutate the parent
+      // contract's fields — even when both party fields happen to be empty.
       const extractedText = doc.extracted_text || '';
       const partyMarker = /(?:بين\s*كل\s*من|تم\s*الاتفاق\s*بين\s*كل\s*من|كل\s*من\s*:)/;
-      if (partyMarker.test(extractedText)) {
+      if (!isGuestUpload && partyMarker.test(extractedText)) {
         // Only extract if the contract doesn't already have parties
         const currentContract = await this.contractRepository.findOne({ // lint-exempt: S2f-deferred (metering-entangled, walled)
           where: { id: doc.contract_id },
@@ -397,13 +503,16 @@ export class DocumentProcessingService {
       const clauseResult = jobStatus.result?.result || jobStatus.result;
       const extractedClauses = clauseResult?.clauses || [];
 
-      // Create clause records in DB
+      // Create clause records in DB. For a guest upload the junction rows are
+      // flagged is_proposed=true — a SEPARATE pile that every default read
+      // excludes, so it never collides with the host's live clause ordering.
       await this.createClausesFromExtraction(
         extractedClauses,
         doc.contract_id,
         doc.id,
         doc.uploaded_by,
         doc.organization_id,
+        isGuestUpload,
       );
 
       doc.processing_status = DocumentProcessingStatus.CLAUSES_EXTRACTED;
@@ -606,6 +715,11 @@ export class DocumentProcessingService {
     documentId: string,
     userId: string,
     orgId: string,
+    // Option C — when true, the junction rows are flagged is_proposed=true so
+    // the extracted clauses form a SEPARATE pile excluded from every default
+    // read (guest new-version upload). Defaults to false → the contract's live
+    // clause set (managing path, byte-unchanged).
+    isProposed = false,
   ): Promise<void> {
     for (let i = 0; i < extractedClauses.length; i++) {
       const ec = extractedClauses[i];
@@ -633,14 +747,40 @@ export class DocumentProcessingService {
         clause_id: savedClause.id,
         section_number: ec.section_number || null,
         order_index: i,
+        is_proposed: isProposed,
       });
 
       await this.contractClauseRepository.save(contractClause); // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled (ContractClause)
     }
 
     this.logger.log(
-      `Created ${extractedClauses.length} clauses for contract ${contractId} from document ${documentId}`,
+      `Created ${extractedClauses.length} ${isProposed ? 'PROPOSED ' : ''}clauses for contract ${contractId} from document ${documentId}`,
     );
+  }
+
+  /**
+   * Host-v1 read of a guest upload's PROPOSED clauses (Option C). Managing-only
+   * — walled by `findInOrg` (cross-tenant probe → 404). Returns ONLY the
+   * `is_proposed = true` junction rows whose clause was extracted from the given
+   * guest upload (`source_document_id = docId`), ordered by the proposed pile's
+   * own `order_index`. These are the clauses excluded from every default read;
+   * this is the single surface that exposes them, for the host to review the
+   * guest's submitted version.
+   */
+  async getProposedClauses(
+    contractId: string,
+    docId: string,
+    orgId: string,
+  ): Promise<ContractClause[]> {
+    await this.contractAccess.findInOrg(contractId, orgId);
+    return this.contractClauseRepository // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled (ContractClause)
+      .createQueryBuilder('cc')
+      .leftJoinAndSelect('cc.clause', 'clause')
+      .where('cc.contract_id = :contractId', { contractId })
+      .andWhere('cc.is_proposed = true')
+      .andWhere('clause.source_document_id = :docId', { docId })
+      .orderBy('cc.order_index', 'ASC')
+      .getMany();
   }
 
   /**
@@ -855,6 +995,10 @@ export class DocumentProcessingService {
       .leftJoinAndSelect('clause.source_document', 'source_doc')
       .where('cc.contract_id = :contractId', { contractId })
       .andWhere('clause.source = :source', { source: ClauseSource.AI_EXTRACTED })
+      // Option C — the managing review screen reviews the contract's LIVE
+      // clauses only; guest-PROPOSED clauses are surfaced via the dedicated
+      // host-v1 read (getProposedClauses), never mixed into review.
+      .andWhere('cc.is_proposed = false')
       .orderBy('source_doc.document_priority', 'ASC')
       .addOrderBy('cc.order_index', 'ASC')
       .getMany();

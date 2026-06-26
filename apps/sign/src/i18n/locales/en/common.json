@@ -187,6 +187,13 @@
     "viewObligations": "View Obligations"
   },
   "contract": {
+    "proposedVersions": {
+      "title": "Guest-submitted versions",
+      "subtitle": "New contract versions a guest uploaded, with the clauses extracted from each. Review only for now.",
+      "byGuest": "Uploaded by guest",
+      "clauseCount": "{{count}} proposed clauses",
+      "reviewOnlyNote": "Review only — accept, reject, and merge are coming soon."
+    },
     "title": "Contract",
     "titlePlural": "Contracts",
     "createNew": "Create New Contract",
@@ -901,6 +908,17 @@
     }
   },
   "guest": {
+    "uploadStatus": {
+      "processingTitle": "Processing your new version…",
+      "processingHint": "We're extracting the clauses from the version you uploaded.",
+      "submittedTitle": "New version submitted for review",
+      "submittedHint": "Your uploaded version was sent to the contract owner to review — they'll see your proposed clauses. It does not replace the contract you're viewing.",
+      "failedTitle": "Upload couldn't be processed",
+      "failedHint": "Something went wrong while processing your version. Please try uploading it again.",
+      "reviewTitle": "Scan quality too low",
+      "reviewHint": "We couldn't reliably read this scan. Please upload a clearer copy.",
+      "reupload": "Upload again"
+    },
     "readOnlyBadge": "Read-only guest view",
     "poweredBy": "Powered by",
     "loading": "Loading shared contract…",

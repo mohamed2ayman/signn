@@ -1,5 +1,5 @@
 import api from '@/services/api/axios';
-import type { DocumentUpload } from '@/types';
+import type { ContractClause, DocumentUpload } from '@/types';
 
 export const documentProcessingService = {
   uploadDocument: (
@@ -27,6 +27,18 @@ export const documentProcessingService = {
   getDocumentStatus: (contractId: string, docId: string) =>
     api
       .get<DocumentUpload>(`/contracts/${contractId}/documents/${docId}/status`)
+      .then((r) => r.data),
+
+  /**
+   * Host-v1 read (Slice 1) — the PROPOSED clauses a bound guest submitted via a
+   * new-version upload (Option C), scoped to one guest document. Excluded from
+   * every default contract read; this is the only surface that returns them.
+   */
+  getProposedClauses: (contractId: string, docId: string) =>
+    api
+      .get<ContractClause[]>(
+        `/contracts/${contractId}/documents/${docId}/proposed-clauses`,
+      )
       .then((r) => r.data),
 
   reprocess: (contractId: string, docId: string) =>

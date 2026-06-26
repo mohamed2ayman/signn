@@ -76,6 +76,10 @@ describe('DocumentProcessingService — cross-tenant access wall (Tier 1)', () =
       // finalizeReview) loads via the scoped chokepoint, so this stub is never
       // invoked — it only satisfies the constructor (house plain-stub pattern).
       { scopedFind: jest.fn(), scopedFindByIdOrThrow: jest.fn() } as any,
+      // Guest extraction completion (Slice 1) — userRepository (last ctor arg).
+      // Not exercised by these access-wall paths; returns a MANAGING uploader if
+      // ever reached so behaviour matches the pre-existing managing default.
+      { findOne: jest.fn().mockResolvedValue({ account_type: 'MANAGING' }) } as any,
     );
   }
 
@@ -210,6 +214,8 @@ describe('DocumentProcessingService — cross-tenant access wall (Tier 1)', () =
         // Option B — S2f: DocumentUploadScopedRepository (required dep). reprocess
         // does NOT load via the scoped chokepoint, so this stub is never invoked.
         { scopedFind: jest.fn(), scopedFindByIdOrThrow: jest.fn() } as any,
+        // Guest extraction (Slice 1) — userRepository (last ctor arg); unused here.
+        { findOne: jest.fn().mockResolvedValue({ account_type: 'MANAGING' }) } as any,
       );
 
       await expect(svc.reprocess(DOC_IN_B, ORG_A)).rejects.toBeInstanceOf(
@@ -249,6 +255,8 @@ describe('DocumentProcessingService — cross-tenant access wall (Tier 1)', () =
         // Option B — S2f: DocumentUploadScopedRepository (required dep). reprocess
         // does NOT load via the scoped chokepoint, so this stub is never invoked.
         { scopedFind: jest.fn(), scopedFindByIdOrThrow: jest.fn() } as any,
+        // Guest extraction (Slice 1) — userRepository (last ctor arg); unused here.
+        { findOne: jest.fn().mockResolvedValue({ account_type: 'MANAGING' }) } as any,
       );
 
       await expect(svc.reprocess('does-not-exist', ORG_A)).rejects.toBeInstanceOf(
@@ -339,6 +347,8 @@ describe('DocumentProcessingService — cross-tenant access wall (Tier 1)', () =
         // Option B — S2f: DocumentUploadScopedRepository (required dep). reprocess
         // does NOT load via the scoped chokepoint, so this stub is never invoked.
         { scopedFind: jest.fn(), scopedFindByIdOrThrow: jest.fn() } as any,
+        // Guest extraction (Slice 1) — userRepository (last ctor arg); unused here.
+        { findOne: jest.fn().mockResolvedValue({ account_type: 'MANAGING' }) } as any,
       );
       // Stub startTextExtraction so the test doesn't dispatch.
       (svc as any).startTextExtraction = jest.fn().mockResolvedValue(undefined);
