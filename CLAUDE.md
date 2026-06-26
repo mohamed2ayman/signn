@@ -4162,3 +4162,92 @@ wrong glyphs, not a crash). One root cause, two symptoms.
    Acrobat crashed — see lesson #175. Any PR touching the PDF rendering
    pipeline must include a real-Acrobat eye-test, not just an in-container
    tool check.
+
+---
+
+## Guest Upload a New Contract Version — Feature #4 (shipped 2026-06-26, PR #96, merged `42127a1`)
+
+The first guest **WRITE-of-a-file** capability on the Guest Portal's shared
+external-access foundation. A bound guest with established identity
+(`account_type=GUEST`, Path B) uploads a revised contract file at
+`POST /guest/contracts/:id/documents`; it lands as a `document_uploads` row and
+re-runs the existing AI extraction pipeline (`uploadAndProcess`). This is
+additive to Portal Rules 5–6 and the prior guest features (#1 viewer/comments,
+#3 watermarked download); those rules are unchanged.
+
+### What shipped
+- **Route + gate:** `GuestUploadController` (`backend/src/modules/guest-portal/controllers/guest-upload.controller.ts`),
+  `@Controller('guest/contracts')` + class-level `JwtAuthGuard` + an explicit
+  `account_type === GUEST` assertion (a managing JWT here gets a loud 403; a
+  passwordless Viewer credential — Path A — is not a JWT and never authenticates
+  on the route) + `@ThrottleOnly('guest_upload')` (5/15min/IP burst guard,
+  SEPARATE from the daily cap). Identity is taken ENTIRELY from the server-side
+  principal, never client input.
+- **Binding wall:** scope is walled through
+  `ContractAccessService.findAccessibleContract → findForGuest` (the
+  `guest_contract_access` binding). A guest requesting a contract it is not bound
+  to gets **404, never 403** (no existence leak). No bare-repo access
+  (`lint:contract-repo` clean).
+- **File safety — magic-bytes:** `assertAllowedDocumentSignature`
+  (`backend/src/common/utils/file-validation.ts`) validates the file's REAL
+  leading bytes (PDF `%PDF`, DOCX `PK\x03\x04`, legacy DOC OLE2) on top of the
+  spoofable ext+MIME check — a disguised payload (e.g. an executable renamed
+  `.pdf`) is rejected 400.
+- **Race-safe daily cap = 5 guest uploads/day PER CONTRACT (UTC day),** enforced
+  at the ROUTE layer because the metering engine has no per-day window (only
+  rolling[throws] / calendar_period[monthly] / per_contract[lifetime] /
+  lifetime). The cap is a SINGLE **atomic conditional UPSERT** on a new
+  `guest_upload_daily_counts(contract_id, day, count)` row (migration
+  `1761000000002`) — the codebase's hot-counter idiom (ARCHITECTURE RULE 9
+  Invariant 2): `INSERT … ON CONFLICT (contract_id, day) DO UPDATE SET
+  count = count + 1 WHERE count < :cap RETURNING count` (0 rows = capped). The
+  row lock lives only for that statement; nothing is locked across the heavy
+  upload. **This replaced a first cut that held a `pg_advisory_xact_lock` across
+  `uploadAndProcess` — an adversarial self-review found it would pool-starvation-
+  deadlock the whole backend at ≥ pool-max concurrent same-contract uploads
+  (deadlock-fix commit `6083b4b`; see lesson #177).** A claimed slot is released
+  (best-effort) if the upload throws before a document lands.
+- **Billing meter — SEPARATE from managing:** new `MeterKey.GUEST_UPLOAD =
+  'guest_upload'` (PG enum value via migration `1761000000001`,
+  `window_type=per_contract`, billing/attribution only — the daily cap is the
+  enforcer). `uploadAndProcess` gained a `meterKey` option (default
+  `UPLOAD_EXTRACTION`) so the guest path charges `guest_upload` while the
+  **MANAGING upload path stays byte-identical** (default meter, still silent).
+  **Subject = host org** (resolver derives `contract → project → organization_id`;
+  the guest's null org is never trusted).
+- **Notifications (net-new on the guest path):** at the daily limit → host org
+  OWNER_ADMINs notified + a clear **429 `GUEST_UPLOAD_DAILY_LIMIT`** to the guest
+  (NOT a silent 403); on success → the managing party (`contract.creator`)
+  notified. Both best-effort (try/catch, never block the upload). The managing
+  upload path remains silent — the notification is guest-path-only.
+- **Frontend:** "Upload new version" affordance in `GuestContractView` (Path-B
+  gated, beside the watermarked-download button); `guestService.uploadGuestContractVersion`
+  via `guestHttp` with a per-request `multipart/form-data` override + Bearer
+  guest JWT; `guest.upload.*` i18n keys in en/ar/fr (exact parity).
+
+### KNOWN ISSUE flagged at merge (NOT a #4 defect; owned by Ayman — ERP/crypto subsystem)
+`erp-sync.integration.spec.ts › "credentials are encrypted at rest, decrypt
+back, and are never returned"` fails with `CryptoService.decrypt: authentication
+failed (payload tampered or wrong key)` **whenever `ERP_CREDENTIAL_ENC_KEY` is
+set in the container's `process.env`**. Root cause: the test injects a dummy key
+via `ConfigModule.forRoot({ load: [() => ({ ERP_CREDENTIAL_ENC_KEY: ENC_KEY })] })`
+without `ignoreEnvVars`, and `@nestjs/config` gives **`process.env` precedence
+over `load()`-ed config** — so the ENCRYPT path (real `CryptoService` →
+`ConfigService.get`) uses the container's real 64-char key while the test's
+manual DECRYPT (`new CryptoService` hardcoded to the 42-char dummy `ENC_KEY`)
+uses the dummy → GCM auth-tag mismatch. It is a **test-robustness bug, not a
+code defect** (the production encryption-at-rest path is correct). The test was
+previously passing only because the container had NO `ERP_CREDENTIAL_ENC_KEY`
+set (ConfigService fell through to the dummy) — i.e. it was **passing for the
+wrong reason and never verified encryption-at-rest under a real key**. Fix
+(Ayman): `ignoreEnvVars: true` on the test's `ConfigModule`, or decrypt via the
+SAME injected `ConfigService` the encrypt path used. This is branch-independent
+(the ERP/crypto code is identical to `main`; PR #96 touches zero ERP/crypto
+files) and was NOT a #96 merge blocker.
+
+### DEFERRED follow-ups (from #4 — tracked so they're not lost)
+1. **AV / malware content scanning** of guest-uploaded files (none today).
+2. **OOXML structural / zip-bomb validation for the DOCX magic-bytes check** — it
+   currently accepts ANY `PK\x03\x04` (ZIP) container as DOCX; the 50MB multer
+   cap bounds input size, and magic-bytes still beats the prior ext+MIME-only
+   check.
