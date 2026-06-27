@@ -267,9 +267,13 @@ describeReal('ERP sync engine (real Postgres)', () => {
     );
     expect(row.credentials_encrypted).toMatch(/^v1\./);
 
-    const crypto = new CryptoService({
-      get: (k: string) => (k === 'ERP_CREDENTIAL_ENC_KEY' ? ENC_KEY : undefined),
-    } as any);
+    // Decrypt through the SAME DI CryptoService singleton ErpConnectionService
+    // used to encrypt — so encrypt + decrypt share one ConfigService/key. This
+    // proves a true round-trip under whatever key is actually in effect (the real
+    // ERP_CREDENTIAL_ENC_KEY when set, else the load()-ed dummy). A second
+    // hand-rolled instance pinned to the dummy diverged from the real env key and
+    // failed with a GCM auth-tag mismatch whenever a real key was present.
+    const crypto = moduleRef.get(CryptoService);
     expect(JSON.parse(crypto.decrypt(row.credentials_encrypted))).toEqual({
       apiKey: 'top-secret',
       user: 'svc',
