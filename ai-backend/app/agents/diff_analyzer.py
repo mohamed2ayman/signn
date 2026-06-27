@@ -45,6 +45,7 @@ class DiffAnalyzerAgent:
     def __init__(self) -> None:
         settings = get_settings()
         self._client = Anthropic(api_key=settings.ANTHROPIC_API_KEY)
+        self._model = settings.ANTHROPIC_MODEL
 
     def analyze_diff(
         self,
@@ -75,7 +76,7 @@ class DiffAnalyzerAgent:
             user_content += f"### Clause {clause.get('id', 'unknown')}\n{clause.get('text', '')}\n\n"
 
         message = self._client.messages.create(
-            model="claude-sonnet-4-6",
+            model=self._model,
             max_tokens=4096,
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_content}],

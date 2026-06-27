@@ -46,6 +46,7 @@ class SummarizerAgent:
     def __init__(self) -> None:
         settings = get_settings()
         self._client = Anthropic(api_key=settings.ANTHROPIC_API_KEY)
+        self._model = settings.ANTHROPIC_MODEL
 
     def summarize(self, full_text: str) -> dict[str, Any]:
         """Summarise *full_text* and return a dict with 17 key elements.
@@ -62,7 +63,7 @@ class SummarizerAgent:
             system prompt.
         """
         message = self._client.messages.create(
-            model="claude-sonnet-4-6",
+            model=self._model,
             max_tokens=4096,
             system=SYSTEM_PROMPT,
             messages=[
