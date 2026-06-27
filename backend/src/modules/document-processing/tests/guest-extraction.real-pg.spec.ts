@@ -197,9 +197,13 @@ describeReal('Guest extraction completion (real Postgres)', () => {
   const seedGuestDoc = async (opts?: {
     uploadedBy?: string;
     contract?: string;
+    status?: string;
+    jobId?: string;
   }): Promise<{ docId: string; reservationId: string }> => {
     const uploadedBy = opts?.uploadedBy ?? guestUserId;
     const contract = opts?.contract ?? contractId;
+    const status = opts?.status ?? 'EXTRACTING_TEXT';
+    const jobId = opts?.jobId ?? `text-job-${randomUUID()}`;
     const reservation = await metering.reserve({
       caller: {
         user_id: uploadedBy,
@@ -218,14 +222,15 @@ describeReal('Guest extraction completion (real Postgres)', () => {
       `INSERT INTO document_uploads
          (id, contract_id, organization_id, file_url, file_name,
           processing_status, processing_job_id, reservation_id, uploaded_by)
-       VALUES ($1, $2, $3, $4, $5, 'EXTRACTING_TEXT', $6, $7, $8)`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
       [
         docId,
         contract,
         orgId,
         `http://x/${docId}.pdf`,
         `${docId}.pdf`,
-        `text-job-${randomUUID()}`,
+        status,
+        jobId,
         reservation.reservation_id,
         uploadedBy,
       ],
@@ -620,5 +625,187 @@ describeReal('Guest extraction completion (real Postgres)', () => {
     expect(rows.every((r: any) => r.is_proposed === true)).toBe(true);
     // Host live read still untouched — exactly the original 3.
     expect(await liveClauseOrder(contractId)).toEqual([0, 1, 2]);
+  });
+
+  // Count the PROPOSED clause set written for one source document.
+  const proposedCountForDoc = async (docId: string): Promise<number> => {
+    const rows = await dataSource.query(
+      `SELECT COUNT(*)::int AS c
+         FROM contract_clauses cc JOIN clauses c ON c.id = cc.clause_id
+        WHERE cc.is_proposed = true AND c.source_document_id = $1`,
+      [docId],
+    );
+    return Number(rows[0]?.c ?? 0);
+  };
+
+  // ─── ⭐ KEY TEST — the SERVER driver completes the pipeline with NO browser
+  //     poll at all (the exact gap that caused the stall). ─────────────────────
+  it('⭐ GREEN — SERVER driver (no browser poll) drives a guest upload to CLAUSES_EXTRACTED: proposed set written, host clauses unchanged, GUEST_UPLOAD reservation COMMITTED', async () => {
+    const { docId, reservationId } = await seedGuestDoc();
+
+    // Drive ONLY via the SYSTEM driver entry — never via the guest/managing
+    // status endpoint, never a browser. Two steps: text→clauses, clauses→done.
+    await docService.advanceInProgressAsSystem(docId);
+    const done = await docService.advanceInProgressAsSystem(docId);
+    expect(done?.processing_status).toBe('CLAUSES_EXTRACTED');
+
+    // Proposed set written, scoped to this guest doc.
+    expect(await proposedCountForDoc(docId)).toBe(GUEST_CLAUSES.length);
+    const proposed = await dataSource.query(
+      `SELECT cc.is_proposed FROM contract_clauses cc JOIN clauses c ON c.id = cc.clause_id
+        WHERE c.source_document_id = $1`,
+      [docId],
+    );
+    expect(proposed.every((r: any) => r.is_proposed === true)).toBe(true);
+
+    // Host's original live clauses untouched + correctly ordered.
+    expect(await liveClauseOrder(contractId)).toEqual([0, 1, 2]);
+
+    // GUEST_UPLOAD reservation COMMITTED by the server driver (not swept).
+    expect(await ledgerStatus(reservationId)).toBe('committed');
+  });
+
+  // ─── ⭐ RACE TEST — two concurrent drivers on the SAME completed doc →
+  //     EXACTLY ONE clause set + EXACTLY ONE commit (atomic conditional guard). ─
+  it('⭐ GREEN — TWO concurrent drivers finalizing the SAME completed doc → EXACTLY ONE clause set + ONE commit (no double-write)', async () => {
+    const { docId, reservationId } = await seedGuestDoc();
+    // Step 1 (text→clauses) once, so the doc is at EXTRACTING_CLAUSES with the
+    // clause job complete.
+    await docService.advanceInProgressAsSystem(docId);
+
+    // Two drivers race the finalize concurrently (server backstop + a browser
+    // poll, or two backstop ticks). The atomic conditional UPDATE inside the
+    // transaction serialises them on the row lock: exactly one wins.
+    const [a, b] = await Promise.all([
+      docService.advanceInProgressAsSystem(docId),
+      docService.advanceInProgressAsSystem(docId),
+    ]);
+    expect(a?.processing_status).toBe('CLAUSES_EXTRACTED');
+    expect(b?.processing_status).toBe('CLAUSES_EXTRACTED');
+
+    // EXACTLY ONE clause set — never doubled — regardless of the race.
+    expect(await proposedCountForDoc(docId)).toBe(GUEST_CLAUSES.length);
+    // Reservation committed exactly once (engine commit is status-guarded too).
+    expect(await ledgerStatus(reservationId)).toBe('committed');
+    // Host live set still pristine.
+    expect(await liveClauseOrder(contractId)).toEqual([0, 1, 2]);
+  });
+
+  // ─── GREEN — SERVER driver completes a MANAGING upload with LIVE clauses. ────
+  it('GREEN — SERVER driver completes a MANAGING upload with LIVE (non-proposed) clauses (doc-derived under the driver)', async () => {
+    const reservation = await metering.reserve({
+      caller: {
+        user_id: ownerUserId,
+        jwt_organization_id: orgId,
+        account_type: 'MANAGING',
+      },
+      meterKey: MeterKey.UPLOAD_EXTRACTION,
+      amount: 1,
+      idempotencyKey: randomUUID(),
+      contractId: contractManagingId,
+      actorRef: ownerUserId,
+      metadata: { route: 'POST /contracts/:contractId/documents' },
+    });
+    const docId = randomUUID();
+    await dataSource.query(
+      `INSERT INTO document_uploads
+         (id, contract_id, organization_id, file_url, file_name,
+          processing_status, processing_job_id, reservation_id, uploaded_by)
+       VALUES ($1, $2, $3, $4, $5, 'EXTRACTING_TEXT', $6, $7, $8)`,
+      [
+        docId,
+        contractManagingId,
+        orgId,
+        `http://x/${docId}.pdf`,
+        `${docId}.pdf`,
+        `text-job-${randomUUID()}`,
+        reservation.reservation_id,
+        ownerUserId,
+      ],
+    );
+
+    await docService.advanceInProgressAsSystem(docId);
+    const done = await docService.advanceInProgressAsSystem(docId);
+    expect(done?.processing_status).toBe('CLAUSES_EXTRACTED');
+
+    // Scope to THIS doc's clauses (the managing contract is shared with another
+    // test) — they must be LIVE (is_proposed=false), the managing default.
+    const rows = await dataSource.query(
+      `SELECT cc.is_proposed
+         FROM contract_clauses cc JOIN clauses c ON c.id = cc.clause_id
+        WHERE c.source_document_id = $1`,
+      [docId],
+    );
+    expect(rows).toHaveLength(GUEST_CLAUSES.length);
+    expect(rows.every((r: any) => r.is_proposed === false)).toBe(true);
+    expect(await ledgerStatus(reservation.reservation_id)).toBe('committed');
+  });
+
+  // ─── GREEN — AI still pending → driver does NOT advance, no error, no
+  //     premature terminal. ────────────────────────────────────────────────────
+  it('GREEN — SERVER driver on a doc whose AI job is still pending → no advance, no clauses, no commit, stays in-progress', async () => {
+    // A job id that the fake AiService reports as still pending (not text-/clause-).
+    const { docId, reservationId } = await seedGuestDoc({
+      status: 'EXTRACTING_CLAUSES',
+      jobId: `pending-job-${randomUUID()}`,
+    });
+
+    const r = await docService.advanceInProgressAsSystem(docId);
+    expect(r?.processing_status).toBe('EXTRACTING_CLAUSES'); // unchanged
+
+    expect(await proposedCountForDoc(docId)).toBe(0); // nothing written
+    expect(await ledgerStatus(reservationId)).toBe('reserved'); // not committed
+  });
+
+  // ─── ⭐ STALENESS BACKSTOP — self-termination for docs that can NEVER complete
+  //     (dead/expired AI job that reports PENDING forever). ─────────────────────
+  it('⭐ GREEN — SERVER driver FAILs a STALE EXTRACTING_CLAUSES doc (expired AI result → pending forever) → self-terminates + refunds', async () => {
+    const { docId, reservationId } = await seedGuestDoc({
+      status: 'EXTRACTING_CLAUSES',
+      jobId: `pending-job-${randomUUID()}`, // fake reports 'pending'
+    });
+    // Age it past the staleness window (MAX_IN_PROGRESS_MS = 60 min).
+    await dataSource.query(
+      `UPDATE document_uploads SET updated_at = now() - interval '90 minutes' WHERE id = $1`,
+      [docId],
+    );
+
+    const r = await docService.advanceInProgressAsSystem(docId);
+    expect(r?.processing_status).toBe('FAILED'); // self-terminated, not stuck forever
+    expect(r?.error_message ?? '').toMatch(/timed out/i);
+    expect(await proposedCountForDoc(docId)).toBe(0); // no clauses written
+    expect(await ledgerStatus(reservationId)).toBe('released'); // reservation refunded
+  });
+
+  // ─── GREEN — STALENESS BACKSTOP covers a crash-stranded TEXT_EXTRACTED (no
+  //     live job) once it ages out. ────────────────────────────────────────────
+  it('GREEN — SERVER driver FAILs a crash-stranded TEXT_EXTRACTED doc (no live job, aged out)', async () => {
+    const { docId, reservationId } = await seedGuestDoc();
+    // Simulate a crash that left it durably at TEXT_EXTRACTED with no job id.
+    await dataSource.query(
+      `UPDATE document_uploads
+          SET processing_status = 'TEXT_EXTRACTED', processing_job_id = NULL,
+              updated_at = now() - interval '90 minutes'
+        WHERE id = $1`,
+      [docId],
+    );
+
+    const r = await docService.advanceInProgressAsSystem(docId);
+    expect(r?.processing_status).toBe('FAILED');
+    expect(await ledgerStatus(reservationId)).toBe('released');
+  });
+
+  // ─── GREEN — a FRESH TEXT_EXTRACTED (transient, no live job) is NOT failed. ──
+  it('GREEN — SERVER driver leaves a FRESH TEXT_EXTRACTED doc (transient, within window) untouched', async () => {
+    const { docId } = await seedGuestDoc();
+    await dataSource.query(
+      `UPDATE document_uploads
+          SET processing_status = 'TEXT_EXTRACTED', processing_job_id = NULL,
+              updated_at = now()
+        WHERE id = $1`,
+      [docId],
+    );
+    const r = await docService.advanceInProgressAsSystem(docId);
+    expect(r?.processing_status).toBe('TEXT_EXTRACTED'); // not prematurely failed
   });
 });

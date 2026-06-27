@@ -34,6 +34,7 @@ const CONTRACT = {
 describe('GuestContractView — guest watermarked download button', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorage.clear();
   });
 
   it('does NOT render the download button for a passwordless viewer (no guestJwt)', () => {
@@ -72,6 +73,7 @@ describe('GuestContractView — guest watermarked download button', () => {
 describe('GuestContractView — guest upload new version affordance (Feature #4)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorage.clear();
   });
 
   const fileInput = (container: HTMLElement) =>
@@ -153,5 +155,35 @@ describe('GuestContractView — guest upload new version affordance (Feature #4)
     await waitFor(() =>
       expect(screen.getByText('guest.upload.errorDailyLimit')).toBeInTheDocument(),
     );
+  });
+
+  it('REFRESH-RESUME — a persisted in-flight upload re-attaches the live status view on mount', async () => {
+    // Simulate a prior upload persisted before a refresh.
+    localStorage.setItem(
+      'guest-upload-inflight:c-1',
+      JSON.stringify({ id: 'd-resume', name: 'revised.pdf' }),
+    );
+    vi.mocked(getGuestDocumentStatus).mockResolvedValue({
+      id: 'd-resume',
+      processing_status: 'EXTRACTING_CLAUSES',
+      quality_flags: null,
+      error_message: null,
+      page_count: null,
+      created_at: '2026-06-27T00:00:00.000Z',
+      updated_at: '2026-06-27T00:00:00.000Z',
+    });
+
+    render(<GuestContractView contract={CONTRACT} guestJwt="guest-jwt" />);
+
+    // On mount, with NO new upload, the status view resumes polling the
+    // persisted doc — proving a refresh re-attaches progress.
+    await waitFor(() =>
+      expect(getGuestDocumentStatus).toHaveBeenCalledWith(
+        'c-1',
+        'guest-jwt',
+        'd-resume',
+      ),
+    );
+    expect(uploadGuestContractVersion).not.toHaveBeenCalled();
   });
 });

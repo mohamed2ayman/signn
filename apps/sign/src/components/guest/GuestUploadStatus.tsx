@@ -6,7 +6,13 @@ import {
 } from '@/services/api/guestService';
 
 const POLL_MS = 2000;
-const POLL_MAX_MS = 120_000; // safety cap — stop polling after 2 min
+// Generous safety cap (10 min) — the SERVER driver now guarantees completion
+// independent of the browser, so this poll is DISPLAY-ONLY. This cap only stops
+// polling forever if something is truly broken; it is well above worst-case
+// Arabic clause extraction (~4–6 min). (The old 120s cap is exactly what caused
+// the stall: cap < AI duration on a poll-driven pipeline.) A refresh
+// re-attaches and resumes regardless.
+const POLL_MAX_MS = 600_000;
 const TERMINAL = new Set([
   'CLAUSES_EXTRACTED',
   'FAILED',
@@ -41,17 +47,25 @@ export default function GuestUploadStatus({
   docId,
   fileName,
   onReupload,
+  onTerminal,
 }: {
   contractId: string;
   guestJwt: string;
   docId: string;
   fileName?: string | null;
   onReupload: () => void;
+  /** Fired once when the doc reaches a terminal status — lets the parent clear
+   *  the persisted in-flight docId so a future refresh doesn't resume a
+   *  finished upload. */
+  onTerminal?: () => void;
 }) {
   const { t } = useTranslation();
   const [status, setStatus] = useState<GuestDocumentStatus | null>(null);
   const [pollError, setPollError] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Keep the latest onTerminal without re-running (restarting) the poll effect.
+  const onTerminalRef = useRef(onTerminal);
+  onTerminalRef.current = onTerminal;
 
   useEffect(() => {
     let cancelled = false;
@@ -73,12 +87,15 @@ export default function GuestUploadStatus({
         if (cancelled) return;
         consecutiveErrors = 0;
         setStatus(s);
-        if (TERMINAL.has(s.processing_status)) stop();
+        if (TERMINAL.has(s.processing_status)) {
+          onTerminalRef.current?.();
+          stop();
+        }
       } catch {
         if (cancelled) return;
-        // Tolerate transient blips; give up after a few consecutive failures.
+        // Tolerate transient blips; give up after several consecutive failures.
         consecutiveErrors += 1;
-        if (consecutiveErrors >= 3) {
+        if (consecutiveErrors >= 5) {
           setPollError(true);
           stop();
         }

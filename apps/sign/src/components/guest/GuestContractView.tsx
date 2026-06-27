@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { Contract } from '@/types';
 import GuestClauseCard from './GuestClauseCard';
@@ -11,6 +11,43 @@ import {
 const UPLOAD_ACCEPT = '.pdf,.docx,.doc';
 const UPLOAD_MAX_MB = 50;
 const UPLOAD_EXTS = ['.pdf', '.docx', '.doc'];
+
+// Refresh-resume: the in-flight upload's docId is persisted per-contract so a
+// refresh / tab-close re-attaches the live status view (the SERVER driver
+// guarantees completion regardless of the browser; this just keeps the guest's
+// progress visible across reloads). Cleared once the doc reaches terminal.
+type InflightDoc = { id: string; name: string | null };
+const inflightKey = (contractId: string) => `guest-upload-inflight:${contractId}`;
+
+function readInflight(contractId: string): InflightDoc | null {
+  try {
+    const raw = localStorage.getItem(inflightKey(contractId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed.id === 'string'
+      ? { id: parsed.id, name: typeof parsed.name === 'string' ? parsed.name : null }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeInflight(contractId: string, doc: InflightDoc): void {
+  try {
+    localStorage.setItem(inflightKey(contractId), JSON.stringify(doc));
+  } catch {
+    // localStorage unavailable (private mode / quota) — non-fatal; in-session
+    // component state still drives the status view for this session.
+  }
+}
+
+function clearInflight(contractId: string): void {
+  try {
+    localStorage.removeItem(inflightKey(contractId));
+  } catch {
+    // ignore
+  }
+}
 
 /**
  * Read-only contract header + clause list for the Guest Portal viewer.
@@ -34,13 +71,18 @@ export default function GuestContractView({
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   // The guest's just-uploaded new version (drives the live status surface).
-  const [uploadedDoc, setUploadedDoc] = useState<{
-    id: string;
-    name: string | null;
-  } | null>(null);
+  const [uploadedDoc, setUploadedDoc] = useState<InflightDoc | null>(null);
   const clauses = [...(contract.contract_clauses ?? [])].sort(
     (a, b) => (a.order_index ?? 0) - (b.order_index ?? 0),
   );
+
+  // Refresh-resume: on mount, re-attach the live status view to any in-flight
+  // upload persisted for this contract (only for an established guest).
+  useEffect(() => {
+    if (!guestJwt) return;
+    const persisted = readInflight(contract.id);
+    if (persisted) setUploadedDoc(persisted);
+  }, [contract.id, guestJwt]);
 
   const handleDownload = async () => {
     if (!guestJwt || downloading) return;
@@ -61,6 +103,7 @@ export default function GuestContractView({
     if (!guestJwt || uploading) return;
     setUploadError(null);
     setUploadedDoc(null);
+    clearInflight(contract.id);
     fileInputRef.current?.click();
   };
 
@@ -88,7 +131,13 @@ export default function GuestContractView({
     setUploadedDoc(null);
     try {
       const res = await uploadGuestContractVersion(contract.id, guestJwt, file);
-      setUploadedDoc({ id: res.id, name: res.original_name ?? res.file_name });
+      const doc: InflightDoc = {
+        id: res.id,
+        name: res.original_name ?? res.file_name,
+      };
+      setUploadedDoc(doc);
+      // Persist so a refresh / tab-close re-attaches the live status view.
+      writeInflight(contract.id, doc);
     } catch (err: any) {
       const status = err?.response?.status;
       const code = err?.response?.data?.error;
@@ -270,9 +319,11 @@ export default function GuestContractView({
                 docId={uploadedDoc.id}
                 fileName={uploadedDoc.name}
                 onReupload={() => {
+                  clearInflight(contract.id);
                   setUploadedDoc(null);
                   handleUploadClick();
                 }}
+                onTerminal={() => clearInflight(contract.id)}
               />
             </div>
           )}
