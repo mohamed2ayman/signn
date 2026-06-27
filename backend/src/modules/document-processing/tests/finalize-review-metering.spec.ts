@@ -31,6 +31,7 @@ import {
   DocumentUpload,
   RiskAnalysis,
   RiskCategory,
+  User,
 } from '../../../database/entities';
 import { AiService } from '../../ai/ai.service';
 import { StorageService } from '../../storage/storage.service';
@@ -139,6 +140,16 @@ describe('finalize_review metered consumer (wiring)', () => {
         {
           provide: DocumentUploadScopedRepository,
           useValue: { scopedFind: jest.fn(), scopedFindByIdOrThrow: jest.fn() },
+        },
+        // Guest extraction completion (Slice 1) — DocumentProcessingService now
+        // injects the User repo to derive the uploader's account_type. Not
+        // reached by finalizeReview / pollAndSaveRisks; returns MANAGING if ever
+        // called so behaviour matches the managing default.
+        {
+          provide: getRepositoryToken(User),
+          useValue: {
+            findOne: jest.fn().mockResolvedValue({ account_type: 'MANAGING' }),
+          },
         },
       ],
     }).compile();

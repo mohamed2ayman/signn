@@ -4,9 +4,10 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { EntityManager, In, Repository } from 'typeorm';
 import { randomUUID } from 'crypto';
 import {
+  AccountType,
   AuditLog,
   DocumentUpload,
   DocumentProcessingStatus,
@@ -18,6 +19,7 @@ import {
   RiskAnalysis,
   RiskCategory,
   RiskLevel,
+  User,
 } from '../../database/entities';
 import { StorageService, UploadedFile } from '../storage/storage.service';
 import { AiService } from '../ai/ai.service';
@@ -87,6 +89,16 @@ export class DocumentProcessingService {
     // request-scoped DocumentUpload reads (getDocuments + updateExtractedText).
     // Required dependency (house style); provided via ScopedRepositoryModule.
     private readonly documentScoped: DocumentUploadScopedRepository,
+    // Guest extraction completion (Slice 1) — appended LAST to preserve the
+    // existing positional constructor order for direct-construction unit tests.
+    // Used ONLY to read the uploader's account_type so the extraction-advance
+    // core can decide, INTRINSICALLY from the document, whether this is a guest
+    // upload (→ proposed clauses, no party-backfill). Deriving it from the doc
+    // (not the calling endpoint) closes the race where a host polling a guest's
+    // in-progress doc via the managing status route would otherwise write LIVE
+    // clauses + backfill.
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
   ) {}
 
   /**
@@ -281,9 +293,97 @@ export class DocumentProcessingService {
     }
     // Tenant wall — walk doc → contract → org. Throws 404 if the doc's
     // contract belongs to another org. Mirrors the reprocess pattern
-    // shipped in Tier 1.
+    // shipped in Tier 1. MANAGING wall — UNCHANGED.
     await this.contractAccess.findInOrg(doc.contract_id, orgId);
 
+    return this.advanceDocumentState(doc);
+  }
+
+  /**
+   * Guest sibling of pollAndAdvance — drives the SAME extraction-advance core
+   * for a bound guest's own new-version upload, walled by the guest CONTRACT
+   * BINDING (`guest_contract_access`) instead of `findInOrg`.
+   *
+   * The managing status route (`GET /contracts/:contractId/documents/:docId/status`)
+   * is UNTOUCHED — it keeps its `findInOrg` wall. This is an additive guest
+   * path; it never loosens the managing wall.
+   *
+   * Three 404-on-mismatch gates (no existence leak):
+   *   (a) the doc must exist;
+   *   (b) `:docId` must belong to `:contractId` AND be THIS guest's own upload
+   *       (`uploaded_by === guestUserId`) — a guest can only drive a document
+   *       they uploaded via the guest path, never the host's original doc nor
+   *       another guest's;
+   *   (c) the guest must be bound to `:contractId` via `guest_contract_access`.
+   *
+   * The proposed-vs-live + party-backfill behaviour is NOT decided here — it is
+   * INTRINSIC to the document (derived from the uploader's account_type inside
+   * advanceDocumentState). A guest-uploaded doc ALWAYS writes proposed clauses
+   * and never backfills, no matter which route drives it. That closes the race
+   * where a host polling a guest's in-progress doc via the managing status
+   * route would otherwise write LIVE clauses + party-backfill.
+   *
+   * The metering COMMIT on terminal success happens inside the shared core
+   * (commitReservationOnSuccess, keyed on doc.reservation_id) — so a guest run
+   * that reaches CLAUSES_EXTRACTED commits the GUEST_UPLOAD reservation instead
+   * of leaving it to be swept/refunded.
+   */
+  async pollAndAdvanceForGuest(
+    docId: string,
+    contractId: string,
+    guestUserId: string,
+  ): Promise<DocumentUpload> {
+    const doc = await this.documentUploadRepository.findOne({ // lint-exempt: wall-protected (guest binding); chokepoint migration scheduled
+      where: { id: docId },
+    });
+
+    // (a) doc existence; (b) URL coherence + guest ownership. All 404 — a
+    // guest learns nothing about documents outside their own upload.
+    if (
+      !doc ||
+      doc.contract_id !== contractId ||
+      doc.uploaded_by !== guestUserId
+    ) {
+      throw new NotFoundException('Document not found');
+    }
+
+    // (c) BINDING WALL — the guest must hold a guest_contract_access row for
+    // this contract. Lightweight (no contract load) for the ~2s status poll.
+    await this.contractAccess.assertGuestContractAccess(contractId, guestUserId);
+
+    return this.advanceDocumentState(doc);
+  }
+
+  /**
+   * Is this document a GUEST upload? Derived from the uploader's account_type,
+   * so the proposed-vs-live decision is intrinsic to the document and identical
+   * no matter which route (managing status poll or guest status poll) drives
+   * the advance. A GUEST account can only ever upload via the guest path to a
+   * bound contract, so account_type=GUEST is the precise discriminator.
+   */
+  private async isGuestUploadedDoc(doc: DocumentUpload): Promise<boolean> {
+    const uploader = await this.userRepository.findOne({
+      where: { id: doc.uploaded_by },
+      select: ['id', 'account_type'],
+    });
+    return uploader?.account_type === AccountType.GUEST;
+  }
+
+  /**
+   * Shared extraction-advance core. Runs AFTER the caller's access wall has
+   * authorized the doc (findInOrg for managing, binding + ownership for guest).
+   * Polls the current job and advances the pipeline one step, owning the
+   * terminal metering commit/release.
+   *
+   * The ONLY behavioural divergence — whether extracted clauses are the Option-C
+   * "proposed" set and whether the parent contract's party fields may be
+   * backfilled — is derived from the DOCUMENT (isGuestUploadedDoc), NOT from the
+   * calling endpoint. So a guest-uploaded doc is always treated as a guest
+   * upload even if a host's managing poll happens to drive it.
+   */
+  private async advanceDocumentState(
+    doc: DocumentUpload,
+  ): Promise<DocumentUpload> {
     if (
       doc.processing_status === DocumentProcessingStatus.CLAUSES_EXTRACTED ||
       doc.processing_status === DocumentProcessingStatus.FAILED ||
@@ -293,6 +393,13 @@ export class DocumentProcessingService {
     }
 
     if (!doc.processing_job_id) {
+      // No live AI job to poll. Normally a sub-second transient state
+      // (UPLOADED before text-dispatch, or TEXT_EXTRACTED between the text-claim
+      // and clause-dispatch). If a row rests here beyond the max window, a crash
+      // stranded the winner mid-dispatch (the lesson #161 class) → terminalize
+      // it so the SERVER driver self-terminates instead of leaving a row no
+      // driver ever advances. Otherwise leave it for the in-flight winner.
+      if (this.isStaleInProgress(doc)) return this.failStaleDoc(doc);
       return doc;
     }
 
@@ -312,45 +419,77 @@ export class DocumentProcessingService {
     }
 
     if (jobStatus.status !== 'completed') {
-      // Still processing
+      // Still processing — OR the AI job is dead and its Celery result has
+      // expired. Celery's AsyncResult reports an unknown / expired task as
+      // PENDING, so a doc whose result aged out would otherwise be re-polled
+      // FOREVER and never terminalize. If it has not completed within the max
+      // window (well beyond the Celery hard time-limit), treat it as dead and
+      // FAIL it so the driver self-terminates. Race-safe + at-most-once.
+      if (this.isStaleInProgress(doc)) return this.failStaleDoc(doc);
       return doc;
     }
+
+    // Intrinsic to the document, not the caller: a guest upload writes proposed
+    // clauses and never backfills the parent contract's party fields.
+    const isGuestUpload = await this.isGuestUploadedDoc(doc);
 
     // Job completed — advance pipeline
     if (doc.processing_status === DocumentProcessingStatus.EXTRACTING_TEXT) {
       // Text extraction complete
       const textResult = jobStatus.result?.result || jobStatus.result;
       const rawText = textResult?.text || '';
-      doc.page_count = textResult?.page_count || 0;
+      const pageCount = textResult?.page_count || 0;
 
-      // Phase 7.25 — persist quality flags from the OCR pipeline.
+      // Phase 7.25 — quality flags from the OCR pipeline.
       const qualityFlags: string[] = Array.isArray(textResult?.quality_flags)
         ? (textResult.quality_flags as string[])
         : [];
+
+      // Trim cover pages / TOC before saving so both the DB and clause
+      // extraction receive the cleaned text.
+      const trimmedText = this.trimCoverPages(rawText, doc.document_label);
+
+      // RACE-SAFE CLAIM (lesson #177 idiom). The server backstop driver and any
+      // browser poll (guest or managing) can all observe "text job completed"
+      // at once → without a guard, two drivers both dispatch clause extraction
+      // = a wasted ~4-min Anthropic clause run. Atomically move
+      // EXTRACTING_TEXT → TEXT_EXTRACTED; 0 rows affected ⇒ a peer already
+      // claimed it → no-op. (The downstream EXTRACTING_CLAUSES guard still makes
+      // the final clause-write exactly-once even if a duplicate job ever slips
+      // through; this claim just avoids the wasted dispatch.)
+      const claim = await this.documentUploadRepository.update( // lint-exempt: S2f-deferred (metering-entangled, walled)
+        {
+          id: doc.id,
+          processing_status: DocumentProcessingStatus.EXTRACTING_TEXT,
+        },
+        { processing_status: DocumentProcessingStatus.TEXT_EXTRACTED },
+      );
+      if (claim.affected !== 1) {
+        return (
+          (await this.documentUploadRepository.findOne({ // lint-exempt: S2f-deferred (metering-entangled, walled)
+            where: { id: doc.id },
+          })) ?? doc
+        );
+      }
+
+      // WINNER — persist the text result + decide the next state.
+      doc.page_count = pageCount;
       doc.quality_flags = qualityFlags.length > 0 ? qualityFlags : null;
+      doc.extracted_text = trimmedText;
 
-      // Trim cover pages / TOC before saving so both the DB and
-      // clause extraction receive the cleaned text.
-      doc.extracted_text = this.trimCoverPages(rawText, doc.document_label);
-
-      // Phase 7.25 — if scan quality flags were detected, park the document
-      // in HUMAN_REVIEW_RECOMMENDED instead of advancing to clause extraction.
-      // The partial extracted_text is still saved (may be useful for the user
-      // to preview what was captured).
+      // Phase 7.25 — poor scan quality parks the doc in HUMAN_REVIEW_RECOMMENDED
+      // (terminal) instead of advancing to clause extraction. The partial
+      // extracted_text is still saved.
       if (qualityFlags.length > 0) {
         this.logger.warn(
-          `[pollAndAdvance] Poor scan quality detected for document ${doc.id}: [${qualityFlags.join(', ')}]. ` +
+          `[advanceDocumentState] Poor scan quality detected for document ${doc.id}: [${qualityFlags.join(', ')}]. ` +
           `Setting status to HUMAN_REVIEW_RECOMMENDED.`,
         );
         doc.processing_status = DocumentProcessingStatus.HUMAN_REVIEW_RECOMMENDED;
         doc.processing_job_id = null;
         await this.documentUploadRepository.save(doc); // lint-exempt: S2f-deferred (metering-entangled, walled)
-        // Phase 7.18 Part 3 — PARKED-TERMINAL state. No clauses were
-        // extracted from this upload; the metered unit ("extraction") did
-        // not produce its deliverable. Refund the reservation. If the
-        // user clicks "Reprocess" / "Continue anyway", that path takes a
-        // FRESH reservation (see reprocess() below). NOT a double-charge
-        // — it IS a new intent (new user click; new dispatch).
+        // Phase 7.18 Part 3 — PARKED-TERMINAL state. No clauses were extracted;
+        // refund the reservation (reprocess takes a fresh one — new intent).
         await this.releaseReservationOnFailure(doc);
         return doc;
       }
@@ -359,17 +498,18 @@ export class DocumentProcessingService {
       doc.processing_job_id = null;
       await this.documentUploadRepository.save(doc); // lint-exempt: S2f-deferred (metering-entangled, walled)
 
-      // Extract party names if the text contains contract party markers
-      const extractedText = doc.extracted_text || '';
+      // Extract party names if the text contains contract party markers.
+      // SUPPRESSED for guest uploads: a guest must NEVER mutate the parent
+      // contract's fields — even when both party fields happen to be empty.
       const partyMarker = /(?:بين\s*كل\s*من|تم\s*الاتفاق\s*بين\s*كل\s*من|كل\s*من\s*:)/;
-      if (partyMarker.test(extractedText)) {
+      if (!isGuestUpload && partyMarker.test(trimmedText)) {
         // Only extract if the contract doesn't already have parties
         const currentContract = await this.contractRepository.findOne({ // lint-exempt: S2f-deferred (metering-entangled, walled)
           where: { id: doc.contract_id },
         });
         if (!currentContract?.party_first_name && !currentContract?.party_second_name) {
           try {
-            const parties = this.extractParties(extractedText);
+            const parties = this.extractParties(trimmedText);
             if (parties.firstParty || parties.secondParty) {
               await this.contractRepository.update( // lint-exempt: S2f-deferred (metering-entangled, walled)
                 { id: doc.contract_id },
@@ -397,27 +537,149 @@ export class DocumentProcessingService {
       const clauseResult = jobStatus.result?.result || jobStatus.result;
       const extractedClauses = clauseResult?.clauses || [];
 
-      // Create clause records in DB
-      await this.createClausesFromExtraction(
-        extractedClauses,
-        doc.contract_id,
-        doc.id,
-        doc.uploaded_by,
-        doc.organization_id,
+      // RACE-SAFE EXACTLY-ONCE FINALIZE (lesson #177 idiom). The server backstop
+      // driver and any browser poll (guest or managing) can all observe "clause
+      // job completed" at once → without a guard that is a DOUBLE clause-write +
+      // double commit. An atomic conditional UPDATE inside a transaction claims
+      // the EXTRACTING_CLAUSES → CLAUSES_EXTRACTED transition: only the caller
+      // whose UPDATE affects exactly 1 row (still EXTRACTING_CLAUSES) writes the
+      // clauses, IN THE SAME TRANSACTION — so the clauses + terminal status
+      // become visible atomically and a crash mid-write rolls back (doc stays
+      // EXTRACTING_CLAUSES → retried by the next driver). Concurrent losers
+      // (affected=0) no-op: the clauses are written EXACTLY ONCE regardless of
+      // how many drivers race. (`manager.transaction` reuses the repo's
+      // connection — no DataSource injection needed.)
+      const won = await this.documentUploadRepository.manager.transaction(
+        async (em) => {
+          const claim = await em.update( // lint-exempt: S2f-deferred (metering-entangled, walled); transaction-scoped finalize claim
+            DocumentUpload,
+            {
+              id: doc.id,
+              processing_status: DocumentProcessingStatus.EXTRACTING_CLAUSES,
+            },
+            {
+              processing_status: DocumentProcessingStatus.CLAUSES_EXTRACTED,
+              processing_job_id: null,
+            },
+          );
+          if (claim.affected !== 1) return false;
+          await this.writeClausesInTx(
+            em,
+            extractedClauses,
+            doc.contract_id,
+            doc.id,
+            doc.uploaded_by,
+            doc.organization_id,
+            isGuestUpload,
+          );
+          return true;
+        },
       );
+
+      if (!won) {
+        // Lost the race — a peer already finalized this doc. Return the fresh
+        // (terminal) view; do NOT write clauses or commit again.
+        return (
+          (await this.documentUploadRepository.findOne({ // lint-exempt: S2f-deferred (metering-entangled, walled)
+            where: { id: doc.id },
+          })) ?? doc
+        );
+      }
 
       doc.processing_status = DocumentProcessingStatus.CLAUSES_EXTRACTED;
       doc.processing_job_id = null;
-      await this.documentUploadRepository.save(doc); // lint-exempt: S2f-deferred (metering-entangled, walled)
 
-      // Phase 7.18 Part 3 — ASYNC TERMINAL SUCCESS. Clauses are now in
-      // the DB; the metered unit ("extraction") produced its
-      // deliverable. Commit the reservation. Inspect TransitionResult
-      // inside the helper; emit observable signal on {applied:false}
-      // (the swept-then-uncharged hazard — TTL < end-to-end duration).
+      // Phase 7.18 Part 3 — ASYNC TERMINAL SUCCESS. Clauses are now in the DB;
+      // commit the reservation. The engine commit is itself status-guarded
+      // (at-most-once), so a stray concurrent commit is a no-op — but only the
+      // race-winner reaches here anyway. {applied:false} is logged as the
+      // swept-then-uncharged hazard.
       await this.commitReservationOnSuccess(doc);
     }
 
+    return doc;
+  }
+
+  /**
+   * SYSTEM driver entry — the browser-INDEPENDENT backstop. Loads the doc fresh
+   * and runs the race-safe advance ONE step, with NO principal and NO access
+   * wall (this is the platform's own background driver, invoked by the
+   * `document-processing-jobs` repeatable scheduler). advanceDocumentState
+   * self-no-ops on terminal / no-job docs and is race-safe (atomic conditional
+   * transitions), so this is safe to call on any scanned in-progress row even
+   * while a guest's / host's browser poll drives the SAME doc concurrently.
+   * Returns null if the doc vanished between the scan and the load.
+   */
+  async advanceInProgressAsSystem(
+    docId: string,
+  ): Promise<DocumentUpload | null> {
+    const doc = await this.documentUploadRepository.findOne({ // lint-exempt: system/no-orgId (processor)
+      where: { id: docId },
+    });
+    if (!doc) return null;
+    return this.advanceDocumentState(doc);
+  }
+
+  /**
+   * Max time a document may sit in a non-terminal in-progress state before the
+   * driver treats it as DEAD and FAILs it (the self-termination guarantee).
+   * 60 min is comfortably beyond the Celery hard time-limit (2400s = 40 min, at
+   * which Celery KILLS the task → it surfaces as a `failed` job, not a pending
+   * one), so a still-running job is never failed prematurely; only a job that is
+   * genuinely dead or whose Celery result has expired (AsyncResult → PENDING
+   * forever) trips this.
+   */
+  private static readonly MAX_IN_PROGRESS_MS = 60 * 60 * 1000;
+
+  private static readonly STALE_ERROR_MESSAGE =
+    'Extraction timed out: the AI job did not complete within the allowed window ' +
+    '(its result is no longer available). Please re-upload to retry.';
+
+  /** True if the doc has rested in its current in-progress state past the max window. */
+  private isStaleInProgress(doc: DocumentUpload): boolean {
+    const ref = doc.updated_at ?? doc.created_at;
+    if (!ref) return false;
+    return (
+      Date.now() - new Date(ref).getTime() >
+      DocumentProcessingService.MAX_IN_PROGRESS_MS
+    );
+  }
+
+  /**
+   * Terminalize a stale / dead in-progress doc as FAILED + refund its
+   * reservation — the driver's self-termination backstop for docs that can
+   * never complete (crash-stranded with no live job, or a dead/expired AI job
+   * that reports PENDING forever). Race-safe: the atomic conditional UPDATE
+   * flips FAILED only from the doc's CURRENT in-progress status, so a peer that
+   * just completed/failed it wins and this no-ops (returns the fresh view). The
+   * reservation release is engine status-guarded (at-most-once).
+   */
+  private async failStaleDoc(doc: DocumentUpload): Promise<DocumentUpload> {
+    const claim = await this.documentUploadRepository.update( // lint-exempt: S2f-deferred (metering-entangled, walled); stale-doc terminalize claim
+      { id: doc.id, processing_status: doc.processing_status },
+      {
+        processing_status: DocumentProcessingStatus.FAILED,
+        processing_job_id: null,
+        error_message: DocumentProcessingService.STALE_ERROR_MESSAGE,
+      },
+    );
+    if (claim.affected !== 1) {
+      // A peer transitioned it first — return the fresh (terminal) view.
+      return (
+        (await this.documentUploadRepository.findOne({ // lint-exempt: S2f-deferred (metering-entangled, walled)
+          where: { id: doc.id },
+        })) ?? doc
+      );
+    }
+    this.logger.warn(
+      `[advanceDocumentState] Stale in-progress document ${doc.id} ` +
+        `(status was ${doc.processing_status}) failed by the driver backstop — ` +
+        `AI job dead or result expired. metering.upload_extraction.stale_failed`,
+    );
+    doc.processing_status = DocumentProcessingStatus.FAILED;
+    doc.processing_job_id = null;
+    doc.error_message = DocumentProcessingService.STALE_ERROR_MESSAGE;
+    await this.releaseReservationOnFailure(doc);
     return doc;
   }
 
@@ -592,9 +854,20 @@ export class DocumentProcessingService {
   }
 
   /**
-   * Create Clause and ContractClause records from extracted data.
+   * Create Clause + ContractClause records from extracted data, INSIDE the
+   * caller's transaction (the race-safe finalize). Writing through the
+   * transaction's EntityManager makes the clause inserts atomic with the
+   * EXTRACTING_CLAUSES → CLAUSES_EXTRACTED status flip that gated entry here, so
+   * only the race-winner ever persists clauses and a crash mid-write rolls the
+   * whole thing back (doc stays EXTRACTING_CLAUSES → retried).
+   *
+   * `isProposed` (Option C) — when true the junction rows are flagged
+   * is_proposed=true so the extracted clauses form a SEPARATE pile excluded from
+   * every default read (guest new-version upload); false → the contract's live
+   * clause set (managing path, byte-unchanged).
    */
-  private async createClausesFromExtraction(
+  private async writeClausesInTx(
+    em: EntityManager,
     extractedClauses: Array<{
       title: string;
       content: string;
@@ -606,12 +879,13 @@ export class DocumentProcessingService {
     documentId: string,
     userId: string,
     orgId: string,
+    isProposed: boolean,
   ): Promise<void> {
     for (let i = 0; i < extractedClauses.length; i++) {
       const ec = extractedClauses[i];
 
       // Create the clause record
-      const clause = this.clauseRepository.create({
+      const clause = em.create(Clause, {
         organization_id: orgId,
         title: ec.title,
         content: ec.content,
@@ -625,22 +899,48 @@ export class DocumentProcessingService {
         created_by: userId,
       });
 
-      const savedClause = await this.clauseRepository.save(clause);
+      const savedClause = await em.save(clause); // lint-exempt: system/no-orgId (processor); transaction-scoped finalize
 
       // Create the contract-clause junction
-      const contractClause = this.contractClauseRepository.create({
+      const contractClause = em.create(ContractClause, {
         contract_id: contractId,
         clause_id: savedClause.id,
         section_number: ec.section_number || null,
         order_index: i,
+        is_proposed: isProposed,
       });
 
-      await this.contractClauseRepository.save(contractClause); // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled (ContractClause)
+      await em.save(contractClause); // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled (ContractClause); transaction-scoped finalize
     }
 
     this.logger.log(
-      `Created ${extractedClauses.length} clauses for contract ${contractId} from document ${documentId}`,
+      `Created ${extractedClauses.length} ${isProposed ? 'PROPOSED ' : ''}clauses for contract ${contractId} from document ${documentId}`,
     );
+  }
+
+  /**
+   * Host-v1 read of a guest upload's PROPOSED clauses (Option C). Managing-only
+   * — walled by `findInOrg` (cross-tenant probe → 404). Returns ONLY the
+   * `is_proposed = true` junction rows whose clause was extracted from the given
+   * guest upload (`source_document_id = docId`), ordered by the proposed pile's
+   * own `order_index`. These are the clauses excluded from every default read;
+   * this is the single surface that exposes them, for the host to review the
+   * guest's submitted version.
+   */
+  async getProposedClauses(
+    contractId: string,
+    docId: string,
+    orgId: string,
+  ): Promise<ContractClause[]> {
+    await this.contractAccess.findInOrg(contractId, orgId);
+    return this.contractClauseRepository // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled (ContractClause)
+      .createQueryBuilder('cc')
+      .leftJoinAndSelect('cc.clause', 'clause')
+      .where('cc.contract_id = :contractId', { contractId })
+      .andWhere('cc.is_proposed = true')
+      .andWhere('clause.source_document_id = :docId', { docId })
+      .orderBy('cc.order_index', 'ASC')
+      .getMany();
   }
 
   /**
@@ -855,6 +1155,10 @@ export class DocumentProcessingService {
       .leftJoinAndSelect('clause.source_document', 'source_doc')
       .where('cc.contract_id = :contractId', { contractId })
       .andWhere('clause.source = :source', { source: ClauseSource.AI_EXTRACTED })
+      // Option C — the managing review screen reviews the contract's LIVE
+      // clauses only; guest-PROPOSED clauses are surfaced via the dedicated
+      // host-v1 read (getProposedClauses), never mixed into review.
+      .andWhere('cc.is_proposed = false')
       .orderBy('source_doc.document_priority', 'ASC')
       .addOrderBy('cc.order_index', 'ASC')
       .getMany();
@@ -1601,8 +1905,8 @@ export class DocumentProcessingService {
   }
 
   /**
-   * Called from pollAndAdvance's CLAUSES_EXTRACTED terminal-success
-   * branch after createClausesFromExtraction has persisted the clauses.
+   * Called from advanceDocumentState's CLAUSES_EXTRACTED terminal-success
+   * branch after writeClausesInTx has persisted the clauses.
    *
    * Success commit doesn't change `consumed` (capacity was taken at
    * reserve). The only state change is the ledger row flipping

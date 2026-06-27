@@ -87,6 +87,22 @@ export class DocumentProcessingController {
     return this.documentProcessingService.reprocess(docId, orgId);
   }
 
+  @Get('documents/:docId/proposed-clauses')
+  async getProposedClauses(
+    @Param('contractId', ParseUUIDPipe) contractId: string,
+    @Param('docId', ParseUUIDPipe) docId: string,
+    @OrganizationId() orgId: string,
+  ) {
+    // Host-v1 — the managing side reviews the PROPOSED clauses a bound guest
+    // submitted via a new-version upload (Option C). Walled by findInOrg in the
+    // service (cross-tenant probe → 404).
+    return this.documentProcessingService.getProposedClauses(
+      contractId,
+      docId,
+      orgId,
+    );
+  }
+
   @Put('documents/:docId/extracted-text')
   async updateExtractedText(
     @Param('docId', ParseUUIDPipe) docId: string,

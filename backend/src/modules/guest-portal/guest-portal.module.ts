@@ -34,6 +34,7 @@ import { ViewerPortalController } from './controllers/viewer-portal.controller';
 import { GuestCommentsController } from './controllers/guest-comments.controller';
 import { GuestDownloadController } from './controllers/guest-download.controller';
 import { GuestUploadController } from './controllers/guest-upload.controller';
+import { GuestStatusController } from './controllers/guest-status.controller';
 
 /**
  * Phase 7.18 — Guest Portal module.
@@ -82,6 +83,7 @@ import { GuestUploadController } from './controllers/guest-upload.controller';
     GuestCommentsController,
     GuestDownloadController,
     GuestUploadController,
+    GuestStatusController,
   ],
   providers: [
     InvitationTokenService,

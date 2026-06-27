@@ -27,6 +27,7 @@ import {
   RiskAnalysis,
   RiskCategory,
   RiskLevel,
+  User,
 } from '../../../../database/entities';
 import { AiService } from '../../../ai/ai.service';
 import { StorageService } from '../../../storage/storage.service';
@@ -186,6 +187,15 @@ describe('AI risk writer — pollAndSaveRisks / saveAiRiskAsRow', () => {
         {
           provide: DocumentUploadScopedRepository,
           useValue: { scopedFind: jest.fn(), scopedFindByIdOrThrow: jest.fn() },
+        },
+        // Guest extraction completion (Slice 1) — DocumentProcessingService now
+        // injects the User repo to derive the uploader's account_type. These AI
+        // risk-writer paths never reach it; returns MANAGING if ever called.
+        {
+          provide: getRepositoryToken(User),
+          useValue: {
+            findOne: jest.fn().mockResolvedValue({ account_type: 'MANAGING' }),
+          },
         },
       ],
     }).compile();

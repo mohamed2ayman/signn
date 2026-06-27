@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { BullModule } from '@nestjs/bull';
 import {
   AuditLog,
   DocumentUpload,
@@ -8,11 +9,17 @@ import {
   Contract,
   RiskAnalysis,
   RiskCategory,
+  User,
 } from '../../database/entities';
 import { DocumentProcessingController } from './document-processing.controller';
 import { DocumentProcessingService } from './document-processing.service';
 import { ParseDocxController } from './parse-docx.controller';
 import { ParseDocxService } from './parse-docx.service';
+// Guest extraction completion — SERVER-SIDE driver (browser-independent
+// backstop). A repeatable SYSTEM job advances in-progress uploads to terminal
+// without any browser poll. Mirrors the metering/portfolio cleanup schedulers.
+import { DocumentExtractionScheduler } from './schedulers/document-extraction.scheduler';
+import { DocumentExtractionProcessor } from './processors/document-extraction.processor';
 import { StorageModule } from '../storage/storage.module';
 import { AiModule } from '../ai/ai.module';
 import { RiskAnalysisModule } from '../risk-analysis/risk-analysis.module';
@@ -43,6 +50,9 @@ import { ScopedRepositoryModule } from '../scoped-repository/scoped-repository.m
       // risk_category against the active taxonomy. Unknown → falls back
       // to 'Uncategorized' + audit log.
       RiskCategory,
+      // Guest extraction completion (Slice 1) — read the uploader's
+      // account_type so the advance core decides proposed-vs-live intrinsically.
+      User,
     ]),
     StorageModule,
     AiModule,
@@ -52,9 +62,16 @@ import { ScopedRepositoryModule } from '../scoped-repository/scoped-repository.m
     ContractsModule,
     MeteringModule,
     ScopedRepositoryModule,
+    // Guest extraction completion — SERVER-SIDE driver queue (browser-independent).
+    BullModule.registerQueue({ name: 'document-processing-jobs' }),
   ],
   controllers: [DocumentProcessingController, ParseDocxController],
-  providers: [DocumentProcessingService, ParseDocxService],
+  providers: [
+    DocumentProcessingService,
+    ParseDocxService,
+    DocumentExtractionScheduler,
+    DocumentExtractionProcessor,
+  ],
   exports: [DocumentProcessingService, ParseDocxService],
 })
 export class DocumentProcessingModule {}
