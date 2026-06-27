@@ -3985,6 +3985,13 @@ that provides + exports it; consumers import the module rather than re-declaring
    key-guarded forward-only migration pattern** from 7.35 (lesson #172) — do NOT decrypt a
    bare value that may still be legacy plaintext, or you risk locking users out.
 
+**Testing note:** when testing a consumer's encrypt→decrypt round-trip, decrypt through the
+SAME DI `CryptoService` instance the production path encrypts with (e.g. `moduleRef.get(CryptoService)`)
+under a real production-shaped key — NEVER a hand-rolled second instance pinned to a dummy.
+`@nestjs/config` gives `process.env` precedence over `load()` unless `ignoreEnvVars: true`, so
+a second instance silently diverges from the real env key (green for the wrong reason when the
+key is absent, red when it's present). See lesson #179.
+
 ---
 
 ## ERP Integration — Phase 7.28 (shipped, v1 + v1.1)
