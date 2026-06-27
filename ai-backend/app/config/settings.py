@@ -14,6 +14,11 @@ class Settings(BaseSettings):
 
     # AI Provider API Keys
     ANTHROPIC_API_KEY: str = ""
+    # Single source of truth for the Claude model id used by ALL agents
+    # (Phase 8.1 centralization). Override via the ANTHROPIC_MODEL env var.
+    # NOTE: changing this model requires running the Arabic accuracy suite
+    # first (ai-backend/tests/accuracy/) — never swap the model blind.
+    ANTHROPIC_MODEL: str = "claude-sonnet-4-6"
     OPENAI_API_KEY: str = ""
 
     # Database

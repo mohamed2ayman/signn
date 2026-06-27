@@ -117,6 +117,7 @@ class RiskAnalyzerAgent:
     def __init__(self) -> None:
         settings = get_settings()
         self._client = Anthropic(api_key=settings.ANTHROPIC_API_KEY)
+        self._model = settings.ANTHROPIC_MODEL
 
     def analyze(
         self,
@@ -184,7 +185,7 @@ class RiskAnalyzerAgent:
             )
 
         message = self._client.messages.create(
-            model="claude-sonnet-4-6",
+            model=self._model,
             max_tokens=4096,
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_content}],

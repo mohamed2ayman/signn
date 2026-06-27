@@ -1,0 +1,28 @@
+{
+  "_about": "Provenance for the anonymized Arabic clause-extraction baseline. Contains NO real identifiers — only the anonymization summary by placeholder type.",
+  "fixture": "general_conditions_ar.txt",
+  "language": "ar",
+  "document_type": "General Conditions (الشروط العامة) — construction contract",
+  "source_format": "Word (.docx), extracted via python-docx (paragraphs + tables + headers)",
+  "extracted_chars_raw": 81088,
+  "anonymized_chars": 81004,
+  "delta_chars": -84,
+  "boundary_chunks": 9,
+  "expected_article_count": 38,
+  "expected_article_count_note": "37 مادة articles + 1 الفقرة (38) clause. The live baseline surfaced الفقرة (38) — a real variation-orders clause labeled الفقرة, not مادة — which the structural lister (keyed on مادة/البند/Article) had initially missed.",
+  "anonymization": {
+    "method": "Consistent placeholder substitution (same real value -> same placeholder). Legal structure, clause wording, section numbering, chunk boundaries, and Arabic text left intact. Public legal references (Egyptian law numbers), standards bodies, and tool names (ISO, Primavera, Aconex, RAMS, etc.) intentionally KEPT as legal/technical substance, not party identifiers.",
+    "placeholders_by_type": {
+      "PARTY_A": 2,
+      "PARTY_B": 1,
+      "PARTY_C": 1,
+      "PARTY_D": 1,
+      "PARTY_E": 1,
+      "PROJECT": 5,
+      "LOCATION": 2
+    },
+    "residual_identifier_scan": "clean"
+  },
+  "raw_document_committed": false,
+  "note": "The raw .docx, the raw extracted text, and the real->placeholder map are NOT committed to the repo. Only this anonymized fixture is."
+}

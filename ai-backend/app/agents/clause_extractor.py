@@ -204,6 +204,7 @@ class ClauseExtractorAgent:
     def __init__(self) -> None:
         settings = get_settings()
         self._client = Anthropic(api_key=settings.ANTHROPIC_API_KEY)
+        self._model = settings.ANTHROPIC_MODEL
 
     # ------------------------------------------------------------------
     # Public entry point
@@ -567,7 +568,7 @@ class ClauseExtractorAgent:
         for attempt in range(1, max_attempts + 1):
             try:
                 message = self._client.messages.create(
-                    model="claude-sonnet-4-6",
+                    model=self._model,
                     max_tokens=max_tokens,
                     system=SYSTEM_PROMPT,
                     messages=[{"role": "user", "content": user_content}],

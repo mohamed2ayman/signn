@@ -105,6 +105,7 @@ class ConflictDetectorAgent:
     def __init__(self) -> None:
         settings = get_settings()
         self._client = Anthropic(api_key=settings.ANTHROPIC_API_KEY)
+        self._model = settings.ANTHROPIC_MODEL
 
     def detect(self, clauses: list[dict[str, Any]]) -> dict[str, Any]:
         """Detect conflicts across clauses from multiple documents.
@@ -163,7 +164,7 @@ class ConflictDetectorAgent:
         )
 
         message = self._client.messages.create(
-            model="claude-sonnet-4-6",
+            model=self._model,
             max_tokens=8192,
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_content}],
