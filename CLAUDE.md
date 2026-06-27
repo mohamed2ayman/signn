@@ -4303,3 +4303,85 @@ limbo": git keeps showing it as modified, and when it carries local edits it
   private-per-dev or shared. Until then, the worktree workaround is the safe path.
   See lesson #181's sibling (env gotchas) and the Team Coordination "gitignored
   files after a rename" note.
+
+---
+
+## Guest AI Extraction Completion — Feature #5, Slice 1 (shipped 2026-06-27, PR #99, merged `77ba6c4`)
+
+The completion fix promised by lesson #180. Feature #4 (PR #96) wired the guest
+new-version upload into the existing `uploadAndProcess` entry point, but only
+**dispatched** the async AI pipeline — nothing DROVE it to terminal for a guest
+(the managing status route is `findInOrg`-walled, which a guest's null org can
+never pass), so 5/5 guest uploads sat stuck at `EXTRACTING_TEXT` /
+`EXTRACTING_CLAUSES`, 0 clauses, reservations refunded by the sweeper. Slice 1
+closes that gap and writes guest-extracted clauses back as a SEPARATE proposed
+set. Additive to Portal Rules 5–6 and the prior guest features (#1 viewer/
+comments, #3 watermarked download, #4 upload); those rules are unchanged.
+
+### What shipped
+- **Server-side SYSTEM driver — browser-independent completion.** A Bull
+  scheduler (`DocumentExtractionScheduler`) periodically advances ANY in-progress
+  doc to terminal independent of any client. Completion no longer depends on a
+  browser tab staying open (the prior browser-only poll, 120s cap, finished ~2.5
+  min BEFORE the ~256s AI job → permanent stuck). The guest status surface is now
+  **display-only**: it reflects state, it does not drive it. Applies to the
+  managing side too. See lesson #182.
+- **Race-safe, exactly-once advance.** The status transition is an atomic
+  conditional UPDATE keyed on the current (non-terminal) status — the same
+  hot-row idiom as ARCHITECTURE RULE 9 Invariant 2 / lesson #177. Whichever
+  caller (the SYSTEM driver or a client-triggered poll) flips the row wins; the
+  clause-write + reservation `commit()` run ONLY on the winning transition.
+  Concurrent drivers/polls converge to **exactly one** clause-write and **exactly
+  one** reservation commit — never double-write, never double-charge.
+- **Staleness backstop.** A doc stuck in-progress beyond a max window is
+  atomically FAILed + its reservation refunded. This guards the Celery
+  "unknown / expired task → PENDING forever" gotcha — without it the very SYSTEM
+  driver built to rescue stuck docs would itself poll an expired-result doc
+  forever and never self-terminate. See lesson #183.
+- **Option C — guest clauses are a SEPARATE proposed set, host's live clauses
+  untouched.** Guest-extracted clauses are written to `contract_clauses` with
+  `is_proposed = true`, scoped by `source_document_id` (the guest's uploaded
+  doc). They are EXCLUDED from the host canonical read, the guest viewer read,
+  and the managing review read — so they never collide with the host's live
+  clauses, never share/contend an `order_index`, and never mutate the host's
+  working set. A host-v1 view surfaces the proposed clauses read-only.
+- **Guest status surface + host v1 view.** Guest status page polls until terminal
+  with `localStorage` refresh-resume (survives a tab refresh); host gets a
+  read-only v1 view of the proposed clauses.
+
+### ARCHITECTURE INVARIANT — proposed-vs-live is DOC-DERIVED, never endpoint-derived (do not regress)
+The advance logic decides proposed-vs-live by the UPLOADER's `account_type`
+(`isGuestUploadedDoc`), NOT by which endpoint or actor triggered the advance. A
+guest-uploaded doc advanced by the SYSTEM driver OR by the managing poll writes
+**PROPOSED** clauses; a managing-uploaded doc writes **LIVE** clauses. The driver
+and the managing status route share one advance path — correctness depends on the
+proposed/live decision being keyed on the doc's uploader, never on the caller.
+Never refactor this to branch on the endpoint/route.
+
+### DEFERRED to Slice 2 (its own phase — do NOT rebuild before reading)
+- `version_id` on `contract_clauses` (true clause versioning).
+- Clause-level accept / reject / merge of proposed clauses into the host's live set.
+- Side-by-side diff-viewer wiring (proposed vs live).
+
+### STILL OPEN carry-overs from Feature #4 (tracked so they're not lost)
+1. **AV / malware content scanning** of guest-uploaded files (none today).
+2. **OOXML structural / zip-bomb validation** for the DOCX magic-bytes check —
+   currently accepts ANY `PK\x03\x04` (ZIP) container as DOCX; the 50MB multer
+   cap bounds input size.
+
+### Hard rules — never violate
+1. **Completion of an async pipeline is owned by a SYSTEM-run server-side driver,
+   never by a client poll.** The browser poll is display-only. If the only thing
+   advancing a job is a client tab, the job is one closed tab away from stuck
+   forever (lesson #182).
+2. **The status advance is an atomic conditional transition; the clause-write +
+   reservation commit ride ONLY on the winning flip.** Exactly-once across any
+   number of concurrent drivers/polls (the #177 idiom).
+3. **The staleness backstop must FAIL + refund any in-progress doc beyond the max
+   window** — so an expired/never-arriving AI result becomes terminal-FAILED, not
+   eternal-PENDING (lesson #183).
+4. **Proposed-vs-live is DOC-DERIVED (`isGuestUploadedDoc`), never endpoint-
+   derived** — see the ARCHITECTURE INVARIANT above.
+5. **Proposed clauses (`is_proposed`, scoped by `source_document_id`) are excluded
+   from the host canonical + guest viewer + managing review reads** — they never
+   touch the host's live clause set or its `order_index` space.
