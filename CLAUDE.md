@@ -4258,3 +4258,48 @@ files) and was NOT a #96 merge blocker.
    currently accepts ANY `PK\x03\x04` (ZIP) container as DOCX; the 50MB multer
    cap bounds input size, and magic-bytes still beats the prior ext+MIME-only
    check.
+
+---
+
+## Known Dev-Env Issues (logged 2026-06-27)
+
+Two recurring developer-environment gotchas, neither a code defect. Banked here so
+the next contributor diagnoses them by class instead of "fixing" code that's fine.
+
+### 1. Stale `node_modules` after pulling a dependency-adding PR → phantom failures in unrelated suites
+A dependency declared in `package.json` by one PR is NOT present in a long-running
+container's `node_modules` until someone runs `npm install`. Concretely: `bidi-js`
+was added in **PR #97** (the Arabic-PDF Acrobat fix, `common/utils/pdf-arabic.ts`).
+On a backend container that predates that PR, **13 suites phantom-fail** —
+`export`, `portfolio-export`, `docusign`, `pdf-arabic`, `guest-download` — all with
+`Cannot find module 'bidi-js' from 'common/utils/pdf-arabic.ts'`, even for a diff
+that touches none of them.
+- **Diagnose by error class:** `Cannot find module '<declared-dep>'` in suites you
+  didn't touch = an ENVIRONMENT/stale-install problem, not your change. Confirm the
+  dep IS in `package.json` (it is, since PR #97), then it's a missing install.
+- **Fix:** `npm install` (or `docker compose up --force-recreate --renew-anon-volumes
+  -d backend` for the anonymous-volume case). **Do NOT** "fix" it by re-adding the
+  dependency in your feature PR — it's already declared on `main`; re-adding it is a
+  spurious, confusing diff.
+- **Team rule:** after pulling a PR that adds a dependency, run `npm install`.
+- This is the cross-contributor variant of Known Issues #5 ("Stale node_modules
+  after git pull") and the older joi/`--renew-anon-volumes` gotcha (Phase 1.5). See
+  lesson #181.
+
+### 2. `NEXT_PHASES.md` limbo — gitignored-BUT-tracked → blocks `git checkout main`; use a worktree for doc-syncs (UNRESOLVED)
+`NEXT_PHASES.md` is listed in `.gitignore` (line 56) BUT is also tracked by git (it
+was committed before being ignored — Phase 5.4). The result is "ignored-but-tracked
+limbo": git keeps showing it as modified, and when it carries local edits it
+**blocks a clean `git checkout main`** (`Your local changes … would be overwritten`)
+— the exact thing that repeatedly snags doc-reconciliation syncs.
+- **Workaround for doc-syncs:** edit the tracked docs (CLAUDE.md, lessons.md) in a
+  **worktree off `origin/main`** (`git worktree add -b docs/<name> ../signn-docs
+  <origin/main-SHA>`), and keep `NEXT_PHASES.md` as a LOCAL edit in the main tree,
+  out of any PR.
+- **UNRESOLVED — pending a Youssef + Ayman decision:** either untrack it
+  (`git rm --cached NEXT_PHASES.md`, so the `.gitignore` entry actually takes effect
+  and it becomes purely local) OR remove it from `.gitignore` and treat it as a
+  shared, committed planning doc. The choice hinges on whether it's meant to be
+  private-per-dev or shared. Until then, the worktree workaround is the safe path.
+  See lesson #181's sibling (env gotchas) and the Team Coordination "gitignored
+  files after a rename" note.
