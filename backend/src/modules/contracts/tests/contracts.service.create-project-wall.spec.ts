@@ -45,6 +45,7 @@ describe('ContractsService.create — project→org ownership wall (S0)', () => 
       noop, // contractorResponseScoped (Option B S2a — unused here)
       noop, // contractApproverScoped (Option B S2a — unused here)
       noop, // contractCommentScoped (Option B S2b — unused by create())
+      noop, // clauseRepository (2a — unused here)
     );
   }
 

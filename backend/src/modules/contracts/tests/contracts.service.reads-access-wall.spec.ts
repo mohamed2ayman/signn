@@ -63,6 +63,7 @@ describe('ContractsService — Tier 2 READ access wall', () => {
       opts.contractorResponseScoped ?? noop, // Option B S2a
       opts.contractApproverScoped ?? noop, // Option B S2a
       noop, // contractCommentScoped (Option B S2b — unused by these Tier 2 READ paths)
+      noop, // clauseRepository (2a — unused here)
     );
   }
 

@@ -6,7 +6,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, EntityManager } from 'typeorm';
 import {
   Contract,
   ContractStatus,
@@ -19,7 +19,10 @@ import {
   User,
   ContractApprover,
   ApproverStatus,
+  Clause,
+  ClauseReviewStatus,
 } from '../../database/entities';
+import { ApplyProposedVersionDto } from './dto/apply-proposed-version.dto';
 import { diffWordsWithSpace } from 'diff';
 import {
   CreateContractDto,
@@ -79,6 +82,12 @@ export class ContractsService {
     // loads (resolve/update/delete) route through its scoped by-id surface;
     // the comment LIST read stays a raw QB → lint bucket (Q3).
     private readonly contractCommentScoped: ContractCommentScopedRepository,
+    // Guest version review (2a) — parent-chain promotion of accepted/edited
+    // proposed clauses creates new Clause versions. Clause is not in the
+    // contract-scoped enforced set (it carries no contract_id); reads here are
+    // always reached through a contract-walled apply (findInOrg), inside a txn.
+    @InjectRepository(Clause)
+    private readonly clauseRepository: Repository<Clause>,
   ) {}
 
   // ─── Contract CRUD ─────────────────────────────────────────
@@ -507,7 +516,9 @@ export class ContractsService {
     // Tenant-isolation Tier 2 — wall on URL contractId.
     await this.contractAccess.findInOrg(contractId, orgId);
     return this.contractClauseRepository.find({ // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled (ContractClause has no scoped repo)
-      where: { contract_id: contractId },
+      // Guest version review (2a) — EXCLUDE guest-proposed clauses from the
+      // host's live Clauses tab (Slice 1 invariant; see contract-clause.entity).
+      where: { contract_id: contractId, is_proposed: false },
       relations: ['clause', 'clause.creator'],
       order: { order_index: 'ASC' },
     });
@@ -620,8 +631,21 @@ export class ContractsService {
       metadata?: Record<string, unknown>;
       bumpVersionNumber?: boolean;
     },
+    // Guest version review (2a) — when an EntityManager is supplied, every read
+    // and write here runs inside the caller's transaction. The apply operation
+    // takes the snapshot FIRST inside its txn so a mid-apply failure rolls the
+    // snapshot back with the promotions (all-or-nothing). Omitted everywhere
+    // else → uses the injected repositories (unchanged behaviour).
+    manager?: EntityManager,
   ): Promise<ContractVersion> {
-    const contract = await this.contractRepository.findOne({ // lint-exempt: two-step hydration (ids validated by scoped load)
+    const contractRepo = manager
+      ? manager.getRepository(Contract) // lint-exempt: wall-protected (findInOrg) txn-bound repo; chokepoint migration scheduled
+      : this.contractRepository;
+    const versionRepo = manager
+      ? manager.getRepository(ContractVersion) // lint-exempt: wall-protected (findInOrg) txn-bound repo; chokepoint migration scheduled
+      : this.contractVersionRepository;
+
+    const contract = await contractRepo.findOne({ // lint-exempt: two-step hydration (ids validated by scoped load)
       where: { id: contractId },
       relations: ['contract_clauses', 'contract_clauses.clause'],
     });
@@ -633,18 +657,21 @@ export class ContractsService {
     // Bump version number for every new event-driven snapshot.
     if (options?.bumpVersionNumber !== false) {
       // Find the highest existing version number for this contract
-      const last = await this.contractVersionRepository.findOne({ // lint-exempt: two-step hydration (ids validated by scoped load)
+      const last = await versionRepo.findOne({ // lint-exempt: two-step hydration (ids validated by scoped load)
         where: { contract_id: contractId },
         order: { version_number: 'DESC' },
       });
       const nextVersion = (last?.version_number || 0) + 1;
       contract.current_version = nextVersion;
-      await this.contractRepository.save(contract); // lint-exempt: wall-protected (findInOrg) — row validated before write
+      await contractRepo.save(contract); // lint-exempt: wall-protected (findInOrg) — row validated before write
     }
 
     const versionNumber = contract.current_version;
 
     const clauses = (contract.contract_clauses || [])
+      // Guest version review (2a) — the snapshot is the LIVE contract only;
+      // guest-proposed clauses (is_proposed=true) are NOT part of it.
+      .filter((cc) => !cc.is_proposed)
       .slice()
       .sort((a, b) => a.order_index - b.order_index)
       .map((cc) => ({
@@ -672,7 +699,7 @@ export class ContractsService {
       changeSummary ||
       this.buildEventDescription(eventType, triggeredByRole, counterpartyRole);
 
-    const version = this.contractVersionRepository.create({
+    const version = versionRepo.create({
       contract_id: contractId,
       version_number: versionNumber,
       version_label: `V${versionNumber}`,
@@ -690,7 +717,213 @@ export class ContractsService {
       created_by: userId,
     });
 
-    return this.contractVersionRepository.save(version); // lint-exempt: wall-protected (findInOrg) — row validated before write
+    return versionRepo.save(version); // lint-exempt: wall-protected (findInOrg) — row validated before write
+  }
+
+  /**
+   * Guest version review — Sub-slice 2a. Apply a host's per-clause decisions for
+   * a guest-proposed version (the proposed set identified by source_document_id)
+   * and commit them ATOMICALLY.
+   *
+   * HOST / MANAGING action — org-scoped via `findInOrg` (cross-tenant probe →
+   * 404, no existence leak). NOT a guest action.
+   *
+   * Order (all inside ONE transaction — snapshot + every promotion commit
+   * together or nothing does):
+   *   1. SNAPSHOT-BEFORE — createVersionSnapshot of the current LIVE contract
+   *      (the recoverable "before"; taken only when there is a live mutation).
+   *   2. accept (modify) — the proposed clause becomes a NEW Clause version via
+   *      the parent-chain (parent_clause_id → original, original is_active=false);
+   *      the live junction is repointed at it; the proposed junction is consumed.
+   *   3. edit (merge)    — same as accept, but with the host's wording; EDITED.
+   *   4. accept (add)    — proposed clause with no original → flipped into the
+   *      live set (is_proposed=false) with a non-colliding live order_index.
+   *   5. removal accept  — the named original live clause is retired + removed
+   *      from the live junction (the snapshot preserves it).
+   *   6. reject          — NO-OP on the contract; the proposed row is discarded.
+   */
+  async applyProposedVersion(
+    contractId: string,
+    docId: string,
+    dto: ApplyProposedVersionDto,
+    userId: string,
+    orgId: string,
+  ): Promise<{
+    snapshot_version_id: string | null;
+    snapshot_version_number: number | null;
+    accepted: number;
+    edited: number;
+    added: number;
+    removed: number;
+    rejected: number;
+  }> {
+    // HOST wall — org-scope the contract before anything (cross-tenant → 404).
+    await this.contractAccess.findInOrg(contractId, orgId);
+
+    const decisions = dto.decisions ?? [];
+    const removals = dto.removals ?? [];
+
+    // Load the proposed set for THIS guest upload (is_proposed=true scoped by
+    // the uploaded document's source_document_id).
+    const proposedCCs = await this.contractClauseRepository // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled (ContractClause has no scoped repo)
+      .createQueryBuilder('cc')
+      .leftJoinAndSelect('cc.clause', 'clause')
+      .where('cc.contract_id = :contractId', { contractId })
+      .andWhere('cc.is_proposed = true')
+      .andWhere('clause.source_document_id = :docId', { docId })
+      .getMany();
+    const proposedById = new Map(proposedCCs.map((cc) => [cc.id, cc]));
+
+    // Validate decisions reference real proposed clauses in THIS set.
+    for (const d of decisions) {
+      if (!proposedById.has(d.proposed_contract_clause_id)) {
+        throw new BadRequestException(
+          `Unknown proposed clause ${d.proposed_contract_clause_id} for this version`,
+        );
+      }
+      if (d.action === 'edit' && !d.edited_content) {
+        throw new BadRequestException(
+          'edited_content is required for an edit decision',
+        );
+      }
+    }
+
+    // A reject-only apply must not snapshot/bump the version (graceful no-op).
+    const hasLiveChanges =
+      decisions.some((d) => d.action === 'accept' || d.action === 'edit') ||
+      removals.some((r) => r.action === 'accept');
+
+    const counts = { accepted: 0, edited: 0, added: 0, removed: 0, rejected: 0 };
+    const snapshotHolder: { version: ContractVersion | null } = { version: null };
+
+    await this.contractClauseRepository.manager.transaction(async (manager) => {
+      const ccRepo = manager.getRepository(ContractClause); // lint-exempt: wall-protected (findInOrg) txn-bound repo; chokepoint migration scheduled
+      const clauseRepo = manager.getRepository(Clause);
+
+      // 1. SNAPSHOT-BEFORE — runs FIRST, inside the txn. A later throw rolls it
+      //    back with the promotions (atomic). Only when there's a live mutation.
+      if (hasLiveChanges) {
+        snapshotHolder.version = await this.createVersionSnapshot(
+          contractId,
+          userId,
+          dto.change_summary,
+          { eventType: ContractVersionEventType.EDITED },
+          manager,
+        );
+      }
+
+      // Live tail order_index for ADDs (computed on the pre-apply live set).
+      const tailRow = await ccRepo
+        .createQueryBuilder('cc')
+        .select('MAX(cc.order_index)', 'max')
+        .where('cc.contract_id = :contractId', { contractId })
+        .andWhere('cc.is_proposed = false')
+        .getRawOne<{ max: string | null }>();
+      let nextOrder = (tailRow?.max == null ? -1 : Number(tailRow.max)) + 1;
+
+      for (const d of decisions) {
+        const propCC = proposedById.get(d.proposed_contract_clause_id)!;
+        const propClause = propCC.clause;
+
+        if (d.action === 'reject') {
+          // NO-OP on the contract — discard the proposed row + its clause.
+          await ccRepo.delete(propCC.id);
+          await clauseRepo.delete(propClause.id);
+          counts.rejected++;
+          continue;
+        }
+
+        if (d.replaces_contract_clause_id) {
+          // MODIFY (accept) / MERGE (edit) — parent-chain promotion.
+          const originalCC = await ccRepo.findOne({
+            where: {
+              id: d.replaces_contract_clause_id,
+              contract_id: contractId,
+              is_proposed: false,
+            },
+            relations: ['clause'],
+          });
+          if (!originalCC || !originalCC.clause) {
+            throw new BadRequestException(
+              `replaces_contract_clause_id ${d.replaces_contract_clause_id} is not a live clause on this contract`,
+            );
+          }
+          const original = originalCC.clause;
+
+          // The proposed clause BECOMES the new live version of the original.
+          propClause.parent_clause_id = original.id;
+          propClause.version = (original.version ?? 1) + 1;
+          propClause.is_active = true;
+          propClause.review_status =
+            d.action === 'edit'
+              ? ClauseReviewStatus.EDITED
+              : ClauseReviewStatus.APPROVED;
+          if (d.action === 'edit') {
+            if (d.edited_title != null) propClause.title = d.edited_title;
+            propClause.content = d.edited_content as string;
+          }
+          propClause.reviewed_by = userId;
+          propClause.reviewed_at = new Date();
+          await clauseRepo.save(propClause);
+
+          // Retire the original clause version.
+          original.is_active = false;
+          await clauseRepo.save(original);
+
+          // Repoint the LIVE junction at the new clause (preserve order_index).
+          // Use a column UPDATE, not save() — originalCC has its `clause`
+          // relation loaded (the original), and save() would derive the FK from
+          // that stale relation object and silently revert the repoint.
+          await ccRepo.update({ id: originalCC.id }, { clause_id: propClause.id });
+
+          // The proposed junction is consumed.
+          await ccRepo.delete(propCC.id);
+
+          if (d.action === 'edit') counts.edited++;
+          else counts.accepted++;
+        } else {
+          // ADD (accept) — brand-new clause; flip into the live set with a
+          // non-colliding live order_index.
+          propCC.is_proposed = false;
+          propCC.order_index = nextOrder++;
+          await ccRepo.save(propCC);
+          propClause.review_status = ClauseReviewStatus.APPROVED;
+          propClause.is_active = true;
+          propClause.reviewed_by = userId;
+          propClause.reviewed_at = new Date();
+          await clauseRepo.save(propClause);
+          counts.added++;
+        }
+      }
+
+      // Removal decisions — guest proposed dropping an original clause.
+      for (const r of removals) {
+        if (r.action !== 'accept') continue; // reject = keep original = no-op
+        const remCC = await ccRepo.findOne({
+          where: {
+            id: r.contract_clause_id,
+            contract_id: contractId,
+            is_proposed: false,
+          },
+          relations: ['clause'],
+        });
+        if (!remCC || !remCC.clause) {
+          throw new BadRequestException(
+            `removal target ${r.contract_clause_id} is not a live clause on this contract`,
+          );
+        }
+        remCC.clause.is_active = false;
+        await clauseRepo.save(remCC.clause);
+        await ccRepo.delete(remCC.id);
+        counts.removed++;
+      }
+    });
+
+    return {
+      snapshot_version_id: snapshotHolder.version?.id ?? null,
+      snapshot_version_number: snapshotHolder.version?.version_number ?? null,
+      ...counts,
+    };
   }
 
   async getVersions(

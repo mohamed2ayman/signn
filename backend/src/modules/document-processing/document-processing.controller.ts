@@ -16,6 +16,8 @@ import { RolesGuard } from '../../common/guards/roles.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { OrganizationId } from '../../common/decorators/organization.decorator';
 import { DocumentProcessingService } from './document-processing.service';
+import { ContractsService } from '../contracts/contracts.service';
+import { ApplyProposedVersionDto } from '../contracts/dto/apply-proposed-version.dto';
 import { UploadDocumentDto } from './dto';
 import { ClauseIdsDto } from './dto/clause-ids.dto';
 import { ClauseReviewStatus } from '../../database/entities';
@@ -30,6 +32,10 @@ import {
 export class DocumentProcessingController {
   constructor(
     private readonly documentProcessingService: DocumentProcessingService,
+    // Guest version review (2a) — applyProposedVersion lives on ContractsService
+    // (it owns createVersionSnapshot + the contract_clauses / contract_versions
+    // repos). ContractsModule exports it; this module already imports it.
+    private readonly contractsService: ContractsService,
   ) {}
 
   // ─── Document Upload & Processing ─────────────────────────
@@ -99,6 +105,26 @@ export class DocumentProcessingController {
     return this.documentProcessingService.getProposedClauses(
       contractId,
       docId,
+      orgId,
+    );
+  }
+
+  @Post('documents/:docId/proposed-version/apply')
+  async applyProposedVersion(
+    @Param('contractId', ParseUUIDPipe) contractId: string,
+    @Param('docId', ParseUUIDPipe) docId: string,
+    @Body() dto: ApplyProposedVersionDto,
+    @CurrentUser() user: any,
+    @OrganizationId() orgId: string,
+  ) {
+    // Host-v1 (2a) — the managing side commits its per-clause decisions on a
+    // guest-proposed version. Org-scoped via findInOrg inside the service
+    // (cross-tenant probe → 404). Snapshot-before + parent-chain + atomic.
+    return this.contractsService.applyProposedVersion(
+      contractId,
+      docId,
+      dto,
+      user.id,
       orgId,
     );
   }
