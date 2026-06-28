@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { documentProcessingService } from '@/services/api/documentProcessingService';
+import { ProposedVersionDiffModal } from '@/components/versions/ProposedVersionDiffModal';
 import type { ContractClause, DocumentUpload } from '@/types';
 
 type ProposedVersion = { doc: DocumentUpload; proposed: ContractClause[] };
@@ -28,6 +29,8 @@ export default function GuestProposedVersionsPanel({
   const [versions, setVersions] = useState<ProposedVersion[]>([]);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  // 2b — which guest doc's proposed-vs-current diff is open (null = none).
+  const [diffDocId, setDiffDocId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -104,49 +107,59 @@ export default function GuestProposedVersionsPanel({
               key={doc.id}
               className="rounded-lg border border-violet-100 bg-white"
             >
-              <button
-                type="button"
-                onClick={() =>
-                  setExpanded((e) => ({ ...e, [doc.id]: !e[doc.id] }))
-                }
-                className="flex w-full items-center gap-3 px-4 py-3 text-start"
-                aria-expanded={isOpen}
-              >
-                <div className="min-w-0 flex-1">
-                  <p
-                    className="truncate text-sm font-medium text-gray-800"
-                    dir="auto"
-                    style={{ unicodeBidi: 'plaintext' }}
-                  >
-                    {name}
-                  </p>
-                  <p className="mt-0.5 text-xs text-gray-500">
-                    {t('contract.proposedVersions.byGuest')} ·{' '}
-                    {t('contract.proposedVersions.clauseCount', {
-                      count: proposed.length,
-                    })}
-                  </p>
-                </div>
-                <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
-                  {String(doc.processing_status).replace(/_/g, ' ')}
-                </span>
-                <svg
-                  aria-hidden="true"
-                  className={`h-4 w-4 flex-shrink-0 text-gray-400 transition-transform ${
-                    isOpen ? 'rotate-180' : ''
-                  }`}
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth={2}
+              <div className="flex items-center gap-2 px-4 py-3">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setExpanded((e) => ({ ...e, [doc.id]: !e[doc.id] }))
+                  }
+                  className="flex min-w-0 flex-1 items-center gap-3 text-start"
+                  aria-expanded={isOpen}
                 >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M19 9l-7 7-7-7"
-                  />
-                </svg>
-              </button>
+                  <div className="min-w-0 flex-1">
+                    <p
+                      className="truncate text-sm font-medium text-gray-800"
+                      dir="auto"
+                      style={{ unicodeBidi: 'plaintext' }}
+                    >
+                      {name}
+                    </p>
+                    <p className="mt-0.5 text-xs text-gray-500">
+                      {t('contract.proposedVersions.byGuest')} ·{' '}
+                      {t('contract.proposedVersions.clauseCount', {
+                        count: proposed.length,
+                      })}
+                    </p>
+                  </div>
+                  <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
+                    {String(doc.processing_status).replace(/_/g, ' ')}
+                  </span>
+                  <svg
+                    aria-hidden="true"
+                    className={`h-4 w-4 flex-shrink-0 text-gray-400 transition-transform ${
+                      isOpen ? 'rotate-180' : ''
+                    }`}
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M19 9l-7 7-7-7"
+                    />
+                  </svg>
+                </button>
+                {/* 2b — open the proposed-vs-current diff (host review aid). */}
+                <button
+                  type="button"
+                  onClick={() => setDiffDocId(doc.id)}
+                  className="shrink-0 rounded-md border border-violet-300 px-2.5 py-1 text-xs font-medium text-violet-700 transition-colors hover:bg-violet-50"
+                >
+                  {t('contract.proposedVersions.viewChanges')}
+                </button>
+              </div>
 
               {isOpen && (
                 <div className="space-y-2 border-t border-violet-100 p-4">
@@ -183,6 +196,14 @@ export default function GuestProposedVersionsPanel({
           );
         })}
       </div>
+
+      {diffDocId && (
+        <ProposedVersionDiffModal
+          contractId={contractId}
+          docId={diffDocId}
+          onClose={() => setDiffDocId(null)}
+        />
+      )}
     </section>
   );
 }

@@ -1,5 +1,9 @@
 import api from '@/services/api/axios';
-import type { ContractClause, DocumentUpload } from '@/types';
+import type {
+  ContractClause,
+  DocumentUpload,
+  ProposedVersionDiffResult,
+} from '@/types';
 
 export const documentProcessingService = {
   uploadDocument: (
@@ -38,6 +42,18 @@ export const documentProcessingService = {
     api
       .get<ContractClause[]>(
         `/contracts/${contractId}/documents/${docId}/proposed-clauses`,
+      )
+      .then((r) => r.data),
+
+  /**
+   * Guest version review (2b) — diff a guest's PROPOSED set (one upload's
+   * proposed clauses) against the contract's CURRENT live clauses. Returns the
+   * {summary, changes} shape the DiffViewer consumes (matched by section_number).
+   */
+  compareProposedVersion: (contractId: string, docId: string) =>
+    api
+      .get<ProposedVersionDiffResult>(
+        `/contracts/${contractId}/documents/${docId}/proposed-version/compare`,
       )
       .then((r) => r.data),
 

@@ -1,4 +1,11 @@
 {
+  "proposedDiff": {
+    "title": "Examiner les modifications proposées",
+    "subtitle": "Contrat actuel ↔ version proposée par l'invité",
+    "current": "Contrat actuel",
+    "proposed": "Proposé par l'invité",
+    "rtlIndicator": "Arabe · se lit de droite à gauche"
+  },
   "app": {
     "name": "Sign",
     "tagline": "Gestion intelligente des contrats",
@@ -192,7 +199,8 @@
       "subtitle": "Nouvelles versions du contrat téléversées par l'invité, avec les clauses extraites de chacune. En lecture seule pour l'instant.",
       "byGuest": "Téléversé par l'invité",
       "clauseCount": "{{count}} clauses proposées",
-      "reviewOnlyNote": "Lecture seule — accepter, rejeter et fusionner arrivent bientôt."
+      "reviewOnlyNote": "Lecture seule — accepter, rejeter et fusionner arrivent bientôt.",
+      "viewChanges": "Voir les modifications"
     },
     "title": "Contrat",
     "titlePlural": "Contrats",

@@ -481,6 +481,15 @@ export interface VersionComparisonResult {
   changes: VersionDiffChange[];
 }
 
+// Guest version review (2b) — proposed-vs-current diff (same change shape as
+// version compare, but no versionA/versionB; A = current live, B = proposed).
+export interface ProposedVersionDiffResult {
+  contract_id: string;
+  document_id: string;
+  summary: { added: number; removed: number; modified: number; unchanged: number };
+  changes: VersionDiffChange[];
+}
+
 // ─── Claims ──────────────────────────────────────────────
 
 export enum ClaimType {
