@@ -294,6 +294,13 @@ Frontend → NestJS controller → Bull queue job → Celery task (FastAPI) → 
 ```
 Never shortcut this flow. The AI backend has 9 Celery tasks and 11 FastAPI routes.
 
+The Claude model id is centralized in a SINGLE setting — `ANTHROPIC_MODEL` in
+`ai-backend/app/config/settings.py` (default `claude-sonnet-4-6`, overridable via the
+`ANTHROPIC_MODEL` env var) — read by all 9 agents via `self._model`; **no agent hardcodes a
+model string** (Phase 8.1). A guard test (`ai-backend/tests/accuracy/test_model_centralization.py`)
+fails if a literal is reintroduced. **Hard rule: never change the model without first running the
+Arabic accuracy suite** (`ai-backend/tests/accuracy/`) — see NEXT_PHASES 8.1.
+
 ---
 
 ## Arabic Document Processing Architecture
