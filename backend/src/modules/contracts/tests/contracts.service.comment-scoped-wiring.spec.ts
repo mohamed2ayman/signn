@@ -62,6 +62,7 @@ describe('ContractsService — Option B S2b comment scoped-repo wiring (by-id mu
       noop, // contractorResponseScoped
       noop, // contractApproverScoped
       opts.contractCommentScoped, // contractCommentScoped (Option B S2b chokepoint)
+      noop, // clauseRepository (2a — unused here)
     );
   }
 

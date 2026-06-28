@@ -18,6 +18,7 @@ import {
   Project,
   User,
   ContractApprover,
+  Clause,
   GuestContractAccess,
 } from '../../database/entities';
 import { CollaborationGateway } from '../collaboration/collaboration.gateway';
@@ -84,6 +85,17 @@ const mockContractVersionRepository = {
   // Return null so createVersionSnapshot treats this as the first version
   findOne: jest.fn().mockResolvedValue(null),
   find: jest.fn().mockResolvedValue([]),
+};
+
+// Guest version review (2a) — Clause repo (parent-chain promotions). Unused by
+// the existing ContractsService tests; present so DI resolves.
+const mockClauseRepository = {
+  create: jest.fn(),
+  save: jest.fn(),
+  findOne: jest.fn(),
+  find: jest.fn(),
+  delete: jest.fn(),
+  update: jest.fn(),
 };
 
 const mockContractCommentRepository = {
@@ -227,6 +239,7 @@ describe('ContractsService', () => {
         { provide: getRepositoryToken(Project),            useValue: mockProjectRepository },
         { provide: getRepositoryToken(User),               useValue: mockUserRepository },
         { provide: getRepositoryToken(ContractApprover),   useValue: mockContractApproverRepository },
+        { provide: getRepositoryToken(Clause),             useValue: mockClauseRepository },
         { provide: CollaborationGateway,                   useValue: mockCollaborationGateway },
         { provide: ContractTemplatesService,               useValue: mockContractTemplatesService },
         { provide: EmailService,                           useValue: mockEmailService },

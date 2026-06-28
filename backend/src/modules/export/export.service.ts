@@ -83,6 +83,9 @@ export class ExportService {
     }
 
     const clauses = (contract.contract_clauses || [])
+      // Guest version review (2a) — never render guest-proposed clauses in the
+      // host's exported contract PDF (Slice 1 invariant).
+      .filter((cc) => !cc.is_proposed)
       .sort((a, b) => a.order_index - b.order_index);
 
     const clauseContent: Content[] = clauses.map((cc, i) => {
@@ -354,7 +357,10 @@ export class ExportService {
           : 'N/A',
       },
       statistics: {
-        total_clauses: contract.contract_clauses?.length || 0,
+        // Guest version review (2a) — count LIVE clauses only (exclude proposed).
+        total_clauses:
+          (contract.contract_clauses || []).filter((cc) => !cc.is_proposed)
+            .length || 0,
         total_risks: risks.length,
         high_risks: risks.filter((r) => r.risk_level === 'HIGH').length,
         medium_risks: risks.filter((r) => r.risk_level === 'MEDIUM').length,

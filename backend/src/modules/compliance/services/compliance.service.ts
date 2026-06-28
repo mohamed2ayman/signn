@@ -564,6 +564,9 @@ export class ComplianceService {
       .createQueryBuilder('cc')
       .leftJoinAndSelect('cc.clause', 'clause')
       .where('cc.contract_id = :contractId', { contractId })
+      // Guest version review (2a) — compliance runs on the LIVE contract only;
+      // guest-proposed clauses (is_proposed=true) are excluded.
+      .andWhere('cc.is_proposed = false')
       .orderBy('cc.order_index', 'ASC')
       .getMany();
     return ccs

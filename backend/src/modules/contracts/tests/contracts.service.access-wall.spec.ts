@@ -68,6 +68,7 @@ describe('ContractsService — cross-tenant access wall (Tier 1 WRITEs)', () => 
       noop, // contractorResponseScoped (Option B S2a — unused here)
       noop, // contractApproverScoped (Option B S2a — unused here)
       opts.contractCommentScoped ?? noop, // contractCommentScoped (Option B S2b)
+      noop, // clauseRepository (2a — unused here)
     );
   }
 
