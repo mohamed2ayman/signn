@@ -23,7 +23,11 @@ import {
   ClauseReviewStatus,
 } from '../../database/entities';
 import { ApplyProposedVersionDto } from './dto/apply-proposed-version.dto';
-import { diffWordsWithSpace } from 'diff';
+import {
+  computeClauseDiff,
+  ClauseDiffInput,
+  ClauseDiffResult,
+} from './utils/clause-diff.util';
 import {
   CreateContractDto,
   UpdateContractDto,
@@ -1009,99 +1013,88 @@ export class ContractsService {
     const versionA = await this.getVersion(contractId, versionAId, orgId);
     const versionB = await this.getVersion(contractId, versionBId, orgId);
 
+    // 2b — the diff algorithm is now the shared `computeClauseDiff` helper.
+    // Version-vs-version still matches by `clause_id` (the helper default), so
+    // the output is unchanged. Only the snapshot→clause-array adapter lives here.
     type SnapClause = {
-      contract_clause_id?: string;
       clause_id: string;
       clause_title: string;
       clause_content: string;
       section_number: string | null;
     };
-
-    const snapA = (versionA.snapshot as any)?.clauses as SnapClause[] | undefined;
-    const snapB = (versionB.snapshot as any)?.clauses as SnapClause[] | undefined;
-    const clausesA: SnapClause[] = Array.isArray(snapA) ? snapA : [];
-    const clausesB: SnapClause[] = Array.isArray(snapB) ? snapB : [];
-
-    const aMap = new Map(clausesA.map((c) => [c.clause_id, c]));
-    const bMap = new Map(clausesB.map((c) => [c.clause_id, c]));
-    const allIds = new Set<string>([...aMap.keys(), ...bMap.keys()]);
-
-    const changes: Array<any> = [];
-    let added = 0,
-      removed = 0,
-      modified = 0,
-      unchanged = 0;
-
-    for (const id of allIds) {
-      const a = aMap.get(id);
-      const b = bMap.get(id);
-
-      if (a && !b) {
-        removed++;
-        changes.push({
-          clauseId: id,
-          clauseNumber: a.section_number,
-          clauseTitle: a.clause_title,
-          changeType: 'REMOVED',
-          originalText: a.clause_content,
-          newText: null,
-          wordLevelDiff: null,
-        });
-      } else if (!a && b) {
-        added++;
-        changes.push({
-          clauseId: id,
-          clauseNumber: b.section_number,
-          clauseTitle: b.clause_title,
-          changeType: 'ADDED',
-          originalText: null,
-          newText: b.clause_content,
-          wordLevelDiff: null,
-        });
-      } else if (a && b) {
-        const aText = a.clause_content || '';
-        const bText = b.clause_content || '';
-        if (aText === bText && a.clause_title === b.clause_title) {
-          unchanged++;
-          changes.push({
-            clauseId: id,
-            clauseNumber: b.section_number,
-            clauseTitle: b.clause_title,
-            changeType: 'UNCHANGED',
-            originalText: aText,
-            newText: bText,
-            wordLevelDiff: null,
-          });
-        } else {
-          modified++;
-          const wordDiff = diffWordsWithSpace(aText, bText).map((p) => ({
-            value: p.value,
-            added: p.added,
-            removed: p.removed,
-          }));
-          changes.push({
-            clauseId: id,
-            clauseNumber: b.section_number,
-            clauseTitle: b.clause_title,
-            changeType: 'MODIFIED',
-            originalText: aText,
-            newText: bText,
-            wordLevelDiff: wordDiff,
-          });
-        }
-      }
-    }
-
-    // Sort: changed first, then unchanged
-    const order: Record<string, number> = { ADDED: 0, REMOVED: 1, MODIFIED: 2, UNCHANGED: 3 };
-    changes.sort((x, y) => order[x.changeType] - order[y.changeType]);
-
-    return {
-      versionA,
-      versionB,
-      summary: { added, removed, modified, unchanged },
-      changes,
+    const toInput = (v: ContractVersion): ClauseDiffInput[] => {
+      const snap = (v.snapshot as any)?.clauses as SnapClause[] | undefined;
+      return Array.isArray(snap)
+        ? snap.map((c) => ({
+            clause_id: c.clause_id,
+            clause_title: c.clause_title,
+            clause_content: c.clause_content,
+            section_number: c.section_number,
+          }))
+        : [];
     };
+
+    const { summary, changes } = computeClauseDiff(
+      toInput(versionA),
+      toInput(versionB),
+    );
+
+    return { versionA, versionB, summary, changes };
+  }
+
+  /**
+   * Guest version review — Sub-slice 2b. Diff a guest's PROPOSED set (the
+   * is_proposed=true clauses from one upload, identified by source_document_id)
+   * against the contract's CURRENT live clauses. Reuses `computeClauseDiff`.
+   * HOST/MANAGING action — org-scoped via findInOrg (cross-tenant probe → 404).
+   *
+   * Matching is by **section_number** (the clause article number): proposed
+   * clauses are a FRESH extraction with NEW clause_ids, so clause_id matching
+   * would mark every clause add/remove. A current clause whose section has no
+   * proposed counterpart → REMOVED; a proposed clause whose section has no
+   * current counterpart (or carries no section_number) → ADDED; same section,
+   * changed content/title → MODIFIED (word-level); identical → UNCHANGED.
+   *
+   * Returns the same {summary, changes} shape the DiffViewer already consumes
+   * (A = current/original side, B = proposed/new side). 2c maps each change back
+   * to a proposed clause by the same section_number key.
+   */
+  async compareProposedVersion(
+    contractId: string,
+    docId: string,
+    orgId: string,
+  ): Promise<ClauseDiffResult & { contract_id: string; document_id: string }> {
+    await this.contractAccess.findInOrg(contractId, orgId);
+
+    // CURRENT live clauses (post-2a filtered read: is_proposed=false).
+    const liveCCs = await this.getContractClauses(contractId, orgId);
+    // PROPOSED set for this guest upload (is_proposed=true + source_document_id).
+    const proposedCCs = await this.contractClauseRepository // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled (ContractClause has no scoped repo)
+      .createQueryBuilder('cc')
+      .leftJoinAndSelect('cc.clause', 'clause')
+      .where('cc.contract_id = :contractId', { contractId })
+      .andWhere('cc.is_proposed = true')
+      .andWhere('clause.source_document_id = :docId', { docId })
+      .orderBy('cc.order_index', 'ASC')
+      .getMany();
+
+    const toInput = (cc: ContractClause): ClauseDiffInput => ({
+      clause_id: cc.clause_id,
+      clause_title: cc.clause?.title ?? '',
+      clause_content: cc.clause?.content ?? '',
+      section_number: cc.section_number,
+    });
+    const sectionKeyOf = (c: ClauseDiffInput): string =>
+      c.section_number && c.section_number.trim()
+        ? `sec:${c.section_number.trim()}`
+        : `nokey:${c.clause_id}`;
+
+    const result = computeClauseDiff(
+      liveCCs.map(toInput),
+      proposedCCs.map(toInput),
+      sectionKeyOf,
+    );
+    return { contract_id: contractId, document_id: docId, ...result };
   }
 
   async saveNewVersion(

@@ -109,6 +109,18 @@ export class DocumentProcessingController {
     );
   }
 
+  @Get('documents/:docId/proposed-version/compare')
+  async compareProposedVersion(
+    @Param('contractId', ParseUUIDPipe) contractId: string,
+    @Param('docId', ParseUUIDPipe) docId: string,
+    @OrganizationId() orgId: string,
+  ) {
+    // Host-v1 (2b) — diff a guest's proposed set against the current live
+    // clauses. Org-scoped via findInOrg inside the service (cross-tenant → 404).
+    // Returns the {summary, changes} shape the DiffViewer consumes.
+    return this.contractsService.compareProposedVersion(contractId, docId, orgId);
+  }
+
   @Post('documents/:docId/proposed-version/apply')
   async applyProposedVersion(
     @Param('contractId', ParseUUIDPipe) contractId: string,

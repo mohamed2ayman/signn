@@ -1,4 +1,11 @@
 {
+  "proposedDiff": {
+    "title": "Review proposed changes",
+    "subtitle": "Current contract ↔ guest's proposed version",
+    "current": "Current contract",
+    "proposed": "Guest proposed",
+    "rtlIndicator": "Arabic · reads right-to-left"
+  },
   "app": {
     "name": "Sign",
     "tagline": "Smart Contract Management",
@@ -192,7 +199,8 @@
       "subtitle": "New contract versions a guest uploaded, with the clauses extracted from each. Review only for now.",
       "byGuest": "Uploaded by guest",
       "clauseCount": "{{count}} proposed clauses",
-      "reviewOnlyNote": "Review only — accept, reject, and merge are coming soon."
+      "reviewOnlyNote": "Review only — accept, reject, and merge are coming soon.",
+      "viewChanges": "View changes"
     },
     "title": "Contract",
     "titlePlural": "Contracts",
