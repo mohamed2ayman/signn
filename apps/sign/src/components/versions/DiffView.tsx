@@ -179,9 +179,16 @@ function ClauseDiff({
           ? 'bg-amber-50 border-amber-200'
           : 'bg-slate-50 border-slate-200';
 
-  // Auto-directional clause content: Arabic → RTL, Latin → LTR, mixed-safe.
-  const contentDir = 'auto' as const;
-  const contentStyle = { unicodeBidi: 'plaintext' as const };
+  // Guest version review (2b) — RTL bidi fix. Render clause content in ONE
+  // explicit paragraph direction (`dir` below: rtl when the diff is Arabic, ltr
+  // otherwise) instead of per-line `unicode-bidi: plaintext`, which resolved
+  // EACH line independently and stranded marker/number-only lines ("1-", "7-1",
+  // "15%", "%") to the left edge. Each diff segment is additionally
+  // bidi-ISOLATED (`segStyle`) so weak/neutral sub-runs stay inline within the
+  // Arabic flow rather than reordering out. The pure-Latin (rtl=false) path
+  // resolves to dir="ltr" with isolated LTR runs — visually identical to before.
+  const dir = rtl ? 'rtl' : 'ltr';
+  const segStyle = { unicodeBidi: 'isolate' as const };
 
   return (
     <div className={`border rounded-lg ${headerColor}`}>
@@ -189,20 +196,17 @@ function ClauseDiff({
       <div className="px-4 py-2 border-b border-current/10 flex items-center gap-2" dir="ltr">
         <span className="text-xs font-semibold uppercase tracking-wide">{change.changeType}</span>
         {change.clauseNumber && <span className="text-xs text-slate-500">§ {change.clauseNumber}</span>}
-        <span className="font-semibold text-slate-900 truncate" dir="auto" style={contentStyle}>
+        <span className="font-semibold text-slate-900 truncate" dir="auto">
           {change.clauseTitle}
         </span>
       </div>
 
       {inline && change.wordLevelDiff ? (
-        <div
-          className="p-4 text-sm leading-relaxed bg-white whitespace-pre-wrap"
-          dir={contentDir}
-          style={contentStyle}
-        >
+        <div className="p-4 text-sm leading-relaxed bg-white whitespace-pre-wrap" dir={dir}>
           {change.wordLevelDiff.map((p, i) => (
             <span
               key={i}
+              style={segStyle}
               className={
                 p.added
                   ? 'bg-emerald-100 text-emerald-800'
@@ -222,45 +226,60 @@ function ClauseDiff({
           className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-200 bg-white"
           dir={rtl ? 'rtl' : 'ltr'}
         >
-          <div className="p-4 text-sm whitespace-pre-wrap" dir={contentDir} style={contentStyle}>
+          <div className="p-4 text-sm">
+            {/* Column label is LTR chrome — OUTSIDE the directional content. */}
             <div className="text-xs uppercase text-slate-400 mb-1" dir="ltr">
               {colLabelA}
             </div>
-            {change.changeType === 'MODIFIED' && change.wordLevelDiff ? (
-              <span>
-                {change.wordLevelDiff.map((p, i) =>
-                  p.added ? null : (
-                    <span key={i} className={p.removed ? 'bg-red-100 text-red-700 line-through' : ''}>
-                      {p.value}
+            <div className="whitespace-pre-wrap" dir={dir}>
+              {change.changeType === 'MODIFIED' && change.wordLevelDiff
+                ? change.wordLevelDiff.map((p, i) =>
+                    p.added ? null : (
+                      <span
+                        key={i}
+                        style={segStyle}
+                        className={p.removed ? 'bg-red-100 text-red-700 line-through' : ''}
+                      >
+                        {p.value}
+                      </span>
+                    ),
+                  )
+                : (
+                    <span
+                      style={segStyle}
+                      className={change.changeType === 'REMOVED' ? 'text-red-700 line-through' : ''}
+                    >
+                      {change.originalText || <em className="text-slate-400">—</em>}
                     </span>
-                  ),
-                )}
-              </span>
-            ) : (
-              <span className={change.changeType === 'REMOVED' ? 'text-red-700 line-through' : ''}>
-                {change.originalText || <em className="text-slate-400">—</em>}
-              </span>
-            )}
+                  )}
+            </div>
           </div>
-          <div className="p-4 text-sm whitespace-pre-wrap" dir={contentDir} style={contentStyle}>
+          <div className="p-4 text-sm">
             <div className="text-xs uppercase text-slate-400 mb-1" dir="ltr">
               {colLabelB}
             </div>
-            {change.changeType === 'MODIFIED' && change.wordLevelDiff ? (
-              <span>
-                {change.wordLevelDiff.map((p, i) =>
-                  p.removed ? null : (
-                    <span key={i} className={p.added ? 'bg-emerald-100 text-emerald-800' : ''}>
-                      {p.value}
+            <div className="whitespace-pre-wrap" dir={dir}>
+              {change.changeType === 'MODIFIED' && change.wordLevelDiff
+                ? change.wordLevelDiff.map((p, i) =>
+                    p.removed ? null : (
+                      <span
+                        key={i}
+                        style={segStyle}
+                        className={p.added ? 'bg-emerald-100 text-emerald-800' : ''}
+                      >
+                        {p.value}
+                      </span>
+                    ),
+                  )
+                : (
+                    <span
+                      style={segStyle}
+                      className={change.changeType === 'ADDED' ? 'text-emerald-700' : ''}
+                    >
+                      {change.newText || <em className="text-slate-400">—</em>}
                     </span>
-                  ),
-                )}
-              </span>
-            ) : (
-              <span className={change.changeType === 'ADDED' ? 'text-emerald-700' : ''}>
-                {change.newText || <em className="text-slate-400">—</em>}
-              </span>
-            )}
+                  )}
+            </div>
           </div>
         </div>
       )}
