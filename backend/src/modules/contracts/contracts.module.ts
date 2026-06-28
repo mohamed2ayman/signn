@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import {
+  Clause,
   Contract,
   ContractClause,
   ContractVersion,
@@ -26,6 +27,9 @@ import { GuestPortalSchemaCheckService } from './services/guest-portal-schema-ch
 @Module({
   imports: [
     TypeOrmModule.forFeature([
+      // Guest version review (2a/2b) — ContractsService.applyProposedVersion +
+      // compareProposedVersion inject the Clause repo (parent-chain promotion).
+      Clause,
       Contract,
       ContractClause,
       ContractVersion,
