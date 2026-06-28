@@ -1104,12 +1104,39 @@ No ContractClauseScopedRepository exists yet — that subclass is the unit that 
 
 ---
 
-### 8.1 — AI Model Evaluation & Migration Path
-**Owner:** Ayman + Youssef | **Status:** ❌ Not started
-- Document all Claude API prompts — tag each with the open-source replacement model intended
-- Arabic accuracy test suite on General Conditions (81k chars, 9 chunks) as baseline
-- Migrate only if accuracy improves AND cost is acceptable
-- **Hard rule:** Never migrate models without running the Arabic accuracy test suite first
+### ✅ 8.1 — AI Model Evaluation & Migration Path — COMPLETE (2026-06-27, PR #103)
+**Owner:** Ayman + Youssef | **Status:** ✅ Complete (squash-merged to `main` at `28cf3a3`)
+
+**What shipped:**
+- **Model-id centralization** — `ANTHROPIC_MODEL` in `ai-backend/app/config/settings.py`
+  (default `claude-sonnet-4-6`, env-overridable); all 9 agents read `settings.ANTHROPIC_MODEL`
+  via `self._model` — same model, single source of truth. A guard test fails if any agent
+  reintroduces a hardcoded literal. (No model swap — that is 8.4/8.5.)
+- **Arabic clause-extraction accuracy harness** (`ai-backend/tests/accuracy/`) — anonymized
+  General Conditions baseline fixture (81k chars / 9 chunks; raw doc never committed), a
+  38-clause structural golden set, a pure model-agnostic scorer (count, boundary P/R/F1,
+  missing/spurious/duplicate, clause-type accuracy, verbatim fidelity), a gated live runner
+  (`temperature=0` in the harness only + token/cost capture), and CI-safe unit tests. The live
+  billable test is skipped in CI (needs `RUN_ACCURACY_SUITE=1` + `ANTHROPIC_API_KEY`).
+- **Captured `claude-sonnet-4-6` baseline** (live run on the fixture): boundary
+  precision/recall/F1 = **1.0 / 1.0 / 1.0** (38/38 clauses; 0 missing/spurious/duplicate; TOC
+  correctly skipped), verbatim fidelity **0.9995**, clause-type accuracy **0.6842** (a soft
+  signal over fuzzy categories). ~72.7k in / 50.7k out tokens, ~$0.98 est. (placeholder pricing).
+- **Prompt inventory** — `docs/ai-prompt-inventory.md` (living inventory of all 9 Claude prompts
+  tagged with intended OSS replacements) + `docs/phase-8.1-investigation.md` (findings + rule).
+
+**Preferred OSS replacement candidates** (to be tested in 8.4/8.5 — NOT selected yet; all
+self-hosted on SageMaker so data stays inside our AWS):
+- Clause classification → **ContractBERT**
+- Risk classification → **ContractBERT (fine-tuned)**
+- Risk explanation generation → **Mistral 7B** OR **DeepSeek-R1-Distill-Qwen-32B**
+- Arabic / bilingual contracts → **LEGAL-XLM-RoBERTa**
+
+**Migration rule (refined this phase):** migration is gated on **Arabic accuracy only** — never
+migrate without running the Arabic accuracy suite first, and the candidate's Arabic accuracy must
+hold or improve vs the `claude-sonnet-4-6` baseline. **Cost is recorded for awareness but is NOT a
+hard gate — quality decides.** Migrate one prompt at a time; the embeddings model is excluded
+(changing it requires a coordinated re-embedding migration).
 
 ---
 
@@ -1403,7 +1430,8 @@ No new env vars required for existing local dev deployments.
 | 7.43 | Compliance PDF Rebuild + Arabic Support (PR-A) | ❌ Not started | A | |
 | 6B.1 | Visual Confidentiality | ❌ After Phase 7 | Y | |
 | 6B.2 | Invisible Watermarks | ❌ After Phase 7 | Y | |
-| 8 | AI Migration | ❌ Not started | A+Y | |
+| 8.1 | AI Model Eval + Arabic accuracy harness + model centralization | ✅ Complete (PR #103) | A+Y | 2026-06-27 |
+| 8.2-8.6 | AI Migration (OCR, annotation, training) | ❌ Not started | A+Y | |
 | 9.1 | Abstract Infrastructure Layers | ✅ Complete (PR #35) | A | 2026-05-28 |
 | 9.2+ | AWS, CI/CD, monitoring, cookies | ❌ Not started | A+Y | |
 | 10 | SOC 2 | ❌ Not started | A+Y | |
@@ -1440,6 +1468,7 @@ No new env vars required for existing local dev deployments.
 12. 7.21 — RFP & Specification Document Analysis (AI — competitive priority)
 13. ~~7.9 — Audit Silent Migrations~~ ✅ Done (PR #34)
 14. ~~7.10 — In-app Dispatch~~ ✅ Already implemented
+15. ~~8.1 — AI Model Evaluation & Migration Path~~ ✅ Done (PR #103) — model-id centralization + Arabic accuracy harness + baseline + prompt inventory
 
 **Youssef:**
 1. 7.7 — Wire Reminder History in Detail Drawer (quick, endpoint ready)
