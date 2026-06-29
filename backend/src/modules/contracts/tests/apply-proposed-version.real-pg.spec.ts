@@ -297,6 +297,48 @@ describeReal('applyProposedVersion — Part B (real Postgres)', () => {
     expect(Number(remainingProposed[0].n)).toBe(0);
   });
 
+  it('⭐ RED→GREEN (2c) — add+edit: merge-editing a NEWLY-ADDED proposed clause promotes the HOST wording (EDITED), not the guest original', async () => {
+    // A proposed clause with NO live counterpart → an ADD. The host opens
+    // "Merge & edit" on it and rewrites the wording, then applies. The DTO doc
+    // documents `edit` for the add path (replace/ADD with host wording → EDITED).
+    // Before the 2c fix the ADD branch ignored edited_content/edited_title and
+    // promoted the GUEST original as APPROVED — silently dropping the host edit.
+    const Padd = await seedProposed('Guest New Title', 'GUEST original new-clause text', 0);
+
+    const result = await contracts.applyProposedVersion(
+      contractId,
+      docId,
+      {
+        decisions: [
+          {
+            proposed_contract_clause_id: Padd.ccId,
+            action: 'edit',
+            // NO replaces_contract_clause_id → ADD, but with the host's wording.
+            edited_title: 'Host Edited Title',
+            edited_content: 'HOST edited new-clause text',
+          },
+        ],
+      },
+      ownerId,
+      orgId,
+    );
+
+    // Counted as an EDIT, not a plain add.
+    expect(result).toMatchObject({ accepted: 0, edited: 1, added: 0, removed: 0, rejected: 0 });
+    expect(result.snapshot_version_id).not.toBeNull();
+
+    const live = await liveClauses();
+    expect(live).toHaveLength(1);
+    // The HOST's wording is promoted — NOT the guest's original.
+    expect(live[0].content).toBe('HOST edited new-clause text');
+    expect(live[0].content).not.toBe('GUEST original new-clause text');
+    expect(live[0].title).toBe('Host Edited Title');
+    expect(live[0].review_status).toBe('EDITED');
+    // It IS the proposed clause (new addition, no parent — a brand-new live clause).
+    expect(live[0].clause_id).toBe(Padd.clauseId);
+    expect(live[0].parent_clause_id).toBeNull();
+  });
+
   it('⭐ GREEN — snapshot-before: the snapshot captures the ORIGINAL wording (it ran first), while the live clause now carries the proposed wording', async () => {
     const La = await seedLive('Live A', 'ORIGINAL content a', 0);
     const Pacc = await seedProposed('Prop A', 'PROPOSED content a', 0);

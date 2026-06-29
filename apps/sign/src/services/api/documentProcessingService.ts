@@ -1,5 +1,7 @@
 import api from '@/services/api/axios';
 import type {
+  ApplyProposedVersionDto,
+  ApplyProposedVersionResult,
   ContractClause,
   DocumentUpload,
   ProposedVersionDiffResult,
@@ -54,6 +56,23 @@ export const documentProcessingService = {
     api
       .get<ProposedVersionDiffResult>(
         `/contracts/${contractId}/documents/${docId}/proposed-version/compare`,
+      )
+      .then((r) => r.data),
+
+  /**
+   * Guest version review (2c) — the host commits its per-clause accept / reject
+   * / merge-edit decisions on a guest-proposed version. Atomic on the backend:
+   * snapshot-before-promote + parent-chain lineage. Rejected = no-op.
+   */
+  applyProposedVersion: (
+    contractId: string,
+    docId: string,
+    dto: ApplyProposedVersionDto,
+  ) =>
+    api
+      .post<ApplyProposedVersionResult>(
+        `/contracts/${contractId}/documents/${docId}/proposed-version/apply`,
+        dto,
       )
       .then((r) => r.data),
 

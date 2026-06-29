@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { X } from 'lucide-react';
 import { VersionDiffChange } from '@/types';
+import { coalesceWordDiffToWholeWords } from './wordDiff';
 
 /**
  * Shared presentational diff modal (extracted in 2b from DiffViewerModal so the
@@ -190,6 +191,14 @@ function ClauseDiff({
   const dir = rtl ? 'rtl' : 'ltr';
   const segStyle = { unicodeBidi: 'isolate' as const };
 
+  // 2c — word-diff granularity: coalesce jsdiff's segment stream so highlights
+  // snap to whole words (fixes Arabic sub-word speckle). Reconstruction-
+  // invariant + Latin-no-op (backend data untouched; compareVersions identical).
+  const wld = useMemo(
+    () => coalesceWordDiffToWholeWords(change.wordLevelDiff),
+    [change.wordLevelDiff],
+  );
+
   return (
     <div className={`border rounded-lg ${headerColor}`}>
       {/* Card header stays LTR chrome. */}
@@ -201,9 +210,9 @@ function ClauseDiff({
         </span>
       </div>
 
-      {inline && change.wordLevelDiff ? (
+      {inline && wld ? (
         <div className="p-4 text-sm leading-relaxed bg-white whitespace-pre-wrap" dir={dir}>
-          {change.wordLevelDiff.map((p, i) => (
+          {wld.map((p, i) => (
             <span
               key={i}
               style={segStyle}
@@ -232,8 +241,8 @@ function ClauseDiff({
               {colLabelA}
             </div>
             <div className="whitespace-pre-wrap" dir={dir}>
-              {change.changeType === 'MODIFIED' && change.wordLevelDiff
-                ? change.wordLevelDiff.map((p, i) =>
+              {change.changeType === 'MODIFIED' && wld
+                ? wld.map((p, i) =>
                     p.added ? null : (
                       <span
                         key={i}
@@ -259,8 +268,8 @@ function ClauseDiff({
               {colLabelB}
             </div>
             <div className="whitespace-pre-wrap" dir={dir}>
-              {change.changeType === 'MODIFIED' && change.wordLevelDiff
-                ? change.wordLevelDiff.map((p, i) =>
+              {change.changeType === 'MODIFIED' && wld
+                ? wld.map((p, i) =>
                     p.removed ? null : (
                       <span
                         key={i}

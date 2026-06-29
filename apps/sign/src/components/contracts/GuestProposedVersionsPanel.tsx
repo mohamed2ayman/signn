@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { documentProcessingService } from '@/services/api/documentProcessingService';
 import { ProposedVersionDiffModal } from '@/components/versions/ProposedVersionDiffModal';
+import HostReviewMergeScreen from '@/components/contracts/HostReviewMergeScreen';
 import type { ContractClause, DocumentUpload } from '@/types';
 
 type ProposedVersion = { doc: DocumentUpload; proposed: ContractClause[] };
@@ -31,40 +32,44 @@ export default function GuestProposedVersionsPanel({
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   // 2b — which guest doc's proposed-vs-current diff is open (null = none).
   const [diffDocId, setDiffDocId] = useState<string | null>(null);
+  // 2c — which guest doc's full review & merge screen is open (null = none).
+  const [reviewDoc, setReviewDoc] = useState<DocumentUpload | null>(null);
+
+  const loadVersions = useCallback(async () => {
+    setLoading(true);
+    try {
+      const docs = await documentProcessingService.getDocuments(contractId);
+      const enriched = await Promise.all(
+        docs.map(async (doc) => {
+          try {
+            const proposed = await documentProcessingService.getProposedClauses(
+              contractId,
+              doc.id,
+            );
+            return { doc, proposed };
+          } catch {
+            return { doc, proposed: [] as ContractClause[] };
+          }
+        }),
+      );
+      setVersions(enriched.filter((v) => v.proposed.length > 0));
+    } catch {
+      setVersions([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [contractId]);
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
     (async () => {
-      try {
-        const docs = await documentProcessingService.getDocuments(contractId);
-        const enriched = await Promise.all(
-          docs.map(async (doc) => {
-            try {
-              const proposed =
-                await documentProcessingService.getProposedClauses(
-                  contractId,
-                  doc.id,
-                );
-              return { doc, proposed };
-            } catch {
-              return { doc, proposed: [] as ContractClause[] };
-            }
-          }),
-        );
-        if (!cancelled) {
-          setVersions(enriched.filter((v) => v.proposed.length > 0));
-        }
-      } catch {
-        if (!cancelled) setVersions([]);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
+      await loadVersions();
+      if (cancelled) return;
     })();
     return () => {
       cancelled = true;
     };
-  }, [contractId]);
+  }, [loadVersions]);
 
   // Nothing to show — no guest-submitted versions. Render nothing (no empty
   // header), so the panel only appears when there is something to review.
@@ -151,14 +156,26 @@ export default function GuestProposedVersionsPanel({
                     />
                   </svg>
                 </button>
-                {/* 2b — open the proposed-vs-current diff (host review aid). */}
-                <button
-                  type="button"
-                  onClick={() => setDiffDocId(doc.id)}
-                  className="shrink-0 rounded-md border border-violet-300 px-2.5 py-1 text-xs font-medium text-violet-700 transition-colors hover:bg-violet-50"
-                >
-                  {t('contract.proposedVersions.viewChanges')}
-                </button>
+                <div className="flex shrink-0 items-center gap-2">
+                  {/* 2b — quick read-only diff. */}
+                  <button
+                    type="button"
+                    onClick={() => setDiffDocId(doc.id)}
+                    className="rounded-md border border-violet-300 px-2.5 py-1 text-xs font-medium text-violet-700 transition-colors hover:bg-violet-50"
+                  >
+                    {t('contract.proposedVersions.viewChanges')}
+                  </button>
+                  {/* 2c — the actionable host review & merge screen. */}
+                  <button
+                    type="button"
+                    onClick={() => setReviewDoc(doc)}
+                    className="rounded-md bg-violet-600 px-3 py-1 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-violet-700"
+                  >
+                    {t('contract.proposedVersions.reviewMerge', {
+                      count: proposed.length,
+                    })}
+                  </button>
+                </div>
               </div>
 
               {isOpen && (
@@ -187,9 +204,17 @@ export default function GuestProposedVersionsPanel({
                       )}
                     </div>
                   ))}
-                  <p className="pt-1 text-[11px] italic text-violet-600/80">
-                    {t('contract.proposedVersions.reviewOnlyNote')}
-                  </p>
+                  <div className="flex items-center justify-end pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setReviewDoc(doc)}
+                      className="rounded-md bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-violet-700"
+                    >
+                      {t('contract.proposedVersions.reviewMerge', {
+                        count: proposed.length,
+                      })}
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -202,6 +227,19 @@ export default function GuestProposedVersionsPanel({
           contractId={contractId}
           docId={diffDocId}
           onClose={() => setDiffDocId(null)}
+        />
+      )}
+
+      {reviewDoc && (
+        <HostReviewMergeScreen
+          contractId={contractId}
+          doc={reviewDoc}
+          onClose={() => setReviewDoc(null)}
+          onApplied={() => {
+            // The proposed set is consumed on apply — refresh so a fully-applied
+            // version drops out of the panel.
+            void loadVersions();
+          }}
         />
       )}
     </section>

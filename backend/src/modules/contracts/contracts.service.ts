@@ -886,17 +886,27 @@ export class ContractsService {
           if (d.action === 'edit') counts.edited++;
           else counts.accepted++;
         } else {
-          // ADD (accept) — brand-new clause; flip into the live set with a
-          // non-colliding live order_index.
+          // ADD — brand-new clause; flip into the live set with a non-colliding
+          // live order_index. An `edit` with no replaces is an ADD carrying the
+          // HOST's wording (the DTO documents `edit` for replace AND add) → mark
+          // EDITED and apply the host text; a plain accept stays APPROVED. The
+          // edited_content required-check above guarantees content is present.
           propCC.is_proposed = false;
           propCC.order_index = nextOrder++;
           await ccRepo.save(propCC);
-          propClause.review_status = ClauseReviewStatus.APPROVED;
+          if (d.action === 'edit') {
+            if (d.edited_title != null) propClause.title = d.edited_title;
+            propClause.content = d.edited_content as string;
+            propClause.review_status = ClauseReviewStatus.EDITED;
+          } else {
+            propClause.review_status = ClauseReviewStatus.APPROVED;
+          }
           propClause.is_active = true;
           propClause.reviewed_by = userId;
           propClause.reviewed_at = new Date();
           await clauseRepo.save(propClause);
-          counts.added++;
+          if (d.action === 'edit') counts.edited++;
+          else counts.added++;
         }
       }
 
