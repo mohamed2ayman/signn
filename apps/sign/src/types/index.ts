@@ -490,6 +490,42 @@ export interface ProposedVersionDiffResult {
   changes: VersionDiffChange[];
 }
 
+// Guest version review (2c) — the host's per-clause decisions submitted to
+// POST /contracts/:id/documents/:docId/proposed-version/apply. Mirrors the
+// backend ApplyProposedVersionDto exactly.
+export interface ApplyProposedClauseDecision {
+  /** is_proposed=true junction row id (ContractClause.id of the proposed clause). */
+  proposed_contract_clause_id: string;
+  action: 'accept' | 'reject' | 'edit';
+  /** Live junction row id this replaces → MODIFY/MERGE; absent → ADD. */
+  replaces_contract_clause_id?: string;
+  edited_title?: string;
+  /** Required when action === 'edit'. */
+  edited_content?: string;
+}
+
+export interface ApplyRemovalDecision {
+  /** Live junction row id (ContractClause.id) the guest proposed dropping. */
+  contract_clause_id: string;
+  action: 'accept' | 'reject';
+}
+
+export interface ApplyProposedVersionDto {
+  decisions: ApplyProposedClauseDecision[];
+  removals?: ApplyRemovalDecision[];
+  change_summary?: string;
+}
+
+export interface ApplyProposedVersionResult {
+  snapshot_version_id: string | null;
+  snapshot_version_number: number | null;
+  accepted: number;
+  edited: number;
+  added: number;
+  removed: number;
+  rejected: number;
+}
+
 // ─── Claims ──────────────────────────────────────────────
 
 export enum ClaimType {
