@@ -4392,3 +4392,77 @@ Never refactor this to branch on the endpoint/route.
 5. **Proposed clauses (`is_proposed`, scoped by `source_document_id`) are excluded
    from the host canonical + guest viewer + managing review reads** — they never
    touch the host's live clause set or its `order_index` space.
+
+---
+
+## Slice 2 — Guest Proposed-Version Review: 2a (apply) + 2b (diff) (shipped 2026-06-28, PRs #106 + #107, merged `4018311`)
+
+Slice 2 (Option γ) lets the host REVIEW and ACT ON a guest's proposed contract
+version (the `is_proposed=true` clauses from one guest upload, identified by
+`source_document_id`). Shipped in two sub-slices, both backend red→green on real
+Postgres; 2b's RTL diff browser-verified. (2a + 2b were doc-synced together; a
+boot defect in 2a was hotfixed to main as PR #108 — see BOOT GUARD below.)
+
+### Sub-slice 2a — the APPLY operation (PR #106, merged `ca53e4b`)
+- **`applyProposedVersion(contractId, docId, dto, userId, orgId)`** — the host
+  commits per-clause decisions on a guest's proposed set. Route
+  **`POST /contracts/:id/documents/:docId/proposed-version/apply`** (managing,
+  org-scoped via `findInOrg` → cross-tenant 404). Lives on `ContractsService`
+  (owns `createVersionSnapshot` + the clause/junction repos); route in
+  `document-processing.controller`.
+- **ATOMIC** (one transaction): (1) SNAPSHOT-BEFORE — `createVersionSnapshot` of
+  the current live contract to Version History FIRST (recoverable); (2) accept
+  (modify) / edit (merge) → the proposed clause BECOMES a new live version via
+  the **`Clause.parent_clause_id` chain** (new clause row linked to the original,
+  original `is_active=false`), the live junction repointed at it, the proposed
+  junction consumed; (3) add (no original) → flipped into the live set with a
+  non-colliding `order_index`; (4) remove-accept → original retired + removed
+  from the live junction (snapshot preserves it); (5) reject → NO-OP on the
+  contract, proposed row discarded.
+- **Leak fix (same PR):** `is_proposed` now filtered out of **5 host reads** —
+  `getContractClauses` (host main Clauses tab), compliance `loadClauses`, export
+  `generateContractPdf` + `generateContractSummary`, and `createVersionSnapshot`
+  — so proposed clauses never appear in the host's live view, compliance, PDFs,
+  or version snapshots.
+
+### Sub-slice 2b — the proposed-vs-current DIFF (PR #107, merged `4018311`)
+- **`GET /contracts/:id/documents/:docId/proposed-version/compare`** (host,
+  org-scoped) returns the DiffViewer-shaped `{summary, changes}` result.
+- **Reuse, not rebuild:** the `compareVersions` diff body was extracted into a
+  shared **`computeClauseDiff(clausesA, clausesB, keyFn)`** helper
+  (`contracts/utils/clause-diff.util.ts`); `compareVersions` calls it and is
+  **byte-identical** afterward. Proposed-compare feeds it live-vs-proposed
+  arrays, **matched by `section_number`** (proposed clauses have fresh
+  `clause_id`s → id-matching would mark everything add/remove). Modified =
+  word-level diff; added/removed represented.
+- **Frontend:** shared **`DiffView`** with RTL support (single
+  `dir={rtl?'rtl':'ltr'}` paragraph context + `unicode-bidi: isolate` on diff
+  sub-runs so Arabic numbers/markers stay inline — fixes a real bidi-stranding
+  bug; see lesson #187); `ProposedVersionDiffModal` + "View changes" entry in
+  `GuestProposedVersionsPanel`.
+
+### BOOT GUARD — `app-boot.smoke.spec.ts` (added in 2b)
+A backend-boot smoke test now bootstraps the **full Nest DI graph**
+(`Test.createTestingModule({ imports: [AppModule] }).compile()`). It exists
+because 2a shipped a defect that made `main` **un-bootable** (`ContractsService`
+injected the `Clause` repo but `ContractsModule` never registered `Clause` in
+`forFeature` → `Nest can't resolve ClauseRepository at index [17]`) that **1183
+tests missed** — none bootstrapped the real app. Hotfixed to main as **PR #108**;
+the smoke test is the permanent guard. **Any service-graph / module-wiring change
+must keep it GREEN.** (Lesson #186.)
+
+### INVARIANTS — never break later
+1. **The apply SNAPSHOTS-BEFORE-promoting and is ATOMIC** — a partial apply
+   (snapshot without promotions, or half-promoted clauses) corrupts the contract.
+   The snapshot runs inside the same transaction as the promotions.
+2. **Proposed-vs-current matches by `section_number`, NOT `clause_id`** —
+   proposed clauses carry fresh ids; id-matching breaks the diff.
+3. **`compareVersions` and proposed-compare SHARE `computeClauseDiff`** — change
+   the diffing there (one place); keep `compareVersions` output byte-identical.
+4. **The backend-boot smoke test guards module wiring** — see BOOT GUARD.
+
+### DEFERRED to 2c
+- The full host **review/merge UI** (accept/reject/edit/add/remove per clause,
+  matching the design) — 2b ships only the diff + a "View changes" entry point.
+- **Word-diff granularity tuning** — Arabic highlights landing on whole
+  words/phrases rather than sub-word fragments.
