@@ -29,6 +29,7 @@ import {
   mapScoreToRiskLevel,
   mapSeverityToLikelihoodImpact,
 } from '../risk-analysis/utils/severity-mapping';
+import { computeCoverTrim } from './utils/cover-trim.util';
 // Tenant-isolation Tier 1 — service-level wall on uploadAndProcess +
 // reprocess + finalizeReview. Same `findInOrg` shape as PR #45.
 import { ContractAccessService } from '../contracts/services/contract-access.service';
@@ -446,8 +447,15 @@ export class DocumentProcessingService {
         : [];
 
       // Trim cover pages / TOC before saving so both the DB and clause
-      // extraction receive the cleaned text.
-      const trimmedText = this.trimCoverPages(rawText, doc.document_label);
+      // extraction receive the cleaned text. Label-INDEPENDENT + clause-guard:
+      // a numbered clause-1 marker is NEVER trimmed away (see cover-trim.util).
+      const trim = computeCoverTrim(rawText, doc.document_label);
+      const trimmedText = trim.text;
+      if (trim.warning) {
+        this.logger.warn(
+          `[trimCoverPages] document ${doc.id} (contract ${doc.contract_id}): ${trim.warning}`,
+        );
+      }
 
       // RACE-SAFE CLAIM (lesson #177 idiom). The server backstop driver and any
       // browser poll (guest or managing) can all observe "text job completed"
@@ -474,7 +482,13 @@ export class DocumentProcessingService {
 
       // WINNER — persist the text result + decide the next state.
       doc.page_count = pageCount;
-      doc.quality_flags = qualityFlags.length > 0 ? qualityFlags : null;
+      // OCR scan-quality flags (blur/contrast/rotation) drive the
+      // HUMAN_REVIEW_RECOMMENDED parking below. The cover-trim clause-guard flag
+      // is OBSERVABILITY only — it must NOT park the doc — so it is merged into
+      // the STORED flags but excluded from the parking decision (which stays on
+      // `qualityFlags`).
+      const storedFlags = [...qualityFlags, ...trim.flags];
+      doc.quality_flags = storedFlags.length > 0 ? storedFlags : null;
       doc.extracted_text = trimmedText;
 
       // Phase 7.25 — poor scan quality parks the doc in HUMAN_REVIEW_RECOMMENDED
@@ -683,72 +697,11 @@ export class DocumentProcessingService {
     return doc;
   }
 
-  /**
-   * Trim cover pages, table of contents, and other preamble from the
-   * extracted text so that only substantive contract content is sent to
-   * clause extraction.  The trimming strategy depends on the document label.
-   */
-  private trimCoverPages(text: string, documentLabel?: string | null): string {
-    if (!text) return text;
-
-    // Detect conditions/specifications documents by label so we avoid matching
-    // agreement phrases (e.g. "تم الاتفاق") that can appear mid-body in those docs.
-    const label = (documentLabel ?? '').toLowerCase();
-    const isConditionsDoc =
-      /condition|شروط|general|particular|spec|مواصفات/.test(label);
-
-    if (isConditionsDoc) {
-      // For conditions docs: try numbered-article patterns FIRST.
-      // This prevents "تم الاتفاق" buried inside an article from truncating the text.
-      const conditionsPatterns = [
-        /مادة\s*[\(\s]?[١-٩\d]/,   // مادة (1) / مادة ١ / مادة 1
-        /المادة\s*[\(\s]?[١-٩\d]/, // المادة (1) / المادة 1
-        /البند\s*[\(\s]?[١-٩\d]/,  // البند (1) / البند 1
-        /Article\s*1\b/i,
-        /Clause\s*1\b/i,
-        /^1[-–.]/m,
-      ];
-      for (const pattern of conditionsPatterns) {
-        const match = text.match(pattern);
-        if (match?.index !== undefined) {
-          return text.substring(match.index);
-        }
-      }
-      // No numbered article found — return as-is
-      return text;
-    }
-
-    // For agreement / general documents: try agreement opening phrases first
-    const agreementPatterns = [
-      /إنه في يوم/,
-      /تم الاتفاق بين كل من/,
-      /تم الاتفاق/,
-    ];
-    for (const pattern of agreementPatterns) {
-      const match = text.match(pattern);
-      if (match?.index !== undefined) {
-        return text.substring(match.index);
-      }
-    }
-
-    // Fallback: conditions-style numbered patterns
-    const conditionsPatterns = [
-      /مادة\s*[\(\s]?[١-٩\d]/,
-      /المادة\s*[\(\s]?[١-٩\d]/,
-      /البند\s*[\(\s]?[١-٩\d]/,
-      /Article\s*1\b/i,
-      /Clause\s*1\b/i,
-      /^1[-–.]/m,
-    ];
-    for (const pattern of conditionsPatterns) {
-      const match = text.match(pattern);
-      if (match?.index !== undefined) {
-        return text.substring(match.index);
-      }
-    }
-
-    return text;
-  }
+  // Cover-page / TOC / preamble trimming now lives in
+  // ./utils/cover-trim.util (computeCoverTrim): label-INDEPENDENT and
+  // clause-guarded (a numbered clause-1 marker is never trimmed away). The old
+  // label-driven trimCoverPages silently cut clauses when a Conditions doc was
+  // mislabeled "Contract Agreement" and a body phrase matched bare "تم الاتفاق".
 
   /**
    * Extract party names from Arabic contract agreement text using regex.
