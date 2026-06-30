@@ -4466,3 +4466,73 @@ must keep it GREEN.** (Lesson #186.)
   matching the design) — 2b ships only the diff + a "View changes" entry point.
 - **Word-diff granularity tuning** — Arabic highlights landing on whole
   words/phrases rather than sub-word fragments.
+
+## Slice 2 COMPLETE — Guest Proposed-Version Review: 2c (host review & merge UI) (shipped 2026-06-29, PR #110, merged `5275bc2`)
+
+Sub-slice **2c** (the FINAL sub-slice) ships the host **review & merge UI** on top
+of the 2a apply + 2b diff backends, and a small **2a backend fix** the UI surfaced.
+With it, **Slice 2 (Option γ) is COMPLETE end-to-end** — backend-verified +
+human-browser-verified (review → merge-edit → apply; the edit survived on an added
+clause; the original is recoverable in Version History).
+
+### Sub-slice 2c — the host review & merge UI (frontend, `apps/sign`)
+- **`HostReviewMergeScreen`** — a full-viewport takeover (fixed overlay, no new
+  route) matching the imported design: **header** (progress "N of M reviewed" +
+  Reject version / Accept all (N), → "Review summary" when all reviewed) →
+  **counts strip** (N of M changed, modified/added/removed chips, Changed/All
+  toggle, show-unchanged) → **324px clause rail** (status-accent cards) +
+  **per-clause cards** (side-by-side RTL diff reusing the shared `DiffView`,
+  Accept / Reject / **Merge & edit**, status states + Undo banner + confidence
+  badge) → **Merge & edit editor** (RTL Arabic textarea, "start from
+  proposed/original" chips → `EDITED`) → **two-step Apply flow** (review-complete
+  summary → apply-confirmation dialog with the Version-History reassurance →
+  calls `applyProposedVersion`) → accept-all / reject-version, keyboard shortcuts
+  (A/R/M/←/→/Esc).
+- **`hostReviewModel`** — the pure **compare ↔ apply-DTO bridge**: joins the 2b
+  compare result + `getProposedClauses` + `getClauses` by `clause_id` /
+  `section_number` to produce the exact `ApplyProposedVersionDto`; auto-rejects
+  the unchanged duplicates so the version is fully consumed. (Unit-tested.)
+- **Word-diff granularity (the deferred 2b item):** a **frontend render-layer
+  coalesce** (`components/versions/wordDiff.ts`, applied in the shared `DiffView`)
+  snaps highlights to **whole words** — fixing the Arabic sub-word speckle.
+  Reconstruction-invariant + Latin no-op, so **backend `computeClauseDiff` is
+  UNTOUCHED and `compareVersions` stays byte-identical**. Do NOT "fix" the speckle
+  in the backend.
+- Entry point: "Review & merge (N)" CTA in `GuestProposedVersionsPanel` (refetches
+  on apply); `documentProcessingService.applyProposedVersion` + DTO/result types;
+  `hostReview` i18n namespace (113 keys, exact en/ar/fr parity).
+
+### 2a APPLY ADD-BRANCH FIX (shipped WITH 2c — the one backend change in PR #110)
+`applyProposedVersion`'s ADD branch now **honors `edited_content`/`edited_title`
+on a merge-edited ADDED clause** and marks it `EDITED`. Previously the ADD branch
+branched only on the presence of a `replaces` target and **never read the host's
+edits**, so Merge & edit on a newly-added clause **silently dropped the host's
+wording** and promoted the guest original as `APPROVED` while the UI reported
+success. A **RED→GREEN real-PG test** (`apply-proposed-version.real-pg.spec.ts`)
+proves the host's edited wording is promoted, NOT the guest original. (Lesson #189.)
+
+### INVARIANT — record (the recurring failure family)
+**A new UI that exposes a backend path for the FIRST time → treat that specific
+path/combination as UNTESTED until a test drives it** (here: `edit × added-clause`),
+even when the broader operation already has tests. 'N tests green' says nothing
+about a combination no test, mock, or UI ever exercised. This is the fourth
+instance of the same family — dispatch≠completion (#180), un-bootable module
+(#186), RTL bidi stranding (#187), add-edit (#189).
+
+### Verified
+- Backend (real PG + Redis, `--runInBand --forceExit`): **138 suites / 1184 tests,
+  0 failures** (baseline 1183 + the 1 new add+edit test). Boot-smoke GREEN;
+  compare-proposed GREEN; `clause-diff.util.ts` untouched → `compareVersions`
+  byte-identical; `nest build` clean; `lint:contract-repo` clean.
+- Frontend: tsc 0-new in touched files; vitest **121/121**.
+- Adversarial multi-agent review during the build; all confirmed findings fixed
+  (the 2a add-edit backend gap + 3 frontend: clause-pane `white-space:pre-wrap`,
+  Esc-closes-confirm/complete, script-driven text alignment).
+
+### DEFERRED / future (do NOT assume built)
+- **Option α** (true `version_id`-on-clauses full-versioning model) remains FILED
+  in NEXT_PHASES as the future model — Slice 2 shipped Option γ (parent-chain
+  promotion), NOT Option α.
+- **Guest-upload carry-overs still open** (from Feature #4): AV / malware content
+  scanning of guest-uploaded files, and OOXML structural / zip-bomb validation for
+  the DOCX magic-bytes check.
