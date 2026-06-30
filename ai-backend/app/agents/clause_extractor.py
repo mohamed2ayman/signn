@@ -5,7 +5,9 @@ from __future__ import annotations
 import json
 import logging
 import re
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 from anthropic import Anthropic, APIConnectionError, APIStatusError
@@ -13,6 +15,16 @@ from anthropic import Anthropic, APIConnectionError, APIStatusError
 from app.config.settings import get_settings
 
 logger = logging.getLogger(__name__)
+
+# --- Rate-limit pacing (parallel chunk extraction) -------------------------
+# When the live anthropic-ratelimit-*-remaining headers fall to/below these
+# floors, the gate makes ALL worker threads pause briefly so the next wave of
+# parallel calls doesn't run the account into a wall of 429s. The concurrency
+# cap is the primary control; this gate is the safety net.
+_RL_REQUESTS_FLOOR = 1          # pause when ≤ this many requests remain in window
+_RL_TOKENS_FLOOR = 32_000       # pause when ≤ this many tokens remain (≈ one big call)
+_RL_LOW_REMAINING_PAUSE = 3.0   # seconds to hold off when a floor is hit
+_RL_MAX_PAUSE = 30.0            # hard cap on any single pause (incl. Retry-After)
 
 SYSTEM_PROMPT = """\
 You are an expert contract clause extraction agent for the SIGN construction \
@@ -198,13 +210,115 @@ def _group_by_boundaries(
     return pieces if pieces else [text]
 
 
+def _safe_int(value: Any) -> int | None:
+    """Parse an int from a header value, returning None on absence/garbage."""
+    if value is None:
+        return None
+    try:
+        return int(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def _min_tokens_remaining(headers: Any) -> int | None:
+    """Smallest of the token-remaining headers present (combined / input / output).
+
+    Different API versions expose ``anthropic-ratelimit-tokens-remaining`` and/or
+    the split ``-input-tokens-remaining`` / ``-output-tokens-remaining``. We take
+    the minimum of whatever is present so the gate reacts to the tightest budget.
+    """
+    candidates = [
+        _safe_int(headers.get("anthropic-ratelimit-tokens-remaining")),
+        _safe_int(headers.get("anthropic-ratelimit-input-tokens-remaining")),
+        _safe_int(headers.get("anthropic-ratelimit-output-tokens-remaining")),
+    ]
+    present = [c for c in candidates if c is not None]
+    return min(present) if present else None
+
+
+class _RateLimitGate:
+    """Thread-safe pacing gate driven by the live ``anthropic-ratelimit-*`` headers.
+
+    The concurrency cap is the PRIMARY control on parallel chunk calls; this gate
+    is a safety net. It holds a single shared "blocked until" instant (monotonic
+    clock). When the API signals the window is nearly spent (a remaining-header at
+    or below a floor) or explicitly tells us to wait (429 ``Retry-After``), every
+    worker thread pauses until that instant — so the pool never trades sequential
+    slowness for a wall of 429s. It NEVER lets the manual retry layer exceed the
+    limit because all threads consult the same gate before each attempt.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._blocked_until = 0.0  # monotonic seconds
+
+    def wait_if_needed(self) -> None:
+        """Block the calling thread until any active pause has elapsed."""
+        while True:
+            with self._lock:
+                remaining = self._blocked_until - time.monotonic()
+            if remaining <= 0:
+                return
+            time.sleep(min(remaining, _RL_MAX_PAUSE))
+
+    def _block_for(self, seconds: float) -> None:
+        seconds = max(0.0, min(seconds, _RL_MAX_PAUSE))
+        if seconds <= 0:
+            return
+        with self._lock:
+            target = time.monotonic() + seconds
+            if target > self._blocked_until:
+                self._blocked_until = target
+
+    def note_headers(self, headers: Any) -> None:
+        """Inspect a successful response's headers; pause if the window is low."""
+        if headers is None:
+            return
+        try:
+            req_rem = _safe_int(headers.get("anthropic-ratelimit-requests-remaining"))
+            tok_rem = _min_tokens_remaining(headers)
+        except Exception:  # noqa: BLE001 — header shapes vary; never crash the call
+            return
+        if (req_rem is not None and req_rem <= _RL_REQUESTS_FLOOR) or (
+            tok_rem is not None and tok_rem <= _RL_TOKENS_FLOOR
+        ):
+            logger.info(
+                "Rate-limit window low (requests_remaining=%s, tokens_remaining=%s) "
+                "— pausing parallel chunk calls for %.1fs",
+                req_rem, tok_rem, _RL_LOW_REMAINING_PAUSE,
+            )
+            self._block_for(_RL_LOW_REMAINING_PAUSE)
+
+    def note_retry_after(self, seconds: float) -> None:
+        """Honor an explicit Retry-After: pause all threads for that long."""
+        self._block_for(seconds)
+
+
+def _retry_after_seconds(exc: APIStatusError) -> float | None:
+    """Read the Retry-After header (seconds) off a 429/5xx, if present."""
+    response = getattr(exc, "response", None)
+    if response is None:
+        return None
+    try:
+        raw = response.headers.get("retry-after")
+    except Exception:  # noqa: BLE001
+        return None
+    return _safe_int(raw) if raw is not None else None
+
+
 class ClauseExtractorAgent:
     """Extracts structured clauses from contract document text."""
 
     def __init__(self) -> None:
         settings = get_settings()
-        self._client = Anthropic(api_key=settings.ANTHROPIC_API_KEY)
+        # max_retries=0 PINS the SDK's built-in retry layer OFF so it does not
+        # MULTIPLY with our manual _call_api_with_retry loop (the old default
+        # max_retries=2 stacked under 4 manual attempts = up to 12 hits/chunk).
+        # Our manual layer is now the single, Retry-After-aware retry authority.
+        self._client = Anthropic(api_key=settings.ANTHROPIC_API_KEY, max_retries=0)
         self._model = settings.ANTHROPIC_MODEL
+        # Max concurrent chunk calls for one document (parallel chunked path).
+        self._concurrency = max(1, int(settings.CLAUSE_EXTRACT_CONCURRENCY or 1))
 
     # ------------------------------------------------------------------
     # Public entry point
@@ -417,7 +531,15 @@ class ClauseExtractorAgent:
         contract_type: str | None,
         document_label: str | None,
     ) -> list[dict[str, Any]]:
-        """Split large document on article boundaries and process each chunk."""
+        """Split a large document on article boundaries and process each chunk.
+
+        The per-chunk Anthropic calls run in PARALLEL (capped at
+        ``self._concurrency``, default 3), but the merge/dedup runs sequentially
+        in chunk-index order via ``_merge_in_order`` — so the result is
+        byte-identical to the old one-at-a-time loop, just faster. Each chunk's
+        prompt depends only on the deterministic chunk list (never on another
+        chunk's API result), so building the prompts up-front is safe.
+        """
         chunks = self._split_on_article_boundaries(full_text)
         chunks = self._merge_small_chunks(chunks)
         total = len(chunks)
@@ -428,11 +550,11 @@ class ClauseExtractorAgent:
             _CHUNK_SIZE,
         )
 
-        all_clauses: list[dict[str, Any]] = []
-        seen_sections: set[str] = set()
-
+        # --- Phase 1: build the per-chunk prompts (deterministic, in order) ----
+        # Each job is (idx, user_content). Tiny (<500-char) fragments are skipped
+        # exactly as before — they never become a job, so order is preserved.
+        jobs: list[tuple[int, str]] = []
         for idx, chunk in enumerate(chunks, 1):
-            # Skip fragments too small to contain a real clause
             if len(chunk.strip()) < 500:
                 logger.info(
                     "Skipping chunk %d/%d (%d chars) — too small to contain a clause",
@@ -440,8 +562,9 @@ class ClauseExtractorAgent:
                 )
                 continue
 
-            # Prepend parent article heading if this chunk starts mid-article
-            chunk = self._add_article_context(chunk, idx - 1, chunks)
+            # Prepend parent article heading if this chunk starts mid-article.
+            # Pure function of the chunk LIST — independent of any API result.
+            ctx_chunk = self._add_article_context(chunk, idx - 1, chunks)
 
             prefix = self._build_user_prefix(contract_type, document_label)
             chunk_note = (
@@ -459,26 +582,83 @@ class ClauseExtractorAgent:
             user_content = prefix + chunk_note + (
                 "Extract all clauses from the following contract chunk:\n\n"
                 "---BEGIN CHUNK---\n"
-                f"{chunk}\n"
+                f"{ctx_chunk}\n"
                 "---END CHUNK---"
             )
+            jobs.append((idx, user_content))
 
+        # --- Phase 2: run the chunk calls in PARALLEL (capped), keyed by idx ---
+        # A ThreadPoolExecutor keeps `concurrency` calls in flight at once and
+        # picks up the next queued chunk as each finishes. The shared gate paces
+        # all threads against the live rate-limit headers.
+        results: dict[int, list[dict[str, Any]]] = {}
+        if jobs:
+            gate = _RateLimitGate()
+            concurrency = max(1, min(self._concurrency, len(jobs)))
             logger.info(
-                "Processing chunk %d/%d (%d chars)", idx, total, len(chunk)
+                "Dispatching %d chunk call(s) with concurrency=%d",
+                len(jobs), concurrency,
             )
-            try:
-                raw = self._call_api_with_retry(user_content)
+
+            def _run_chunk(job: tuple[int, str]) -> tuple[int, list[dict[str, Any]]]:
+                j_idx, user_content = job
+                logger.info("Processing chunk %d/%d", j_idx, total)
+                raw = self._call_api_with_retry(user_content, gate=gate)
                 chunk_clauses = self._parse_json(raw)
-            except Exception as exc:  # noqa: BLE001
-                logger.warning(
-                    "Chunk %d/%d failed — skipping. Error: %s. Chunk preview: %r",
-                    idx, total, exc, chunk[:200],
+                logger.info(
+                    "Chunk %d/%d returned %d clauses", j_idx, total, len(chunk_clauses)
                 )
-                continue
-            logger.info(
-                "Chunk %d/%d returned %d clauses", idx, total, len(chunk_clauses)
-            )
+                return j_idx, chunk_clauses
 
+            with ThreadPoolExecutor(max_workers=concurrency) as executor:
+                futures = {executor.submit(_run_chunk, job): job[0] for job in jobs}
+                for future in as_completed(futures):
+                    idx = futures[future]
+                    try:
+                        ridx, chunk_clauses = future.result()
+                        results[ridx] = chunk_clauses
+                    except Exception as exc:  # noqa: BLE001
+                        # Preserve the ORIGINAL "skip a failed chunk" behavior: a
+                        # chunk that exhausts retries contributes 0 clauses and the
+                        # rest still merge. (Pre-existing silent-skip — kept as-is;
+                        # hardening it is a tracked follow-up, out of scope here.)
+                        logger.warning(
+                            "Chunk %d/%d failed — skipping. Error: %s", idx, total, exc
+                        )
+                        results[idx] = []
+
+        # --- Phase 3: merge/dedup — UNCHANGED logic, in chunk-index order ------
+        # `jobs` is already in ascending index order; reassemble results to match
+        # and merge exactly as the sequential loop did → byte-identical output.
+        ordered_chunk_clauses = [results.get(idx, []) for idx, _ in jobs]
+        unique_clauses = self._merge_in_order(ordered_chunk_clauses)
+
+        raw_total = sum(len(c) for c in ordered_chunk_clauses)
+        logger.info(
+            "Chunked extraction complete — %d unique clauses from %d chunks "
+            "(%d duplicates removed)",
+            len(unique_clauses),
+            total,
+            raw_total - len(unique_clauses),
+        )
+        return unique_clauses
+
+    @staticmethod
+    def _merge_in_order(
+        ordered_chunk_clauses: list[list[dict[str, Any]]],
+    ) -> list[dict[str, Any]]:
+        """Merge per-chunk clause lists into the final deduplicated clause list.
+
+        This is the EXACT merge/dedup the sequential loop used, factored out so
+        the parallel path can call it with results reassembled in chunk-index
+        order — and so it can be unit-tested directly. ``ordered_chunk_clauses``
+        MUST be in chunk-index order; the output is byte-identical to processing
+        the chunks one at a time (same section dedup, same null-section running
+        counter, same title-dedup, same order).
+        """
+        all_clauses: list[dict[str, Any]] = []
+        seen_sections: set[str] = set()
+        for chunk_clauses in ordered_chunk_clauses:
             # Merge — deduplicate by section_number to handle any overlap
             for clause in chunk_clauses:
                 sec = clause.get("section_number")
@@ -505,14 +685,10 @@ class ClauseExtractorAgent:
             elif not title_key:
                 unique_clauses.append(clause)  # keep untitled clauses as-is
             else:
-                logger.debug("Duplicate title '%s' skipped in final dedup pass", clause.get("title"))
-
-        logger.info(
-            "Chunked extraction complete — %d unique clauses from %d chunks (%d duplicates removed)",
-            len(unique_clauses),
-            total,
-            len(all_clauses) - len(unique_clauses),
-        )
+                logger.debug(
+                    "Duplicate title '%s' skipped in final dedup pass",
+                    clause.get("title"),
+                )
         return unique_clauses
 
     # ------------------------------------------------------------------
@@ -556,32 +732,60 @@ class ClauseExtractorAgent:
         else:
             return 32_000
 
-    def _call_api_with_retry(self, user_content: str) -> str:
-        """Call the Anthropic API with exponential-backoff retry on transient errors."""
+    def _call_api_with_retry(
+        self, user_content: str, gate: _RateLimitGate | None = None
+    ) -> str:
+        """Call the Anthropic API with bounded, Retry-After-aware retry.
+
+        The SDK's own retry layer is pinned OFF (``max_retries=0`` in __init__),
+        so this is the SINGLE retry authority — the two layers no longer multiply.
+        Backoff is a few seconds (4 → 8 → 16, capped), NOT the old 30/60/120, and
+        honors the server's ``Retry-After`` header when present. When a ``gate``
+        is supplied (the parallel chunked path) every thread paces against the
+        live ``anthropic-ratelimit-*`` headers so the pool never runs the account
+        into a wall of 429s.
+        """
         max_attempts = 4
-        base_delay = 30  # seconds — backs off as 30, 60, 120
+        base_delay = 4              # seconds — exponential 4, 8, 16 …
+        max_delay = _RL_MAX_PAUSE   # cap any single backoff (and Retry-After wait)
         last_exc: Exception | None = None
 
         max_tokens = self._calculate_max_tokens(len(user_content))
         logger.debug("API call: %d chars input → max_tokens=%d", len(user_content), max_tokens)
 
         for attempt in range(1, max_attempts + 1):
+            if gate is not None:
+                gate.wait_if_needed()
             try:
-                message = self._client.messages.create(
+                raw_response = self._client.messages.with_raw_response.create(
                     model=self._model,
                     max_tokens=max_tokens,
                     system=SYSTEM_PROMPT,
                     messages=[{"role": "user", "content": user_content}],
                 )
+                # Feed the live rate-limit headers to the gate BEFORE parsing so
+                # peers see a low-window signal as early as possible.
+                if gate is not None:
+                    gate.note_headers(raw_response.headers)
+                message = raw_response.parse()
                 return message.content[0].text  # success
             except APIStatusError as exc:
                 # 529 = overloaded, 500/502/503/504 = transient server errors
                 if exc.status_code in (429, 500, 502, 503, 504, 529):
                     last_exc = exc
-                    delay = base_delay * (2 ** (attempt - 1))
+                    retry_after = _retry_after_seconds(exc)
+                    if retry_after is not None and gate is not None:
+                        # Make ALL parallel threads honor the server's backoff.
+                        gate.note_retry_after(retry_after)
+                    delay = (
+                        float(retry_after)
+                        if retry_after is not None
+                        else base_delay * (2 ** (attempt - 1))
+                    )
+                    delay = min(delay, max_delay)
                     logger.warning(
                         "Anthropic API transient error %s (attempt %d/%d) — "
-                        "retrying in %ds: %s",
+                        "retrying in %.1fs: %s",
                         exc.status_code,
                         attempt,
                         max_attempts,
@@ -594,10 +798,10 @@ class ClauseExtractorAgent:
                 raise  # non-retryable status code
             except APIConnectionError as exc:
                 last_exc = exc
-                delay = base_delay * (2 ** (attempt - 1))
+                delay = min(base_delay * (2 ** (attempt - 1)), max_delay)
                 logger.warning(
                     "Anthropic API connection error (attempt %d/%d) — "
-                    "retrying in %ds: %s",
+                    "retrying in %.1fs: %s",
                     attempt,
                     max_attempts,
                     delay,

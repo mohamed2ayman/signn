@@ -39,19 +39,29 @@ VALID_CLAUSES_JSON = json.dumps([
 
 
 def _make_mock_client(mocker, json_text: str):
-    """Patch anthropic.Anthropic and wire .messages.create to return json_text.
+    """Patch anthropic.Anthropic and wire the raw-response call to return json_text.
 
     Returns (mock_anthropic_class, mock_client_instance).
 
     The patch must be applied before ClauseExtractorAgent() is instantiated
-    because the constructor calls Anthropic(api_key=...) immediately.
+    because the constructor calls Anthropic(api_key=..., max_retries=0) immediately.
+
+    The agent reads rate-limit headers, so it now calls
+    ``messages.with_raw_response.create(...)`` and then ``.parse()`` /``.headers``
+    (instead of ``messages.create``). The mock mirrors that shape.
     """
     mock_anthropic_cls = mocker.patch("app.agents.clause_extractor.Anthropic")
     mock_client = mock_anthropic_cls.return_value  # what Anthropic() returns
 
-    # Build a fake response object with .content[0].text = json_text
+    # Build a fake message object with .content[0].text = json_text
     fake_block = type("TextBlock", (), {"text": json_text})()
-    mock_client.messages.create.return_value.content = [fake_block]
+    fake_message = type("Message", (), {"content": [fake_block]})()
+
+    # Raw-response wrapper: .parse() -> message, .headers -> dict-like (.get()).
+    raw = mocker.MagicMock()
+    raw.parse.return_value = fake_message
+    raw.headers = {}  # empty → gate sees no rate-limit signal
+    mock_client.messages.with_raw_response.create.return_value = raw
 
     return mock_anthropic_cls, mock_client
 
@@ -135,7 +145,7 @@ def test_extract_long_document_triggers_chunked_path(mocker):
     result = agent.extract(long_text)
 
     # API must have been called at least once (chunked path)
-    assert mock_client.messages.create.call_count >= 1
+    assert mock_client.messages.with_raw_response.create.call_count >= 1
     assert isinstance(result, list)
 
 

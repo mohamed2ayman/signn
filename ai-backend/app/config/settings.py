@@ -21,6 +21,16 @@ class Settings(BaseSettings):
     ANTHROPIC_MODEL: str = "claude-sonnet-4-6"
     OPENAI_API_KEY: str = ""
 
+    # Max number of chunk-extraction Anthropic calls issued CONCURRENTLY for a
+    # single large document (the chunked clause-extraction path). Default 3 is a
+    # safe floor that respects typical account rate limits. NOTE: the rate-limit
+    # budget is SHARED across the Celery worker processes (--concurrency), so the
+    # platform-wide worst case is (celery concurrency) × this value — size
+    # accordingly. The agent also reads the live anthropic-ratelimit-* response
+    # headers and pauses if the window is nearly spent, so raising this is safe
+    # but should be tuned against the account's Anthropic usage tier.
+    CLAUSE_EXTRACT_CONCURRENCY: int = 3
+
     # Database
     DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/sign_platform"
 
