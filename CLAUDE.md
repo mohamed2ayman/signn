@@ -325,7 +325,8 @@ Different document types use different start markers:
 - **Conditions documents** (شروط, particular, general, spec, مواصفات): look for FIRST `مادة` marker using regex `/مادة\s*[\(\s]?[١-٩\d]/`
 
 ⚠️ NEVER use `تم الاتفاق` as the start marker for conditions documents — this phrase appears inside article bodies and will cut off Articles 1-8.
-File: `backend/src/modules/document-processing/document-processing.service.ts`
+
+✅ **Now CODE-ENFORCED (PR #113, merged `5c42041`).** Cover-page/TOC trimming lives in a pure, **label-INDEPENDENT** `computeCoverTrim` at `backend/src/modules/document-processing/utils/cover-trim.util.ts` — the old label-driven `trimCoverPages` in `document-processing.service.ts` is **removed**. The trimmer NEVER trims past the first numbered clause-1 marker; honors a genuine opener (`إنه في يوم` / `تم الاتفاق بين كل من`) only when it PRECEDES clause 1; **drops the bare `تم الاتفاق`** from the marker set (it is a substring of body phrases like `ما لم يتم الاتفاق على غير ذلك`); and when an opener is found AT/AFTER clause 1 it trims at the clause (preserving it) while surfacing **loudly** — a `warning` log + the `cover_trim_clause_guard` quality flag (observability only, never parks the doc). A Conditions doc mislabeled "Contract Agreement" no longer silently loses clauses 1 & 2 (verified live: Project4 reprocess 33→35 clauses, `التعريفات` + `قواعد العمل بالموقع` restored). See lesson #192.
 
 ### Arabic Clause Markers — Per Document Type
 Construction contracts use different clause markers depending on document type.
