@@ -301,6 +301,17 @@ model string** (Phase 8.1). A guard test (`ai-backend/tests/accuracy/test_model_
 fails if a literal is reintroduced. **Hard rule: never change the model without first running the
 Arabic accuracy suite** (`ai-backend/tests/accuracy/`) — see NEXT_PHASES 8.1.
 
+Large-document clause extraction (the chunked path, documents **> 30,000 chars**) runs its
+per-chunk Anthropic calls **in parallel**, capped by `CLAUSE_EXTRACT_CONCURRENCY` in
+`ai-backend/app/config/settings.py` (default **3**, overridable via the `CLAUSE_EXTRACT_CONCURRENCY`
+env var). The cap is the primary rate-limit control; a thread-safe rate-limit gate also reads the
+live `anthropic-ratelimit-*` response headers and auto-pauses near the limit (and honors
+`Retry-After`), so raising the cap won't trade speed for 429s. **NOTE:** the rate-limit budget is
+SHARED across the Celery worker processes (`--concurrency`), so the platform-wide worst case is
+`(Celery concurrency) × CLAUSE_EXTRACT_CONCURRENCY` — size it against the account's Anthropic usage
+tier. The chunk merge runs in chunk-index order, so output is byte-identical to the old sequential
+path. See lesson #193.
+
 ---
 
 ## Arabic Document Processing Architecture
