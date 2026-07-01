@@ -551,6 +551,16 @@ export class DocumentProcessingService {
       const clauseResult = jobStatus.result?.result || jobStatus.result;
       const extractedClauses = clauseResult?.clauses || [];
 
+      // (D/E) Observability flags from the AI merge: `clause_dedup_dropped:<n>`
+      // when the content-aware dedup removes duplicates, and
+      // `combined_conditions_file` when a بند numbering restart suggests GC+PC
+      // are in one file. Persisted so silent clause loss is VISIBLE. These do
+      // NOT park the doc — parking is OCR-flags-only in the text-extraction path.
+      const clauseFlags: string[] = Array.isArray(clauseResult?.quality_flags)
+        ? (clauseResult.quality_flags as string[])
+        : [];
+      const mergedQualityFlags = [...(doc.quality_flags ?? []), ...clauseFlags];
+
       // RACE-SAFE EXACTLY-ONCE FINALIZE (lesson #177 idiom). The server backstop
       // driver and any browser poll (guest or managing) can all observe "clause
       // job completed" at once → without a guard that is a DOUBLE clause-write +
@@ -574,6 +584,8 @@ export class DocumentProcessingService {
             {
               processing_status: DocumentProcessingStatus.CLAUSES_EXTRACTED,
               processing_job_id: null,
+              quality_flags:
+                mergedQualityFlags.length > 0 ? mergedQualityFlags : null,
             },
           );
           if (claim.affected !== 1) return false;
@@ -602,6 +614,8 @@ export class DocumentProcessingService {
 
       doc.processing_status = DocumentProcessingStatus.CLAUSES_EXTRACTED;
       doc.processing_job_id = null;
+      doc.quality_flags =
+        mergedQualityFlags.length > 0 ? mergedQualityFlags : null;
 
       // Phase 7.18 Part 3 — ASYNC TERMINAL SUCCESS. Clauses are now in the DB;
       // commit the reservation. The engine commit is itself status-guarded

@@ -179,7 +179,15 @@ def run_extract_clauses(self, request_data: dict[str, Any]) -> dict[str, Any]:
             contract_type=request_data.get("contract_type"),
             document_label=request_data.get("document_label"),
         )
-        return {"status": "completed", "result": {"clauses": clauses}}
+        # quality_flags surfaces content-dedup drops + combined-conditions
+        # detection so silent clause loss becomes visible downstream.
+        return {
+            "status": "completed",
+            "result": {
+                "clauses": clauses,
+                "quality_flags": agent.last_quality_flags,
+            },
+        }
     except Exception as e:
         return {"status": "failed", "error": str(e)}
 
