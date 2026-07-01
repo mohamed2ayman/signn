@@ -1,14 +1,15 @@
-"""Unit tests for the PARALLEL chunked clause-extraction path (A + B).
+"""Unit tests for the PARALLEL chunked clause-extraction path.
 
 Covers:
-  * `_merge_in_order` produces the exact sequential merge/dedup result.
-  * The parallel `_extract_chunked` output is byte-identical to the sequential
-    merge of the same per-chunk responses — even when chunk calls COMPLETE
-    out of order (proves reassembly is by chunk index, not completion order).
+  * `_merge_in_order` (content-aware dedup) produces the expected result.
+  * The parallel `_extract_chunked` output equals the sequential merge of the
+    same per-chunk responses — even when chunk calls COMPLETE out of order
+    (proves reassembly is by chunk index, not completion order).
   * The concurrency cap is respected (and >1 ⇒ it really parallelizes).
   * The SDK's built-in retries are pinned OFF (no double-retry stacking).
   * The retry layer honors the server's Retry-After header.
 
+Dedup SEMANTICS (content vs section/title) are covered in test_clause_dedup.py.
 All Anthropic calls are mocked — no API key or network access needed.
 """
 
@@ -21,29 +22,33 @@ import time
 
 from app.agents.clause_extractor import ClauseExtractorAgent
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Canned per-chunk responses, chosen to exercise every dedup branch:
-#   - chunk 2 repeats section_number "1"  → section dedup drops it
-#   - chunk 3 has two null-section clauses → both kept (running __nosec_ counter)
-#   - chunk 4 title "a" collides with chunk 1 title "A" → title dedup drops it
-# Expected final (in chunk-index order): A, B, C, D, E
-# ─────────────────────────────────────────────────────────────────────────────
 
+def _clause(title: str, content: str, section: str | None) -> dict:
+    return {
+        "title": title,
+        "content": content,
+        "clause_type": "general",
+        "section_number": section,
+        "confidence": 0.9,
+    }
+
+
+# Per-chunk responses. Each clause has DISTINCT content EXCEPT chunk 3's second
+# clause, which is a TRUE overlap duplicate of chunk 1's clause (identical
+# content) — the content-aware merge drops it. Everything else is kept in order.
 CANNED: dict[int, list[dict]] = {
-    1: [{"title": "A", "content": "a", "clause_type": "general", "section_number": "1", "confidence": 0.9}],
-    2: [
-        {"title": "B", "content": "b", "clause_type": "general", "section_number": "2", "confidence": 0.9},
-        {"title": "Dup1", "content": "d", "clause_type": "general", "section_number": "1", "confidence": 0.5},
-    ],
+    1: [_clause("Definitions", "definitions body about the terms used", "1")],
+    2: [_clause("Scope", "scope of works to be performed", "2")],
     3: [
-        {"title": "C", "content": "c", "clause_type": "general", "section_number": None, "confidence": 0.9},
-        {"title": "D", "content": "dd", "clause_type": "general", "section_number": None, "confidence": 0.9},
+        _clause("Payment", "payment terms and certificates", "3"),
+        _clause("Definitions", "definitions body about the terms used", "1"),  # dup
     ],
-    4: [{"title": "a", "content": "aa", "clause_type": "general", "section_number": "4", "confidence": 0.4}],
-    5: [{"title": "E", "content": "e", "clause_type": "general", "section_number": "5", "confidence": 0.9}],
+    4: [_clause("Warranty", "warranty and defects liability", "4")],
+    5: [_clause("Disputes", "dispute resolution and arbitration", "5")],
 }
-
 ORDERED_INPUTS = [CANNED[i] for i in (1, 2, 3, 4, 5)]
+EXPECTED_TITLES = ["Definitions", "Scope", "Payment", "Warranty", "Disputes"]
+EXPECTED_SECTIONS = ["1", "2", "3", "4", "5"]
 
 
 def _chunk_text(idx: int) -> str:
@@ -53,12 +58,9 @@ def _chunk_text(idx: int) -> str:
 
 
 class _FakeCalls:
-    """Thread-safe stand-in for `_call_api_with_retry`.
-
-    Records max concurrent in-flight calls and returns the canned JSON for the
-    chunk identified by its ZMARK<idx>Z marker. `delay_fn(idx)` controls per-call
-    duration so completion order can be inverted on purpose.
-    """
+    """Thread-safe stand-in for `_call_api_with_retry`. Records max concurrent
+    in-flight calls and returns the canned JSON for the chunk identified by its
+    ZMARK<idx>Z marker. `delay_fn(idx)` controls per-call duration."""
 
     def __init__(self, delay_fn=None) -> None:
         self._delay_fn = delay_fn or (lambda idx: 0.0)
@@ -83,7 +85,6 @@ class _FakeCalls:
 
 
 def _make_agent(mocker, concurrency: int):
-    """Construct an agent with Anthropic patched out and a fixed chunk list."""
     mocker.patch("app.agents.clause_extractor.Anthropic")
     agent = ClauseExtractorAgent()
     agent._concurrency = concurrency
@@ -93,31 +94,26 @@ def _make_agent(mocker, concurrency: int):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 1. The merge helper itself produces the exact, hand-computed result.
+# 1. The merge helper produces the expected content-deduped result.
 # ─────────────────────────────────────────────────────────────────────────────
 
-def test_merge_in_order_matches_hand_computed_expectation():
+def test_merge_in_order_matches_expectation():
     merged = ClauseExtractorAgent._merge_in_order(ORDERED_INPUTS)
-
-    assert [c["title"] for c in merged] == ["A", "B", "C", "D", "E"]
-    assert [c["section_number"] for c in merged] == ["1", "2", None, None, "5"]
-    # section "1" duplicate (chunk 2) dropped; title "a" (chunk 4) dropped;
-    # both null-section clauses (chunk 3) kept.
-    assert len(merged) == 5
+    assert [c["title"] for c in merged] == EXPECTED_TITLES
+    assert [c["section_number"] for c in merged] == EXPECTED_SECTIONS
+    assert len(merged) == 5  # chunk 3's identical-content Definitions copy dropped
 
 
-def test_merge_in_order_is_independent_of_a_failed_chunk():
-    """A failed chunk is represented as an empty list and contributes nothing —
-    the rest still merge in order (mirrors the skip-failed-chunk behavior)."""
+def test_merge_in_order_skips_failed_chunk():
+    """A failed chunk is an empty list and contributes nothing; the rest merge
+    in order (and the content-dup in chunk 3 is still dropped)."""
     inputs = [CANNED[1], [], CANNED[3], [], CANNED[5]]
     merged = ClauseExtractorAgent._merge_in_order(inputs)
-    assert [c["title"] for c in merged] == ["A", "C", "D", "E"]
+    assert [c["title"] for c in merged] == ["Definitions", "Payment", "Disputes"]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 2. Parallel output === sequential merge of the same responses (THE guarantee).
-#    Completion order is inverted (chunk 5 finishes first) to prove reassembly
-#    is by chunk index, not by which future resolves first.
+# 2. Parallel output == sequential merge, even with completion order inverted.
 # ─────────────────────────────────────────────────────────────────────────────
 
 def test_parallel_extract_equals_sequential_even_out_of_order(mocker):
@@ -128,42 +124,34 @@ def test_parallel_extract_equals_sequential_even_out_of_order(mocker):
 
     result = agent._extract_chunked("ignored", None, None)
 
-    expected = ClauseExtractorAgent._merge_in_order(ORDERED_INPUTS)
-    assert result == expected  # byte-identical to the sequential merge
-    assert [c["title"] for c in result] == ["A", "B", "C", "D", "E"]
-    assert [c["section_number"] for c in result] == ["1", "2", None, None, "5"]
+    assert result == ClauseExtractorAgent._merge_in_order(ORDERED_INPUTS)
+    assert [c["title"] for c in result] == EXPECTED_TITLES
     assert fake.calls == 5  # one call per chunk, none skipped
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 3. Concurrency cap is respected (and it really runs in parallel).
+# 3. Concurrency cap respected (and it really runs in parallel).
 # ─────────────────────────────────────────────────────────────────────────────
 
 def test_concurrency_cap_is_respected(mocker):
     agent = _make_agent(mocker, concurrency=3)
     fake = _FakeCalls(delay_fn=lambda idx: 0.1)  # uniform → forces overlap
     agent._call_api_with_retry = fake
-
     agent._extract_chunked("ignored", None, None)
-
-    # 5 chunks, cap 3 → at most 3 ever in flight, and it DID parallelize to 3.
-    assert fake.max_in_flight == 3
+    assert fake.max_in_flight == 3  # 5 chunks, cap 3 → at most 3 in flight
 
 
 def test_concurrency_one_is_sequential(mocker):
     agent = _make_agent(mocker, concurrency=1)
     fake = _FakeCalls(delay_fn=lambda idx: 0.02)
     agent._call_api_with_retry = fake
-
     result = agent._extract_chunked("ignored", None, None)
-
-    assert fake.max_in_flight == 1  # cap=1 ⇒ strictly one at a time
-    # …and the output is still the same correct, ordered merge.
-    assert [c["title"] for c in result] == ["A", "B", "C", "D", "E"]
+    assert fake.max_in_flight == 1
+    assert [c["title"] for c in result] == EXPECTED_TITLES
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 4. (B) SDK retries pinned OFF — no double-retry stacking.
+# 4. SDK retries pinned OFF; Retry-After honored.
 # ─────────────────────────────────────────────────────────────────────────────
 
 def test_sdk_retries_are_pinned_off(mocker):
@@ -171,10 +159,6 @@ def test_sdk_retries_are_pinned_off(mocker):
     ClauseExtractorAgent()
     assert mock_cls.call_args.kwargs.get("max_retries") == 0
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 5. (B) The retry layer honors the server's Retry-After header.
-# ─────────────────────────────────────────────────────────────────────────────
 
 def test_retry_honors_retry_after_header(mocker):
     import httpx
@@ -194,12 +178,9 @@ def test_retry_honors_retry_after_header(mocker):
     ok.parse.return_value = fake_message
     ok.headers = {}
 
-    # First attempt raises 429+Retry-After; second succeeds.
     mock_client.messages.with_raw_response.create.side_effect = [err, ok]
     sleep_mock = mocker.patch("app.agents.clause_extractor.time.sleep")
 
     out = agent._call_api_with_retry("hello")
-
     assert out == "[]"
-    # Honored the server's 7s (not the old 30s base), capped at _RL_MAX_PAUSE.
     sleep_mock.assert_called_once_with(7.0)

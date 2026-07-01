@@ -7,7 +7,9 @@ import logging
 import re
 import threading
 import time
+import unicodedata
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from difflib import SequenceMatcher
 from typing import Any
 
 from anthropic import Anthropic, APIConnectionError, APIStatusError
@@ -25,6 +27,18 @@ _RL_REQUESTS_FLOOR = 1          # pause when ≤ this many requests remain in wi
 _RL_TOKENS_FLOOR = 32_000       # pause when ≤ this many tokens remain (≈ one big call)
 _RL_LOW_REMAINING_PAUSE = 3.0   # seconds to hold off when a floor is hit
 _RL_MAX_PAUSE = 30.0            # hard cap on any single pause (incl. Retry-After)
+
+# --- Extraction quality flags (surfaced in the clause-extraction result) ----
+# Set when the content-aware merge drops ≥1 clause as a true duplicate — makes
+# clause loss VISIBLE (was a silent logger.debug). Value carries the count.
+_DEDUP_DROPPED_FLAG_PREFIX = "clause_dedup_dropped:"
+# Set when a document appears to contain BOTH General AND Particular Conditions
+# (a بند numbering RESTART: a low number reappears after a higher one). Per
+# policy these should be uploaded as SEPARATE files — flagged, not rerouted.
+_COMBINED_CONDITIONS_FLAG = "combined_conditions_file"
+# Set when adjacent partials of the SAME clause (split across a chunk boundary)
+# were stitched back into one. Value carries the count of stitches performed.
+_SPLIT_CLAUSE_FLAG_PREFIX = "split_clause:"
 
 SYSTEM_PROMPT = """\
 You are an expert contract clause extraction agent for the SIGN construction \
@@ -319,6 +333,10 @@ class ClauseExtractorAgent:
         self._model = settings.ANTHROPIC_MODEL
         # Max concurrent chunk calls for one document (parallel chunked path).
         self._concurrency = max(1, int(settings.CLAUSE_EXTRACT_CONCURRENCY or 1))
+        # Quality flags produced by the LAST extract() call (dedup-dropped /
+        # combined-conditions). Read by the Celery task into the result so the
+        # signals are visible downstream. Reset at the start of every extract().
+        self.last_quality_flags: list[str] = []
 
     # ------------------------------------------------------------------
     # Public entry point
@@ -351,9 +369,38 @@ class ClauseExtractorAgent:
         list[dict[str, Any]]
             A list of clause dicts matching the ``ExtractedClauseItem`` schema.
         """
+        self.last_quality_flags = []
         if len(full_text) <= 30_000:
-            return self._extract_single(full_text, contract_type, document_label)
-        return self._extract_chunked(full_text, contract_type, document_label)
+            clauses = self._extract_single(full_text, contract_type, document_label)
+        else:
+            # _extract_chunked appends a dedup-dropped flag when the content-aware
+            # merge removes duplicates.
+            clauses = self._extract_chunked(full_text, contract_type, document_label)
+
+        # (A) Stitch adjacent partials of ONE clause that was cut across a chunk
+        # boundary (overshoot split OR a genuinely-huge single بند). Strict guards
+        # (adjacent + same leading section + junction content overlap) mean this
+        # can NEVER re-merge the distinct GC/PC clauses the content-dedup keeps
+        # apart. (D/C) A stitch is surfaced loudly (per-stitch warning) + a flag.
+        clauses, n_stitched = self._stitch_split_clauses(clauses)
+        if n_stitched:
+            self.last_quality_flags.append(f"{_SPLIT_CLAUSE_FLAG_PREFIX}{n_stitched}")
+
+        # (E) Combined General + Particular Conditions detection — a بند numbering
+        # RESTART (a low number reappears after a higher one) usually means both
+        # sections are in ONE file. Per policy they should be SEPARATE uploads;
+        # we flag + warn loudly rather than reroute. Runs on the final clause set,
+        # so it also covers the small-document single-call path.
+        if self._detect_numbering_restart(clauses):
+            self.last_quality_flags.append(_COMBINED_CONDITIONS_FLAG)
+            logger.warning(
+                "Combined-conditions file detected: clause numbering RESTARTS "
+                "(a low number reappears after a higher one) — General + "
+                "Particular Conditions are likely in ONE file. Policy: upload as "
+                "SEPARATE files. Extracted %d clause(s).",
+                len(clauses),
+            )
+        return clauses
 
     # ------------------------------------------------------------------
     # Single-call path (small documents)
@@ -627,21 +674,46 @@ class ClauseExtractorAgent:
                         )
                         results[idx] = []
 
-        # --- Phase 3: merge/dedup — UNCHANGED logic, in chunk-index order ------
+        # --- Phase 3: CONTENT-AWARE merge/dedup — in chunk-index order ---------
         # `jobs` is already in ascending index order; reassemble results to match
-        # and merge exactly as the sequential loop did → byte-identical output.
+        # and merge. Dedup is by NORMALIZED CONTENT (a true duplicate is the SAME
+        # clause re-emitted at a chunk boundary), NOT by section_number/title — so
+        # distinct clauses that merely share a بند number or heading are kept.
         ordered_chunk_clauses = [results.get(idx, []) for idx, _ in jobs]
         unique_clauses = self._merge_in_order(ordered_chunk_clauses)
 
         raw_total = sum(len(c) for c in ordered_chunk_clauses)
+        dropped = raw_total - len(unique_clauses)
+        if dropped > 0:
+            # (D) Make clause loss VISIBLE — a quality flag + summary warning
+            # (per-drop warnings come from _merge_in_order).
+            self.last_quality_flags.append(f"{_DEDUP_DROPPED_FLAG_PREFIX}{dropped}")
+            logger.warning(
+                "Content-dedup removed %d duplicate clause(s) across %d chunks "
+                "(kept %d unique).",
+                dropped, total, len(unique_clauses),
+            )
         logger.info(
             "Chunked extraction complete — %d unique clauses from %d chunks "
             "(%d duplicates removed)",
             len(unique_clauses),
             total,
-            raw_total - len(unique_clauses),
+            dropped,
         )
         return unique_clauses
+
+    @staticmethod
+    def _normalize_for_dedup(text: str) -> str:
+        """Normalize clause content for equality comparison: NFKC + collapse all
+        whitespace to single spaces + strip. Two emissions of the SAME clause
+        (chunk-boundary overlap) normalize to the same string; distinct clauses
+        do not.
+        """
+        if not text:
+            return ""
+        t = unicodedata.normalize("NFKC", text)
+        t = re.sub(r"\s+", " ", t).strip()
+        return t
 
     @staticmethod
     def _merge_in_order(
@@ -649,47 +721,176 @@ class ClauseExtractorAgent:
     ) -> list[dict[str, Any]]:
         """Merge per-chunk clause lists into the final deduplicated clause list.
 
-        This is the EXACT merge/dedup the sequential loop used, factored out so
-        the parallel path can call it with results reassembled in chunk-index
-        order — and so it can be unit-tested directly. ``ordered_chunk_clauses``
-        MUST be in chunk-index order; the output is byte-identical to processing
-        the chunks one at a time (same section dedup, same null-section running
-        counter, same title-dedup, same order).
-        """
-        all_clauses: list[dict[str, Any]] = []
-        seen_sections: set[str] = set()
-        for chunk_clauses in ordered_chunk_clauses:
-            # Merge — deduplicate by section_number to handle any overlap
-            for clause in chunk_clauses:
-                sec = clause.get("section_number")
-                key = (
-                    str(sec)
-                    if sec is not None
-                    else f"__nosec_{len(all_clauses)}"
-                )
-                if key not in seen_sections:
-                    seen_sections.add(key)
-                    all_clauses.append(clause)
-                else:
-                    logger.debug("Duplicate section_number %s skipped", key)
+        CONTENT-AWARE dedup: a TRUE duplicate is the SAME clause re-emitted at a
+        chunk boundary — i.e. **near-identical normalized CONTENT** — NOT merely a
+        shared ``section_number`` or ``title``. This is the fix for the GC+PC
+        collision: a General-Conditions ``بند 1`` and a Particular-Conditions
+        ``بند 1`` share the number (and may share a title) but have DIFFERENT
+        content, so BOTH are kept. A real overlap duplicate has identical content
+        and is merged to one.
 
-        # Final deduplication pass by title (safety net for any overlap the
-        # section_number key may have missed, e.g. clauses with no section_number)
-        seen_titles: set[str] = set()
+        Content is the dedup key (not ``(section, content)``) on purpose: the
+        model can label the two copies of an overlap duplicate with DIFFERENT
+        section_numbers, so keying on content alone is the robust signal. Clauses
+        with empty content are never treated as duplicates (kept as-is). First
+        occurrence wins; ``ordered_chunk_clauses`` MUST be in chunk-index order.
+
+        Every drop is surfaced LOUDLY (``logger.warning``) — clause loss is no
+        longer a silent ``logger.debug``.
+        """
+        seen_content: set[str] = set()
         unique_clauses: list[dict[str, Any]] = []
-        for clause in all_clauses:
-            title_key = clause.get("title", "").strip().lower()
-            if title_key and title_key not in seen_titles:
-                seen_titles.add(title_key)
-                unique_clauses.append(clause)
-            elif not title_key:
-                unique_clauses.append(clause)  # keep untitled clauses as-is
-            else:
-                logger.debug(
-                    "Duplicate title '%s' skipped in final dedup pass",
-                    clause.get("title"),
+        for chunk_clauses in ordered_chunk_clauses:
+            for clause in chunk_clauses:
+                norm = ClauseExtractorAgent._normalize_for_dedup(
+                    clause.get("content", "")
                 )
+                if norm and norm in seen_content:
+                    # (D) LOUD — a clause is being dropped as a true duplicate.
+                    logger.warning(
+                        "Dropping duplicate clause (identical content) — "
+                        "section_number=%r title=%r",
+                        clause.get("section_number"),
+                        clause.get("title"),
+                    )
+                    continue
+                if norm:
+                    seen_content.add(norm)
+                unique_clauses.append(clause)
         return unique_clauses
+
+    @staticmethod
+    def _leading_int(section_number: Any) -> int | None:
+        """Parse the leading integer of a section_number (Western or Arabic-Indic
+        digits), ignoring optional brackets. Returns None if there is no leading
+        integer (e.g. null, "" , or a non-numeric label).
+        """
+        if section_number is None:
+            return None
+        s = str(section_number).strip()
+        m = re.match(r"[\(\[]?\s*([0-9]+|[٠-٩]+)", s)
+        if not m:
+            return None
+        digits = m.group(1).translate(str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789"))
+        try:
+            return int(digits)
+        except ValueError:
+            return None
+
+    @staticmethod
+    def _detect_numbering_restart(clauses: list[dict[str, Any]]) -> bool:
+        """(E) True when clause numbering RESTARTS — a low number (≤ 2) reappears
+        after a higher one has been seen. This is the signature of a single file
+        that holds both General Conditions (``بند 1…N``) and Particular Conditions
+        (``بند 1…M``). Sub-article-style numbers (e.g. "4.1") reduce to their
+        leading integer, so normal ascending clause lists never trigger.
+        """
+        max_seen = 0
+        for clause in clauses:
+            n = ClauseExtractorAgent._leading_int(clause.get("section_number"))
+            if n is None:
+                continue
+            if n <= 2 and max_seen > n + 1:
+                return True  # a low number reappeared well after a higher one
+            if n > max_seen:
+                max_seen = n
+        return False
+
+    # ------------------------------------------------------------------
+    # (A) Split-clause stitching — reassemble one clause cut across a chunk edge
+    # ------------------------------------------------------------------
+
+    # A junction overlap must be a SUBSTANTIAL contiguous block…
+    _STITCH_MIN_OVERLAP = 60          # …at least this many chars, AND
+    _STITCH_MIN_OVERLAP_FRACTION = 0.2  # …at least this fraction of the shorter partial.
+    # The overlap must sit at the JUNCTION: near the END of the first partial and
+    # near the START of the second (allowing for a prepended بند heading on the 2nd).
+    _STITCH_P1_END_TOLERANCE = 60
+    _STITCH_P2_START_TOLERANCE = 300
+
+    @staticmethod
+    def _content_overlap_merge(p1: str, p2: str) -> str | None:
+        """If ``p1``'s SUFFIX overlaps ``p2``'s PREFIX (the signature of a single
+        clause cut across a chunk boundary — a shared sub-article block plus the
+        200-char split overlap), return the merged content that preserves ALL of
+        both sides while the overlap appears once. Return ``None`` when there is
+        no such junction overlap (i.e. these are NOT two partials of one clause).
+
+        The merge keeps ALL of ``p1`` and appends only the part of ``p2`` AFTER
+        the overlap — so every sub-article on both sides is preserved (7-1…7-4)
+        and only the overlapping portion (7-3) is de-duplicated. ``p2``'s
+        pre-overlap prefix (the prepended heading + the truncated copy of the
+        overlap) is dropped in favour of ``p1``'s complete version.
+        """
+        if not p1 or not p2:
+            return None
+        min_size = max(
+            ClauseExtractorAgent._STITCH_MIN_OVERLAP,
+            ClauseExtractorAgent._STITCH_MIN_OVERLAP_FRACTION * min(len(p1), len(p2)),
+        )
+        # Scan ALL matching blocks (not just the longest) for one that sits at the
+        # JUNCTION — near p1's END and near p2's START. This deliberately ignores
+        # the identical بند heading both partials carry (it matches at the START of
+        # BOTH → fails the "near p1's end" test) and locks onto the real overlap
+        # (the shared sub-article block) instead.
+        best = None
+        for b in SequenceMatcher(None, p1, p2, autojunk=False).get_matching_blocks():
+            if b.size < min_size:
+                continue
+            ends_p1 = (b.a + b.size) >= (len(p1) - ClauseExtractorAgent._STITCH_P1_END_TOLERANCE)
+            starts_p2 = b.b <= ClauseExtractorAgent._STITCH_P2_START_TOLERANCE
+            if ends_p1 and starts_p2 and (best is None or b.size > best.size):
+                best = b
+        if best is None:
+            return None
+        # Keep ALL of p1, append only p2's content AFTER the shared block.
+        return p1 + p2[best.b + best.size :]
+
+    @staticmethod
+    def _stitch_split_clauses(
+        clauses: list[dict[str, Any]],
+    ) -> tuple[list[dict[str, Any]], int]:
+        """(A) Fold adjacent partials of the SAME clause — one clause cut across a
+        chunk boundary — back into a single clause.
+
+        STRICT guards, ALL required (never section-number alone):
+          1. ADJACENT in output order (consecutive),
+          2. SAME leading section number, and
+          3. their contents OVERLAP at the junction (``_content_overlap_merge``).
+
+        This CANNOT re-merge the GC/PC clauses the content-dedup fix keeps apart:
+        a GC ``بند 7`` and a PC ``بند 7`` are non-adjacent (other clauses sit
+        between them) and their contents do not overlap — either guard rejects.
+        Handles N-way splits (a huge single بند cut into 3+ pieces) by folding
+        each next partial into the growing merged clause.
+
+        Returns ``(clauses, n_stitched)``.
+        """
+        if len(clauses) < 2:
+            return clauses, 0
+        result: list[dict[str, Any]] = [dict(clauses[0])]
+        stitched = 0
+        for clause in clauses[1:]:
+            prev = result[-1]
+            s_prev = ClauseExtractorAgent._leading_int(prev.get("section_number"))
+            s_cur = ClauseExtractorAgent._leading_int(clause.get("section_number"))
+            merged = None
+            if s_prev is not None and s_prev == s_cur:
+                merged = ClauseExtractorAgent._content_overlap_merge(
+                    prev.get("content", "") or "", clause.get("content", "") or ""
+                )
+            if merged is not None:
+                prev["content"] = merged  # extend prev (keep its title/section)
+                stitched += 1
+                logger.warning(
+                    "Stitched a split clause (chunk-boundary partials reassembled) "
+                    "— section_number=%r title=%r",
+                    prev.get("section_number"),
+                    prev.get("title"),
+                )
+            else:
+                result.append(dict(clause))
+        return result, stitched
 
     # ------------------------------------------------------------------
     # Shared helpers
