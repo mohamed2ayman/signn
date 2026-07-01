@@ -122,4 +122,53 @@ describe('computeCoverTrim (cover-page trim clause-guard — B + C + D)', () => 
     const r = computeCoverTrim('', 'Contract Agreement');
     expect(r).toEqual({ text: '', flags: [], warning: null });
   });
+
+  // ── "البند رقم (N)" heading format + spaced parens + cross-ref (Project8) ──
+
+  it('recognizes "البند رقم (N)" headings → clause 1 preserved', () => {
+    const fixture =
+      'صفحة الغلاف\n' +
+      'البند رقم (1) التمهيد والمرفقات والتعريفات\n' +
+      'يقصد بالكلمات التالية المعاني المبينة قرين كل منها.\n' +
+      'البند رقم (2) موضوع العقد - نطاق العمل\n';
+    const r = computeCoverTrim(fixture, 'General Conditions');
+    expect(r.text.startsWith('البند رقم (1) التمهيد')).toBe(true);
+    expect(r.text).toContain('التمهيد والمرفقات والتعريفات');
+    expect(r.text).not.toContain('صفحة الغلاف'); // cover trimmed
+    expect(r.flags).toEqual([]);
+  });
+
+  it('recognizes spaced parens "البند رقم ( 1 )" → clause 1 preserved', () => {
+    const fixture =
+      'غلاف\n' +
+      'البند رقم ( 1 ) التمهيد والمرفقات والتعريفات\n' +
+      'تعريفات.\n' +
+      'البند رقم (2) موضوع العقد\n';
+    const r = computeCoverTrim(fixture, null);
+    expect(r.text.startsWith('البند رقم ( 1 ) التمهيد')).toBe(true);
+    expect(r.text).not.toContain('غلاف');
+  });
+
+  it('does NOT trim at a mid-body "البند (2)" cross-reference inside clause 1 (Project8)', () => {
+    // Clause 1 heading "البند رقم ( 1 )" precedes a bare cross-ref "البند (2)"
+    // in its definitions body. The trim MUST land at the heading, not the ref.
+    const fixture =
+      'صفحة الغلاف - عقد خدمات\n' +
+      'البند رقم ( 1 ) التمهيد والمرفقات والتعريفات\n' +
+      'التغييرات: يقصد بها ما هو محدد في البند (2) من هذا العقد على التوالي.\n' +
+      'البند رقم (2) موضوع العقد - نطاق العمل\n';
+    const r = computeCoverTrim(fixture, 'General Conditions');
+    expect(r.text.startsWith('البند رقم ( 1 ) التمهيد')).toBe(true);
+    expect(r.text).toContain('التمهيد والمرفقات والتعريفات'); // clause 1 preserved
+  });
+
+  it('a bare mid-body "البند (N)" cross-reference (no heading) is NOT a trim point', () => {
+    const fixture =
+      'مقدمة العقد وملاحظات عامة تشير إلى البند (2) من هذا العقد وإلى البند (8).\n';
+    const r = computeCoverTrim(fixture, 'x');
+    // Cross-ref is mid-line → not line-anchored → no clause marker → no trim.
+    expect(r.text).toBe(fixture);
+    expect(r.flags).toEqual([]);
+    expect(r.warning).toBeNull();
+  });
 });

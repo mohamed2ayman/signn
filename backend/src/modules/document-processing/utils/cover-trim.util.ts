@@ -30,9 +30,13 @@ export const COVER_TRIM_CLAUSE_GUARD_FLAG = 'cover_trim_clause_guard';
  * earliest of these is the authoritative "start of the contract body".
  */
 const CLAUSE_MARKERS: RegExp[] = [
-  /مادة\s*[\(\s]?[١-٩\d]/, // مادة (1) / مادة ١ / مادة 1
-  /المادة\s*[\(\s]?[١-٩\d]/, // المادة (1) / المادة 1
-  /البند\s*[\(\s]?[١-٩\d]/, // البند (1) / البند 1
+  // Arabic markers: line-anchored (^\s* + /m) so a mid-body cross-reference
+  // (e.g. "…البند (2) من هذا العقد…") is NEVER treated as the trim point; accept
+  // the optional رقم word and a space after the bracket ("البند رقم ( 1 )").
+  // Mirrors the clause-extractor's _ARTICLE_BOUNDARY_RE intent.
+  /^\s*مادة\s*(?:رقم\s*)?[\(\[]?\s*[١-٩\d]/m, // مادة (1) / مادة رقم ( 1 ) / مادة 1
+  /^\s*المادة\s*(?:رقم\s*)?[\(\[]?\s*[١-٩\d]/m, // المادة (1) / المادة رقم (1)
+  /^\s*البند\s*(?:رقم\s*)?[\(\[]?\s*[١-٩\d]/m, // البند (1) / البند رقم ( 1 ) / البند 1
   /Article\s*1\b/i,
   /Clause\s*1\b/i,
   /^1[-–.]/m,
