@@ -9,6 +9,7 @@ import threading
 import time
 import unicodedata
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from difflib import SequenceMatcher
 from typing import Any
 
 from anthropic import Anthropic, APIConnectionError, APIStatusError
@@ -35,6 +36,9 @@ _DEDUP_DROPPED_FLAG_PREFIX = "clause_dedup_dropped:"
 # (a بند numbering RESTART: a low number reappears after a higher one). Per
 # policy these should be uploaded as SEPARATE files — flagged, not rerouted.
 _COMBINED_CONDITIONS_FLAG = "combined_conditions_file"
+# Set when adjacent partials of the SAME clause (split across a chunk boundary)
+# were stitched back into one. Value carries the count of stitches performed.
+_SPLIT_CLAUSE_FLAG_PREFIX = "split_clause:"
 
 SYSTEM_PROMPT = """\
 You are an expert contract clause extraction agent for the SIGN construction \
@@ -372,6 +376,15 @@ class ClauseExtractorAgent:
             # _extract_chunked appends a dedup-dropped flag when the content-aware
             # merge removes duplicates.
             clauses = self._extract_chunked(full_text, contract_type, document_label)
+
+        # (A) Stitch adjacent partials of ONE clause that was cut across a chunk
+        # boundary (overshoot split OR a genuinely-huge single بند). Strict guards
+        # (adjacent + same leading section + junction content overlap) mean this
+        # can NEVER re-merge the distinct GC/PC clauses the content-dedup keeps
+        # apart. (D/C) A stitch is surfaced loudly (per-stitch warning) + a flag.
+        clauses, n_stitched = self._stitch_split_clauses(clauses)
+        if n_stitched:
+            self.last_quality_flags.append(f"{_SPLIT_CLAUSE_FLAG_PREFIX}{n_stitched}")
 
         # (E) Combined General + Particular Conditions detection — a بند numbering
         # RESTART (a low number reappears after a higher one) usually means both
@@ -782,6 +795,102 @@ class ClauseExtractorAgent:
             if n > max_seen:
                 max_seen = n
         return False
+
+    # ------------------------------------------------------------------
+    # (A) Split-clause stitching — reassemble one clause cut across a chunk edge
+    # ------------------------------------------------------------------
+
+    # A junction overlap must be a SUBSTANTIAL contiguous block…
+    _STITCH_MIN_OVERLAP = 60          # …at least this many chars, AND
+    _STITCH_MIN_OVERLAP_FRACTION = 0.2  # …at least this fraction of the shorter partial.
+    # The overlap must sit at the JUNCTION: near the END of the first partial and
+    # near the START of the second (allowing for a prepended بند heading on the 2nd).
+    _STITCH_P1_END_TOLERANCE = 60
+    _STITCH_P2_START_TOLERANCE = 300
+
+    @staticmethod
+    def _content_overlap_merge(p1: str, p2: str) -> str | None:
+        """If ``p1``'s SUFFIX overlaps ``p2``'s PREFIX (the signature of a single
+        clause cut across a chunk boundary — a shared sub-article block plus the
+        200-char split overlap), return the merged content that preserves ALL of
+        both sides while the overlap appears once. Return ``None`` when there is
+        no such junction overlap (i.e. these are NOT two partials of one clause).
+
+        The merge keeps ALL of ``p1`` and appends only the part of ``p2`` AFTER
+        the overlap — so every sub-article on both sides is preserved (7-1…7-4)
+        and only the overlapping portion (7-3) is de-duplicated. ``p2``'s
+        pre-overlap prefix (the prepended heading + the truncated copy of the
+        overlap) is dropped in favour of ``p1``'s complete version.
+        """
+        if not p1 or not p2:
+            return None
+        min_size = max(
+            ClauseExtractorAgent._STITCH_MIN_OVERLAP,
+            ClauseExtractorAgent._STITCH_MIN_OVERLAP_FRACTION * min(len(p1), len(p2)),
+        )
+        # Scan ALL matching blocks (not just the longest) for one that sits at the
+        # JUNCTION — near p1's END and near p2's START. This deliberately ignores
+        # the identical بند heading both partials carry (it matches at the START of
+        # BOTH → fails the "near p1's end" test) and locks onto the real overlap
+        # (the shared sub-article block) instead.
+        best = None
+        for b in SequenceMatcher(None, p1, p2, autojunk=False).get_matching_blocks():
+            if b.size < min_size:
+                continue
+            ends_p1 = (b.a + b.size) >= (len(p1) - ClauseExtractorAgent._STITCH_P1_END_TOLERANCE)
+            starts_p2 = b.b <= ClauseExtractorAgent._STITCH_P2_START_TOLERANCE
+            if ends_p1 and starts_p2 and (best is None or b.size > best.size):
+                best = b
+        if best is None:
+            return None
+        # Keep ALL of p1, append only p2's content AFTER the shared block.
+        return p1 + p2[best.b + best.size :]
+
+    @staticmethod
+    def _stitch_split_clauses(
+        clauses: list[dict[str, Any]],
+    ) -> tuple[list[dict[str, Any]], int]:
+        """(A) Fold adjacent partials of the SAME clause — one clause cut across a
+        chunk boundary — back into a single clause.
+
+        STRICT guards, ALL required (never section-number alone):
+          1. ADJACENT in output order (consecutive),
+          2. SAME leading section number, and
+          3. their contents OVERLAP at the junction (``_content_overlap_merge``).
+
+        This CANNOT re-merge the GC/PC clauses the content-dedup fix keeps apart:
+        a GC ``بند 7`` and a PC ``بند 7`` are non-adjacent (other clauses sit
+        between them) and their contents do not overlap — either guard rejects.
+        Handles N-way splits (a huge single بند cut into 3+ pieces) by folding
+        each next partial into the growing merged clause.
+
+        Returns ``(clauses, n_stitched)``.
+        """
+        if len(clauses) < 2:
+            return clauses, 0
+        result: list[dict[str, Any]] = [dict(clauses[0])]
+        stitched = 0
+        for clause in clauses[1:]:
+            prev = result[-1]
+            s_prev = ClauseExtractorAgent._leading_int(prev.get("section_number"))
+            s_cur = ClauseExtractorAgent._leading_int(clause.get("section_number"))
+            merged = None
+            if s_prev is not None and s_prev == s_cur:
+                merged = ClauseExtractorAgent._content_overlap_merge(
+                    prev.get("content", "") or "", clause.get("content", "") or ""
+                )
+            if merged is not None:
+                prev["content"] = merged  # extend prev (keep its title/section)
+                stitched += 1
+                logger.warning(
+                    "Stitched a split clause (chunk-boundary partials reassembled) "
+                    "— section_number=%r title=%r",
+                    prev.get("section_number"),
+                    prev.get("title"),
+                )
+            else:
+                result.append(dict(clause))
+        return result, stitched
 
     # ------------------------------------------------------------------
     # Shared helpers
