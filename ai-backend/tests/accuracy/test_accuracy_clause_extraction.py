@@ -29,6 +29,6 @@ def test_clause_extraction_baseline():
     print_report(result)
 
     r = result["report"]
-    assert r["golden_count"] == 37
+    assert r["golden_count"] == 38
     assert r["matched"] > 0
     assert r["boundary_recall"] >= 0.5  # loose baseline sanity, not a strict gate
