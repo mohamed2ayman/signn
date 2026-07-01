@@ -5,9 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from anthropic import Anthropic
-
-from app.config.settings import get_settings
+from app.agents.base_agent import BaseAgent
 
 SYSTEM_PROMPT = """\
 You are an expert legal document summariser for the SIGN contract management
@@ -40,13 +38,8 @@ Do NOT include any text outside the JSON object.
 """
 
 
-class SummarizerAgent:
+class SummarizerAgent(BaseAgent):
     """Produces a structured 17-element summary of a contract."""
-
-    def __init__(self) -> None:
-        settings = get_settings()
-        self._client = Anthropic(api_key=settings.ANTHROPIC_API_KEY)
-        self._model = settings.ANTHROPIC_MODEL
 
     def summarize(self, full_text: str) -> dict[str, Any]:
         """Summarise *full_text* and return a dict with 17 key elements.
@@ -62,8 +55,7 @@ class SummarizerAgent:
             A dict whose keys match the 17 summary elements described in the
             system prompt.
         """
-        message = self._client.messages.create(
-            model=self._model,
+        message = self._call_anthropic(
             max_tokens=4096,
             system=SYSTEM_PROMPT,
             messages=[

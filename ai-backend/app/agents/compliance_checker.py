@@ -17,9 +17,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from anthropic import Anthropic
-
-from app.config.settings import get_settings
+from app.agents.base_agent import BaseAgent
 
 
 SYSTEM_PROMPT = """\
@@ -112,13 +110,8 @@ Return ONLY the JSON object. No prose before or after.
 """
 
 
-class ComplianceCheckerAgent:
+class ComplianceCheckerAgent(BaseAgent):
     """Single-call multi-layer compliance evaluator."""
-
-    def __init__(self) -> None:
-        settings = get_settings()
-        self._client = Anthropic(api_key=settings.ANTHROPIC_API_KEY)
-        self._model = settings.ANTHROPIC_MODEL
 
     def check(
         self,
@@ -167,8 +160,7 @@ class ComplianceCheckerAgent:
 
         user_content = "\n".join(sections)
 
-        message = self._client.messages.create(
-            model=self._model,
+        message = self._call_anthropic(
             max_tokens=8192,
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_content}],

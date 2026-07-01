@@ -129,7 +129,7 @@ def _chunk(idx: int) -> str:
 
 
 def test_extract_sets_split_clause_flag(mocker):
-    mocker.patch("app.agents.clause_extractor.Anthropic")
+    mocker.patch("app.agents.base_agent.Anthropic")
     agent = ClauseExtractorAgent()
     agent._concurrency = 2
 
