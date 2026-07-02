@@ -12,8 +12,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from difflib import SequenceMatcher
 from typing import Any
 
-from anthropic import Anthropic, APIConnectionError, APIStatusError
+from anthropic import APIConnectionError, APIStatusError
 
+from app.agents.base_agent import BaseAgent
 from app.config.settings import get_settings
 
 logger = logging.getLogger(__name__)
@@ -320,17 +321,16 @@ def _retry_after_seconds(exc: APIStatusError) -> float | None:
     return _safe_int(raw) if raw is not None else None
 
 
-class ClauseExtractorAgent:
+class ClauseExtractorAgent(BaseAgent):
     """Extracts structured clauses from contract document text."""
 
     def __init__(self) -> None:
-        settings = get_settings()
         # max_retries=0 PINS the SDK's built-in retry layer OFF so it does not
         # MULTIPLY with our manual _call_api_with_retry loop (the old default
         # max_retries=2 stacked under 4 manual attempts = up to 12 hits/chunk).
         # Our manual layer is now the single, Retry-After-aware retry authority.
-        self._client = Anthropic(api_key=settings.ANTHROPIC_API_KEY, max_retries=0)
-        self._model = settings.ANTHROPIC_MODEL
+        super().__init__(max_retries=0)
+        settings = get_settings()
         # Max concurrent chunk calls for one document (parallel chunked path).
         self._concurrency = max(1, int(settings.CLAUSE_EXTRACT_CONCURRENCY or 1))
         # Quality flags produced by the LAST extract() call (dedup-dropped /
@@ -958,11 +958,11 @@ class ClauseExtractorAgent:
             if gate is not None:
                 gate.wait_if_needed()
             try:
-                raw_response = self._client.messages.with_raw_response.create(
-                    model=self._model,
+                raw_response = self._call_model(
                     max_tokens=max_tokens,
                     system=SYSTEM_PROMPT,
                     messages=[{"role": "user", "content": user_content}],
+                    raw=True,
                 )
                 # Feed the live rate-limit headers to the gate BEFORE parsing so
                 # peers see a low-window signal as early as possible.

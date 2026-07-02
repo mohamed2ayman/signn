@@ -5,9 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from anthropic import Anthropic
-
-from app.config.settings import get_settings
+from app.agents.base_agent import BaseAgent
 
 SYSTEM_PROMPT = """\
 You are a legal research agent for the SIGN contract management platform.
@@ -35,13 +33,8 @@ indicate a lower relevance_score rather than fabricating details.
 """
 
 
-class ResearchAgent:
+class ResearchAgent(BaseAgent):
     """Discovers legal assets relevant to given keywords and jurisdiction."""
-
-    def __init__(self) -> None:
-        settings = get_settings()
-        self._client = Anthropic(api_key=settings.ANTHROPIC_API_KEY)
-        self._model = settings.ANTHROPIC_MODEL
 
     def research(
         self,
@@ -71,8 +64,7 @@ class ResearchAgent:
             "search criteria."
         )
 
-        message = self._client.messages.create(
-            model=self._model,
+        message = self._call_model(
             max_tokens=4096,
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_content}],

@@ -5,9 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from anthropic import Anthropic
-
-from app.config.settings import get_settings
+from app.agents.base_agent import BaseAgent
 
 # ═══════════════════════════════════════════════════════════════════════════
 # ⚠️  PHASE 7.17 PROMPT 1 — A.1 PROMPT UPDATE
@@ -111,13 +109,8 @@ text outside the JSON array.
 """
 
 
-class RiskAnalyzerAgent:
+class RiskAnalyzerAgent(BaseAgent):
     """Analyses contract clauses and surfaces legal / commercial risks."""
-
-    def __init__(self) -> None:
-        settings = get_settings()
-        self._client = Anthropic(api_key=settings.ANTHROPIC_API_KEY)
-        self._model = settings.ANTHROPIC_MODEL
 
     def analyze(
         self,
@@ -184,8 +177,7 @@ class RiskAnalyzerAgent:
                 f"{knowledge_context}\n"
             )
 
-        message = self._client.messages.create(
-            model=self._model,
+        message = self._call_model(
             max_tokens=4096,
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_content}],

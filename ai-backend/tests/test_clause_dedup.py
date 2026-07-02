@@ -138,7 +138,7 @@ def _chunk(idx: int) -> str:
 def test_extract_sets_dedup_and_combined_flags(mocker):
     """A combined GC+PC file with a boundary duplicate → extract() records BOTH
     `clause_dedup_dropped:<n>` and `combined_conditions_file`."""
-    mocker.patch("app.agents.clause_extractor.Anthropic")
+    mocker.patch("app.agents.base_agent.Anthropic")
     agent = ClauseExtractorAgent()
     agent._concurrency = 2
 

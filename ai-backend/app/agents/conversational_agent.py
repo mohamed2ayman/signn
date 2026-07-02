@@ -6,9 +6,7 @@ import json
 import re
 from typing import Any
 
-from anthropic import Anthropic
-
-from app.config.settings import get_settings
+from app.agents.base_agent import BaseAgent
 
 SYSTEM_PROMPT = """\
 You are an expert legal assistant for the SIGN contract management platform.
@@ -40,13 +38,8 @@ Do NOT include any text outside the JSON object.
 """
 
 
-class ConversationalAgent:
+class ConversationalAgent(BaseAgent):
     """Interactive chat agent that answers questions about contracts."""
-
-    def __init__(self) -> None:
-        settings = get_settings()
-        self._client = Anthropic(api_key=settings.ANTHROPIC_API_KEY)
-        self._model = settings.ANTHROPIC_MODEL
 
     def chat(
         self,
@@ -117,8 +110,7 @@ class ConversationalAgent:
                 f"question is general:\n\n{system_context}"
             )
 
-        response = self._client.messages.create(
-            model=self._model,
+        response = self._call_model(
             max_tokens=4096,
             system=system_prompt,
             messages=messages,
