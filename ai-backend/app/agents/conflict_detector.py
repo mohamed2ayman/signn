@@ -156,7 +156,7 @@ class ConflictDetectorAgent(BaseAgent):
             "and list ALL conflicting values.\n"
         )
 
-        message = self._call_anthropic(
+        message = self._call_model(
             max_tokens=8192,
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_content}],

@@ -68,7 +68,7 @@ class DiffAnalyzerAgent(BaseAgent):
         for clause in modified_clauses:
             user_content += f"### Clause {clause.get('id', 'unknown')}\n{clause.get('text', '')}\n\n"
 
-        message = self._call_anthropic(
+        message = self._call_model(
             max_tokens=4096,
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_content}],

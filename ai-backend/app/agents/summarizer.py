@@ -55,7 +55,7 @@ class SummarizerAgent(BaseAgent):
             A dict whose keys match the 17 summary elements described in the
             system prompt.
         """
-        message = self._call_anthropic(
+        message = self._call_model(
             max_tokens=4096,
             system=SYSTEM_PROMPT,
             messages=[

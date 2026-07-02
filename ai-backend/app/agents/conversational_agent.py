@@ -110,7 +110,7 @@ class ConversationalAgent(BaseAgent):
                 f"question is general:\n\n{system_context}"
             )
 
-        response = self._call_anthropic(
+        response = self._call_model(
             max_tokens=4096,
             system=system_prompt,
             messages=messages,

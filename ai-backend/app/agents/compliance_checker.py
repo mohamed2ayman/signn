@@ -160,7 +160,7 @@ class ComplianceCheckerAgent(BaseAgent):
 
         user_content = "\n".join(sections)
 
-        message = self._call_anthropic(
+        message = self._call_model(
             max_tokens=8192,
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_content}],

@@ -5,7 +5,8 @@ Phase 8.1 gave the Claude model id a SINGLE source of truth
 per-agent Anthropic client + model wiring into ``app/agents/base_agent.py``, so
 the centralized literals (``self._model = settings.ANTHROPIC_MODEL`` and
 ``model=self._model``) now live in ONE place — the base — and every agent
-inherits ``BaseAgent`` and routes its call through ``self._call_anthropic(...)``.
+inherits ``BaseAgent`` and routes its call through ``self._call_model(...)``
+(provider-generalized; defaults to Anthropic, the only provider today).
 
 These tests assert that stronger invariant:
   * the 9 agents are all present (base_agent.py excluded from that set);
@@ -78,8 +79,8 @@ def test_every_agent_inherits_base_and_routes_through_chokepoint():
         assert re.search(r"class \w+\(BaseAgent\)", src), (
             f"{p.name} must inherit BaseAgent"
         )
-        assert "self._call_anthropic(" in src, (
-            f"{p.name} must route its Anthropic call through self._call_anthropic()"
+        assert "self._call_model(" in src, (
+            f"{p.name} must route its model call through self._call_model()"
         )
         # And must NOT bypass the chokepoint by rebuilding its own client or
         # re-reading the model directly — those now live only in BaseAgent.

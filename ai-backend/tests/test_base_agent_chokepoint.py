@@ -1,7 +1,8 @@
 """Zero-behaviour-change proof for the BaseAgent chokepoint.
 
 The BaseAgent slice routed all 9 agents' Anthropic calls through one method,
-``BaseAgent._call_anthropic``. These tests prove the consolidation changed only
+``BaseAgent._call_model`` (provider-generalized; defaults to Anthropic, the only
+provider today). These tests prove the consolidation changed only
 the call MECHANISM, not what is sent to Anthropic:
 
   * Per-agent OUTBOUND-kwargs proof — for each agent, the mocked client's
@@ -35,7 +36,7 @@ from app.agents import (
     risk_analyzer,
     summarizer,
 )
-from app.agents.base_agent import BaseAgent
+from app.agents.base_agent import BaseAgent, ModelProvider
 from app.config.settings import get_settings
 
 _MOCK_TARGET = "app.agents.base_agent.Anthropic"
@@ -172,6 +173,49 @@ def test_clause_extractor_uses_raw_path_and_forwards_kwargs(mocker):
     assert kw["system"] == clause_extractor.SYSTEM_PROMPT
     assert isinstance(kw["max_tokens"], int) and kw["max_tokens"] > 0  # dynamically sized
     assert "temperature" not in kw
+
+
+def test_call_model_provider_seam(mocker):
+    """The chokepoint is provider-generalized: ``provider`` defaults to ANTHROPIC
+    (today's only backend, so every agent takes the exact pre-reshape path), and
+    any other provider is a LOUD NotImplementedError — the deliberate seam the
+    model migration extends, never a silent fallthrough."""
+    import inspect
+
+    sig = inspect.signature(BaseAgent._call_model)
+    assert sig.parameters["provider"].default is ModelProvider.ANTHROPIC
+
+    mocker.patch(_MOCK_TARGET)
+    agent = BaseAgent()
+    with pytest.raises(NotImplementedError):
+        # A stand-in for any future not-yet-wired provider value.
+        agent._call_model(
+            provider="sagemaker",  # type: ignore[arg-type]
+            system="s", messages=[{"role": "user", "content": "m"}], max_tokens=1,
+        )
+
+
+def test_call_model_temperature_none_is_omitted_from_wire(mocker):
+    """``temperature`` defaults to None and is OMITTED from the API call — the
+    byte-identical guarantee for today's agents (none pass it). It reaches the
+    wire ONLY when a caller explicitly sets it."""
+    mock_cls = mocker.patch(_MOCK_TARGET)
+    client = mock_cls.return_value
+    msgs = [{"role": "user", "content": "m"}]
+
+    agent = BaseAgent()
+
+    # (a) default temperature=None → key absent from the create kwargs entirely.
+    agent._call_model(system="s", messages=msgs, max_tokens=7)
+    kw = client.messages.create.call_args.kwargs
+    assert set(kw) == {"model", "max_tokens", "system", "messages"}
+    assert "temperature" not in kw
+
+    # (b) explicitly set → present with exactly that value.
+    agent._call_model(system="s", messages=msgs, max_tokens=7, temperature=0.3)
+    kw = client.messages.create.call_args.kwargs
+    assert kw["temperature"] == 0.3
+    assert set(kw) == {"model", "max_tokens", "system", "messages", "temperature"}
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -958,7 +958,7 @@ class ClauseExtractorAgent(BaseAgent):
             if gate is not None:
                 gate.wait_if_needed()
             try:
-                raw_response = self._call_anthropic(
+                raw_response = self._call_model(
                     max_tokens=max_tokens,
                     system=SYSTEM_PROMPT,
                     messages=[{"role": "user", "content": user_content}],
