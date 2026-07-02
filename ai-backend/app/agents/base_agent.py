@@ -4,22 +4,35 @@ Consolidates the per-agent ``Anthropic(...)`` client + ``ANTHROPIC_MODEL`` wirin
 that all 9 agents previously duplicated, and funnels every model call through ONE
 method, ``_call_model``. That method is the seam where:
 
-* (future slice) PII-scrubbing will wrap the outbound request / inbound response, and
+* (Slice 1, shipped) reversible structured-PII scrubbing wraps the outbound
+  request / inbound response when a caller opts in with ``scrub=True``, and
 * (future migration) additional backends plug in as new ``ModelProvider`` members
   (e.g. self-hosted SageMaker models) — a new provider branch, not a refactor.
 
-TODAY only the Anthropic provider exists and it is a faithful passthrough — the
-request sent to Anthropic and the value returned are byte-identical to what each
-agent sent / received before this consolidation. No behaviour change.
+TODAY only the Anthropic provider exists. With ``scrub=False`` (the default) it
+is a faithful passthrough — the request sent to Anthropic and the value returned
+are byte-identical to what each agent sent / received before this consolidation.
+
+PII scrubbing (Slice 1) — opt-in per agent, greppable via ``scrub=True``:
+the 8 Camp-1 agents (conversational, risk, compliance, conflict, obligations,
+summarizer, diff, research) pass ``scrub=True``; ClauseExtractorAgent does NOT —
+extraction stays unscrubbed BY DESIGN (BAA posture, decision D1), and the raw
+path rejects ``scrub=True`` loudly. The token→value mapping is a local variable
+inside one ``_call_model`` invocation — never logged, never persisted; logs
+carry counts-by-type and placeholder NAMES only.
 """
 from __future__ import annotations
 
+import logging
 from enum import Enum
 from typing import Any
 
 from anthropic import Anthropic
 
 from app.config.settings import get_settings
+from app.services.pii_scrubber import PiiScrubber
+
+logger = logging.getLogger(__name__)
 
 
 class ModelProvider(str, Enum):
@@ -57,6 +70,7 @@ class BaseAgent:
         max_tokens: int,
         temperature: float | None = None,
         raw: bool = False,
+        scrub: bool = False,
         **kwargs: Any,
     ) -> Any:
         """Single chokepoint for every model call.
@@ -75,6 +89,15 @@ class BaseAgent:
         calling ``.parse()`` — identical to
         ``self._client.messages.with_raw_response.create(...)`` before.
 
+        ``scrub=True`` (opt-in; the 8 Camp-1 agents): structured PII (emails,
+        EG/SA/UAE/QA phones + national IDs, IBANs — Arabic-Indic digits
+        included) is replaced with placeholders in ``system`` + ``messages``
+        BEFORE the call, and the real values are restored into the response's
+        text content AFTER. The mapping is a local variable of this invocation
+        — it dies with the call and is never logged. ``scrub=True`` with
+        ``raw=True`` raises ``ValueError``: the only raw caller is the clause
+        extractor, and extraction is unscrubbed by design (BAA posture, D1).
+
         ``model=self._model`` is injected here (the single centralized source).
         ``temperature=None`` (the default) is OMITTED from the API call — no
         agent sends one today, and injecting one would change the wire payload;
@@ -82,6 +105,22 @@ class BaseAgent:
         kwargs pass straight through unchanged.
         """
         if provider is ModelProvider.ANTHROPIC:
+            if scrub and raw:
+                raise ValueError(
+                    "scrub not supported on raw path — extraction is "
+                    "unscrubbed by design"
+                )
+            scrubber: PiiScrubber | None = None
+            if scrub:
+                scrubber = PiiScrubber()
+                system = scrubber.scrub_system(system)
+                messages = scrubber.scrub_messages(messages)
+                if scrubber.has_pii:
+                    # Counts by type only — NEVER values (pii_scrubber rule).
+                    logger.info(
+                        "pii_scrub: scrubbed %s before model call",
+                        scrubber.counts_summary(),
+                    )
             call_kwargs: dict[str, Any] = dict(
                 model=self._model,
                 max_tokens=max_tokens,
@@ -96,6 +135,32 @@ class BaseAgent:
                 if raw
                 else self._client.messages.create
             )
-            return endpoint(**call_kwargs)
+            response = endpoint(**call_kwargs)
+            if scrubber is not None and scrubber.has_pii:
+                self._restore_pii_in_response(response, scrubber)
+            return response
         # Seam for the model migration: new providers add a branch above.
         raise NotImplementedError(f"model provider {provider!r} is not yet wired")
+
+    @staticmethod
+    def _restore_pii_in_response(response: Any, scrubber: PiiScrubber) -> None:
+        """Restore real PII values into the response's text blocks, in place.
+
+        Agents read ``message.content[i].text`` — that is exactly what gets
+        restored. A placeholder surviving restore (e.g. the model mangled or
+        invented a token) is a WARNING with placeholder NAMES only, never a
+        failure: Camp-1 output is analysis, a survivor is cosmetic, not
+        corruption.
+        """
+        survivors: set[str] = set()
+        for block in getattr(response, "content", None) or []:
+            text = getattr(block, "text", None)
+            if isinstance(text, str):
+                restored = scrubber.restore(text)
+                block.text = restored
+                survivors.update(scrubber.validate_restored(restored))
+        if survivors:
+            logger.warning(
+                "pii_scrub: unrestored placeholders in model response: %s",
+                ", ".join(sorted(survivors)),
+            )
