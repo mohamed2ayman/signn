@@ -103,6 +103,7 @@ class ObligationsExtractorAgent(BaseAgent):
                 )
 
         message = self._call_model(
+            scrub=True,  # Camp-1: structured-PII scrubbed (Slice 1)
             max_tokens=4096,
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_content}],

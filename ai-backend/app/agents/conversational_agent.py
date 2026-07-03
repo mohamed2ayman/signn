@@ -111,6 +111,7 @@ class ConversationalAgent(BaseAgent):
             )
 
         response = self._call_model(
+            scrub=True,  # Camp-1: structured-PII scrubbed (Slice 1)
             max_tokens=4096,
             system=system_prompt,
             messages=messages,

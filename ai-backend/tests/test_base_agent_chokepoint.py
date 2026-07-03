@@ -219,6 +219,55 @@ def test_call_model_temperature_none_is_omitted_from_wire(mocker):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Slice 1 — per-agent PII-scrub opt-in surface (greppable via scrub=True)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize(
+    "agent_cls, invoke, _max_tokens, _system, ret_text", SIMPLE_CASES
+)
+def test_camp1_agents_opt_in_to_scrub(
+    mocker, agent_cls, invoke, _max_tokens, _system, ret_text
+):
+    """Every Camp-1 agent passes ``scrub=True`` to the chokepoint — the
+    explicit, per-agent opt-in surface of Slice 1."""
+    spy = mocker.spy(BaseAgent, "_call_model")
+    mock_cls = mocker.patch(_MOCK_TARGET)
+    mock_cls.return_value.messages.create.return_value = _fake_message(ret_text)
+
+    agent = agent_cls()
+    try:
+        invoke(agent)
+    except Exception:
+        pass  # outbound-only assertion; parsing is out of scope here
+
+    assert spy.call_count == 1
+    assert spy.call_args.kwargs.get("scrub") is True, (
+        f"{agent_cls.__name__} must opt in to PII scrubbing (scrub=True)"
+    )
+
+
+def test_clause_extractor_does_not_opt_in_to_scrub(mocker):
+    """ClauseExtractorAgent must NOT pass ``scrub=True`` — extraction stays
+    unscrubbed BY DESIGN (BAA posture, decision D1)."""
+    spy = mocker.spy(BaseAgent, "_call_model")
+    mock_cls = mocker.patch(_MOCK_TARGET)
+    client = mock_cls.return_value
+    raw = mocker.MagicMock()
+    raw.parse.return_value = _fake_message("[]")
+    raw.headers = {}
+    client.messages.with_raw_response.create.return_value = raw
+
+    agent = clause_extractor.ClauseExtractorAgent()
+    agent.extract("Sample contract text for testing purposes.")
+
+    assert spy.call_count >= 1
+    for call in spy.call_args_list:
+        assert call.kwargs.get("scrub", False) is False, (
+            "clause_extractor must never opt in to scrubbing (D1)"
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Boot-smoke: nothing broke at wiring / instantiation time.
 # ─────────────────────────────────────────────────────────────────────────────
 

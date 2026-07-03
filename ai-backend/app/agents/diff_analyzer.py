@@ -69,6 +69,7 @@ class DiffAnalyzerAgent(BaseAgent):
             user_content += f"### Clause {clause.get('id', 'unknown')}\n{clause.get('text', '')}\n\n"
 
         message = self._call_model(
+            scrub=True,  # Camp-1: structured-PII scrubbed (Slice 1)
             max_tokens=4096,
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_content}],
