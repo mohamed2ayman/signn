@@ -85,7 +85,7 @@ class _FakeCalls:
 
 
 def _make_agent(mocker, concurrency: int):
-    mocker.patch("app.agents.clause_extractor.Anthropic")
+    mocker.patch("app.agents.base_agent.Anthropic")
     agent = ClauseExtractorAgent()
     agent._concurrency = concurrency
     chunks = [_chunk_text(i) for i in (1, 2, 3, 4, 5)]
@@ -155,7 +155,7 @@ def test_concurrency_one_is_sequential(mocker):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def test_sdk_retries_are_pinned_off(mocker):
-    mock_cls = mocker.patch("app.agents.clause_extractor.Anthropic")
+    mock_cls = mocker.patch("app.agents.base_agent.Anthropic")
     ClauseExtractorAgent()
     assert mock_cls.call_args.kwargs.get("max_retries") == 0
 
@@ -164,7 +164,7 @@ def test_retry_honors_retry_after_header(mocker):
     import httpx
     from anthropic import APIStatusError
 
-    mock_cls = mocker.patch("app.agents.clause_extractor.Anthropic")
+    mock_cls = mocker.patch("app.agents.base_agent.Anthropic")
     mock_client = mock_cls.return_value
     agent = ClauseExtractorAgent()
 

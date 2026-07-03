@@ -5,9 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from anthropic import Anthropic
-
-from app.config.settings import get_settings
+from app.agents.base_agent import BaseAgent
 
 SYSTEM_PROMPT = """\
 You are an expert obligations extraction agent for the SIGN contract management
@@ -48,13 +46,8 @@ Do NOT include any text outside the JSON array.
 """
 
 
-class ObligationsExtractorAgent:
+class ObligationsExtractorAgent(BaseAgent):
     """Scans contract clauses and extracts structured obligations."""
-
-    def __init__(self) -> None:
-        settings = get_settings()
-        self._client = Anthropic(api_key=settings.ANTHROPIC_API_KEY)
-        self._model = settings.ANTHROPIC_MODEL
 
     def extract(self, clauses: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Extract obligations from *clauses*.
@@ -109,8 +102,7 @@ class ObligationsExtractorAgent:
                     f"{clause.get('text', '')}\n\n"
                 )
 
-        message = self._client.messages.create(
-            model=self._model,
+        message = self._call_model(
             max_tokens=4096,
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_content}],

@@ -6,9 +6,7 @@ import json
 import uuid
 from typing import Any
 
-from anthropic import Anthropic
-
-from app.config.settings import get_settings
+from app.agents.base_agent import BaseAgent
 
 SYSTEM_PROMPT = """\
 You are an expert contract conflict detection agent for the SIGN platform,
@@ -98,14 +96,9 @@ Do NOT include any text outside the JSON object.
 """
 
 
-class ConflictDetectorAgent:
+class ConflictDetectorAgent(BaseAgent):
     """Detects conflicts between clauses from different documents
     using document priority to determine governing values."""
-
-    def __init__(self) -> None:
-        settings = get_settings()
-        self._client = Anthropic(api_key=settings.ANTHROPIC_API_KEY)
-        self._model = settings.ANTHROPIC_MODEL
 
     def detect(self, clauses: list[dict[str, Any]]) -> dict[str, Any]:
         """Detect conflicts across clauses from multiple documents.
@@ -163,8 +156,7 @@ class ConflictDetectorAgent:
             "and list ALL conflicting values.\n"
         )
 
-        message = self._client.messages.create(
-            model=self._model,
+        message = self._call_model(
             max_tokens=8192,
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_content}],

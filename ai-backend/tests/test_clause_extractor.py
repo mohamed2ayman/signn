@@ -2,9 +2,9 @@
 
 All Anthropic API calls are mocked — no API key or network access needed.
 
-Mock target: "app.agents.clause_extractor.Anthropic"
+Mock target: "app.agents.base_agent.Anthropic"
 The mock MUST be in place before ClauseExtractorAgent() is instantiated
-because the client is created inside __init__:
+because the client is created inside BaseAgent.__init__ (via super().__init__):
     self._client = Anthropic(api_key=settings.ANTHROPIC_API_KEY)
 """
 
@@ -44,13 +44,14 @@ def _make_mock_client(mocker, json_text: str):
     Returns (mock_anthropic_class, mock_client_instance).
 
     The patch must be applied before ClauseExtractorAgent() is instantiated
-    because the constructor calls Anthropic(api_key=..., max_retries=0) immediately.
+    because BaseAgent.__init__ calls Anthropic(api_key=..., max_retries=0) immediately
+    (ClauseExtractorAgent passes max_retries=0 through super().__init__).
 
     The agent reads rate-limit headers, so it now calls
     ``messages.with_raw_response.create(...)`` and then ``.parse()`` /``.headers``
     (instead of ``messages.create``). The mock mirrors that shape.
     """
-    mock_anthropic_cls = mocker.patch("app.agents.clause_extractor.Anthropic")
+    mock_anthropic_cls = mocker.patch("app.agents.base_agent.Anthropic")
     mock_client = mock_anthropic_cls.return_value  # what Anthropic() returns
 
     # Build a fake message object with .content[0].text = json_text
