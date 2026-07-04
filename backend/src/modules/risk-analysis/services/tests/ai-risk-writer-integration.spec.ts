@@ -56,6 +56,9 @@ const ORG_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const CONTRACT_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const CLAUSE_ID_1 = 'cccccccc-cccc-4ccc-8ccc-cccccccccc01';
 const CLAUSE_ID_2 = 'cccccccc-cccc-4ccc-8ccc-cccccccccc02';
+// contract_clauses junction ids (Bug-2: risks link by cc.id, NOT clauses.id).
+const CONTRACT_CLAUSE_ID_1 = 'dddddddd-dddd-4ddd-8ddd-dddddddddd01';
+const CONTRACT_CLAUSE_ID_2 = 'dddddddd-dddd-4ddd-8ddd-dddddddddd02';
 const JOB_ID = 'job-uuid-001';
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -81,6 +84,20 @@ const mockRiskCategoryRepo = {
     name: 'Performance Bond',
     is_active: true,
   })),
+};
+
+// Bug-2: the writer maps clauses.id -> the contract_clauses junction id via
+// findOne({ where: { contract_id, clause_id } }). This mock returns the junction
+// for known clauses and null for anything else (the unresolvable-id path).
+const CC_JUNCTION_BY_CLAUSE: Record<string, string> = {
+  [CLAUSE_ID_1]: CONTRACT_CLAUSE_ID_1,
+  [CLAUSE_ID_2]: CONTRACT_CLAUSE_ID_2,
+};
+const mockContractClauseRepo = {
+  findOne: jest.fn(async ({ where }: any) => {
+    const id = CC_JUNCTION_BY_CLAUSE[where?.clause_id];
+    return id ? { id } : null;
+  }),
 };
 
 // Stub out the other repos the constructor needs but which the writer
@@ -147,6 +164,11 @@ describe('AI risk writer — pollAndSaveRisks / saveAiRiskAsRow', () => {
       name: 'Performance Bond',
       is_active: true,
     }));
+    // Bug-2: default junction lookup maps known clause ids -> their cc.id.
+    mockContractClauseRepo.findOne.mockImplementation(async ({ where }: any) => {
+      const id = CC_JUNCTION_BY_CLAUSE[where?.clause_id];
+      return id ? { id } : null;
+    });
 
     // Fake timers — the writer's `await new Promise(setTimeout(...3000))`
     // becomes instant under jest.useFakeTimers + jest.advanceTimersByTime.
@@ -157,7 +179,7 @@ describe('AI risk writer — pollAndSaveRisks / saveAiRiskAsRow', () => {
         DocumentProcessingService,
         { provide: getRepositoryToken(DocumentUpload), useValue: stubRepo },
         { provide: getRepositoryToken(Clause), useValue: stubRepo },
-        { provide: getRepositoryToken(ContractClause), useValue: stubRepo },
+        { provide: getRepositoryToken(ContractClause), useValue: mockContractClauseRepo },
         { provide: getRepositoryToken(Contract), useValue: stubRepo },
         { provide: getRepositoryToken(RiskAnalysis), useValue: mockRiskAnalysisRepo },
         { provide: getRepositoryToken(AuditLog), useValue: mockAuditLogRepo },
@@ -255,7 +277,7 @@ describe('AI risk writer — pollAndSaveRisks / saveAiRiskAsRow', () => {
     const saved = mockRiskAnalysisRepo.save.mock.calls[0][0];
     expect(saved).toMatchObject({
       contract_id: CONTRACT_ID,
-      contract_clause_id: CLAUSE_ID_1,
+      contract_clause_id: CONTRACT_CLAUSE_ID_1,
       risk_category: 'Performance Bond',
       likelihood: 4,
       impact: 5,
@@ -270,6 +292,57 @@ describe('AI risk writer — pollAndSaveRisks / saveAiRiskAsRow', () => {
       status: 'OPEN',
     });
     expect(mockAuditLogRepo.insert).not.toHaveBeenCalled();
+  });
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Bug-2 — risk links by contract_clauses.id (FK-valid), not clauses.id
+  // ──────────────────────────────────────────────────────────────────────
+
+  it('maps the AI clause_id to the contract_clauses junction id so the FK is satisfied', async () => {
+    (mockAiService.getJobStatus as jest.Mock).mockResolvedValue(
+      completedJob([
+        {
+          clause_id: CLAUSE_ID_1,
+          risk_category: 'Performance Bond',
+          likelihood: 3,
+          impact: 3,
+          description: 'x',
+        },
+      ]),
+    );
+
+    await runPollAndSaveRisks();
+
+    // Looked the junction up by (contract_id, clauses.id) …
+    expect(mockContractClauseRepo.findOne).toHaveBeenCalledWith({
+      where: { contract_id: CONTRACT_ID, clause_id: CLAUSE_ID_1 },
+    });
+    const saved = mockRiskAnalysisRepo.save.mock.calls[0][0];
+    // … and stored the JUNCTION id (a valid contract_clauses.id), NOT the raw
+    // clauses.id that previously violated FK_risk_analyses_clause.
+    expect(saved.contract_clause_id).toBe(CONTRACT_CLAUSE_ID_1);
+    expect(saved.contract_clause_id).not.toBe(CLAUSE_ID_1);
+  });
+
+  it('stores a null contract_clause_id (never an FK crash) when the AI echoes an unresolvable clause id', async () => {
+    (mockAiService.getJobStatus as jest.Mock).mockResolvedValue(
+      completedJob([
+        {
+          clause_id: 'ffffffff-ffff-4fff-8fff-ffffffffff99', // not a real clause
+          risk_category: 'Performance Bond',
+          likelihood: 3,
+          impact: 3,
+          description: 'x',
+        },
+      ]),
+    );
+
+    await runPollAndSaveRisks();
+
+    expect(mockRiskAnalysisRepo.save).toHaveBeenCalledTimes(1);
+    expect(
+      mockRiskAnalysisRepo.save.mock.calls[0][0].contract_clause_id,
+    ).toBeNull();
   });
 
   // ──────────────────────────────────────────────────────────────────────
@@ -434,7 +507,7 @@ describe('AI risk writer — pollAndSaveRisks / saveAiRiskAsRow', () => {
     // Exactly one row saved (the valid one).
     expect(mockRiskAnalysisRepo.save).toHaveBeenCalledTimes(1);
     expect(mockRiskAnalysisRepo.save.mock.calls[0][0]).toMatchObject({
-      contract_clause_id: CLAUSE_ID_1,
+      contract_clause_id: CONTRACT_CLAUSE_ID_1,
       likelihood: 2,
       impact: 4,
     });
