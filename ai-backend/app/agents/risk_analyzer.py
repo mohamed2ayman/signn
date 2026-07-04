@@ -3,9 +3,56 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from app.agents.base_agent import BaseAgent
+
+
+def _parse_risk_array(raw: str) -> list[dict[str, Any]]:
+    """Parse the model's JSON risk array robustly + truncation-tolerant.
+
+    The model wraps its output in a ```json markdown fence (and may add a
+    preamble), which a bare ``json.loads`` chokes on — the historical cause of
+    the risk path parsing 0 risks. It can also hit ``max_tokens`` mid-array, so
+    the array has no closing ``]``. This mirrors the proven parser shipped in
+    ``scripts/risk_prelabel_batch.py``: strip the fence, isolate the outermost
+    ``[...]``, and — if that fails — decode complete objects one at a time and
+    keep everything before the cutoff. Returns ``[]`` on unparseable prose.
+    """
+    s = (raw or "").strip()
+    if s.startswith("```"):
+        s = re.sub(r"^```[a-zA-Z]*\n?", "", s)
+        s = re.sub(r"\n?```\s*$", "", s).strip()
+    a = s.find("[")
+    if a == -1:
+        return []
+    # Fast path: a well-formed complete array (possibly with surrounding prose).
+    b = s.rfind("]")
+    if b > a:
+        try:
+            out = json.loads(s[a:b + 1])
+            if isinstance(out, list):
+                return [x for x in out if isinstance(x, dict)]
+        except (json.JSONDecodeError, ValueError):
+            pass
+    # Salvage path: decode complete objects until the first incomplete one.
+    dec = json.JSONDecoder()
+    i = a + 1
+    objs: list[dict[str, Any]] = []
+    while i < len(s):
+        while i < len(s) and s[i] in " \t\r\n,":
+            i += 1
+        if i >= len(s) or s[i] == "]":
+            break
+        try:
+            obj, end = dec.raw_decode(s, i)
+        except (json.JSONDecodeError, ValueError):
+            break  # truncated / incomplete object — keep what completed
+        if isinstance(obj, dict):
+            objs.append(obj)
+        i = end
+    return objs
 
 # ═══════════════════════════════════════════════════════════════════════════
 # ⚠️  PHASE 7.17 PROMPT 1 — A.1 PROMPT UPDATE
@@ -185,5 +232,8 @@ class RiskAnalyzerAgent(BaseAgent):
         )
 
         raw_text = message.content[0].text
-        risks: list[dict[str, Any]] = json.loads(raw_text)
+        # Robust, fence-/truncation-tolerant parse (was a bare json.loads that
+        # returned 0 risks on the model's ```json-fenced output). The _call_model
+        # chokepoint above is UNCHANGED — only the parsing of its response text.
+        risks: list[dict[str, Any]] = _parse_risk_array(raw_text)
         return risks

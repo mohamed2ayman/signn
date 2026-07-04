@@ -1714,11 +1714,23 @@ export class DocumentProcessingService {
       await this.recordUnknownCategory(orgId, contractId, rawCategory);
     }
 
+    // ── Resolve the clause link (Bug-2 fix) ──────────────────────────
+    // The AI echoes back the clause's `clauses.id`, but `contract_clause_id`
+    // FKs to `contract_clauses(id)` — a `clauses.id` there violates the FK
+    // (0 clause ids are valid junction ids). Map clauses.id -> the
+    // contract_clauses junction id for THIS contract. Null when the AI echoed
+    // an id we can't resolve — the row still saves, unlinked, never an FK crash.
+    // lint-exempt: wall-protected (finalizeReview walls contractId); clauses.id->cc.id FK map
+    const junction = await this.contractClauseRepository.findOne({
+      where: { contract_id: contractId, clause_id: aiRisk.clause_id },
+    });
+    const contractClauseId = junction?.id ?? null;
+
     // ── Build and save. Going through .save() ensures the
     //    @BeforeInsert hook on RiskAnalysis fires and sets risk_score.
     const row = this.riskAnalysisRepository.create({
       contract_id: contractId,
-      contract_clause_id: aiRisk.clause_id,
+      contract_clause_id: contractClauseId,
       risk_category: aiCategory,
       risk_level: riskLevel,
       likelihood,
