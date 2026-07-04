@@ -37,6 +37,17 @@ export enum MeterKey {
   // like upload_extraction (per_contract / closed). The matching PG
   // `meter_key_enum` ALTER TYPE ADD VALUE lands in migration 1761000000001.
   GUEST_UPLOAD = 'guest_upload',
+  // Guest chat Slice 1 — guest AI questions about the bound contract. A
+  // SEPARATE meter from `ai_assistant_message` so a guest's metered usage is
+  // capped/attributed independently and does NOT consume the host's managing
+  // AI quota. BILLING/ATTRIBUTION only: the 20/day-per-contract daily cap is
+  // enforced at the route layer (atomic conditional UPSERT in
+  // GuestChatService, the guest_upload idiom), NOT by this meter — the
+  // metering engine has no daily window (see metering-resolver
+  // computeWindowKey). ADDITIVE enum value only; the engine treats it exactly
+  // like guest_upload (per_contract / closed). The matching PG
+  // `meter_key_enum` ALTER TYPE ADD VALUE lands in migration 1763000000001.
+  GUEST_AI_QUERY = 'guest_ai_query',
 }
 
 export enum MeterWindowType {

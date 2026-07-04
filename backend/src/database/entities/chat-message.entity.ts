@@ -64,6 +64,14 @@ export class ChatMessage {
   @Column({ type: 'text', nullable: true })
   error_message: string | null;
 
+  /**
+   * Guest chat Slice 1 — metering reservation linkage (guest_ai_query).
+   * NULL for managing-user chat (un-metered today) and for USER turns. No FK
+   * to metering_ledger — attribution, not ownership (migration 1763000000003).
+   */
+  @Column({ type: 'uuid', nullable: true })
+  reservation_id: string | null;
+
   @CreateDateColumn({ type: 'timestamptz' })
   created_at: Date;
 

@@ -25,6 +25,10 @@ export const THROTTLER_NAMES = [
   // Network-layer BURST protection, separate from the 5/day-per-contract
   // daily quota enforced in GuestUploadService.
   'guest_upload',
+  // Guest chat Slice 1 — guest AI question send (JWT-gated, Path-B).
+  // Network-layer BURST protection, separate from the 20/day-per-contract
+  // daily quota enforced in GuestChatService.
+  'guest_ai_query',
 ] as const;
 
 export type ThrottlerName = (typeof THROTTLER_NAMES)[number];

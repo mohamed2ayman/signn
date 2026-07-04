@@ -265,6 +265,12 @@ import { dataSourceOptions } from './config/data-source';
           // exchange, so it is stricter than guest_invite_exchange: 5/15min/IP
           // (mirrors portfolio_export's abuse-mitigation shape).
           { name: 'guest_upload', ttl: 900_000, limit: 5 },
+          // Guest chat Slice 1 — guest AI question send. BURST protection
+          // only (NOT the daily cap — that is 20/day-per-contract, enforced
+          // in GuestChatService via the atomic daily counter). Chat turns
+          // are conversational, so the window is shorter and looser than
+          // guest_upload: 10/min/IP.
+          { name: 'guest_ai_query', ttl: 60_000, limit: 10 },
         ],
       }),
     }),

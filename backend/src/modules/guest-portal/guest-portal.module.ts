@@ -21,11 +21,19 @@ import { ExportModule } from '../export/export.module';
 // upload notice + the host at-limit notice.
 import { DocumentProcessingModule } from '../document-processing/document-processing.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+// Guest chat Slice 1 — guest-walled multi-turn AI chat. Reuses the host chat
+// entities (ChatSession/ChatMessage), the AiModule dispatch→poll boundary,
+// and the metering engine (guest_ai_query meter, subject = host org).
+import { ChatSession } from '../../database/entities/chat-session.entity';
+import { ChatMessage } from '../../database/entities/chat-message.entity';
+import { AiModule } from '../ai/ai.module';
+import { MeteringModule } from '../metering/metering.module';
 
 import { InvitationTokenService } from './services/invitation-token.service';
 import { ViewerCredentialService } from './services/viewer-credential.service';
 import { GuestInvitationService } from './services/guest-invitation.service';
 import { GuestUploadService } from './services/guest-upload.service';
+import { GuestChatService } from './services/guest-chat.service';
 import { ViewerCredentialGuard } from './guards/viewer-credential.guard';
 
 import { GuestInvitationsController } from './controllers/guest-invitations.controller';
@@ -35,6 +43,7 @@ import { GuestCommentsController } from './controllers/guest-comments.controller
 import { GuestDownloadController } from './controllers/guest-download.controller';
 import { GuestUploadController } from './controllers/guest-upload.controller';
 import { GuestStatusController } from './controllers/guest-status.controller';
+import { GuestChatController } from './controllers/guest-chat.controller';
 
 /**
  * Phase 7.18 — Guest Portal module.
@@ -65,6 +74,8 @@ import { GuestStatusController } from './controllers/guest-status.controller';
       GuestContractAccess,
       User,
       ContractComment,
+      ChatSession,
+      ChatMessage,
     ]),
     ContractsModule,
     AuthModule,
@@ -75,6 +86,8 @@ import { GuestStatusController } from './controllers/guest-status.controller';
     ExportModule,
     DocumentProcessingModule,
     NotificationsModule,
+    AiModule,
+    MeteringModule,
   ],
   controllers: [
     GuestInvitationsController,
@@ -84,12 +97,14 @@ import { GuestStatusController } from './controllers/guest-status.controller';
     GuestDownloadController,
     GuestUploadController,
     GuestStatusController,
+    GuestChatController,
   ],
   providers: [
     InvitationTokenService,
     ViewerCredentialService,
     GuestInvitationService,
     GuestUploadService,
+    GuestChatService,
     ViewerCredentialGuard,
   ],
 })

@@ -113,6 +113,13 @@ export class AiService {
     history?: Array<{ role: string; content: string }>;
     system_context?: string;
     knowledge_context?: string;
+    /**
+     * Guest chat Slice 1 — server-assembled contract grounding (metadata +
+     * active clauses). The conversational agent already accepts it; the
+     * ChatRequest pydantic field was added in the same slice (it was
+     * previously absent, so the HTTP boundary silently dropped it).
+     */
+    contract_context?: string;
   }): Promise<{ job_id: string; status: string }> {
     const response = await firstValueFrom(
       this.httpService.post(`${this.aiBackendUrl}/agents/chat`, data),
