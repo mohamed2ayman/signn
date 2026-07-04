@@ -312,6 +312,18 @@ SHARED across the Celery worker processes (`--concurrency`), so the platform-wid
 tier. The chunk merge runs in chunk-index order, so output is byte-identical to the old sequential
 path. See lesson #193.
 
+**Per-clause risk analysis is FUNCTIONAL as of PR #126.** It was *latently* broken —
+`risk_analyses` sat empty (no contract had been review-finalized) until the Phase-8.3
+pre-labeling pass first drove the writer end-to-end, which exposed two always-on bugs.
+Bug 1: `RiskAnalyzerAgent.analyze()` did a bare `json.loads()` on the model's
+` ```json `-fenced output → **0 risks on every call** (a verbatim recurrence of lesson
+#166); now a fence-/truncation-tolerant `_parse_risk_array` (the
+`_call_model(scrub=True, …)` chokepoint is UNCHANGED — only the response-text parse).
+Bug 2: the writer (`document-processing.service.ts` `saveAiRiskAsRow`) stored the
+AI-echoed `clauses.id` into `risk_analyses.contract_clause_id`, violating the FK to
+`contract_clauses(id)`; now mapped to the junction `contract_clauses.id`
+(`findOne({contract_id, clause_id})`, null when unresolvable). See lesson #200.
+
 ---
 
 ## Arabic Document Processing Architecture
@@ -442,6 +454,60 @@ Cross-references are NEVER clause boundaries. See Guideline 11 in SYSTEM_PROMPT.
 
 ⚠️ Do NOT use dynamic formula (chars/4 * 1.5) — underestimates Arabic output density and causes truncation.
 ⚠️ Do NOT hardcode 64,000 — 6x more expensive than needed.
+
+---
+
+## Clause Dedup & Split-Clause Stitching (post-extraction assembly, PR #117)
+
+After per-chunk extraction, the per-chunk clause lists are reassembled in
+`ai-backend/app/agents/clause_extractor.py`. Three mechanisms, three observable
+quality flags. See lesson #199.
+
+### Content-aware dedup (`_merge_in_order`) — key on CONTENT, never section/title
+Dedup keys on **normalized content** (NFKC + whitespace-collapsed), NOT on
+`section_number` or `title`. A combined General + Particular Conditions file
+legitimately holds a GC `بند 7` AND a PC `بند 7` — same number, often same title,
+**different content**. Keying on number/title would silently drop one (real PC-clause
+loss); keying on content keeps both distinct clauses while still merging a TRUE
+chunk-overlap duplicate (the same clause re-emitted at a chunk boundary is
+byte-identical after normalization). Every drop is LOUD (`logger.warning`) + counted.
+
+### Split-clause stitching (`_stitch_split_clauses` / `_content_overlap_merge`)
+A clause cut across a chunk boundary comes back as two adjacent partials; stitching
+folds them into one. It fires ONLY when ALL THREE hold: **(1) adjacent** in the list,
+**(2) same leading section number**, AND **(3) a genuine junction content-overlap**
+(a substantial contiguous block sitting at partial-1's END and partial-2's START).
+**Section-number sameness ALONE must NEVER merge** — that is exactly the GC/PC
+collision (two distinct same-number clauses).
+
+### Combined-conditions detection
+A بند numbering RESTART (a low number reappearing after a higher one) is the signature
+of a single file holding BOTH General and Particular Conditions. Policy is to upload
+GC/PC as SEPARATE files — the pipeline FLAGS, never reroutes.
+
+### The three quality flags (surfaced on the extraction result)
+| Flag | Meaning |
+|---|---|
+| `clause_dedup_dropped:<n>` | the content-aware merge dropped `n` true-duplicate clauses |
+| `split_clause:<n>` | `n` split-across-chunk clauses were stitched back into one |
+| `combined_conditions_file` | numbering restart → GC+PC likely in one file (upload separately) |
+
+### Hard rules — never violate
+1. Dedup + stitch decisions key on **content identity**, never on `section_number` or
+   `title` alone — those repeat by design across a document's GC/PC sub-parts, and
+   label-based merging silently destroys real clauses.
+2. Stitching requires the full **adjacent + same-section + junction-overlap** guard.
+   Never relax it to section-number-only.
+
+### Known limitation (NOT fully solved — backlog)
+The stitch SIZE threshold + the chunker's handling of very large clauses / multi-article
+oversized blocks still mis-handle edge cases: a large clause split can go **un-stitched**
+(the size gate scales with clause size while the chunk overlap is a fixed ~200 chars),
+and an en-dash sub-article split can **over-fragment** a multi-article block and drop an
+orphaned continuation (text loss). Investigated but NOT shipped — see the session
+investigation docs (`docs/stitch-threshold-large-clause-investigation.md`,
+`docs/no-overlap-split-investigation.md`). Do not assume large-clause stitching is fully
+robust.
 
 ---
 
