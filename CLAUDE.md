@@ -4550,3 +4550,71 @@ instance of the same family — dispatch≠completion (#180), un-bootable module
 - **Guest-upload carry-overs still open** (from Feature #4): AV / malware content
   scanning of guest-uploaded files, and OOXML structural / zip-bomb validation for
   the DOCX magic-bytes check.
+
+---
+
+## PII-Scrubbing Foundation — Feature #6 groundwork (shipped 2026-07-02, PRs #118 chokepoint `148dbb3` + #122 scrubbing `0349fc5`, both Ayman-approved)
+
+The ai-backend groundwork for Feature #6 (guest AI assistant): a single model-call
+chokepoint across all 9 agents, plus reversible structured-PII scrubbing at that
+chokepoint. Two stacked PRs, both squash-merged to `main`.
+
+### The chokepoint (PR #118, `148dbb3`)
+- **`BaseAgent._call_model(provider=ModelProvider.ANTHROPIC, system, messages,
+  max_tokens, temperature=None, raw=False, **kwargs)`** — the single chokepoint
+  for ALL 9 ai-backend agents' Anthropic calls. Zero behavior change proven by
+  per-agent exact-kwargs tests; `temperature=None` is omitted from the wire
+  payload; clause_extractor's `with_raw_response` + rate-limit header-gate +
+  `max_retries=0` posture (lesson #193) is preserved via `raw=True`.
+- **Generalized provider seam** — `ModelProvider` is an enum; non-Anthropic
+  providers raise `NotImplementedError` today. This is Ayman's approved plug-in
+  point for the SageMaker model migration: a new provider lands INSIDE
+  `_call_model`, agents never change.
+- **Model-guard test strengthened** (`test_model_centralization.py`): the model
+  id has a single source in `base_agent`, all agents route through `_call_model`,
+  and no agent may hold a hardcoded model string.
+
+### The scrubber (PR #122, `0349fc5`)
+- **Structured-PII scrub/restore at `_call_model`, opt-in per agent
+  (`scrub=True`)** — reversible placeholder substitution covering: emails,
+  EG/SA/UAE/QA phone numbers + national IDs, IBANs, with **Arabic-Indic digit
+  normalization via a length-preserving 1:1 translate** (spans map back to
+  original offsets; the original digit form is what gets scrubbed and restored —
+  lesson #196).
+- **Validation-gated detection, not regex-only** (lesson #195): real Luhn for
+  SA/Emirates IDs, real MOD-97 for IBANs, structural date + governorate
+  validation for the EG 14-digit ID (its final check digit has NO verified
+  public spec — the code says so honestly rather than pretending), and
+  prefix-required for QA phones (bare 8-digit runs are too false-positive-prone
+  in contract text). Negative tests assert invoice numbers, amounts, and dates
+  SURVIVE unscrubbed.
+- **8 analysis agents opt in with `scrub=True`; `clause_extractor` NEVER scrubs.**
+  This is decision **D1**: extraction stays unscrubbed under the Anthropic
+  BAA / zero-data-retention posture — the canonical contract record is not
+  gambled on restore fidelity. `scrub=True` combined with `raw=True` raises
+  `ValueError` (the extraction path cannot be scrubbed by accident).
+- **The PII map is in-process only** — never logged, never persisted; logs carry
+  counts + placeholder names only. Restore is validated after the model call;
+  placeholder survivors WARN (names only, never values).
+
+### INVARIANTS — never violate
+1. **Any new ai-backend agent MUST route its model calls through `_call_model`**
+   and make an EXPLICIT scrub decision (`scrub=True` or a documented reason not
+   to). No direct Anthropic client calls in agent code.
+2. **Extraction stays unscrubbed** unless the D1 decision is explicitly
+   revisited (behind a round-trip-fidelity validation gate).
+3. **Never log or persist the PII map** — counts and placeholder names only.
+
+### DEFERRED (filed, do NOT assume built)
+- Arabic name/address NER scrubbing (Tier B, ~87% recall ceiling, torch runtime
+  cost) — structured-only shipped in Slice 1.
+- Extraction scrubbing — gated behind a scrub→extract→restore round-trip
+  validation proving zero clause-content corruption.
+- OpenAI embeddings scrubbing — the chat-query embedding path is handled when
+  guest chat is built.
+- Admin allowance-CRUD surface for the guest-AI meters.
+
+### NEXT
+The guest chat build (Feature #6 Slices 1–2) sits on this foundation; the Claude
+Design export is the visual target (see lesson #190 for the export-as-reference
+workflow).
