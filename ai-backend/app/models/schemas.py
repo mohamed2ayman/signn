@@ -243,6 +243,23 @@ class ChatRequest(BaseModel):
             "so the model treats it as ambient context rather than user input."
         ),
     )
+    # Guest chat Slice 1 (ADDITIVE): tasks.run_chat has always read
+    # request_data.get("contract_context") and ConversationalAgent.chat()
+    # has always accepted it, but the field was missing here — so pydantic
+    # (extra=ignore) silently DROPPED it at the HTTP boundary and it never
+    # reached the agent. This field closes that gap for the guest-chat
+    # contract grounding. NOTE (flagged for Ayman): `knowledge_context` has
+    # the same silent-drop gap on this model and is deliberately NOT added
+    # in this slice — adding it changes host-chat behavior (legal-corpus
+    # grounding would start flowing) and is the host module owner's call.
+    contract_context: Optional[str] = Field(
+        None,
+        description=(
+            "Optional contract grounding (metadata + clause text) assembled "
+            "server-side by the caller. Injected into the user turn as a "
+            "'### Contract Context' block by the conversational agent."
+        ),
+    )
 
 
 class Citation(BaseModel):
