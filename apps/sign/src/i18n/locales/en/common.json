@@ -331,6 +331,35 @@
     "noContractsYet": "No contracts yet. Create your first contract.",
     "viewObligations": "View Obligations"
   },
+  "projectDashboard": {
+    "tabs": {
+      "dashboard": "Dashboard",
+      "contracts": "Contracts",
+      "partiesTeam": "Parties & Team"
+    },
+    "health": {
+      "title": "Project Health",
+      "band": {
+        "healthy": "Healthy",
+        "atRisk": "At risk",
+        "critical": "Critical"
+      },
+      "insufficientTitle": "Not enough analysed contracts yet",
+      "insufficientBody": "The health score appears once this project has contracts with completed risk analysis.",
+      "driversTitle": "Top drivers",
+      "driver": {
+        "highRisk": "−{{points}}%: {{count}} high-risk finding(s)",
+        "mediumRisk": "−{{points}}%: {{count}} medium-risk finding(s)",
+        "expired": "−{{points}}%: {{count}} expired contract(s)",
+        "expiring": "−{{points}}%: {{count}} contract(s) expiring within 30 days",
+        "stalled": "−{{points}}%: {{count}} stalled draft contract(s)",
+        "overdueObligations": "−{{points}}%: {{count}} overdue obligation(s)"
+      }
+    },
+    "parties": {
+      "comingSoon": "The parties & team directory is coming in a later release."
+    }
+  },
   "contract": {
     "proposedVersions": {
       "title": "Guest-submitted versions",

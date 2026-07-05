@@ -1,13 +1,15 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { projectService } from '@/services/api/projectService';
 import { contractService } from '@/services/api/contractService';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
 import ChatPanel from '@/components/chat/ChatPanel';
 import ContractTypeSelector from '@/components/contracts/ContractTypeSelector';
+import ProjectHealthBar from '@/components/project/ProjectHealthBar';
 import { ContractType, LicenseOrganization } from '@/types';
-import type { Project, Contract } from '@/types';
+import type { Project } from '@/types';
 
 const statusConfig: Record<string, { bg: string; text: string; dot: string }> = {
   DRAFT: { bg: 'bg-gray-50', text: 'text-gray-700', dot: 'bg-gray-400' },
@@ -29,13 +31,23 @@ function ContractStatusDot({ status }: { status: string }) {
   );
 }
 
+// ── 7.20 slice 1 — tabbed shell ─────────────────────────────────
+type ProjectTab = 'dashboard' | 'contracts' | 'parties';
+
+const TABS: ReadonlyArray<{ id: ProjectTab; labelKey: string }> = [
+  { id: 'dashboard', labelKey: 'projectDashboard.tabs.dashboard' },
+  { id: 'contracts', labelKey: 'projectDashboard.tabs.contracts' },
+  { id: 'parties', labelKey: 'projectDashboard.tabs.partiesTeam' },
+];
+
 export default function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { t } = useTranslation();
+  const queryClient = useQueryClient();
   const [project, setProject] = useState<Project | null>(null);
-  const [contracts, setContracts] = useState<Contract[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<ProjectTab>('dashboard');
   const [showCreateContract, setShowCreateContract] = useState(false);
   const [createStep, setCreateStep] = useState<'type' | 'details'>('type');
   const [selectedType, setSelectedType] = useState<ContractType | null>(null);
@@ -48,8 +60,7 @@ export default function ProjectDetailPage() {
   useEffect(() => {
     if (!id) return;
 
-    // Fetch project and contracts independently so a failure in one
-    // doesn't prevent the other from rendering
+    // Project fetch — pre-existing pattern, untouched in the 7.20 tab slice.
     projectService
       .getById(id)
       .then(setProject)
@@ -58,15 +69,18 @@ export default function ProjectDetailPage() {
         setError('project');
       })
       .finally(() => setLoading(false));
-
-    contractService
-      .getAll(id)
-      .then(setContracts)
-      .catch((err) => {
-        console.error('Failed to load contracts:', err);
-        // Contracts stay as empty array — page still renders
-      });
   }, [id]);
+
+  // Contracts via React Query (lesson #105). Shared queryKey with
+  // ProjectHealthBar and later 7.20 slices — React Query dedupes the fetch
+  // across components on the same key. A failure here still renders the
+  // page (contracts fall back to an empty array, matching prior behaviour).
+  const contractsQ = useQuery({
+    queryKey: ['project-contracts', id],
+    queryFn: () => contractService.getAll(id!),
+    enabled: !!id,
+  });
+  const contracts = contractsQ.data ?? [];
 
   const isStandardForm = (ct: ContractType) => ct !== ContractType.ADHOC && ct !== ContractType.UPLOADED;
 
@@ -95,7 +109,7 @@ export default function ProjectDetailPage() {
         license_acknowledged: isStandardForm(selectedType) ? true : undefined,
         license_organization: isStandardForm(selectedType) ? getLicenseOrg(selectedType) : undefined,
       });
-      setContracts([contract, ...contracts]);
+      await queryClient.invalidateQueries({ queryKey: ['project-contracts', id] });
       setShowCreateContract(false);
       setCreateStep('type');
       setSelectedType(null);
@@ -244,7 +258,50 @@ export default function ProjectDetailPage() {
         </div>
       </div>
 
-      {/* Contracts List */}
+      {/* ── Tabs (7.20 slice 1) — tab STATE, not URL routes ── */}
+      <div role="tablist" aria-label={t('project.title')} className="flex gap-1 border-b border-gray-200">
+        {TABS.map((tab) => (
+          <button
+            key={tab.id}
+            role="tab"
+            aria-selected={activeTab === tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`-mb-px border-b-2 px-4 py-2.5 text-sm font-medium transition-colors ${
+              activeTab === tab.id
+                ? 'border-primary text-primary'
+                : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
+            }`}
+          >
+            {t(tab.labelKey)}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Dashboard tab (default) ── */}
+      {activeTab === 'dashboard' && (
+        <div className="space-y-6">
+          <ProjectHealthBar
+            projectId={id!}
+            onNavigateToTab={() => setActiveTab('contracts')}
+          />
+          {/* Slice 2-3: attention zone, risk mix, obligations, contracts-by-status, directory summary.
+              NOTE for those slices: getDashboard().contracts.by_status carries the RAW 12
+              ContractStatus values — fold to the 6 portfolio buckets before feeding StatusPie. */}
+          <div />
+        </div>
+      )}
+
+      {/* ── Parties & Team tab — placeholder this slice ── */}
+      {activeTab === 'parties' && (
+        <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-6 py-12 text-center">
+          <p className="text-sm font-medium text-gray-500">
+            {t('projectDashboard.parties.comingSoon')}
+          </p>
+        </div>
+      )}
+
+      {/* ── Contracts tab — the pre-existing contracts card, moved verbatim ── */}
+      {activeTab === 'contracts' && (
       <div className="rounded-xl border border-gray-200/80 bg-white shadow-card">
         <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
           <div className="flex items-center gap-2">
@@ -309,6 +366,7 @@ export default function ProjectDetailPage() {
           </div>
         )}
       </div>
+      )}
 
       {/* Create Contract Modal — Multi-step */}
       {showCreateContract && (

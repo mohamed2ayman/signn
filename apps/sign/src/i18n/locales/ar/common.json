@@ -331,6 +331,35 @@
     "noContractsYet": "لا توجد عقود بعد. أنشئ أول عقد.",
     "viewObligations": "عرض الالتزامات"
   },
+  "projectDashboard": {
+    "tabs": {
+      "dashboard": "لوحة المشروع",
+      "contracts": "العقود",
+      "partiesTeam": "الأطراف والفريق"
+    },
+    "health": {
+      "title": "صحة المشروع",
+      "band": {
+        "healthy": "سليم",
+        "atRisk": "معرض للخطر",
+        "critical": "حرج"
+      },
+      "insufficientTitle": "لا توجد عقود محللة كافية بعد",
+      "insufficientBody": "يظهر مؤشر الصحة عندما يحتوي المشروع على عقود اكتمل تحليل مخاطرها.",
+      "driversTitle": "أهم العوامل",
+      "driver": {
+        "highRisk": "−{{points}}%: {{count}} من نتائج المخاطر العالية",
+        "mediumRisk": "−{{points}}%: {{count}} من نتائج المخاطر المتوسطة",
+        "expired": "−{{points}}%: {{count}} عقد منتهي الصلاحية",
+        "expiring": "−{{points}}%: {{count}} عقد تنتهي صلاحيته خلال 30 يومًا",
+        "stalled": "−{{points}}%: {{count}} مسودة عقد متوقفة",
+        "overdueObligations": "−{{points}}%: {{count}} التزام متأخر"
+      }
+    },
+    "parties": {
+      "comingSoon": "دليل الأطراف والفريق قادم في إصدار لاحق."
+    }
+  },
   "contract": {
     "proposedVersions": {
       "title": "نسخ مُقدَّمة من الضيف",

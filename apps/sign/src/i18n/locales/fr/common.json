@@ -332,6 +332,35 @@
     "noContractsYet": "Aucun contrat pour l'instant. Créez votre premier contrat.",
     "viewObligations": "Voir les obligations"
   },
+  "projectDashboard": {
+    "tabs": {
+      "dashboard": "Tableau de bord",
+      "contracts": "Contrats",
+      "partiesTeam": "Parties et équipe"
+    },
+    "health": {
+      "title": "Santé du projet",
+      "band": {
+        "healthy": "Sain",
+        "atRisk": "À risque",
+        "critical": "Critique"
+      },
+      "insufficientTitle": "Pas encore assez de contrats analysés",
+      "insufficientBody": "Le score de santé apparaît lorsque le projet contient des contrats dont l'analyse des risques est terminée.",
+      "driversTitle": "Principaux facteurs",
+      "driver": {
+        "highRisk": "−{{points}}% : {{count}} constat(s) à risque élevé",
+        "mediumRisk": "−{{points}}% : {{count}} constat(s) à risque moyen",
+        "expired": "−{{points}}% : {{count}} contrat(s) expiré(s)",
+        "expiring": "−{{points}}% : {{count}} contrat(s) expirant sous 30 jours",
+        "stalled": "−{{points}}% : {{count}} brouillon(s) de contrat à l'arrêt",
+        "overdueObligations": "−{{points}}% : {{count}} obligation(s) en retard"
+      }
+    },
+    "parties": {
+      "comingSoon": "L'annuaire des parties et de l'équipe arrive dans une prochaine version."
+    }
+  },
   "contract": {
     "proposedVersions": {
       "title": "Versions soumises par l'invité",
