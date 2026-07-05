@@ -1148,11 +1148,12 @@ hard gate — quality decides.** Migrate one prompt at a time; the embeddings mo
 
 ---
 
-### 8.3 — Annotation Setup: Label Studio
-**Owner:** Ayman | **Status:** ❌ Not started
-- `docker run -p 8080:8080 heartexlabs/label-studio`
-- Configure annotation projects for clause extraction, risk classification
-- Import existing extracted clauses as pre-annotations
+### 8.3 — Annotation Setup: in-app review tooling (Label Studio superseded)
+**Owner:** Ayman | **Status:** 🟡 In-app annotation tooling BUILT (PR #130); pre-labeling done; ground-truth export TBD
+- **DECISION:** annotate IN-APP (editable Risk Analysis tab + editable contract parties), NOT Label Studio — the app already renders Arabic/RTL clauses + risks correctly and the pre-labels already live in the DB, so correcting them in place beats an external tool + import/export round-trip. (Label Studio tooling was investigated then removed; `docs/phase-8.3-labelstudio-plan.md` is the decision record.)
+- **BUILT (PR #130):** risk LEVEL + CATEGORY (the 17 clause-type labels, not the 8 broad buckets) human-correctable with original-vs-corrected tracking (`is_edited_by_user` + `original_risk_level`/`original_risk_category`); contract parties correctable (Swap First⇄Second + `is_parties_edited_by_user` + `original_party_first_name`/`original_party_second_name`). Additive migrations `1764000000001` / `1765000000001`.
+- **Prior:** the one-off risk pre-labeling batch (PR #125) populated `risk_analyses` (1,061 rows); the new tracking columns capture human corrections on top = the was_corrected signal.
+- **TODO:** ground-truth EXPORT from the corrected rows (feeds 8.4/8.5 training); the Arabic category + swap terms are DRAFT pending Youssef's legal review; the root reversed-party EXTRACTION bug (regex in `document-processing.service.ts`) is a separate backlog fix.
 
 ---
 

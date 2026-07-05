@@ -324,6 +324,30 @@ AI-echoed `clauses.id` into `risk_analyses.contract_clause_id`, violating the FK
 `contract_clauses(id)`; now mapped to the junction `contract_clauses.id`
 (`findOne({contract_id, clause_id})`, null when unresolvable). See lesson #200.
 
+**Phase 8.3 annotation review tooling is BUILT (PR #130) — risk labels + contract
+parties are human-correctable, as permanent product features.** *Editable Risk Analysis
+tab:* each risk card's `risk_level` (High/Medium/Low) and `risk_category` are correctable
+dropdowns; **`risk_category` uses the 17 clause-type labels** (`CLAUSE_TYPE_LABELS`), NOT
+the 8 broad `risk_categories` buckets (the AI's real free-text categories map onto the
+clause types + it keeps risk labels consistent with clause labels). Edits reuse
+**`PATCH /risk-analysis/:id`** (a focused annotate route, org-walled via `findInOrg` — NOT
+the L/I `:id/override` path with its drift/learned-baseline machinery) and snapshot the AI
+ORIGINAL ONCE on the first edit: `risk_analyses` gained **`is_edited_by_user` +
+`original_risk_level` + `original_risk_category`** (the was_corrected signal). *Party
+editing:* a **Swap First⇄Second** button + correction tracking on `contracts` —
+**`is_parties_edited_by_user` + `original_party_first_name` + `original_party_second_name`**
+snapshotted once by `updateParties` (party-NAME editing via `PUT /contracts/:id/parties`
+pre-existed; only the swap + the tracking are new; the root reversed-party EXTRACTION regex
+bug in `document-processing.service.ts` is a SEPARATE backlog item). Category dropdown
+labels are i18n'd via a shared `clauseTypeLabel` helper + a `clauseType.*` block (en/ar/fr),
+which ALSO fixed the pre-existing clause-type dropdown's Arabic + RTL positioning app-wide
+(level labels reuse the existing `portfolio.riskLevel.*` keys). **The Arabic/French
+`clauseType.*` category terms + the `parties.swap` label are DRAFT `_TODO`, pending
+Youssef's legal-terminology review before they are final.** Additive migrations
+`1764000000001` (risk) + `1765000000001` (parties), IF NOT EXISTS + no backfill — the 1,061
+existing `risk_analyses` rows + all `contracts` untouched, clauses/clause_types and the PR
+#126 write path untouched. See lesson #201.
+
 ---
 
 ## Arabic Document Processing Architecture
