@@ -9,6 +9,7 @@ import GuestErrorScreen, {
   type GuestErrorKind,
 } from '@/components/guest/GuestErrorScreen';
 import GuestContractView from '@/components/guest/GuestContractView';
+import GuestChatPanel from '@/components/guest/GuestChatPanel';
 import GuestComments from '@/components/guest/GuestComments';
 import EstablishIdentityModal from '@/components/guest/EstablishIdentityModal';
 import {
@@ -60,6 +61,8 @@ export default function GuestViewerPage() {
   const [guestJwt, setGuestJwt] = useState<string | null>(null);
   const [guestUser, setGuestUser] = useState<GuestIdentity['user'] | null>(null);
   const [seedComments, setSeedComments] = useState<GuestComment[]>([]);
+  // Guest AI Assistant drawer (Feature #6) — page owns the open/closed bit.
+  const [chatOpen, setChatOpen] = useState(false);
 
   const didInit = useRef(false);
 
@@ -159,7 +162,29 @@ export default function GuestViewerPage() {
 
       {phase === 'ready' && contract && (
         <>
-          <GuestContractView contract={contract} guestJwt={guestJwt} />
+          <GuestContractView
+            contract={contract}
+            guestJwt={guestJwt}
+            onAskAi={guestJwt ? () => setChatOpen(true) : undefined}
+          />
+
+          {/* Guest AI Assistant drawer — mounted at page level (sibling of the
+              contract view), Path-B only. Session expiry mirrors comments:
+              drop back to read-only, honest instead of silently failing. */}
+          {guestJwt && (
+            <GuestChatPanel
+              contractId={contract.id}
+              clauses={(contract.contract_clauses ?? []).map((cc) => ({
+                section_number: cc.section_number,
+                title: cc.clause?.title ?? null,
+                content: cc.clause?.content ?? null,
+              }))}
+              guestJwt={guestJwt}
+              isOpen={chatOpen}
+              onClose={() => setChatOpen(false)}
+              onSessionExpired={handleGuestSessionExpired}
+            />
+          )}
 
           <section className="mt-8">
             {!guestUser ? (

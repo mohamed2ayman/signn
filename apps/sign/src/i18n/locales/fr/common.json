@@ -1080,7 +1080,7 @@
     },
     "commentCta": {
       "title": "Vous souhaitez commenter ce contrat ?",
-      "body": "Définissez un mot de passe pour laisser des commentaires nominatifs. Votre accès reste limité à ce contrat.",
+      "body": "Définissez un mot de passe pour laisser des commentaires nominatifs, téléverser des versions et interroger l'assistant IA sur ce contrat. Votre accès reste limité à ce contrat.",
       "button": "Définir un mot de passe pour commenter"
     },
     "identity": {
@@ -1158,6 +1158,35 @@
         "title": "Une erreur est survenue",
         "body": "Nous n'avons pas pu charger ce contrat partagé pour le moment. Veuillez réessayer dans un instant."
       }
+    },
+    "assistant": {
+      "trigger": "Demander à l'IA",
+      "title": "Assistant IA SIGN",
+      "subline": "Répond uniquement sur ce contrat",
+      "newChat": "Nouvelle discussion",
+      "welcomeTitle": "Comment puis-je vous aider avec ce contrat ?",
+      "welcomeBody": "Posez-moi vos questions sur les clauses, les conditions de paiement, les dates ou les obligations — je vous indiquerai la clause exacte.",
+      "tryAsking": "Essayez de demander",
+      "suggested1": "Quel est mon échéancier de paiement ?",
+      "suggested2": "Quelles sont mes échéances clés ?",
+      "suggested3": "Résumez mes obligations",
+      "suggested4": "Qui sont les parties à ce contrat ?",
+      "placeholder": "Posez une question sur ce contrat…",
+      "placeholderCapped": "Limite quotidienne atteinte — réessayez demain",
+      "send": "Envoyer",
+      "helper": "L'IA de SIGN peut faire des erreurs. Vérifiez les détails importants dans le contrat.",
+      "errorText": "Une erreur est survenue en contactant l'assistant.",
+      "retry": "Réessayer",
+      "viewInContract": "Voir dans le contrat",
+      "stillWorking": "Je travaille encore sur votre réponse — actualisez pour vérifier.",
+      "thinking": "Réflexion en cours…",
+      "loadingHistory": "Chargement de la conversation…",
+      "remaining": "{{n}} question(s) restante(s) sur {{limit}} aujourd’hui",
+      "rateTitle": "Limite quotidienne de questions atteinte",
+      "rateBody": "Vous avez utilisé vos {{limit}} questions du jour. Votre limite se réinitialise demain — vous pouvez toujours relire la conversation ci-dessus.",
+      "rateResets": "Réinitialisation demain à {{time}}.",
+      "throttleNotice": "Vous envoyez des messages trop rapidement. Veuillez patienter un instant.",
+      "sessionExpired": "Votre session sécurisée a expiré. Rechargez la page pour continuer la discussion."
     }
   }
 }

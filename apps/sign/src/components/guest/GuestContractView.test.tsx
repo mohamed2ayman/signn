@@ -187,3 +187,38 @@ describe('GuestContractView — guest upload new version affordance (Feature #4)
     expect(uploadGuestContractVersion).not.toHaveBeenCalled();
   });
 });
+
+describe('GuestContractView — Ask AI trigger (Feature #6)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.clear();
+  });
+
+  it('does NOT render Ask AI for a passwordless viewer (no guestJwt), even with a handler', () => {
+    render(<GuestContractView contract={CONTRACT} onAskAi={vi.fn()} />);
+    expect(screen.queryByTestId('guest-ask-ai')).not.toBeInTheDocument();
+  });
+
+  it('does NOT render Ask AI when no handler is wired (panel absent)', () => {
+    render(<GuestContractView contract={CONTRACT} guestJwt="guest-jwt" />);
+    expect(screen.queryByTestId('guest-ask-ai')).not.toBeInTheDocument();
+  });
+
+  it('renders Ask AI first in the Path-B action row and fires the handler', () => {
+    const onAskAi = vi.fn();
+    render(
+      <GuestContractView
+        contract={CONTRACT}
+        guestJwt="guest-jwt"
+        onAskAi={onAskAi}
+      />,
+    );
+    const trigger = screen.getByTestId('guest-ask-ai');
+    expect(trigger).toHaveTextContent('guest.assistant.trigger');
+    // Lead affordance: Ask AI precedes Upload + Download in the row.
+    const row = trigger.parentElement as HTMLElement;
+    expect(row.firstElementChild).toBe(trigger);
+    fireEvent.click(trigger);
+    expect(onAskAi).toHaveBeenCalledTimes(1);
+  });
+});
