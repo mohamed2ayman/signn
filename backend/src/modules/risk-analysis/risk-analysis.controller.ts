@@ -19,7 +19,12 @@ import { User, UserRole } from '../../database/entities';
 import { RiskAnalysisService } from './risk-analysis.service';
 import { RiskExplanationService } from './services/risk-explanation.service';
 import { RiskOverrideService } from './services/risk-override.service';
-import { CreateRiskRuleDto, OverrideRiskDto, UpdateRiskStatusDto } from './dto';
+import {
+  AnnotateRiskDto,
+  CreateRiskRuleDto,
+  OverrideRiskDto,
+  UpdateRiskStatusDto,
+} from './dto';
 
 @Controller('risk-analysis')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -106,6 +111,32 @@ export class RiskAnalysisController {
       impact: dto.impact,
       note: dto.note,
     });
+  }
+
+  /**
+   * Phase 8.3 — editable Risk Analysis tab. Human correction of a finding's
+   * `risk_level` and/or `risk_category`. Org-walled (404 cross-tenant) in the
+   * service; open to any authenticated org member — matching the
+   * `PUT :id/status` precedent (no `@Roles`). Snapshots the AI original on the
+   * first edit; touches ONLY the label layer (never L/I / the override/drift
+   * machinery).
+   *
+   * NOTE: `:id` matches a single path segment, so it does NOT collide with
+   * `:id/override` (two segments); `ParseUUIDPipe` further restricts it to
+   * UUIDs, so it never shadows the static `rules` / `categories` routes.
+   */
+  @Patch(':id')
+  async annotate(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: AnnotateRiskDto,
+    @CurrentUser() user: User,
+  ) {
+    return this.riskAnalysisService.annotateRisk(
+      id,
+      dto,
+      user.id,
+      user.organization_id,
+    );
   }
 
   /**

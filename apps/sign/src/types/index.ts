@@ -346,6 +346,10 @@ export interface Contract {
   executed_at?: string | null;
   party_first_name?: string | null;
   party_second_name?: string | null;
+  // Party annotation tracking (permanent product feature)
+  original_party_first_name?: string | null;
+  original_party_second_name?: string | null;
+  is_parties_edited_by_user?: boolean;
   created_at: string;
   updated_at: string;
   project?: Project;
@@ -812,6 +816,12 @@ export interface RiskAnalysis {
   handled_by: string | null;
   handled_at: string | null;
   created_at: string;
+  // Phase 8.3 — human annotation tracking (editable Risk Analysis tab)
+  is_edited_by_user?: boolean;
+  edited_by_user_id?: string | null;
+  edited_at?: string | null;
+  original_risk_level?: string | null;
+  original_risk_category?: string | null;
   contract?: Contract;
   contract_clause?: ContractClause;
   handler?: User;

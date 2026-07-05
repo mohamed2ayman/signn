@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Injectable,
   NotFoundException,
   Logger,
@@ -6,7 +7,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { RiskAnalysis, RiskRule, RiskCategory } from '../../database/entities';
-import { CreateRiskRuleDto, UpdateRiskStatusDto } from './dto';
+import { AnnotateRiskDto, CreateRiskRuleDto, UpdateRiskStatusDto } from './dto';
 import { CollaborationGateway } from '../collaboration/collaboration.gateway';
 // Tenant-isolation Tier 2 — wall the two contractId-keyed reads
 // (getByContract + getRiskSummary) via ContractAccessService.findInOrg.
@@ -113,6 +114,83 @@ export class RiskAnalysisService {
     const saved = await this.riskAnalysisRepository.save(risk); // lint-exempt: wall-protected (findInOrg) — row validated before write
 
     // Emit real-time event
+    if (risk.contract_id) {
+      this.collaborationGateway.emitRiskUpdated(risk.contract_id, {
+        contractId: risk.contract_id,
+        risk: saved,
+      });
+    }
+
+    return saved;
+  }
+
+  /**
+   * Phase 8.3 — human annotation of a finding's `risk_level` / `risk_category`
+   * from the editable Risk Analysis tab. Reuses the exact `findInOrg` wall as
+   * `updateRiskStatus` (cross-tenant → 404 BEFORE any write).
+   *
+   * On the FIRST human edit it snapshots the AI ORIGINAL (level + category)
+   * into `original_risk_level` / `original_risk_category` so
+   * original-vs-corrected is preserved (the Phase-8.3 training signal).
+   *
+   * `risk_category` is a free-text column (the AI writes arbitrary values, and
+   * the existing free-text/`Uncategorized` values are preserved as-is). The
+   * editable-tab dropdown constrains a human's choice to the 17 clause-type
+   * labels (`CLAUSE_TYPE_LABELS`, reused so risk labels stay in lock-step with
+   * clause_type labels); the server bounds it only by shape (`@MaxLength(100)`)
+   * — no taxonomy list is duplicated on the backend.
+   *
+   * Deliberately edits the label layer ONLY: it never touches
+   * likelihood/impact/risk_score and never triggers the drift /
+   * learned-baseline machinery (that is the separate B.3 override path).
+   */
+  async annotateRisk(
+    id: string,
+    dto: AnnotateRiskDto,
+    userId: string,
+    orgId: string,
+  ): Promise<RiskAnalysis> {
+    if (dto.risk_level === undefined && dto.risk_category === undefined) {
+      throw new BadRequestException(
+        'Provide at least one of risk_level or risk_category',
+      );
+    }
+
+    const risk = await this.riskAnalysisRepository.findOne({ // lint-exempt: two-step hydration (ids validated by scoped load)
+      where: { id },
+    });
+    if (!risk) {
+      throw new NotFoundException('Risk analysis not found');
+    }
+
+    // WALL (pre-S2e stop-gap): the by-id load resolves the row's contract_id;
+    // the cross-tenant probe → 404 (never 403) BEFORE the mutation. Same
+    // findInOrg pattern as updateRiskStatus / the #65 create() wall.
+    await this.contractAccess.findInOrg(risk.contract_id, orgId);
+
+    // Snapshot the AI ORIGINAL exactly once — immediately before the first
+    // human edit. Guarded on is_edited_by_user so subsequent edits keep the
+    // TRUE original, not the previous human value.
+    if (!risk.is_edited_by_user) {
+      risk.original_risk_level = risk.risk_level;
+      risk.original_risk_category = risk.risk_category;
+    }
+
+    if (dto.risk_level !== undefined) {
+      risk.risk_level = dto.risk_level;
+    }
+    if (dto.risk_category !== undefined) {
+      risk.risk_category = dto.risk_category;
+    }
+    risk.is_edited_by_user = true;
+    risk.edited_by_user_id = userId;
+    risk.edited_at = new Date();
+
+    // save() (not update()) so the @BeforeUpdate hook runs — risk_score is
+    // recomputed from the UNCHANGED L/I (annotation never edits L/I), so the
+    // score is left intact; only the label layer changes.
+    const saved = await this.riskAnalysisRepository.save(risk); // lint-exempt: wall-protected (findInOrg) — row validated before write
+
     if (risk.contract_id) {
       this.collaborationGateway.emitRiskUpdated(risk.contract_id, {
         contractId: risk.contract_id,

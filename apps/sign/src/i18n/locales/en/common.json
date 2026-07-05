@@ -1,4 +1,26 @@
 {
+  "clauseType": {
+    "general": "General",
+    "payment": "Payment",
+    "liability": "Liability",
+    "termination": "Termination",
+    "indemnification": "Indemnification",
+    "force_majeure": "Force Majeure",
+    "dispute_resolution": "Dispute Resolution",
+    "confidentiality": "Confidentiality",
+    "compliance": "Compliance",
+    "insurance": "Insurance",
+    "warranty": "Warranty",
+    "intellectual_property": "IP",
+    "scope_of_work": "Scope of Work",
+    "variations": "Variations",
+    "defects": "Defects",
+    "time": "Time",
+    "other": "Other"
+  },
+  "parties": {
+    "swap": "Swap First ⇄ Second"
+  },
   "proposedDiff": {
     "title": "Review proposed changes",
     "subtitle": "Current contract ↔ guest's proposed version",

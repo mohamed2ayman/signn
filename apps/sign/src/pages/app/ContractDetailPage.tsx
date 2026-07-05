@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 import type { RootState } from '@/store';
 import { contractService } from '@/services/api/contractService';
@@ -13,6 +14,7 @@ import LoadingSpinner from '@/components/common/LoadingSpinner';
 import ChatPanel from '@/components/chat/ChatPanel';
 import { useCollaboration } from '@/hooks/useCollaboration';
 import type { Contract, ContractClause, Clause, ContractComment, RiskAnalysis, ContractShare, SignatureSigner, ConflictDetail, ContractVersion, ContractApprover, ProjectMember } from '@/types';
+import RiskCard from '@/components/contracts/RiskCard';
 import { ApproverStatus } from '@/types';
 import VersionTimeline from '@/components/versions/VersionTimeline';
 import DiffViewerModal from '@/components/versions/DiffViewerModal';
@@ -255,6 +257,7 @@ const tabConfig = [
 /* ── Main Component ──────────────────────────────────────────── */
 export default function ContractDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const { t } = useTranslation();
   const navigate = useNavigate();
 
   const [contract, setContract] = useState<Contract | null>(null);
@@ -377,6 +380,17 @@ export default function ContractDetailPage() {
       setLoading(false);
     }
   };
+
+  // Phase 8.3 — persist a human risk annotation (level/category) and reflect
+  // the change in the loaded risks. Throwing propagates to RiskCard, which
+  // reverts its optimistic update.
+  const handleAnnotateRisk = useCallback(
+    async (riskId: string, data: { risk_level?: string; risk_category?: string }) => {
+      const updated = await riskAnalysisService.annotate(riskId, data);
+      setRisks((prev) => prev.map((r) => (r.id === riskId ? { ...r, ...updated } : r)));
+    },
+    [],
+  );
 
   // ── Real-time collaboration ──
   const reloadClauses = useCallback(() => {
@@ -1137,6 +1151,17 @@ export default function ContractDetailPage() {
               <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
             </svg>
             <h3 className="text-sm font-semibold text-gray-800">أطراف العقد</h3>
+            {contract.is_parties_edited_by_user && (
+              <span
+                className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700"
+                title="Parties reviewed/corrected by a user"
+              >
+                <svg className="h-2.5 w-2.5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+                Reviewed
+              </span>
+            )}
           </div>
           {!editingParties && (
             <button
@@ -1176,6 +1201,22 @@ export default function ContractDetailPage() {
                 className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
               />
             </div>
+            {/* Swap First ⇄ Second — crosses the drafts; user reviews then Saves. */}
+            <button
+              type="button"
+              onClick={() => {
+                const prevFirst = partyFirstDraft;
+                setPartyFirstDraft(partySecondDraft);
+                setPartySecondDraft(prevFirst);
+              }}
+              className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-50"
+              title={t('parties.swap')}
+            >
+              <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-9L21 3m0 0l-4.5 4.5M21 3H7.5" />
+              </svg>
+              {t('parties.swap')}
+            </button>
             <div className="flex items-center justify-end gap-2">
               <button
                 onClick={() => setEditingParties(false)}
@@ -1698,41 +1739,13 @@ export default function ContractDetailPage() {
             </div>
           )}
 
-          {/* Regular Risks — unchanged rendering */}
+          {/* Regular Risks — level + category editable (Phase 8.3) */}
           {risks.filter(r => r.risk_category !== 'DOCUMENT_CONFLICT').map((risk) => (
-            <div key={risk.id} className="rounded-xl border border-gray-200/80 bg-white shadow-card transition-shadow hover:shadow-card-hover">
-              <div className="flex items-center justify-between px-5 py-4">
-                <div className="flex items-center gap-3">
-                  <RiskLevelBadge level={risk.risk_level} />
-                  <span className="text-xs font-medium text-gray-400">{risk.risk_category}</span>
-                </div>
-                <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                  risk.status === 'OPEN' ? 'bg-amber-50 text-amber-700' : 'bg-gray-50 text-gray-500'
-                }`}>
-                  <span className={`h-1.5 w-1.5 rounded-full ${risk.status === 'OPEN' ? 'bg-amber-400' : 'bg-gray-300'}`} />
-                  {risk.status}
-                </span>
-              </div>
-              <div className="border-t border-gray-50 px-5 py-4">
-                <p className="text-sm leading-relaxed text-gray-600">{risk.description}</p>
-                {risk.recommendation && (
-                  <div className="mt-3 rounded-lg border border-blue-100 bg-blue-50/50 p-3">
-                    <div className="mb-1 flex items-center gap-1.5">
-                      <svg className="h-3.5 w-3.5 text-blue-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 18v-5.25m0 0a6.01 6.01 0 001.5-.189m-1.5.189a6.01 6.01 0 01-1.5-.189m3.75 7.478a12.06 12.06 0 01-4.5 0m3.75 2.383a14.406 14.406 0 01-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 10-7.517 0c.85.493 1.509 1.333 1.509 2.316V18" />
-                      </svg>
-                      <span className="text-xs font-semibold text-blue-700">AI Recommendation</span>
-                    </div>
-                    <p className="text-sm text-blue-600">{risk.recommendation}</p>
-                  </div>
-                )}
-                {risk.citation_source && risk.risk_category !== 'DOCUMENT_CONFLICT' && (
-                  <p className="mt-2 text-xs text-gray-400">
-                    <span className="font-medium">Source:</span> {risk.citation_source}
-                  </p>
-                )}
-              </div>
-            </div>
+            <RiskCard
+              key={risk.id}
+              risk={risk}
+              onAnnotate={handleAnnotateRisk}
+            />
           ))}
 
           {risks.length === 0 && (

@@ -1,4 +1,27 @@
 {
+  "clauseType": {
+    "_TODO": "PENDING LEGAL REVIEW (Youssef): the Arabic clause-type / risk-category terms below are DRAFT starting values — verify/correct FIDIC legal terminology before finalizing.",
+    "general": "عام",
+    "payment": "المدفوعات",
+    "liability": "المسؤولية",
+    "termination": "الإنهاء",
+    "indemnification": "التعويض",
+    "force_majeure": "القوة القاهرة",
+    "dispute_resolution": "تسوية النزاعات",
+    "confidentiality": "السرية",
+    "compliance": "الامتثال",
+    "insurance": "التأمين",
+    "warranty": "الضمان",
+    "intellectual_property": "الملكية الفكرية",
+    "scope_of_work": "نطاق العمل",
+    "variations": "الأوامر التغييرية",
+    "defects": "العيوب",
+    "time": "المدة",
+    "other": "أخرى"
+  },
+  "parties": {
+    "swap": "تبديل الطرف الأول ⇄ الطرف الثاني"
+  },
   "proposedDiff": {
     "title": "مراجعة التغييرات المقترحة",
     "subtitle": "العقد الحالي ↔ النسخة المقترحة من الضيف",

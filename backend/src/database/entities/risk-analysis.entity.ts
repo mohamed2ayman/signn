@@ -173,6 +173,44 @@ export class RiskAnalysis {
   @JoinColumn({ name: 'platform_default_ref_id' })
   platform_default_ref: RiskCategoryPlatformDefault | null;
 
+  // ─── Phase 8.3 — human annotation tracking ───────────────────────────
+
+  /**
+   * True once a human has edited this finding's risk_level / risk_category
+   * from the editable Risk Analysis tab. Defaults false — the AI pre-labels
+   * stay false until a human corrects them.
+   */
+  @Column({ type: 'boolean', default: false })
+  is_edited_by_user: boolean;
+
+  /**
+   * User who last edited level/category. NULL until the first edit.
+   * FK ON DELETE SET NULL preserves the edit history if the user is deleted.
+   */
+  @Column({ type: 'uuid', nullable: true })
+  edited_by_user_id: string | null;
+
+  @ManyToOne(() => User, { nullable: true })
+  @JoinColumn({ name: 'edited_by_user_id' })
+  edited_by_user: User | null;
+
+  /** Timestamp of the most recent human edit. NULL until the first edit. */
+  @Column({ type: 'timestamptz', nullable: true })
+  edited_at: Date | null;
+
+  /**
+   * The AI's ORIGINAL risk_level, snapshotted exactly once immediately
+   * before the first human edit (the original-vs-corrected training
+   * signal). NULL until the first edit. VARCHAR(10) rather than the enum
+   * type to decouple the archived value from the RiskLevel enum.
+   */
+  @Column({ type: 'varchar', length: 10, nullable: true })
+  original_risk_level: string | null;
+
+  /** The AI's ORIGINAL risk_category, snapshotted once before the first edit. */
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  original_risk_category: string | null;
+
   // ─── Lifecycle hooks ─────────────────────────────────────────────────
 
   /**
