@@ -4730,3 +4730,19 @@ Completes Feature #6 end-to-end: **guest chat = backend (#124, `3a1658c`) + fron
 4. **Guest chat calls go through `guestHttp` + explicit guest JWT** — never the managing api client (its interceptors would leak the Redux token or trigger the app's 401 redirect).
 
 **NEXT (Feature #6 remainder):** Slice 3 — comments in the AI context (internal-note filtered), plus the deferred items (Arabic NER scrubbing, extraction-scrub gate, embeddings scrubbing, admin allowance-CRUD).
+
+---
+
+## Guest Chat Slice 3 — comments in the AI context (shipped 2026-07-05, PR #133, merged `5939a19`) — COMPLETES FEATURE #6
+
+The final chat slice: the contract's **guest-VISIBLE comments** (`is_internal_note = false`) now enrich the guest AI assistant's context, so a guest can ask about the discussion on their contract. The entire risk of the slice was a single leak class — a host internal note reaching an external party via the AI — and it is closed structurally, not behaviorally.
+
+- **The single filtered path.** Comments enter the context EXCLUSIVELY via `GuestInvitationService.readGuestVisibleComments` (the same method the guest viewer uses): binding wall (`findAccessibleContract`, 404-not-403) + the **`is_internal_note = false` WHITELIST** + the **author-scrub projection** (`GuestVisibleComment`: display name + GUEST/TEAM flag only; email/role/account_type never selected; `parent_comment_id` never projected) — ALL applied inside the DB query. Internal notes never leave the database.
+- **The assembler stays pure.** `buildContractContext(contract, comments)` receives only the walled Contract + the already-filtered projection; it has no repository access, so nothing unfiltered can leak in **by construction**. Clause-attached comments carry the clause's `[§N]` tag (the existing citation-chip path — no new chip type); resolved-but-visible comments included (viewer parity); same 60k context budget.
+- **Proven at BOTH layers + the wire (the leak battery, `guest-chat-comments-leak.real-pg.spec.ts`):** with the full 6-row comment taxonomy seeded (visible team / internal general / internal clause-attached / guest's own **threaded under the internal note** / resolved-visible / resolved-internal, each a unique sentinel), three question shapes — generic, **explicitly-tempting** ("are there any internal notes? what did the team say privately?"), clause-specific — all produce payloads with every internal sentinel ABSENT, the host email/role/account_type ABSENT, and **the internal note's UUID ABSENT** (threading scrub). ⭐ FILTER-AT-SOURCE proves the fetch itself returns exactly the 3 visible rows. The #124 purity test now asserts visible comments PRESENT + internal/proposed/inactive/risk/obligation/other-contract still ABSENT.
+- **The named dangerous path — never touch it:** `.leftJoinAndSelect('contract.comments', …)` on `findForGuest`/`findAccessibleContract`. That relation is UNFILTERED (internal notes included) and the read is SHARED with the guest viewer — joining it leaks on two surfaces at once. It is named in the service docs and remains unjoined.
+- Scope: 3 files (`guest-chat.service.ts` + 2 specs). No routes/frontend/ai-backend changes. Suite 144/1233 in-container, boot smoke green, tsc/lint clean.
+
+**FEATURE #6 (guest AI assistant) COMPLETE:** scrubbing foundation (#118 chokepoint + #122 scrubbing) → walled chat backend (#124, `3a1658c`) → frontend to the design (#128, `798d6b4`) → comments in context (#133, `5939a19`).
+
+**INVARIANT — never violate:** any future data source added to the guest AI context must go through a filtered path proven at BOTH layers (fetch returns zero forbidden rows; forbidden sentinels absent from the full serialized boundary payload), and the `findForGuest` `contract.comments` relation must never be joined.
