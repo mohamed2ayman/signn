@@ -34,6 +34,15 @@ import { SubscriptionsService } from '../../subscriptions/subscriptions.service'
 import { THROTTLER_NAMES } from '../../../common/decorators/throttle-only.decorator';
 import { GuestChatController } from '../controllers/guest-chat.controller';
 import { GuestChatService } from '../services/guest-chat.service';
+// Slice 3 — GuestChatService now injects the SINGLE filtered comment path.
+// The service is REAL (its readGuestVisibleComments query is part of what
+// this spec proves); its deps unused on the read path are stubbed.
+import { GuestInvitationService } from '../services/guest-invitation.service';
+import { GuestInvitation } from '../../../database/entities/guest-invitation.entity';
+import { InvitationTokenService } from '../services/invitation-token.service';
+import { ViewerCredentialService } from '../services/viewer-credential.service';
+import { AuthService } from '../../auth/auth.service';
+import { GuestInvitationScopedRepository } from '../../scoped-repository/guest-invitation-scoped.repository';
 
 /**
  * Guest chat Slice 1 — REAL-Postgres proof.
@@ -262,6 +271,7 @@ describeReal('GuestChatController / GuestChatService (real Postgres)', () => {
           User,
           ChatSession,
           ChatMessage,
+          GuestInvitation,
           MeterDefinition,
           PlanAllowance,
           SubjectAllowance,
@@ -275,6 +285,14 @@ describeReal('GuestChatController / GuestChatService (real Postgres)', () => {
         ContractAccessService,
         MeteringService,
         MeteringResolver,
+        // Slice 3 — REAL GuestInvitationService: readGuestVisibleComments (the
+        // single filtered comment path) runs its real QueryBuilder against the
+        // real DB. Deps unused by that read path are inert stubs.
+        GuestInvitationService,
+        { provide: InvitationTokenService, useValue: {} },
+        { provide: ViewerCredentialService, useValue: {} },
+        { provide: AuthService, useValue: {} },
+        { provide: GuestInvitationScopedRepository, useValue: {} },
         // No org subscription → the resolver falls through to the
         // meter_definitions.default_limit (1,000,000 placeholder) — the daily
         // counter, not the meter, is the binding cap. Exactly production
@@ -356,7 +374,9 @@ describeReal('GuestChatController / GuestChatService (real Postgres)', () => {
       'Other contract clause',
       OTHER_CONTRACT_SENTINEL,
     );
-    // Comments (visible + internal) — Slice 3 territory, must NOT leak.
+    // Comments: the VISIBLE one now flows into context (Slice 3); the
+    // INTERNAL note must NEVER leak. The exhaustive per-taxonomy battery
+    // lives in guest-chat-comments-leak.real-pg.spec.ts.
     for (const [content, internal] of [
       [VISIBLE_COMMENT_SENTINEL, false],
       [INTERNAL_NOTE_SENTINEL, true],
@@ -589,7 +609,7 @@ describeReal('GuestChatController / GuestChatService (real Postgres)', () => {
     const wire = JSON.stringify(payload);
     expect(wire).not.toContain(PROPOSED_SENTINEL); // proposed clauses (Slice 2 artifacts)
     expect(wire).not.toContain(INACTIVE_SENTINEL); // inactive clause versions
-    expect(wire).not.toContain(VISIBLE_COMMENT_SENTINEL); // comments = Slice 3
+    expect(wire).toContain(VISIBLE_COMMENT_SENTINEL); // visible comments IN (Slice 3)
     expect(wire).not.toContain(INTERNAL_NOTE_SENTINEL); // internal notes EVER
     expect(wire).not.toContain(RISK_SENTINEL); // risk analyses EVER
     expect(wire).not.toContain(OBLIGATION_SENTINEL); // obligations EVER

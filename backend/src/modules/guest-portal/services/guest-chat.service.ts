@@ -20,6 +20,10 @@ import { ContractAccessService } from '../../contracts/services/contract-access.
 import { AiService } from '../../ai/ai.service';
 import { MeteringService } from '../../metering/services/metering.service';
 import { MeterKey } from '../../metering/enums/meter-key.enum';
+import {
+  GuestInvitationService,
+  GuestVisibleComment,
+} from './guest-invitation.service';
 
 /** The guest principal shape the JwtStrategy surfaces (Path B). */
 export interface GuestPrincipal {
@@ -52,13 +56,20 @@ export interface GuestChatMessageView {
  *      (id, user_id = guest, contract_id = the walled contract) so a session
  *      can never be read by another guest and can never receive messages
  *      resolved against a different contract.
- *   2. STRICT CONTEXT — the AI context is assembled from EXACTLY the walled
- *      contract read the guest viewer uses: contract metadata + ACTIVE live
+ *   2. STRICT CONTEXT — the AI context is assembled from EXACTLY what the
+ *      guest can already see in the viewer: contract metadata + ACTIVE live
  *      clauses (`contract_clauses.is_proposed = false` is enforced by the
- *      wall's JOIN condition itself; `clause.is_active` filtered here).
- *      NOTHING else: no comments (Slice 3), no risk / compliance /
- *      obligations, no proposed clauses, no version history, no other
- *      contracts. There is deliberately NO other data source in this file.
+ *      wall's JOIN condition itself; `clause.is_active` filtered here) +
+ *      (Slice 3) the GUEST-VISIBLE comments fetched through the SINGLE
+ *      filtered path `GuestInvitationService.readGuestVisibleComments`
+ *      (wall + `is_internal_note = false` DB-layer WHITELIST + author-scrub
+ *      projection). INTERNAL NOTES NEVER ENTER THE CONTEXT — the filter is
+ *      applied in the comment query itself, and the assembler only ever
+ *      receives the already-filtered `GuestVisibleComment[]` projection.
+ *      NOTHING else: no risk / compliance / obligations, no proposed
+ *      clauses, no version history, no other contracts. The assembler has
+ *      no repository access; `contract.comments` (the UNFILTERED relation)
+ *      is never loaded by the wall and must NEVER be joined in.
  *   3. RACE-SAFE DAILY CAP — 20 guest questions/day PER CONTRACT (UTC day),
  *      enforced by a SINGLE atomic conditional UPSERT on
  *      `guest_ai_query_daily_counts` (the guest_upload idiom — Rule 9
@@ -109,6 +120,11 @@ export class GuestChatService {
     private readonly contractAccess: ContractAccessService,
     private readonly aiService: AiService,
     private readonly metering: MeteringService,
+    // Slice 3 — the SINGLE filtered comment path (wall + is_internal_note=false
+    // whitelist + author-scrub, all applied at the DB layer inside
+    // readGuestVisibleComments). The assembler must only ever receive its
+    // output; never fetch comments any other way from this service.
+    private readonly guestInvitations: GuestInvitationService,
     // lint-exempt: chat scopes by user_id/session_id (ownership), NOT contract→org — same posture as the host chat module's repos; the contract itself is walled via ContractAccessService on every route
     @InjectRepository(ChatSession)
     private readonly sessionRepo: Repository<ChatSession>,
@@ -288,8 +304,21 @@ export class GuestChatService {
         content: m.content as string,
       }));
 
-    // 4 — STRICT context: the walled contract read ONLY (invariant 2).
-    const contractContext = this.buildContractContext(contract);
+    // 4 — STRICT context (invariant 2): the walled contract read + (Slice 3)
+    // the guest-visible comments from the SINGLE filtered path. The whitelist
+    // (`is_internal_note = false`) and the author-scrub live INSIDE
+    // readGuestVisibleComments' query — internal notes never leave the DB,
+    // host PII is never selected. NEVER swap this for `contract.comments`
+    // (the unfiltered relation) or a bare ContractComment repo read.
+    const visibleComments =
+      await this.guestInvitations.readGuestVisibleComments(
+        contractId,
+        guest.id,
+      );
+    const contractContext = this.buildContractContext(
+      contract,
+      visibleComments,
+    );
 
     // 5 — persist the user turn (terminal on creation).
     const userMessage = await this.messageRepo.save( // lint-exempt: write (guest user-turn insert); the scoped chokepoint is read-only
@@ -441,16 +470,26 @@ export class GuestChatService {
   // ─── Context assembly (invariant 2 — the security-critical projection) ──
 
   /**
-   * Build the AI grounding context from EXACTLY the walled contract read:
-   * contract metadata + live ACTIVE clauses. The wall's JOIN already excludes
+   * Build the AI grounding context from EXACTLY the guest-visible reads:
+   * contract metadata + live ACTIVE clauses (the walled contract read) +
+   * (Slice 3) the guest-visible comments. The wall's JOIN already excludes
    * `is_proposed = true` junction rows; inactive clauses are dropped here.
    * Sections are labeled `§<section_number>` so the model can cite them and
-   * the frontend can key citation chips by section.
+   * the frontend can key citation chips by section. Comments carry the same
+   * `[§N]` tag when attached to a clause, so a comment-informed answer cites
+   * the clause it discusses (the existing chip path — no new chip type).
    *
-   * This function receives ONLY the Contract object from the wall — it has
-   * no repository access, so no other data source can leak in.
+   * SECURITY — this function is PURE: it receives ONLY the Contract object
+   * from the wall and the ALREADY-FILTERED `GuestVisibleComment[]` from
+   * `readGuestVisibleComments` (is_internal_note=false whitelist + scrubbed
+   * author projection, both applied at the DB layer). It has no repository
+   * access, so no unfiltered source can leak in by construction. Internal
+   * notes and raw author PII structurally cannot reach this function.
    */
-  buildContractContext(contract: Contract): string {
+  buildContractContext(
+    contract: Contract,
+    comments: GuestVisibleComment[] = [],
+  ): string {
     const meta: string[] = ['### Contract'];
     meta.push(`Name: ${contract.name ?? 'Untitled'}`);
     if (contract.contract_type) meta.push(`Type: ${contract.contract_type}`);
@@ -494,6 +533,53 @@ export class GuestChatService {
         `\n[Note: ${omitted.length} clause(s) omitted for length: ${omitted.join(', ')}. ` +
           `Tell the user to consult the contract viewer for their full text.]`,
       );
+    }
+
+    // ── Slice 3: guest-VISIBLE comments (already filtered + author-scrubbed
+    //    upstream — see the docstring). Chronological; clause-attached
+    //    comments carry the clause's [§N] tag so the model cites the clause
+    //    when answering from its discussion; general comments carry no tag.
+    if (comments.length > 0) {
+      const sectionByJunctionId = new Map<string, string>();
+      for (const cc of junctions) {
+        sectionByJunctionId.set(
+          cc.id,
+          cc.section_number ?? String((cc.order_index ?? 0) + 1),
+        );
+      }
+      const header =
+        '\n### Comments (the visible discussion on this contract)\n' +
+        'When an answer draws on a comment, cite the clause section it is ' +
+        'attached to (e.g. §2) when one is shown.';
+      parts.push(header);
+      used += header.length;
+
+      let omittedComments = 0;
+      for (const c of comments) {
+        const section = c.contract_clause_id
+          ? sectionByJunctionId.get(c.contract_clause_id)
+          : null;
+        const tag = section ? `[§${section}] ` : '';
+        const day =
+          c.created_at instanceof Date
+            ? c.created_at.toISOString().slice(0, 10)
+            : String(c.created_at).slice(0, 10);
+        const line = `\n- ${tag}${c.author_role === 'GUEST' ? 'Guest' : 'Team'} (${c.author_name}, ${day}): ${c.content}`;
+        if (
+          used + line.length >
+          GuestChatService.GUEST_CHAT_CONTEXT_MAX_CHARS
+        ) {
+          omittedComments += 1;
+          continue;
+        }
+        parts.push(line);
+        used += line.length;
+      }
+      if (omittedComments > 0) {
+        parts.push(
+          `\n[Note: ${omittedComments} comment(s) omitted for length.]`,
+        );
+      }
     }
 
     return parts.join('\n');
