@@ -21,6 +21,26 @@
     font-family: 'Cairo', system-ui, sans-serif;
   }
 
+  /* Guest AI Assistant citation tap → clause pulse (Feature #6). Applied by
+     scrollToGuestClause(); self-clears on animationend. */
+  .guest-clause-highlight {
+    animation: guest-clause-pulse 2.4s ease-out 1;
+  }
+  @keyframes guest-clause-pulse {
+    0% {
+      box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.45);
+      background-color: rgba(13, 110, 253, 0.06);
+    }
+    60% {
+      box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.25);
+      background-color: rgba(13, 110, 253, 0.04);
+    }
+    100% {
+      box-shadow: 0 0 0 0 rgba(13, 110, 253, 0);
+      background-color: transparent;
+    }
+  }
+
   /* Smoother scrollbars */
   ::-webkit-scrollbar {
     width: 6px;

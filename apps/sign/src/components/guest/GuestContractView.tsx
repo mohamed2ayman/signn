@@ -60,9 +60,13 @@ function clearInflight(contractId: string): void {
 export default function GuestContractView({
   contract,
   guestJwt,
+  onAskAi,
 }: {
   contract: Contract;
   guestJwt?: string | null;
+  /** Opens the Guest AI Assistant drawer (Feature #6). Path-B gated like
+   *  Upload/Download — rendered only inside the `{guestJwt && …}` row. */
+  onAskAi?: () => void;
 }) {
   const { t } = useTranslation();
   const [downloading, setDownloading] = useState(false);
@@ -229,7 +233,33 @@ export default function GuestContractView({
             </h2>
             {guestJwt && (
               <div className="flex flex-col items-end gap-1.5">
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  {/* Ask AI — the assistant trigger (Feature #6). Filled
+                      primary = the lead affordance of the row per the design. */}
+                  {onAskAi && (
+                    <button
+                      type="button"
+                      onClick={onAskAi}
+                      data-testid="guest-ask-ai"
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-primary-600"
+                    >
+                      <svg
+                        aria-hidden="true"
+                        className="h-3.5 w-3.5"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                        strokeWidth={2}
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M8 10h8m-8 4h5m-9 6l3.2-3.2A8 8 0 1120 12a8 8 0 01-12.8 4.8L4 20z"
+                        />
+                      </svg>
+                      {t('guest.assistant.trigger')}
+                    </button>
+                  )}
                   {/* Upload new version (Path-B gated) */}
                   <button
                     type="button"
@@ -336,11 +366,19 @@ export default function GuestContractView({
             <div className="space-y-3">
               {clauses.map((cc) =>
                 cc.clause ? (
-                  <GuestClauseCard
+                  // The data attribute is the citation-chip scroll anchor
+                  // (Feature #6): the chat panel resolves `§section` taps via
+                  // [data-guest-clause-section] + pulses .guest-clause-highlight.
+                  <div
                     key={cc.id}
-                    clause={cc.clause}
-                    sectionNumber={cc.section_number}
-                  />
+                    data-guest-clause-section={cc.section_number ?? ''}
+                    className="scroll-mt-24 rounded-lg"
+                  >
+                    <GuestClauseCard
+                      clause={cc.clause}
+                      sectionNumber={cc.section_number}
+                    />
+                  </div>
                 ) : null,
               )}
             </div>

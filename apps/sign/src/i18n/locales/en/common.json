@@ -1073,7 +1073,7 @@
     },
     "commentCta": {
       "title": "Want to comment on this contract?",
-      "body": "Set a password to leave attributed comments. Your access stays limited to this contract.",
+      "body": "Set a password to leave attributed comments, upload versions, and ask the AI assistant about this contract. Your access stays limited to this contract.",
       "button": "Set a password to comment"
     },
     "identity": {
@@ -1151,6 +1151,35 @@
         "title": "Something went wrong",
         "body": "We could not load this shared contract just now. Please try again in a moment."
       }
+    },
+    "assistant": {
+      "trigger": "Ask AI",
+      "title": "SIGN AI Assistant",
+      "subline": "Answers about this contract only",
+      "newChat": "New Chat",
+      "welcomeTitle": "How can I help with this contract?",
+      "welcomeBody": "Ask me anything about the clauses, payment terms, dates or obligations — I'll point you to the exact clause.",
+      "tryAsking": "Try asking",
+      "suggested1": "What's my payment schedule?",
+      "suggested2": "When are my key deadlines?",
+      "suggested3": "Summarize my obligations",
+      "suggested4": "Who are the parties to this contract?",
+      "placeholder": "Ask about this contract…",
+      "placeholderCapped": "Daily limit reached — try again tomorrow",
+      "send": "Send",
+      "helper": "SIGN AI can make mistakes. Verify important details in the contract.",
+      "errorText": "Something went wrong reaching the assistant.",
+      "retry": "Retry",
+      "viewInContract": "View in contract",
+      "stillWorking": "Still working on your answer — refresh to check.",
+      "thinking": "Thinking…",
+      "loadingHistory": "Loading conversation…",
+      "remaining": "{{n}} of {{limit}} questions left today",
+      "rateTitle": "Daily question limit reached",
+      "rateBody": "You've used all {{limit}} questions for today. Your limit resets tomorrow — you can still read the conversation above.",
+      "rateResets": "Resets tomorrow at {{time}}.",
+      "throttleNotice": "You're sending messages too quickly. Please wait a moment.",
+      "sessionExpired": "Your secure session expired. Reload the page to keep chatting."
     }
   }
 }
