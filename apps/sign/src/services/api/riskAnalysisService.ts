@@ -14,6 +14,11 @@ export const riskAnalysisService = {
   updateStatus: (id: string, status: string) =>
     api.put<RiskAnalysis>(`/risk-analysis/${id}/status`, { status }).then(r => r.data),
 
+  // Phase 8.3 — editable Risk Analysis tab. Human correction of a finding's
+  // level and/or category. Hits the bare PATCH /risk-analysis/:id endpoint.
+  annotate: (id: string, data: { risk_level?: string; risk_category?: string }) =>
+    api.patch<RiskAnalysis>(`/risk-analysis/${id}`, data).then(r => r.data),
+
   // Rules
   getRules: (activeOnly?: boolean) =>
     api.get<RiskRule[]>('/risk-analysis/rules', { params: { active_only: activeOnly } }).then(r => r.data),

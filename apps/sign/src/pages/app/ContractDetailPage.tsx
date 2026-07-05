@@ -13,6 +13,7 @@ import LoadingSpinner from '@/components/common/LoadingSpinner';
 import ChatPanel from '@/components/chat/ChatPanel';
 import { useCollaboration } from '@/hooks/useCollaboration';
 import type { Contract, ContractClause, Clause, ContractComment, RiskAnalysis, ContractShare, SignatureSigner, ConflictDetail, ContractVersion, ContractApprover, ProjectMember } from '@/types';
+import RiskCard from '@/components/contracts/RiskCard';
 import { ApproverStatus } from '@/types';
 import VersionTimeline from '@/components/versions/VersionTimeline';
 import DiffViewerModal from '@/components/versions/DiffViewerModal';
@@ -377,6 +378,17 @@ export default function ContractDetailPage() {
       setLoading(false);
     }
   };
+
+  // Phase 8.3 — persist a human risk annotation (level/category) and reflect
+  // the change in the loaded risks. Throwing propagates to RiskCard, which
+  // reverts its optimistic update.
+  const handleAnnotateRisk = useCallback(
+    async (riskId: string, data: { risk_level?: string; risk_category?: string }) => {
+      const updated = await riskAnalysisService.annotate(riskId, data);
+      setRisks((prev) => prev.map((r) => (r.id === riskId ? { ...r, ...updated } : r)));
+    },
+    [],
+  );
 
   // ── Real-time collaboration ──
   const reloadClauses = useCallback(() => {
@@ -1698,41 +1710,13 @@ export default function ContractDetailPage() {
             </div>
           )}
 
-          {/* Regular Risks — unchanged rendering */}
+          {/* Regular Risks — level + category editable (Phase 8.3) */}
           {risks.filter(r => r.risk_category !== 'DOCUMENT_CONFLICT').map((risk) => (
-            <div key={risk.id} className="rounded-xl border border-gray-200/80 bg-white shadow-card transition-shadow hover:shadow-card-hover">
-              <div className="flex items-center justify-between px-5 py-4">
-                <div className="flex items-center gap-3">
-                  <RiskLevelBadge level={risk.risk_level} />
-                  <span className="text-xs font-medium text-gray-400">{risk.risk_category}</span>
-                </div>
-                <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                  risk.status === 'OPEN' ? 'bg-amber-50 text-amber-700' : 'bg-gray-50 text-gray-500'
-                }`}>
-                  <span className={`h-1.5 w-1.5 rounded-full ${risk.status === 'OPEN' ? 'bg-amber-400' : 'bg-gray-300'}`} />
-                  {risk.status}
-                </span>
-              </div>
-              <div className="border-t border-gray-50 px-5 py-4">
-                <p className="text-sm leading-relaxed text-gray-600">{risk.description}</p>
-                {risk.recommendation && (
-                  <div className="mt-3 rounded-lg border border-blue-100 bg-blue-50/50 p-3">
-                    <div className="mb-1 flex items-center gap-1.5">
-                      <svg className="h-3.5 w-3.5 text-blue-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 18v-5.25m0 0a6.01 6.01 0 001.5-.189m-1.5.189a6.01 6.01 0 01-1.5-.189m3.75 7.478a12.06 12.06 0 01-4.5 0m3.75 2.383a14.406 14.406 0 01-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 10-7.517 0c.85.493 1.509 1.333 1.509 2.316V18" />
-                      </svg>
-                      <span className="text-xs font-semibold text-blue-700">AI Recommendation</span>
-                    </div>
-                    <p className="text-sm text-blue-600">{risk.recommendation}</p>
-                  </div>
-                )}
-                {risk.citation_source && risk.risk_category !== 'DOCUMENT_CONFLICT' && (
-                  <p className="mt-2 text-xs text-gray-400">
-                    <span className="font-medium">Source:</span> {risk.citation_source}
-                  </p>
-                )}
-              </div>
-            </div>
+            <RiskCard
+              key={risk.id}
+              risk={risk}
+              onAnnotate={handleAnnotateRisk}
+            />
           ))}
 
           {risks.length === 0 && (

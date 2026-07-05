@@ -1,5 +1,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
+import { clauseTypeLabel } from '@/components/review/ClauseReviewCard';
 import { clauseService } from '@/services/api/clauseService';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
 import ConfidenceBadge from '@/components/common/ConfidenceBadge';
@@ -255,6 +257,7 @@ function ClauseCard({
 }) {
   const isAI = clause.source === 'AI_EXTRACTED';
   const isPending = clause.review_status === 'PENDING_REVIEW';
+  const { t } = useTranslation();
 
   // ── Type dropdown state ──────────────────────────────────────
   const [localType, setLocalType] = useState<string | null>(clause.clause_type ?? null);
@@ -328,14 +331,14 @@ function ClauseCard({
               className="flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-600 transition-colors hover:bg-blue-100"
               title="Click to change clause type"
             >
-              {localType ? (CLAUSE_TYPE_LABELS[localType] || localType) : 'Set type'}
+              {localType ? clauseTypeLabel(localType, t) : 'Set type'}
               <svg className="h-2.5 w-2.5 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
               </svg>
             </button>
             {isTypeOpen && (
               <div
-                className="absolute left-0 top-full z-50 mt-1 max-h-60 w-44 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg"
+                className="absolute top-full z-50 mt-1 max-h-60 w-44 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg ltr:left-0 rtl:right-0"
                 onClick={(e) => e.stopPropagation()}
               >
                 {Object.entries(CLAUSE_TYPE_LABELS).map(([key, label]) => (
@@ -343,11 +346,11 @@ function ClauseCard({
                     key={key}
                     type="button"
                     onClick={(e) => handleTypeSelect(key, e)}
-                    className={`flex w-full items-center justify-between px-3 py-1.5 text-left text-xs transition-colors hover:bg-gray-50 ${
+                    className={`flex w-full items-center justify-between px-3 py-1.5 text-start text-xs transition-colors hover:bg-gray-50 ${
                       key === localType ? 'bg-blue-50 font-medium text-blue-600' : 'text-gray-700'
                     }`}
                   >
-                    {label}
+                    {t(`clauseType.${key}`, { defaultValue: label })}
                     {key === localType && (
                       <svg className="h-3.5 w-3.5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />

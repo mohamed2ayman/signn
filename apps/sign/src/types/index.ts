@@ -812,6 +812,12 @@ export interface RiskAnalysis {
   handled_by: string | null;
   handled_at: string | null;
   created_at: string;
+  // Phase 8.3 — human annotation tracking (editable Risk Analysis tab)
+  is_edited_by_user?: boolean;
+  edited_by_user_id?: string | null;
+  edited_at?: string | null;
+  original_risk_level?: string | null;
+  original_risk_category?: string | null;
   contract?: Contract;
   contract_clause?: ContractClause;
   handler?: User;

@@ -1,4 +1,24 @@
 {
+  "clauseType": {
+    "_TODO": "PENDING LEGAL REVIEW: the French clause-type / risk-category terms below are DRAFT values pending verification.",
+    "general": "Général",
+    "payment": "Paiement",
+    "liability": "Responsabilité",
+    "termination": "Résiliation",
+    "indemnification": "Indemnisation",
+    "force_majeure": "Force Majeure",
+    "dispute_resolution": "Règlement des différends",
+    "confidentiality": "Confidentialité",
+    "compliance": "Conformité",
+    "insurance": "Assurance",
+    "warranty": "Garantie",
+    "intellectual_property": "PI",
+    "scope_of_work": "Étendue des travaux",
+    "variations": "Modifications",
+    "defects": "Défauts",
+    "time": "Délais",
+    "other": "Autre"
+  },
   "proposedDiff": {
     "title": "Examiner les modifications proposées",
     "subtitle": "Contrat actuel ↔ version proposée par l'invité",

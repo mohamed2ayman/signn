@@ -1,4 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { ClauseReviewStatus } from '@/types';
 import type { Clause } from '@/types';
 import ConfidenceBadge from '@/components/common/ConfidenceBadge';
@@ -156,6 +158,29 @@ export const CLAUSE_TYPE_LABELS: Record<string, string> = {
   other: 'Other',
 };
 
+/** Reverse map (English label → key) so a stored English category label can be
+ *  resolved back to its `clauseType.*` i18n key. */
+export const CLAUSE_LABEL_TO_KEY: Record<string, string> = Object.fromEntries(
+  Object.entries(CLAUSE_TYPE_LABELS).map(([key, label]) => [label, key]),
+);
+
+/**
+ * Localize a clause_type / risk_category value for DISPLAY only. Accepts a KEY
+ * ('payment'), an English LABEL ('Payment'), or free-text ('Uncategorized',
+ * 'Payment Terms'). Returns the localized label for the 17 known categories
+ * (via the `clauseType.*` i18n keys, English fallback), or the raw value
+ * unchanged for anything else. Storage is never affected.
+ */
+export function clauseTypeLabel(
+  value: string | null | undefined,
+  t: TFunction,
+): string {
+  if (!value) return '';
+  const key = CLAUSE_TYPE_LABELS[value] ? value : CLAUSE_LABEL_TO_KEY[value];
+  if (key) return t(`clauseType.${key}`, { defaultValue: CLAUSE_TYPE_LABELS[key] });
+  return value;
+}
+
 export default function ClauseReviewCard({
   clause,
   sectionNumber,
@@ -165,6 +190,7 @@ export default function ClauseReviewCard({
   isSelected = false,
   onClick,
 }: ClauseReviewCardProps) {
+  const { t } = useTranslation();
   const [isExpanded, setIsExpanded] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState(clause.title);
@@ -265,23 +291,23 @@ export default function ClauseReviewCard({
                 className="flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary transition-colors hover:bg-primary/20"
                 title="Click to change clause type"
               >
-                {localType ? (CLAUSE_TYPE_LABELS[localType] || localType) : 'Set type'}
+                {localType ? clauseTypeLabel(localType, t) : 'Set type'}
                 <svg className="h-2.5 w-2.5 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                 </svg>
               </button>
               {isTypeDropdownOpen && (
-                <div className="absolute left-0 top-full z-50 mt-1 max-h-60 w-44 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
+                <div className="absolute top-full z-50 mt-1 max-h-60 w-44 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg ltr:left-0 rtl:right-0">
                   {Object.entries(CLAUSE_TYPE_LABELS).map(([key, label]) => (
                     <button
                       key={key}
                       type="button"
                       onClick={(e) => handleTypeSelect(key, e)}
-                      className={`flex w-full items-center justify-between px-3 py-1.5 text-left text-xs transition-colors hover:bg-gray-50 ${
+                      className={`flex w-full items-center justify-between px-3 py-1.5 text-start text-xs transition-colors hover:bg-gray-50 ${
                         key === localType ? 'bg-primary/5 font-medium text-primary' : 'text-gray-700'
                       }`}
                     >
-                      {label}
+                      {t(`clauseType.${key}`, { defaultValue: label })}
                       {key === localType && (
                         <svg className="h-3.5 w-3.5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
