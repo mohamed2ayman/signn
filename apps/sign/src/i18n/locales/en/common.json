@@ -18,6 +18,9 @@
     "time": "Time",
     "other": "Other"
   },
+  "parties": {
+    "swap": "Swap First ⇄ Second"
+  },
   "proposedDiff": {
     "title": "Review proposed changes",
     "subtitle": "Current contract ↔ guest's proposed version",

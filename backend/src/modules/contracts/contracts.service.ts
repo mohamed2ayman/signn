@@ -354,12 +354,22 @@ export class ContractsService {
     // through the scoped repo. Both layers fire; see update() for the rationale.
     const contract = await this.contractScoped.scopedFindByIdOrThrow(id, orgId);
 
+    // Snapshot the AI-extracted ORIGINAL party names exactly ONCE — immediately
+    // before the first human edit/swap — so original-vs-corrected is preserved.
+    // Guarded on is_parties_edited_by_user so later edits keep the TRUE original.
+    // Mirrors the risk annotation's original_* / is_edited_by_user tracking.
+    if (!contract.is_parties_edited_by_user) {
+      contract.original_party_first_name = contract.party_first_name;
+      contract.original_party_second_name = contract.party_second_name;
+    }
+
     if (data.party_first_name !== undefined) {
       contract.party_first_name = data.party_first_name || null;
     }
     if (data.party_second_name !== undefined) {
       contract.party_second_name = data.party_second_name || null;
     }
+    contract.is_parties_edited_by_user = true;
 
     await this.contractRepository.save(contract); // lint-exempt: wall-protected (findInOrg) — row validated before write
     return this.findById(id, orgId);

@@ -19,6 +19,9 @@
     "time": "Délais",
     "other": "Autre"
   },
+  "parties": {
+    "swap": "Échanger premier ⇄ second"
+  },
   "proposedDiff": {
     "title": "Examiner les modifications proposées",
     "subtitle": "Contrat actuel ↔ version proposée par l'invité",

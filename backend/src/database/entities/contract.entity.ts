@@ -189,6 +189,19 @@ export class Contract {
   @Column({ type: 'varchar', length: 500, nullable: true })
   party_second_name: string | null;
 
+  // ─── Party annotation tracking (permanent product feature) ───────────
+  // The AI-extracted ORIGINAL party names, snapshotted exactly ONCE immediately
+  // before the first human edit/swap (original-vs-corrected). NULL until then.
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  original_party_first_name: string | null;
+
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  original_party_second_name: string | null;
+
+  /** True once a human has edited/swapped the parties. Defaults false. */
+  @Column({ type: 'boolean', default: false })
+  is_parties_edited_by_user: boolean;
+
   @Column({ type: 'timestamptz', nullable: true })
   executed_at: Date | null;
 
