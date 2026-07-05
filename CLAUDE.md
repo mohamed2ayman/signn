@@ -4708,3 +4708,25 @@ chokepoint. Two stacked PRs, both squash-merged to `main`.
 The guest chat build (Feature #6 Slices 1–2) sits on this foundation; the Claude
 Design export is the visual target (see lesson #190 for the export-as-reference
 workflow).
+
+---
+
+## Guest Chat Slice 2 — GuestChatPanel frontend (shipped 2026-07-05, PR #128, merged `798d6b4`)
+
+Completes Feature #6 end-to-end: **guest chat = backend (#124, `3a1658c`) + frontend (#128, `798d6b4`), both shipped.** The backend slice (guest-walled multi-turn chat routes, strict clauses+metadata context, GUEST_AI_QUERY meter, 20/day atomic counter, `guest_ai_query` burst throttler, scrubbing inherited via the conversational agent's `scrub=True`) landed 2026-07-04; this slice is the `GuestChatPanel` UI built to the Claude Design export and human-browser-verified.
+
+- **Forked from the host ChatPanel, host chat PROVABLY untouched.** `GuestChatPanel.tsx` forks the drawer/bubbles/markdown-lite/1.5s-poll+90s-cap/refresh-resume pattern; `git diff` on `components/chat/` + `chatService.ts` vs pre-merge main is 0 lines. The host panel remains LTR-only with hardcoded English — **RTL and i18n are guest-fork-only** (27 `guest.assistant.*` keys ×3 locales, parity-asserted; Cairo via the global `[dir='rtl']` rule).
+- **All 10 states:** loading-history · empty/first-open (design's 4 suggested questions) · sent (optimistic) · thinking (dots, 1500ms poll, 90s cap) · answered + citation chips · error + Retry · burst-throttle transient notice · daily-cap WARNING pill · daily-cap REACHED (amber card + disabled composer + `resets_at`) · session-expired (401 → `onSessionExpired`, mirrors GuestComments).
+- **Backend contract consumed (#124):** send → `{user_message, assistant_message, remaining, cap}`; daily-cap 429 `{error:'GUEST_AI_QUERY_DAILY_LIMIT', remaining:0, cap, resets_at}`; burst 429 (named-throttler shape, `retryAfter`); 401 → session-expired. The **quota pill renders only from real `{remaining, cap}`** (the history endpoint carries no quota — no fabricated "20 of 20"; lesson #203).
+- **Citation chips render ONLY for real §refs** — parser handles `§N` (Latin + Arabic-Indic digits) and conservative `البند/المادة N` forms, matched against the contract's actual `section_number`s (never invented). Tap → excerpt expands AND the clause card scroll-and-pulses via the `data-guest-clause-section` anchor + `.guest-clause-highlight` keyframe in `styles/index.css`; the panel stays open.
+- **Service layer on the ISOLATED `guestHttp`** (`guestChatService.ts`) with explicit `Bearer <guestJwt>` per request — never the managing client. Session resume via `guest-chat-session:<contractId>` localStorage (the guest-upload grain).
+- **Path-B gated like upload/download:** the filled-primary "Ask AI" trigger renders only inside `GuestContractView`'s `{guestJwt && …}` action row (lead position); the Path-A identity CTA card copy now mentions the assistant (spec §3.3 Option A). Panel mounts at `GuestViewerPage` level.
+- **Verified:** vitest 156/156 (25 files; +35 new — panel state machine incl. poll/cap/resume/429s/retry/quota, citation parser, service classifier, trigger gating); `vite build` clean; tsc 0-new in touched source; i18n parity 27×3; CI 3/3 green; **human visual gate PASSED** (EN E2E against the live backend, Arabic RTL mirroring with the drawer pinned LEFT, citation-tap scroll+highlight, real quota pill counting down).
+
+**Hard rules — never violate:**
+1. **The host ChatPanel stays untouched by guest work** — fork, don't mutate. Guest-specific behavior (RTL, i18n, quota, gating) lives only in `GuestChatPanel.tsx`.
+2. **Citation chips must never be invented** — render only for parsed refs that match a real clause `section_number` on the bound contract.
+3. **The quota pill shows real backend data only** — never seed it with an assumed cap before the first send response.
+4. **Guest chat calls go through `guestHttp` + explicit guest JWT** — never the managing api client (its interceptors would leak the Redux token or trigger the app's 401 redirect).
+
+**NEXT (Feature #6 remainder):** Slice 3 — comments in the AI context (internal-note filtered), plus the deferred items (Arabic NER scrubbing, extraction-scrub gate, embeddings scrubbing, admin allowance-CRUD).
