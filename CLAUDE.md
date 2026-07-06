@@ -4746,3 +4746,56 @@ The final chat slice: the contract's **guest-VISIBLE comments** (`is_internal_no
 **FEATURE #6 (guest AI assistant) COMPLETE:** scrubbing foundation (#118 chokepoint + #122 scrubbing) → walled chat backend (#124, `3a1658c`) → frontend to the design (#128, `798d6b4`) → comments in context (#133, `5939a19`).
 
 **INVARIANT — never violate:** any future data source added to the guest AI context must go through a filtered path proven at BOTH layers (fetch returns zero forbidden rows; forbidden sentinels absent from the full serialized boundary payload), and the `findForGuest` `contract.comments` relation must never be joined.
+
+## 7.20 Slice 1 — Project Detail Tabbed Shell + Project Health Bar (PR #132)
+
+First slice of the 7.20 Project Intelligence Dashboard. Frontend-only (`apps/sign`);
+zero backend changes. Two things shipped:
+
+- **ProjectDetailPage is now a TABBED SHELL** — Dashboard (default on load) /
+  Contracts / Parties & Team, implemented as component tab STATE, **not URL
+  routes** (there is no nested-route pattern under `projects/:id`; adding one
+  for deep-linkable tabs is a deliberate future routing decision, see lesson
+  #211). Breadcrumb + header card (incl. the 4 quick stats) remain the shared
+  shell above the tabs. The pre-existing contracts card moved verbatim to the
+  Contracts tab; create-contract modal, AI ChatPanel, and the obligations/
+  permissions buttons are unchanged. Contracts fetch is React Query
+  (`['project-contracts', id]`); create-contract invalidates that key.
+  Parties & Team is a placeholder until the directory slice.
+- **`ProjectHealthBar`** (`apps/sign/src/components/project/ProjectHealthBar.tsx`)
+  renders as the Dashboard tab's first widget: horizontal bar (fill width =
+  score %, fill colour = band), band pill, top-3 plain-language drivers with
+  point deductions (risk/status drivers switch to the Contracts tab; the
+  overdue-obligations driver navigates to `/app/projects/:id/obligations`).
+  Scoring is the PURE exported **`computeProjectHealth()`** in
+  `apps/sign/src/components/project/projectHealth.ts` with all weights in the
+  named tunable **`HEALTH_WEIGHTS`** const (bands: ≥80 Healthy / 55–79 At risk /
+  <55 Critical; colours imported from `PORTFOLIO_CHART_COLORS`). Data: three
+  shared-key queries — `['project-dashboard'|'project-contracts'|
+  'project-obligations', projectId]` — reused by later slices.
+
+### Hard rules — never violate
+1. **`GET /projects/:id/dashboard` wire-shape landmines** (lesson #210): every
+   breakdown `count` is a **STRING** (`Number()` it); breakdown arrays are
+   **SPARSE** (zero-fill LOW/MEDIUM/HIGH and needed statuses before math);
+   `contracts.by_status` carries the **RAW 12 ContractStatus values** — fold
+   12→6 before feeding `StatusPie` (fold map exists backend-only; frontend fold
+   is still TODO for the contracts-by-status slice).
+2. **Insufficient data stays NEUTRAL** — 0 contracts OR 0 risk-analysis rows →
+   the "not enough analysed contracts" state, NEVER a low/red score.
+3. **Health weights live ONLY in `HEALTH_WEIGHTS`** — never inline a weight in
+   a component; the formula is a tunable product decision pending calibration.
+4. **In-app accent = Tailwind `primary` classes (#0D6EFD)** — that is what every
+   `bg-primary`/`text-primary` in the app resolves to (`apps/sign/tailwind.config.js`).
+   `#4F6EF7` is the SIGN **brand-mark indigo** (SignLogo, auth-page chrome,
+   `PORTFOLIO_CHART_COLORS.primary`) — do not hardcode it as a UI accent in new
+   app surfaces; use `primary` classes so dashboard work matches neighbouring pages.
+5. **`memberCount`/`contractCount` (GET /projects) and `expiry_date`
+   (GET /contracts) are on the wire but UNDECLARED on the frontend `Project`/
+   `Contract` types** — bind via a local type extension; widening the shared
+   types in `types/index.ts` is its own deliberate change.
+
+### Deferred (later 7.20 slices — do NOT assume built)
+Attention zone, risk mix, obligation rollup, contracts-by-status widget,
+parties & team directory, customize mode (v1 layout persistence will follow the
+`sign_portfolio_view` localStorage pattern — there is NO backend layout store).
