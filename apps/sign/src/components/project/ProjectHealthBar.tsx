@@ -1,5 +1,4 @@
 import { useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 
@@ -13,6 +12,7 @@ import {
   type HealthBand,
   type HealthDriver,
 } from './projectHealth';
+import { ATTENTION_ZONE_ID } from './ProjectAttentionZone';
 import type { Contract } from '@/types';
 
 /**
@@ -28,14 +28,19 @@ const BAND_COLOR: Record<HealthBand, string> = {
   critical: PORTFOLIO_CHART_COLORS.riskHigh,
 };
 
-/** Where each driver's "explain" affordance points, until its panel exists. */
-const DRIVER_TARGET: Record<HealthDriver['key'], 'contracts' | 'obligations'> = {
+/**
+ * Where each driver's "explain" affordance points. Slice 2: overdue /
+ * expired / expiring drivers scroll to the "Needs your attention" zone
+ * (which now shows those exact rows); risk + stalled drivers still switch
+ * to the Contracts tab until the risk-mix slice lands.
+ */
+const DRIVER_TARGET: Record<HealthDriver['key'], 'contracts' | 'attention'> = {
   highRisk: 'contracts',
   mediumRisk: 'contracts',
-  expired: 'contracts',
-  expiring: 'contracts',
+  expired: 'attention',
+  expiring: 'attention',
   stalled: 'contracts',
-  overdueObligations: 'obligations',
+  overdueObligations: 'attention',
 };
 
 export default function ProjectHealthBar({
@@ -47,7 +52,6 @@ export default function ProjectHealthBar({
   onNavigateToTab?: (tab: 'contracts') => void;
 }) {
   const { t } = useTranslation();
-  const navigate = useNavigate();
 
   // Three project-scoped queries — shared keys, reused by later slices
   // (the Contracts tab already consumes ['project-contracts', projectId];
@@ -132,8 +136,11 @@ export default function ProjectHealthBar({
   const color = BAND_COLOR[band];
 
   const onDriverClick = (key: HealthDriver['key']) => {
-    if (DRIVER_TARGET[key] === 'obligations') {
-      navigate(`/app/projects/${projectId}/obligations`);
+    if (DRIVER_TARGET[key] === 'attention') {
+      // In-page anchor to the "Needs your attention" zone directly below.
+      document
+        .getElementById(ATTENTION_ZONE_ID)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     } else {
       onNavigateToTab?.('contracts');
     }
