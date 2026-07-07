@@ -109,7 +109,10 @@ export default function ProjectAttentionZone({
                 </ul>
               )}
               {overdue && overdue.length > MAX_ROWS_PER_GROUP && (
-                <MoreCount count={overdue.length - MAX_ROWS_PER_GROUP} />
+                <MoreCount
+                  count={overdue.length - MAX_ROWS_PER_GROUP}
+                  onClick={() => navigate(`/app/projects/${projectId}/obligations`)}
+                />
               )}
             </FeedSection>
 
@@ -321,12 +324,22 @@ function ExpiryRow({ entry }: { entry: { contract: ContractWithExpiry; daysLeft:
   );
 }
 
-function MoreCount({ count }: { count: number }) {
+/**
+ * Overflow hint for a capped list. A REAL control (button), not a span —
+ * the text mentions "View all", so users click it; it must navigate to the
+ * exact same destination as the zone's "View all ↗" affordance.
+ */
+function MoreCount({ count, onClick }: { count: number; onClick: () => void }) {
   const { t } = useTranslation();
   return (
-    <p className="mt-1.5 text-xs text-gray-400">
+    <button
+      type="button"
+      onClick={onClick}
+      className="mt-1.5 inline-flex items-center gap-1 text-xs font-medium text-primary transition-colors hover:text-primary-600"
+    >
       {t('projectDashboard.attention.more', { count })}
-    </p>
+      <span aria-hidden="true">↗</span>
+    </button>
   );
 }
 

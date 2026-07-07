@@ -108,6 +108,11 @@ function renderPage() {
       <MemoryRouter initialEntries={['/app/projects/p-1']}>
         <Routes>
           <Route path="/app/projects/:id" element={<ProjectDetailPage />} />
+          {/* Stub target so tests can assert view-all navigation actually lands. */}
+          <Route
+            path="/app/projects/:id/obligations"
+            element={<div>OBLIGATIONS_PAGE_STUB</div>}
+          />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -270,6 +275,31 @@ describe('ProjectDetailPage — attention zone (7.20 slice 2)', () => {
     // MET + past due is NOT overdue → all-clear (given LOW-only risk, no expiry).
     expect(await screen.findByText('projectDashboard.attention.allClearTitle')).toBeInTheDocument();
     expect(screen.queryByText('Old met obligation')).not.toBeInTheDocument();
+  });
+
+  it('overflow hint "+N more" is a real control that navigates to the obligations view', async () => {
+    // 6 overdue obligations → top 5 rendered + a "+1 more" overflow hint.
+    vi.mocked(obligationService.getPortfolioObligations).mockResolvedValue(
+      Array.from({ length: 6 }, (_, i) => ({
+        id: `ob-${i}`,
+        contract_id: 'c-1',
+        description: `Overdue item ${i}`,
+        status: 'PENDING',
+        due_date: isoDaysFromNow(-(i + 1)),
+        obligation_type: 'REPORTING',
+        is_critical: false,
+        responsible_party: 'CONTRACTOR',
+      })) as never,
+    );
+    renderPage();
+    await screen.findAllByText('Metro Line 4');
+    // The hint must be an INTERACTIVE element (not a bare span/p)…
+    const hint = await screen.findByRole('button', {
+      name: /projectDashboard\.attention\.more/,
+    });
+    // …and clicking it must land on the same view-all destination.
+    await userEvent.click(hint);
+    expect(await screen.findByText('OBLIGATIONS_PAGE_STUB')).toBeInTheDocument();
   });
 
   it('per-source isolation: obligations failure shows a scoped error while expiring still renders', async () => {
