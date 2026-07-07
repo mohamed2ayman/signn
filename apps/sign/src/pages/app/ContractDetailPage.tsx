@@ -14,7 +14,7 @@ import LoadingSpinner from '@/components/common/LoadingSpinner';
 import ChatPanel from '@/components/chat/ChatPanel';
 import { useCollaboration } from '@/hooks/useCollaboration';
 import type { Contract, ContractClause, Clause, ContractComment, RiskAnalysis, ContractShare, SignatureSigner, ConflictDetail, ContractVersion, ContractApprover, ProjectMember } from '@/types';
-import RiskCard from '@/components/contracts/RiskCard';
+import RiskAnalysisTab from '@/components/contracts/RiskAnalysisTab';
 import { ApproverStatus } from '@/types';
 import VersionTimeline from '@/components/versions/VersionTimeline';
 import DiffViewerModal from '@/components/versions/DiffViewerModal';
@@ -385,7 +385,10 @@ export default function ContractDetailPage() {
   // the change in the loaded risks. Throwing propagates to RiskCard, which
   // reverts its optimistic update.
   const handleAnnotateRisk = useCallback(
-    async (riskId: string, data: { risk_level?: string; risk_category?: string }) => {
+    async (
+      riskId: string,
+      data: { risk_level?: string; risk_category?: string; recommendation?: string },
+    ) => {
       const updated = await riskAnalysisService.annotate(riskId, data);
       setRisks((prev) => prev.map((r) => (r.id === riskId ? { ...r, ...updated } : r)));
     },
@@ -749,7 +752,6 @@ export default function ContractDetailPage() {
     );
   }
 
-  const clauseRisks = (clauseId: string) => risks.filter((r) => r.contract_clause_id === clauseId);
   const highRisks = risks.filter(r => r.risk_level === 'HIGH');
   const openRisks = risks.filter(r => r.status === 'OPEN');
 
@@ -1411,7 +1413,8 @@ export default function ContractDetailPage() {
           )}
 
           {clauses.map((cc, index) => {
-            const risks = clauseRisks(cc.id);
+            // Risk-tab rework — STEP 4: the Clauses tab is clauses-only. Risk
+            // badges + AI risk insights moved to the Risk Analysis tab.
             return (
               <div key={cc.id} className="rounded-xl border border-gray-200/80 bg-white shadow-card transition-shadow hover:shadow-card-hover">
                 {/* Clause Header */}
@@ -1439,9 +1442,6 @@ export default function ContractDetailPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    {risks.map((risk) => (
-                      <RiskLevelBadge key={risk.id} level={risk.risk_level} />
-                    ))}
                     {contract.status === 'DRAFT' && (
                       <button
                         onClick={() => handleRemoveClause(cc.id)}
@@ -1462,26 +1462,6 @@ export default function ContractDetailPage() {
                     {cc.clause?.content}
                   </p>
                 </div>
-
-                {/* Inline Risk Insights */}
-                {risks.length > 0 && (
-                  <div className="border-t border-gray-100 bg-gray-50/70 px-5 py-3">
-                    <div className="mb-2 flex items-center gap-1.5">
-                      <svg className="h-3.5 w-3.5 text-amber-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
-                      </svg>
-                      <span className="text-xs font-semibold text-gray-500">AI Risk Analysis</span>
-                    </div>
-                    <div className="space-y-2">
-                      {risks.map((risk) => (
-                        <div key={risk.id} className="flex items-start gap-2">
-                          <RiskLevelBadge level={risk.risk_level} />
-                          <p className="text-sm text-gray-600">{risk.description}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
               </div>
             );
           })}
@@ -1739,14 +1719,17 @@ export default function ContractDetailPage() {
             </div>
           )}
 
-          {/* Regular Risks — level + category editable (Phase 8.3) */}
-          {risks.filter(r => r.risk_category !== 'DOCUMENT_CONFLICT').map((risk) => (
-            <RiskCard
-              key={risk.id}
-              risk={risk}
-              onAnnotate={handleAnnotateRisk}
-            />
-          ))}
+          {/* Regular Risks — clause-by-clause, grouped by document, editable
+              recommendation + AI re-phrase (Risk-tab rework, STEP 5). Backend
+              returns them ordered document-priority → clause order. */}
+          <RiskAnalysisTab
+            risks={risks.filter((r) => r.risk_category !== 'DOCUMENT_CONFLICT')}
+            onAnnotate={handleAnnotateRisk}
+            onRephraseApplied={() => {
+              reloadClauses();
+              reloadRisks();
+            }}
+          />
 
           {risks.length === 0 && (
             <div className="py-10 text-center">

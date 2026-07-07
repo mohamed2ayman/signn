@@ -39,6 +39,21 @@ export class AiService {
     return response.data;
   }
 
+  // ─── Clause Re-phrase (AI rewrite that mitigates a risk) ────
+
+  async triggerClauseRephrase(data: {
+    clause_text: string;
+    clause_title?: string | null;
+    risk_description?: string | null;
+    recommendation?: string | null;
+  }): Promise<{ job_id: string; status: string }> {
+    const response = await firstValueFrom(
+      this.httpService.post(`${this.aiBackendUrl}/agents/rephrase-clause`, data),
+    );
+    this.logger.log(`Clause rephrase dispatched: job_id=${response.data.job_id}`);
+    return response.data;
+  }
+
   // ─── Summarize ─────────────────────────────────────────────
 
   async triggerSummarize(data: {

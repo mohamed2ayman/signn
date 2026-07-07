@@ -19,6 +19,8 @@ from app.models.schemas import (
     ChatResponse,
     ClauseExtractionRequest,
     ClauseExtractionResponse,
+    ClauseRewriteRequest,
+    ClauseRewriteResponse,
     ComplianceCheckRequest,
     ComplianceCheckResponse,
     ConflictDetectionRequest,
@@ -61,6 +63,26 @@ async def risk_analysis(request: RiskAnalysisRequest) -> AsyncJobResponse:
     job_id = str(uuid.uuid4())
     celery_app.send_task(
         "tasks.run_risk_analysis",
+        args=[request.model_dump()],
+        task_id=job_id,
+    )
+    return AsyncJobResponse(job_id=job_id, status="queued")
+
+
+# ---------------------------------------------------------------------------
+# Clause Re-phrase (AI rewrite that reduces/removes an identified risk)
+# ---------------------------------------------------------------------------
+
+@router.post(
+    "/rephrase-clause",
+    response_model=AsyncJobResponse,
+    summary="Re-phrase a clause to reduce an identified risk",
+)
+async def rephrase_clause(request: ClauseRewriteRequest) -> AsyncJobResponse:
+    """Dispatch a clause-rewrite task to the Celery worker."""
+    job_id = str(uuid.uuid4())
+    celery_app.send_task(
+        "tasks.run_rephrase_clause",
         args=[request.model_dump()],
         task_id=job_id,
     )

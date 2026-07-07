@@ -23,6 +23,12 @@ interface RiskCardProps {
     riskId: string,
     data: { risk_level?: string; risk_category?: string },
   ) => Promise<void>;
+  /**
+   * Risk-tab rework — STEP 5: when true, RiskCard renders the level / category /
+   * status / description ONLY and omits its own recommendation panel, because
+   * the grouped Risk tab renders an editable RecommendationBlock below it.
+   */
+  hideRecommendation?: boolean;
 }
 
 /**
@@ -32,7 +38,7 @@ interface RiskCardProps {
  * failure). Everything else (status pill, description, recommendation,
  * citation) is unchanged.
  */
-export default function RiskCard({ risk, onAnnotate }: RiskCardProps) {
+export default function RiskCard({ risk, onAnnotate, hideRecommendation }: RiskCardProps) {
   const { t } = useTranslation();
   const [localLevel, setLocalLevel] = useState<string>(risk.risk_level);
   const [localCategory, setLocalCategory] = useState<string>(risk.risk_category);
@@ -205,7 +211,7 @@ export default function RiskCard({ risk, onAnnotate }: RiskCardProps) {
         <p className="text-sm leading-relaxed text-gray-600" dir="auto" style={{ unicodeBidi: 'plaintext' }}>
           {risk.description}
         </p>
-        {risk.recommendation && (
+        {!hideRecommendation && risk.recommendation && (
           <div className="mt-3 rounded-lg border border-blue-100 bg-blue-50/50 p-3">
             <div className="mb-1 flex items-center gap-1.5">
               <svg className="h-3.5 w-3.5 text-blue-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">

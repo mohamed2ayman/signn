@@ -45,6 +45,24 @@ def run_risk_analysis(self, request_data: dict[str, Any]) -> dict[str, Any]:
         return {"status": "failed", "error": str(e)}
 
 
+@celery_app.task(name="tasks.run_rephrase_clause", bind=True)
+def run_rephrase_clause(self, request_data: dict[str, Any]) -> dict[str, Any]:
+    """Re-phrase a single clause to reduce/remove an identified risk."""
+    from app.agents.clause_rewriter import ClauseRewriterAgent
+
+    agent = ClauseRewriterAgent()
+    try:
+        result = agent.rewrite(
+            clause_text=request_data["clause_text"],
+            clause_title=request_data.get("clause_title"),
+            risk_description=request_data.get("risk_description"),
+            recommendation=request_data.get("recommendation"),
+        )
+        return {"status": "completed", "result": result}
+    except Exception as e:
+        return {"status": "failed", "error": str(e)}
+
+
 @celery_app.task(name="tasks.run_summarize", bind=True)
 def run_summarize(self, request_data: dict[str, Any]) -> dict[str, Any]:
     """Generate a structured contract summary."""

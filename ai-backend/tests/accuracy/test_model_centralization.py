@@ -31,15 +31,17 @@ _AGENT_FILES = sorted(
     if p.name not in {"__init__.py", "base_agent.py"}
 )
 
-# The 9 Claude agents that must inherit BaseAgent and route through the chokepoint.
+# The Claude agents that must inherit BaseAgent and route through the chokepoint.
+# (clause_rewriter.py added by the Risk-tab rework — STEP 3.)
 EXPECTED_AGENTS = {
     "clause_extractor.py", "risk_analyzer.py", "compliance_checker.py",
     "conflict_detector.py", "obligations_extractor.py", "summarizer.py",
     "diff_analyzer.py", "conversational_agent.py", "research_agent.py",
+    "clause_rewriter.py",
 }
 
 
-def test_all_nine_agents_present():
+def test_all_expected_agents_present():
     assert {p.name for p in _AGENT_FILES} == EXPECTED_AGENTS
 
 
