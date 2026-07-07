@@ -9,6 +9,7 @@ import ChatPanel from '@/components/chat/ChatPanel';
 import ContractTypeSelector from '@/components/contracts/ContractTypeSelector';
 import ProjectHealthBar from '@/components/project/ProjectHealthBar';
 import ProjectAttentionZone from '@/components/project/ProjectAttentionZone';
+import ProjectAnalyticsRow from '@/components/project/ProjectAnalyticsRow';
 import { ContractType, LicenseOrganization } from '@/types';
 import type { Project } from '@/types';
 
@@ -290,10 +291,13 @@ export default function ProjectDetailPage() {
             projectId={id!}
             onNavigateToTab={() => setActiveTab('contracts')}
           />
-          {/* Slice 3+: risk mix, obligation rollup, contracts-by-status, directory summary.
-              NOTE for those slices: getDashboard().contracts.by_status carries the RAW 12
-              ContractStatus values — fold to the 6 portfolio buckets before feeding StatusPie. */}
-          <div />
+          {/* Slice 3 — supporting analytics row (risk mix / obligations /
+              contracts-by-status via the 12→6 fold / directory summary). */}
+          <ProjectAnalyticsRow
+            projectId={id!}
+            onNavigateToTab={() => setActiveTab('parties')}
+          />
+          {/* Final slice: customize mode (localStorage layout persistence). */}
         </div>
       )}
 

@@ -421,6 +421,32 @@
         "risk": "Impossible de charger les données de risque"
       }
     },
+    "analytics": {
+      "error": "Impossible de charger ce widget",
+      "retry": "Réessayer",
+      "obligationsTitle": "Obligations",
+      "upcomingTitle": "Prochaines échéances",
+      "noneUpcoming": "Aucune obligation à venir",
+      "dueToday": "Échéance aujourd'hui",
+      "dueIn": "Dans {{count}} j",
+      "directoryTitle": "Parties et équipe",
+      "directory": {
+        "team": "Équipe interne",
+        "teamCount": "{{count}} membre(s)",
+        "external": "Parties externes",
+        "pendingInvites": "{{count}} invitation(s) en attente",
+        "viewAll": "Voir l'annuaire",
+        "empty": "Aucune partie ni membre d'équipe pour l'instant",
+        "partyType": {
+          "EMPLOYER": "Maître d'ouvrage",
+          "ENGINEERING_CONSULTANT": "Consultant en ingénierie",
+          "DESIGN_CONSULTANT": "Consultant en conception",
+          "COST_CONSULTANT": "Consultant en coûts",
+          "CONTRACTOR": "Entrepreneur",
+          "SUBCONTRACTOR": "Sous-traitant"
+        }
+      }
+    },
     "parties": {
       "comingSoon": "L'annuaire des parties et de l'équipe arrive dans une prochaine version."
     }

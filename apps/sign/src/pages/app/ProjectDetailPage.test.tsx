@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import ProjectDetailPage from '@/pages/app/ProjectDetailPage';
 import { projectService } from '@/services/api/projectService';
+import { projectPartyService } from '@/services/api/projectPartyService';
 import { contractService } from '@/services/api/contractService';
 import { obligationService } from '@/services/api/obligationService';
 import type { ProjectDashboard } from '@/services/api/projectService';
@@ -28,6 +29,13 @@ vi.mock('@/services/api/projectService', () => ({
   projectService: {
     getById: vi.fn(),
     getDashboard: vi.fn(),
+    getMembers: vi.fn(),
+  },
+}));
+
+vi.mock('@/services/api/projectPartyService', () => ({
+  projectPartyService: {
+    getAll: vi.fn(),
   },
 }));
 
@@ -128,6 +136,8 @@ describe('ProjectDetailPage — tabbed shell (7.20 slice 1)', () => {
     vi.clearAllMocks();
     vi.mocked(projectService.getById).mockResolvedValue(PROJECT as never);
     vi.mocked(projectService.getDashboard).mockResolvedValue(DASHBOARD);
+    vi.mocked(projectService.getMembers).mockResolvedValue([]);
+    vi.mocked(projectPartyService.getAll).mockResolvedValue([]);
     vi.mocked(contractService.getAll).mockResolvedValue(CONTRACTS as never);
     vi.mocked(obligationService.getPortfolioObligations).mockResolvedValue([]);
   });
@@ -203,6 +213,8 @@ describe('ProjectDetailPage — attention zone (7.20 slice 2)', () => {
     vi.clearAllMocks();
     vi.mocked(projectService.getById).mockResolvedValue(PROJECT as never);
     vi.mocked(projectService.getDashboard).mockResolvedValue(DASHBOARD);
+    vi.mocked(projectService.getMembers).mockResolvedValue([]);
+    vi.mocked(projectPartyService.getAll).mockResolvedValue([]);
     vi.mocked(contractService.getAll).mockResolvedValue(CONTRACTS as never);
     vi.mocked(obligationService.getPortfolioObligations).mockResolvedValue([]);
   });
@@ -320,5 +332,125 @@ describe('ProjectDetailPage — attention zone (7.20 slice 2)', () => {
     expect(await screen.findByText('Expiring HVAC Package')).toBeInTheDocument();
     // And no all-clear (unknown obligations ≠ all clear).
     expect(screen.queryByText('projectDashboard.attention.allClearTitle')).not.toBeInTheDocument();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────
+// 7.20 slice 3 — supporting analytics row
+// ─────────────────────────────────────────────────────────────────
+
+describe('ProjectDetailPage — analytics row (7.20 slice 3)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(projectService.getById).mockResolvedValue(PROJECT as never);
+    vi.mocked(projectService.getDashboard).mockResolvedValue({
+      ...DASHBOARD,
+      contracts: {
+        total: 8,
+        by_status: [
+          { status: 'ACTIVE', count: '6' },
+          { status: 'DRAFT', count: '1' },
+          { status: 'CHANGES_REQUESTED', count: '1' },
+        ],
+      },
+      parties: { total: 2, by_type: [{ party_type: 'EMPLOYER', count: '2' }] },
+      risk_summary: [
+        { risk_level: 'HIGH', count: '4' },
+        { risk_level: 'MEDIUM', count: '4' },
+        { risk_level: 'LOW', count: '2' },
+      ],
+    });
+    vi.mocked(projectService.getMembers).mockResolvedValue([
+      { id: 'm-1', project_id: 'p-1', user_id: 'u-1', role: 'OWNER', permission_level: null, added_at: '' },
+      { id: 'm-2', project_id: 'p-1', user_id: 'u-2', role: 'MEMBER', permission_level: null, added_at: '' },
+    ] as never);
+    vi.mocked(projectPartyService.getAll).mockResolvedValue([
+      { id: 'pp-1', project_id: 'p-1', party_type: 'EMPLOYER', name: 'NTA', email: 'e@x.com', invitation_status: 'ACCEPTED' },
+      { id: 'pp-2', project_id: 'p-1', party_type: 'CONTRACTOR', name: 'Delta', email: 'c@x.com', invitation_status: 'PENDING' },
+    ] as never);
+    vi.mocked(contractService.getAll).mockResolvedValue(CONTRACTS as never);
+    vi.mocked(obligationService.getPortfolioObligations).mockResolvedValue([
+      {
+        id: 'ob-up',
+        contract_id: 'c-1',
+        description: 'Upcoming bond renewal',
+        status: 'PENDING',
+        due_date: isoDaysFromNow(4),
+        obligation_type: 'PERFORMANCE_BOND',
+        is_critical: false,
+        responsible_party: 'CONTRACTOR',
+      },
+      {
+        id: 'ob-over',
+        contract_id: 'c-1',
+        description: 'Overdue payment',
+        status: 'PENDING',
+        due_date: isoDaysFromNow(-3),
+        obligation_type: 'PAYMENT',
+        is_critical: false,
+        responsible_party: 'EMPLOYER',
+      },
+    ] as never);
+  });
+
+  it('renders all four analytics widgets with data', async () => {
+    renderPage();
+    await screen.findAllByText('Metro Line 4');
+    // A — risk mix (self-carded portfolio component)
+    expect(await screen.findByText('portfolio.charts.riskBar.title')).toBeInTheDocument();
+    // B — obligation rollup (KPI row + upcoming list)
+    expect(screen.getByText('projectDashboard.analytics.obligationsTitle')).toBeInTheDocument();
+    expect(screen.getByText('obligation.ui.kpi.total')).toBeInTheDocument();
+    expect(screen.getByText('Upcoming bond renewal')).toBeInTheDocument();
+    // C — contracts by status (self-carded, fed by the 12→6 fold)
+    expect(screen.getByText('portfolio.charts.statusPie.title')).toBeInTheDocument();
+    // D — directory summary
+    expect(screen.getByText('projectDashboard.analytics.directoryTitle')).toBeInTheDocument();
+    expect(
+      screen.getByText(/projectDashboard\.analytics\.directory\.teamCount:2/),
+    ).toBeInTheDocument();
+    expect(screen.getByText('projectDashboard.analytics.directory.partyType.EMPLOYER')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /projectDashboard\.analytics\.directory\.viewAll/ }),
+    ).toBeInTheDocument();
+  });
+
+  it('"View directory" navigates to the Parties & Team tab', async () => {
+    renderPage();
+    await screen.findAllByText('Metro Line 4');
+    await userEvent.click(
+      await screen.findByRole('button', { name: /projectDashboard\.analytics\.directory\.viewAll/ }),
+    );
+    expect(await screen.findByText('projectDashboard.parties.comingSoon')).toBeInTheDocument();
+  });
+
+  it('shows per-widget empty states with no data', async () => {
+    vi.mocked(projectService.getDashboard).mockResolvedValue({
+      ...DASHBOARD,
+      contracts: { total: 0, by_status: [] },
+      risk_summary: [],
+    });
+    vi.mocked(projectService.getMembers).mockResolvedValue([]);
+    vi.mocked(projectPartyService.getAll).mockResolvedValue([]);
+    vi.mocked(obligationService.getPortfolioObligations).mockResolvedValue([]);
+    renderPage();
+    await screen.findAllByText('Metro Line 4');
+    // A + C fall back to the shared widget-empty chrome (two instances).
+    const empties = await screen.findAllByText('portfolio.empty.widget');
+    expect(empties.length).toBeGreaterThanOrEqual(2);
+    // D shows its own empty copy.
+    expect(screen.getByText('projectDashboard.analytics.directory.empty')).toBeInTheDocument();
+  });
+
+  it('per-widget isolation: parties failure errors ONLY the directory widget', async () => {
+    vi.mocked(projectPartyService.getAll).mockRejectedValue(new Error('boom'));
+    renderPage();
+    await screen.findAllByText('Metro Line 4');
+    // Directory shows a scoped error…
+    expect(await screen.findByText('projectDashboard.analytics.error')).toBeInTheDocument();
+    // …while A, B, and C still render.
+    expect(screen.getByText('portfolio.charts.riskBar.title')).toBeInTheDocument();
+    expect(screen.getByText('portfolio.charts.statusPie.title')).toBeInTheDocument();
+    expect(screen.getByText('obligation.ui.kpi.total')).toBeInTheDocument();
   });
 });

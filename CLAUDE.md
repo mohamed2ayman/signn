@@ -4822,6 +4822,33 @@ Additional hard rules (on top of 1–5 above):
    stalled still switch to the Contracts tab. Only link targets changed —
    the health formula and numbers are untouched.
 
+### Slice 3 — supporting analytics row (shipped with this branch's PR)
+
+**`ProjectAnalyticsRow`** (`apps/sign/src/components/project/ProjectAnalyticsRow.tsx`)
+renders below the attention zone: (A) risk mix via `RiskDistributionBar`,
+(B) obligation rollup via `ObligationKpiRow`/`computeKpis` + a "next due"
+list, (C) contracts-by-status via `StatusPie`, (D) directory summary with
+"View directory ↗" → the Parties & Team tab. Pure adapters live in
+`apps/sign/src/components/project/dashboardAnalytics.ts`. Per-widget
+loading/error isolation. NEW shared queries added this slice:
+`['project-parties', id]` (projectPartyService.getAll — param is camelCase
+`projectId` on the wire) and `['project-members', id]` — the future
+directory slice reuses them.
+
+Additional hard rules (on top of 1–8 above):
+9. **The 12→6 fold is a MIRROR, not an import** (lesson #218):
+   `PROJECT_CONTRACT_STATUS_BUCKETS` in `dashboardAnalytics.ts` mirrors the
+   backend `CONTRACT_STATUS_BUCKETS`
+   (`backend/src/modules/portfolio-analytics/portfolio-analytics.service.ts`,
+   the source of truth — backend is outside the npm workspace so it cannot be
+   imported). ANY change to the backend map must be replicated there in the
+   same PR; per-status parity tests in `dashboardAnalytics.test.ts` fail a
+   NAMED test on drift. Unknown status → DRAFT (backend parity).
+10. **The app's first party-type labels** live at
+    `projectDashboard.analytics.directory.partyType.*` (en/ar/fr) — reuse
+    them for any future party-type display; SUBCONTRACTOR renders as
+    "Sub-Contractor" per naming rule 5.
+
 ### Deferred (later 7.20 slices — do NOT assume built)
 Risk mix, obligation rollup, contracts-by-status widget,
 parties & team directory, customize mode (v1 layout persistence will follow the
@@ -4925,3 +4952,7 @@ legal-terminology review (same posture as `clauseType.*`).
    as the source clause.
 4. **Merge "mark handled" reuses the existing `APPROVED` status** — do not
    invent a new risk status.
+
+Parties & team directory (full), customize mode (v1 layout persistence will
+follow the `sign_portfolio_view` localStorage pattern — there is NO backend
+layout store).

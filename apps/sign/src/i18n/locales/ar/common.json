@@ -420,6 +420,32 @@
         "risk": "تعذر تحميل بيانات المخاطر"
       }
     },
+    "analytics": {
+      "error": "تعذر تحميل هذه الأداة",
+      "retry": "إعادة المحاولة",
+      "obligationsTitle": "الالتزامات",
+      "upcomingTitle": "المستحق تاليًا",
+      "noneUpcoming": "لا توجد التزامات قادمة",
+      "dueToday": "مستحق اليوم",
+      "dueIn": "خلال {{count}} يوم",
+      "directoryTitle": "الأطراف والفريق",
+      "directory": {
+        "team": "الفريق الداخلي",
+        "teamCount": "{{count}} عضو",
+        "external": "الأطراف الخارجية",
+        "pendingInvites": "{{count}} دعوة معلقة",
+        "viewAll": "عرض الدليل",
+        "empty": "لا توجد أطراف أو أعضاء فريق بعد",
+        "partyType": {
+          "EMPLOYER": "صاحب العمل",
+          "ENGINEERING_CONSULTANT": "استشاري هندسي",
+          "DESIGN_CONSULTANT": "استشاري تصميم",
+          "COST_CONSULTANT": "استشاري تكاليف",
+          "CONTRACTOR": "المقاول",
+          "SUBCONTRACTOR": "مقاول من الباطن"
+        }
+      }
+    },
     "parties": {
       "comingSoon": "دليل الأطراف والفريق قادم في إصدار لاحق."
     }
