@@ -90,8 +90,22 @@ describe('RiskAnalysisService — READ wall (layer 1) + S2d scoped data layer (l
       const riskScoped = {
         scopedFind: jest.fn().mockResolvedValue(scopedRows),
       };
+      // Risk-tab rework — STEP 1: the hydrate is now a QueryBuilder (it orders
+      // by the source document's priority two joins away). Capture the WHERE
+      // ids to prove the tenancy-validated ids drive the hydrate.
+      const whereSpy = jest.fn();
+      const qb: any = {
+        leftJoinAndSelect: jest.fn().mockReturnThis(),
+        where: jest.fn((sql: string, params: any) => {
+          whereSpy(sql, params);
+          return qb;
+        }),
+        orderBy: jest.fn().mockReturnThis(),
+        addOrderBy: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue(hydrated),
+      };
       const riskAnalysisRepository = {
-        find: jest.fn().mockResolvedValue(hydrated),
+        createQueryBuilder: jest.fn().mockReturnValue(qb),
       };
       const contractAccess = { findInOrg: jest.fn().mockResolvedValue({}) };
 
@@ -108,16 +122,11 @@ describe('RiskAnalysisService — READ wall (layer 1) + S2d scoped data layer (l
         { contract_id: CONTRACT_IN_A },
         ORG_A,
       );
-      // Hydrate is keyed on the tenancy-validated ids ONLY (In([...])), never
-      // on the raw contract_id, and preserves relations + order.
-      const findArg = riskAnalysisRepository.find.mock.calls[0][0];
-      expect(findArg.where.id.value).toEqual(['risk-1', 'risk-2']);
-      expect(findArg.relations).toEqual([
-        'contract_clause',
-        'contract_clause.clause',
-        'handler',
-      ]);
-      expect(findArg.order).toEqual({ created_at: 'DESC' });
+      // Hydrate is keyed on the tenancy-validated ids ONLY, never on the raw
+      // contract_id.
+      expect(whereSpy).toHaveBeenCalledWith('r.id IN (:...ids)', {
+        ids: ['risk-1', 'risk-2'],
+      });
       expect(result).toEqual(hydrated);
     });
 

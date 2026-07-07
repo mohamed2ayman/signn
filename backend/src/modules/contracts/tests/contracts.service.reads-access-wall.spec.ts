@@ -89,8 +89,18 @@ describe('ContractsService — Tier 2 READ access wall', () => {
 
     it('happy path: in-org caller, clauses returned', async () => {
       const rows = [{ id: 'cc-1' }];
+      // Risk-tab rework — STEP 1: the read is now a QueryBuilder (it orders by
+      // the source document's priority, grouping each file's clauses together).
+      const qb: any = {
+        leftJoinAndSelect: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        addOrderBy: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue(rows),
+      };
       const contractClauseRepository = {
-        find: jest.fn().mockResolvedValue(rows),
+        createQueryBuilder: jest.fn().mockReturnValue(qb),
       };
       const contractAccess = { findInOrg: resolve() };
 

@@ -5,7 +5,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import { RiskAnalysis, RiskRule, RiskCategory } from '../../database/entities';
 import { AnnotateRiskDto, CreateRiskRuleDto, UpdateRiskStatusDto } from './dto';
 import { CollaborationGateway } from '../collaboration/collaboration.gateway';
@@ -57,11 +57,42 @@ export class RiskAnalysisService {
     // relation support; keying by the validated ids (never raw request input)
     // carries the tenancy proof into the hydrate. Same two-step as
     // ObligationsService.findByContract.
-    return this.riskAnalysisRepository.find({ // lint-exempt: two-step hydration (ids validated by scoped load)
-      where: { id: In(scoped.map((r) => r.id)) },
-      relations: ['contract_clause', 'contract_clause.clause', 'handler'],
-      order: { created_at: 'DESC' },
-    });
+    //
+    // ORDERING (Risk-tab rework, STEP 1) — the SHARED source of truth with the
+    // Clauses tab (ContractsService.getContractClauses uses the identical
+    // expression). A QueryBuilder (not `find`) is required so we can order by
+    // the source document's priority, which lives two joins away
+    // (risk → contract_clause → clause → source_document). Order:
+    //   1) document priority ASC — unset (0) / no-document rows sort LAST
+    //   2) document upload order (created_at ASC) — fallback when priority unset
+    //   3) clause order_index ASC — clause order WITHIN a document (matches the
+    //      Clauses tab exactly; order_index numbers from 0 per document)
+    //   4) risk id ASC — stable final tiebreak
+    // Defensive: a risk whose contract_clause / clause / source_document is
+    // missing (e.g. a future DOCUMENT_CONFLICT risk with contract_clause_id
+    // NULL) is preserved via LEFT JOINs and sorts to the very end — never
+    // dropped, never a crash.
+    return this.riskAnalysisRepository // lint-exempt: two-step hydration (ids validated by scoped load)
+      .createQueryBuilder('r')
+      .leftJoinAndSelect('r.contract_clause', 'cc')
+      .leftJoinAndSelect('cc.clause', 'clause')
+      .leftJoinAndSelect('clause.source_document', 'doc')
+      // Risk-tab rework — TASK 4: hydrate the parent (previous) clause so a
+      // MERGED risk can show "Updated · v{n}" + "View previous version"
+      // (read-only) without a second round-trip.
+      .leftJoinAndSelect('clause.parent_clause', 'parentClause')
+      .leftJoinAndSelect('r.handler', 'handler')
+      // Risk-tab rework — STEP 3: hydrate the pending AI-proposed rewrite (if
+      // any) so the frontend can render it under the recommendation on load.
+      .leftJoinAndSelect('r.proposed_contract_clause', 'pcc')
+      .leftJoinAndSelect('pcc.clause', 'pclause')
+      .where('r.id IN (:...ids)', { ids: scoped.map((r) => r.id) })
+      .orderBy('CASE WHEN doc.document_priority > 0 THEN 0 ELSE 1 END', 'ASC')
+      .addOrderBy('doc.document_priority', 'ASC')
+      .addOrderBy('doc.created_at', 'ASC')
+      .addOrderBy('cc.order_index', 'ASC')
+      .addOrderBy('r.id', 'ASC')
+      .getMany();
   }
 
   async getByClause(
@@ -150,9 +181,13 @@ export class RiskAnalysisService {
     userId: string,
     orgId: string,
   ): Promise<RiskAnalysis> {
-    if (dto.risk_level === undefined && dto.risk_category === undefined) {
+    if (
+      dto.risk_level === undefined &&
+      dto.risk_category === undefined &&
+      dto.recommendation === undefined
+    ) {
       throw new BadRequestException(
-        'Provide at least one of risk_level or risk_category',
+        'Provide at least one of risk_level, risk_category or recommendation',
       );
     }
 
@@ -174,6 +209,10 @@ export class RiskAnalysisService {
     if (!risk.is_edited_by_user) {
       risk.original_risk_level = risk.risk_level;
       risk.original_risk_category = risk.risk_category;
+      // Snapshot the AI-drafted recommendation too (Risk-tab rework, STEP 2).
+      // `?? null` normalises a pre-existing NULL recommendation so the
+      // was_corrected signal is unambiguous.
+      risk.original_recommendation = risk.recommendation ?? null;
     }
 
     if (dto.risk_level !== undefined) {
@@ -181,6 +220,9 @@ export class RiskAnalysisService {
     }
     if (dto.risk_category !== undefined) {
       risk.risk_category = dto.risk_category;
+    }
+    if (dto.recommendation !== undefined) {
+      risk.recommendation = dto.recommendation;
     }
     risk.is_edited_by_user = true;
     risk.edited_by_user_id = userId;

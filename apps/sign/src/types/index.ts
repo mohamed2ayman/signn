@@ -822,6 +822,13 @@ export interface RiskAnalysis {
   edited_at?: string | null;
   original_risk_level?: string | null;
   original_risk_category?: string | null;
+  // Risk-tab rework — STEP 2: editable recommendation tracking.
+  original_recommendation?: string | null;
+  // Risk-tab rework — STEP 3: pending AI-proposed clause rewrite (if any).
+  proposed_contract_clause_id?: string | null;
+  proposed_contract_clause?: ContractClause | null;
+  // Risk-tab rework — FIX 1: when a rewrite was merged (persistent MERGED state).
+  merged_at?: string | null;
   contract?: Contract;
   contract_clause?: ContractClause;
   handler?: User;

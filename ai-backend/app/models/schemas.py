@@ -115,6 +115,36 @@ class DiffResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Clause Re-phrase (AI rewrite that reduces/removes an identified risk)
+# ---------------------------------------------------------------------------
+
+class ClauseRewriteRequest(BaseModel):
+    """Request body for the clause-rewriter agent."""
+
+    clause_text: str = Field(..., description="The original clause text to re-phrase.")
+    clause_title: Optional[str] = Field(
+        None, description="The original clause title (echoed back if unchanged)."
+    )
+    risk_description: Optional[str] = Field(
+        None, description="Plain-language description of the risk to reduce/remove."
+    )
+    recommendation: Optional[str] = Field(
+        None,
+        description="The reviewer's / AI's recommended mitigation to apply in the rewrite.",
+    )
+
+
+class ClauseRewriteResponse(BaseModel):
+    """Response from the clause-rewriter agent."""
+
+    rewritten_title: str = Field(..., description="The re-phrased clause title.")
+    rewritten_content: str = Field(..., description="The re-phrased clause body.")
+    rationale: str = Field(
+        ..., description="Short explanation of what changed and how it lowers the risk."
+    )
+
+
+# ---------------------------------------------------------------------------
 # Obligations Extraction
 # ---------------------------------------------------------------------------
 
