@@ -379,6 +379,32 @@
         "risk": "Couldn't load risk data"
       }
     },
+    "analytics": {
+      "error": "Couldn't load this widget",
+      "retry": "Retry",
+      "obligationsTitle": "Obligations",
+      "upcomingTitle": "Next due",
+      "noneUpcoming": "No upcoming obligations",
+      "dueToday": "Due today",
+      "dueIn": "In {{count}}d",
+      "directoryTitle": "Parties & team",
+      "directory": {
+        "team": "Internal team",
+        "teamCount": "{{count}} member(s)",
+        "external": "External parties",
+        "pendingInvites": "{{count}} pending invitation(s)",
+        "viewAll": "View directory",
+        "empty": "No parties or team members yet",
+        "partyType": {
+          "EMPLOYER": "Employer",
+          "ENGINEERING_CONSULTANT": "Engineering Consultant",
+          "DESIGN_CONSULTANT": "Design Consultant",
+          "COST_CONSULTANT": "Cost Consultant",
+          "CONTRACTOR": "Contractor",
+          "SUBCONTRACTOR": "Sub-Contractor"
+        }
+      }
+    },
     "parties": {
       "comingSoon": "The parties & team directory is coming in a later release."
     }
