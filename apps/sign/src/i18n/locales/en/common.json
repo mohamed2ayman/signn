@@ -356,6 +356,29 @@
         "overdueObligations": "−{{points}}%: {{count}} overdue obligation(s)"
       }
     },
+    "attention": {
+      "title": "Needs your attention",
+      "viewAll": "View all",
+      "retry": "Retry",
+      "noneInGroup": "None",
+      "overdueHeading": "Overdue obligations",
+      "expiringHeading": "Contracts expiring within 30 days",
+      "highRiskHeading": "High-risk findings",
+      "highRisk": "{{count}} high-risk finding(s) on this project's contracts — review in Contracts",
+      "daysOverdue": "{{count}}d overdue",
+      "daysLeft": "{{count}}d left",
+      "expiresToday": "Expires today",
+      "expiredAgo": "Expired {{count}}d ago",
+      "open": "Open",
+      "more": "+{{count}} more in View all",
+      "allClearTitle": "Everything is on track",
+      "allClearBody": "0 high-risk findings, no overdue obligations, and no contracts expiring within 30 days.",
+      "error": {
+        "obligations": "Couldn't load obligations",
+        "contracts": "Couldn't load contracts",
+        "risk": "Couldn't load risk data"
+      }
+    },
     "parties": {
       "comingSoon": "The parties & team directory is coming in a later release."
     }

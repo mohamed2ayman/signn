@@ -8,6 +8,7 @@ import LoadingSpinner from '@/components/common/LoadingSpinner';
 import ChatPanel from '@/components/chat/ChatPanel';
 import ContractTypeSelector from '@/components/contracts/ContractTypeSelector';
 import ProjectHealthBar from '@/components/project/ProjectHealthBar';
+import ProjectAttentionZone from '@/components/project/ProjectAttentionZone';
 import { ContractType, LicenseOrganization } from '@/types';
 import type { Project } from '@/types';
 
@@ -284,7 +285,12 @@ export default function ProjectDetailPage() {
             projectId={id!}
             onNavigateToTab={() => setActiveTab('contracts')}
           />
-          {/* Slice 2-3: attention zone, risk mix, obligations, contracts-by-status, directory summary.
+          {/* Slice 2 — "Needs your attention" zone (Rev 02 control-center model). */}
+          <ProjectAttentionZone
+            projectId={id!}
+            onNavigateToTab={() => setActiveTab('contracts')}
+          />
+          {/* Slice 3+: risk mix, obligation rollup, contracts-by-status, directory summary.
               NOTE for those slices: getDashboard().contracts.by_status carries the RAW 12
               ContractStatus values — fold to the 6 portfolio buckets before feeding StatusPie. */}
           <div />

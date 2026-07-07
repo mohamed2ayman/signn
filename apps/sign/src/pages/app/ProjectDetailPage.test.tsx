@@ -108,6 +108,11 @@ function renderPage() {
       <MemoryRouter initialEntries={['/app/projects/p-1']}>
         <Routes>
           <Route path="/app/projects/:id" element={<ProjectDetailPage />} />
+          {/* Stub target so tests can assert view-all navigation actually lands. */}
+          <Route
+            path="/app/projects/:id/obligations"
+            element={<div>OBLIGATIONS_PAGE_STUB</div>}
+          />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -181,5 +186,139 @@ describe('ProjectDetailPage — tabbed shell (7.20 slice 1)', () => {
     ).toBeInTheDocument();
     // Never a misleading score in this state.
     expect(screen.queryByText(/\d+%/)).not.toBeInTheDocument();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────
+// 7.20 slice 2 — "Needs your attention" zone
+// ─────────────────────────────────────────────────────────────────
+
+const isoDaysFromNow = (days: number) =>
+  new Date(Date.now() + days * 86_400_000).toISOString();
+const dateDaysFromNow = (days: number) =>
+  new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
+
+describe('ProjectDetailPage — attention zone (7.20 slice 2)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(projectService.getById).mockResolvedValue(PROJECT as never);
+    vi.mocked(projectService.getDashboard).mockResolvedValue(DASHBOARD);
+    vi.mocked(contractService.getAll).mockResolvedValue(CONTRACTS as never);
+    vi.mocked(obligationService.getPortfolioObligations).mockResolvedValue([]);
+  });
+
+  it('shows overdue, expiring, and high-risk entries when present', async () => {
+    vi.mocked(projectService.getDashboard).mockResolvedValue({
+      ...DASHBOARD,
+      risk_summary: [
+        { risk_level: 'HIGH', count: '3' },
+        { risk_level: 'LOW', count: '1' },
+      ],
+    });
+    vi.mocked(contractService.getAll).mockResolvedValue([
+      {
+        ...(CONTRACTS[0] as object),
+        id: 'c-exp',
+        name: 'Expiring Steel Supply',
+        expiry_date: dateDaysFromNow(10),
+      },
+    ] as never);
+    vi.mocked(obligationService.getPortfolioObligations).mockResolvedValue([
+      {
+        id: 'ob-1',
+        contract_id: 'c-1',
+        description: 'Submit overdue payment certificate',
+        status: 'PENDING', // derived-overdue: PENDING + past due (the landmine)
+        due_date: isoDaysFromNow(-6),
+        obligation_type: 'PAYMENT',
+        is_critical: true,
+        responsible_party: 'EMPLOYER',
+        contract: { id: 'c-1', name: 'Main Construction Agreement' },
+      },
+    ] as never);
+
+    renderPage();
+    await screen.findAllByText('Metro Line 4');
+    expect(await screen.findByText('projectDashboard.attention.title')).toBeInTheDocument();
+    // Overdue row (derived from PENDING + past due_date)
+    expect(await screen.findByText('Submit overdue payment certificate')).toBeInTheDocument();
+    // Expiring row
+    expect(screen.getByText('Expiring Steel Supply')).toBeInTheDocument();
+    // High-risk entry (count interpolated by mocked t as key:values)
+    expect(screen.getByText(/projectDashboard\.attention\.highRisk:3/)).toBeInTheDocument();
+    // No all-clear when things need attention
+    expect(screen.queryByText('projectDashboard.attention.allClearTitle')).not.toBeInTheDocument();
+  });
+
+  it('shows the all-clear state when zero overdue, expiring, and high-risk', async () => {
+    // Default mocks: LOW-only risk, no expiry, no obligations.
+    renderPage();
+    await screen.findAllByText('Metro Line 4');
+    expect(await screen.findByText('projectDashboard.attention.allClearTitle')).toBeInTheDocument();
+  });
+
+  it('does NOT surface actioned obligations as overdue', async () => {
+    vi.mocked(obligationService.getPortfolioObligations).mockResolvedValue([
+      {
+        id: 'ob-met',
+        contract_id: 'c-1',
+        description: 'Old met obligation',
+        status: 'MET',
+        due_date: isoDaysFromNow(-90),
+        obligation_type: 'INSURANCE',
+        is_critical: false,
+        responsible_party: 'CONTRACTOR',
+      },
+    ] as never);
+    renderPage();
+    await screen.findAllByText('Metro Line 4');
+    // MET + past due is NOT overdue → all-clear (given LOW-only risk, no expiry).
+    expect(await screen.findByText('projectDashboard.attention.allClearTitle')).toBeInTheDocument();
+    expect(screen.queryByText('Old met obligation')).not.toBeInTheDocument();
+  });
+
+  it('overflow hint "+N more" is a real control that navigates to the obligations view', async () => {
+    // 6 overdue obligations → top 5 rendered + a "+1 more" overflow hint.
+    vi.mocked(obligationService.getPortfolioObligations).mockResolvedValue(
+      Array.from({ length: 6 }, (_, i) => ({
+        id: `ob-${i}`,
+        contract_id: 'c-1',
+        description: `Overdue item ${i}`,
+        status: 'PENDING',
+        due_date: isoDaysFromNow(-(i + 1)),
+        obligation_type: 'REPORTING',
+        is_critical: false,
+        responsible_party: 'CONTRACTOR',
+      })) as never,
+    );
+    renderPage();
+    await screen.findAllByText('Metro Line 4');
+    // The hint must be an INTERACTIVE element (not a bare span/p)…
+    const hint = await screen.findByRole('button', {
+      name: /projectDashboard\.attention\.more/,
+    });
+    // …and clicking it must land on the same view-all destination.
+    await userEvent.click(hint);
+    expect(await screen.findByText('OBLIGATIONS_PAGE_STUB')).toBeInTheDocument();
+  });
+
+  it('per-source isolation: obligations failure shows a scoped error while expiring still renders', async () => {
+    vi.mocked(obligationService.getPortfolioObligations).mockRejectedValue(new Error('boom'));
+    vi.mocked(contractService.getAll).mockResolvedValue([
+      {
+        ...(CONTRACTS[0] as object),
+        id: 'c-exp2',
+        name: 'Expiring HVAC Package',
+        expiry_date: dateDaysFromNow(5),
+      },
+    ] as never);
+    renderPage();
+    await screen.findAllByText('Metro Line 4');
+    // Scoped error for the obligations source…
+    expect(await screen.findByText('projectDashboard.attention.error.obligations')).toBeInTheDocument();
+    // …while the contracts-sourced expiring row still renders.
+    expect(await screen.findByText('Expiring HVAC Package')).toBeInTheDocument();
+    // And no all-clear (unknown obligations ≠ all clear).
+    expect(screen.queryByText('projectDashboard.attention.allClearTitle')).not.toBeInTheDocument();
   });
 });

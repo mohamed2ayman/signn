@@ -357,6 +357,29 @@
         "overdueObligations": "−{{points}}% : {{count}} obligation(s) en retard"
       }
     },
+    "attention": {
+      "title": "Requiert votre attention",
+      "viewAll": "Tout voir",
+      "retry": "Réessayer",
+      "noneInGroup": "Aucun",
+      "overdueHeading": "Obligations en retard",
+      "expiringHeading": "Contrats expirant sous 30 jours",
+      "highRiskHeading": "Constats à risque élevé",
+      "highRisk": "{{count}} constat(s) à risque élevé sur les contrats de ce projet — à examiner dans Contrats",
+      "daysOverdue": "{{count}} j de retard",
+      "daysLeft": "{{count}} j restants",
+      "expiresToday": "Expire aujourd'hui",
+      "expiredAgo": "Expiré il y a {{count}} j",
+      "open": "Ouvrir",
+      "more": "+{{count}} de plus dans Tout voir",
+      "allClearTitle": "Tout est sur la bonne voie",
+      "allClearBody": "Aucun constat à risque élevé, aucune obligation en retard et aucun contrat expirant sous 30 jours.",
+      "error": {
+        "obligations": "Impossible de charger les obligations",
+        "contracts": "Impossible de charger les contrats",
+        "risk": "Impossible de charger les données de risque"
+      }
+    },
     "parties": {
       "comingSoon": "L'annuaire des parties et de l'équipe arrive dans une prochaine version."
     }

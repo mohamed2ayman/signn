@@ -4795,7 +4795,34 @@ zero backend changes. Two things shipped:
    `Contract` types** — bind via a local type extension; widening the shared
    types in `types/index.ts` is its own deliberate change.
 
+### Slice 2 — "Needs your attention" zone (shipped with this branch's PR)
+
+**`ProjectAttentionZone`** (`apps/sign/src/components/project/ProjectAttentionZone.tsx`)
+renders directly BELOW ProjectHealthBar on the Dashboard tab — the attention/
+action hero (Rev 02 control-center model). Three urgency-ordered feeds with
+PER-SOURCE error isolation (a failed feed shows a scoped retry, never blanks
+the others): overdue obligations → expired + expiring(≤30d) contracts →
+high-risk findings count (links to the Contracts tab until the risk-mix
+slice). All-clear state renders ONLY when every source loaded AND all three
+feeds are empty. Pure derivations live in
+`apps/sign/src/components/project/attentionData.ts`.
+
+Additional hard rules (on top of 1–5 above):
+6. **Overdue is DERIVED, never the stored column** (lesson #212):
+   `deriveOverdueObligations` filters via
+   `effectiveStatus(status, due_date) === 'OVERDUE'` — a bare
+   `status === 'OVERDUE'` filter silently undercounts (most overdue rows are
+   PENDING with a past due_date until the reminder pass runs).
+7. **The zone re-declares the SAME three queryKeys as ProjectHealthBar**
+   (`['project-dashboard'|'project-contracts'|'project-obligations', id]`) —
+   React Query dedupes across siblings; do NOT lift the fetches to the page
+   (lesson #213).
+8. **Health-bar driver links:** overdue/expired/expiring drivers scroll to the
+   zone's in-page anchor (`ATTENTION_ZONE_ID` export); highRisk/mediumRisk/
+   stalled still switch to the Contracts tab. Only link targets changed —
+   the health formula and numbers are untouched.
+
 ### Deferred (later 7.20 slices — do NOT assume built)
-Attention zone, risk mix, obligation rollup, contracts-by-status widget,
+Risk mix, obligation rollup, contracts-by-status widget,
 parties & team directory, customize mode (v1 layout persistence will follow the
 `sign_portfolio_view` localStorage pattern — there is NO backend layout store).
