@@ -529,13 +529,33 @@ export class ContractsService {
   ): Promise<ContractClause[]> {
     // Tenant-isolation Tier 2 — wall on URL contractId.
     await this.contractAccess.findInOrg(contractId, orgId);
-    return this.contractClauseRepository.find({ // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled (ContractClause has no scoped repo)
+    // ORDERING (Risk-tab rework, STEP 1) — the SHARED source of truth with the
+    // Risk tab (RiskAnalysisService.getByContract uses the identical
+    // expression). `order_index` numbers from 0 PER DOCUMENT, so a plain
+    // `order_index ASC` interleaves the clauses of a multi-document contract;
+    // ordering by the source document's priority FIRST groups each file's
+    // clauses together (the design's "files grouped, clauses in order"). Order:
+    //   1) document priority ASC — unset (0) / no-document clauses sort LAST
+    //   2) document upload order (created_at ASC) — fallback when priority unset
+    //   3) clause order_index ASC — clause order WITHIN a document
+    //   4) contract_clause id ASC — stable final tiebreak
+    // LEFT JOIN so a clause with no source_document (e.g. a manually-added
+    // clause) is preserved and sorts last, never dropped.
+    return this.contractClauseRepository // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled (ContractClause has no scoped repo)
+      .createQueryBuilder('cc')
+      .leftJoinAndSelect('cc.clause', 'clause')
+      .leftJoinAndSelect('clause.creator', 'creator')
+      .leftJoinAndSelect('clause.source_document', 'doc')
       // Guest version review (2a) — EXCLUDE guest-proposed clauses from the
       // host's live Clauses tab (Slice 1 invariant; see contract-clause.entity).
-      where: { contract_id: contractId, is_proposed: false },
-      relations: ['clause', 'clause.creator'],
-      order: { order_index: 'ASC' },
-    });
+      .where('cc.contract_id = :contractId', { contractId })
+      .andWhere('cc.is_proposed = false')
+      .orderBy('CASE WHEN doc.document_priority > 0 THEN 0 ELSE 1 END', 'ASC')
+      .addOrderBy('doc.document_priority', 'ASC')
+      .addOrderBy('doc.created_at', 'ASC')
+      .addOrderBy('cc.order_index', 'ASC')
+      .addOrderBy('cc.id', 'ASC')
+      .getMany();
   }
 
   // ─── Version Management ────────────────────────────────────

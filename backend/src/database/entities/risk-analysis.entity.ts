@@ -211,6 +211,39 @@ export class RiskAnalysis {
   @Column({ type: 'varchar', length: 100, nullable: true })
   original_risk_category: string | null;
 
+  /**
+   * The AI's ORIGINAL recommendation text, snapshotted exactly once
+   * immediately before the first human edit (Risk-tab rework, STEP 2).
+   * NULL until the first edit (and stays NULL if the AI never wrote a
+   * recommendation). `text` to match the `recommendation` column.
+   */
+  @Column({ type: 'text', nullable: true })
+  original_recommendation: string | null;
+
+  /**
+   * The AI-drafted PROPOSED replacement clause for this risk (Risk-tab
+   * rework, STEP 3 — "re-phrase clause"). Points at an `is_proposed=true`
+   * ContractClause created by the non-guest AI-rewrite path
+   * (source = AI_DRAFTED, source_document_id = NULL so it stays isolated
+   * from the guest document-scoped proposed-version machinery). NULL until a
+   * rewrite is generated; cleared again once the host promotes (Merge & Apply)
+   * or discards (Cancel) it. FK ON DELETE SET NULL.
+   */
+  @Column({ type: 'uuid', nullable: true })
+  proposed_contract_clause_id: string | null;
+
+  @ManyToOne(() => ContractClause, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'proposed_contract_clause_id' })
+  proposed_contract_clause: ContractClause | null;
+
+  /**
+   * Risk-tab rework — FIX 1: when the AI re-phrase was promoted (Merge &
+   * Apply). Set ONLY on the accept path; a reject leaves it NULL. Drives the
+   * persistent MERGED state of the recommendation block (survives reload).
+   */
+  @Column({ type: 'timestamptz', nullable: true })
+  merged_at: Date | null;
+
   // ─── Lifecycle hooks ─────────────────────────────────────────────────
 
   /**

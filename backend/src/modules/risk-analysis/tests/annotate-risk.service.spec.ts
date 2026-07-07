@@ -142,6 +142,45 @@ describe('RiskAnalysisService.annotateRisk — Phase 8.3 editable risk labels', 
     expect(riskAnalysisRepository.save).toHaveBeenCalledTimes(1);
   });
 
+  it('persists an edited recommendation and snapshots original_recommendation on the first edit (STEP 2)', async () => {
+    const risk = { ...aiRow(), recommendation: 'AI original advice', original_recommendation: null };
+    const { svc, riskAnalysisRepository } = build({ risk });
+
+    const saved: any = await svc.annotateRisk(
+      RISK,
+      { recommendation: 'Human-corrected advice' },
+      USER,
+      ORG,
+    );
+
+    expect(saved.recommendation).toBe('Human-corrected advice');
+    expect(saved.is_edited_by_user).toBe(true);
+    // AI original recommendation preserved (was_corrected signal)
+    expect(saved.original_recommendation).toBe('AI original advice');
+    expect(riskAnalysisRepository.save).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the TRUE original_recommendation on subsequent recommendation edits', async () => {
+    const risk = {
+      ...aiRow(),
+      is_edited_by_user: true,
+      recommendation: 'first human edit',
+      original_recommendation: 'AI original advice',
+    };
+    const { svc } = build({ risk });
+
+    const saved: any = await svc.annotateRisk(
+      RISK,
+      { recommendation: 'second human edit' },
+      USER,
+      ORG,
+    );
+
+    expect(saved.recommendation).toBe('second human edit');
+    // NOT overwritten with the previous human value
+    expect(saved.original_recommendation).toBe('AI original advice');
+  });
+
   it('rejects an empty body (neither level nor category) BEFORE loading the row', async () => {
     const { svc, riskAnalysisRepository } = build({ risk: aiRow() });
 

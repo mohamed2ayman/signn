@@ -3,6 +3,8 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import {
+  Clause,
+  ContractClause,
   KnowledgeAsset,
   RiskAnalysis,
   RiskAnalysisOverrideLog,
@@ -20,10 +22,13 @@ import { DriftReportService } from './services/drift-report.service';
 import { RiskExplanationService } from './services/risk-explanation.service';
 import { RiskMethodologyResolverService } from './services/risk-methodology-resolver.service';
 import { RiskOverrideService } from './services/risk-override.service';
+import { RiskRephraseService } from './services/risk-rephrase.service';
 // Tenant-isolation Tier 2 — wall GET /risk-analysis/contract/:contractId
 // and `.../summary` reads at the service layer via
 // ContractAccessService.findInOrg.
 import { ContractsModule } from '../contracts/contracts.module';
+// Risk-tab rework — STEP 3: exports AiService for the clause-rephrase dispatch.
+import { AiModule } from '../ai/ai.module';
 // Option B — S2d: the per-contract risk LIST reads (getByContract,
 // getRiskSummary) load through the RiskAnalysis scoped repository
 // (canonical risk→contract→project→org), UNDER the findInOrg wall.
@@ -45,6 +50,11 @@ import { ScopedRepositoryModule } from '../scoped-repository/scoped-repository.m
       // Phase 7.17 — Prompt 1, S.4: append-only override audit log,
       // injected by B.3 override service.
       RiskAnalysisOverrideLog,
+      // Risk-tab rework — STEP 3: RiskRephraseService creates the AI-proposed
+      // clause (non-guest is_proposed path) and promotes it via the parent
+      // chain onto the risk's live clause.
+      Clause,
+      ContractClause,
     ]),
     // Phase 7.17 — Prompt 1, B.2: KnowledgeAssetsModule exports
     // RiskMethodologyReaderService, which the resolver injects to
@@ -60,6 +70,8 @@ import { ScopedRepositoryModule } from '../scoped-repository/scoped-repository.m
     BullModule.registerQueue({ name: 'learned-baseline' }),
     ContractsModule,
     ScopedRepositoryModule,
+    // Risk-tab rework — STEP 3: AiService.triggerClauseRephrase + getJobStatus.
+    AiModule,
   ],
   controllers: [
     RiskAnalysisController,
@@ -89,6 +101,9 @@ import { ScopedRepositoryModule } from '../scoped-repository/scoped-repository.m
     // RiskDriftController. Injected by RiskOverrideService (B.3
     // touchpoint) to invalidate the per-org cache on each override.
     DriftReportService,
+    // Risk-tab rework — STEP 3: AI clause re-phrase (dispatch / poll / apply +
+    // non-guest proposed-clause creation + parent-chain promotion).
+    RiskRephraseService,
   ],
   exports: [
     RiskAnalysisService,

@@ -19,8 +19,11 @@ import { User, UserRole } from '../../database/entities';
 import { RiskAnalysisService } from './risk-analysis.service';
 import { RiskExplanationService } from './services/risk-explanation.service';
 import { RiskOverrideService } from './services/risk-override.service';
+import { RiskRephraseService } from './services/risk-rephrase.service';
 import {
   AnnotateRiskDto,
+  ApplyRephraseDto,
+  EditProposalDto,
   CreateRiskRuleDto,
   OverrideRiskDto,
   UpdateRiskStatusDto,
@@ -35,6 +38,8 @@ export class RiskAnalysisController {
     private readonly riskOverride: RiskOverrideService,
     // Phase 7.17 — Prompt 1, B.5: handles GET :id/explanation below.
     private readonly riskExplanation: RiskExplanationService,
+    // Risk-tab rework — STEP 3: AI clause re-phrase (dispatch / poll / apply).
+    private readonly riskRephrase: RiskRephraseService,
   ) {}
 
   @Get('contract/:contractId')
@@ -136,6 +141,61 @@ export class RiskAnalysisController {
       dto,
       user.id,
       user.organization_id,
+    );
+  }
+
+  /**
+   * Risk-tab rework — STEP 3: AI clause re-phrase.
+   *
+   * `POST :id/rephrase` dispatches the AI rewrite job for the risk's clause and
+   * returns a `job_id` to poll. `GET :id/rephrase/status?job_id=` polls it and,
+   * on completion, creates + returns the proposed replacement for the merge
+   * preview. `POST :id/rephrase/apply` promotes (accept) or discards (reject).
+   * All org-walled in the service (404 cross-tenant); any authenticated org
+   * member, matching the annotate / status precedent (no `@Roles`).
+   *
+   * `:id/rephrase*` are multi-segment routes, so they never collide with the
+   * single-segment `PATCH :id`; `ParseUUIDPipe` restricts `:id` to UUIDs.
+   */
+  @Post(':id/rephrase')
+  async startRephrase(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: User,
+  ) {
+    return this.riskRephrase.startRephrase(id, user.organization_id);
+  }
+
+  @Get(':id/rephrase/status')
+  async pollRephrase(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('job_id') jobId: string,
+    @CurrentUser() user: User,
+  ) {
+    return this.riskRephrase.pollRephrase(id, jobId, user.organization_id);
+  }
+
+  @Post(':id/rephrase/edit')
+  async editProposal(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: EditProposalDto,
+    @CurrentUser() user: User,
+  ) {
+    return this.riskRephrase.editProposal(id, dto, user.organization_id);
+  }
+
+  @Post(':id/rephrase/apply')
+  async applyRephrase(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ApplyRephraseDto,
+    @CurrentUser() user: User,
+  ) {
+    return this.riskRephrase.applyRephrase(
+      id,
+      dto.action,
+      user.organization_id,
+      user.id,
+      // TASK 3 — checkbox is checked by default; default to true when omitted.
+      dto.mark_handled ?? true,
     );
   }
 
