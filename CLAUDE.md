@@ -4826,3 +4826,102 @@ Additional hard rules (on top of 1–5 above):
 Risk mix, obligation rollup, contracts-by-status widget,
 parties & team directory, customize mode (v1 layout persistence will follow the
 `sign_portfolio_view` localStorage pattern — there is NO backend layout store).
+
+---
+
+## Risk Analysis Tab Rework — PR #137 (shipped 2026-07-07, merged `8a21274`)
+
+The Risk Analysis tab now renders risks **clause-by-clause, grouped into
+collapsible per-document sections**, in the SAME order as the Clauses tab; the
+Clauses tab is **clauses-only**; and an AI **re-phrase → review → merge** flow
+proposes a rewritten clause and promotes it via the existing parent-chain
+versioning. Backend + frontend, all three suites green (backend 1247 /
+ai-backend 201 / frontend 192). Additive-only; annotation corpus untouched.
+
+### Server-side ordering (ONE source of truth for BOTH tabs)
+- `RiskAnalysisService.getByContract` AND `ContractsService.getContractClauses`
+  use the **identical** ordering expression:
+  `document_priority` (unset/0 LAST) → document `created_at` (upload order) →
+  `order_index` → id. Both LEFT-JOIN `clause.source_document`; null-document
+  rows sort last (never dropped/crash).
+- WHY: `order_index` numbers **from 0 per document**, so a flat `order_index`
+  sort **interleaves** the clauses of a multi-document contract. Ordering by
+  document priority FIRST groups each file's clauses together. **Any new
+  clause-scoped read that must match tab order MUST reuse this exact expression**
+  (lesson #214).
+
+### Clauses tab is clauses-only
+Risk badges + the inline "AI Risk Analysis" block were removed from
+`ContractDetailPage.tsx`. The shared `RiskLevelBadge` and the page-level risk
+fetch stay (the Risk tab consumes them).
+
+### Editable recommendation + tracking
+`PATCH /risk-analysis/:id` (the annotate route, `AnnotateRiskDto`) now also
+accepts `recommendation`; the service **snapshots `original_recommendation`
+once** on the first edit (the `was_corrected` signal, alongside the existing
+`original_risk_level`/`original_risk_category`). Migration `1766000000001`.
+
+### ClauseRewriterAgent (ai-backend) + rephrase endpoints
+- `ai-backend/app/agents/clause_rewriter.py` — routes through the single
+  `BaseAgent._call_model` chokepoint with **`scrub=True`**, async Celery task
+  `run_rephrase_clause`, route `POST /agents/rephrase-clause`, fence-/
+  truncation-tolerant parse, **same-language output (Arabic in → Arabic out)**.
+  The model-centralization guard test now covers **10** agents.
+- Backend endpoints (`RiskRephraseService` + `RiskAnalysisController`):
+  `POST :id/rephrase` (dispatch) · `GET :id/rephrase/status?job_id=` (poll →
+  creates the proposed clause) · `POST :id/rephrase/edit` (persist an edit to
+  the proposed clause text) · `POST :id/rephrase/apply` (accept = promote,
+  reject = discard).
+
+### Non-guest proposed-clause path — isolation vs grouping (INVARIANT)
+- The AI proposal is an `is_proposed=true` ContractClause with
+  `source=AI_DRAFTED` and **`source_document_id = NULL`** — the isolation
+  mechanism that keeps it OUT of the guest document-scoped panel query
+  (`clause.source_document_id = :docId`). Linked to its risk via
+  `risk_analyses.proposed_contract_clause_id` (migration `1766000000002`).
+- **On promotion the promoted clause MUST inherit the original clause's
+  `source_document_id`** (`propClause.source_document_id = original.source_document_id`),
+  else the merged clause + all its risks fall out of their file section into the
+  null-source "Document" fallback group. Position (`section_number`/
+  `order_index`) is preserved automatically because the original **junction is
+  reused** (only its `clause_id` is repointed). See lesson #215.
+- Reuses the parent-chain promotion MODEL (Option γ) in a focused single-clause
+  path — the shipped guest `applyProposedVersion` is byte-untouched (zero
+  regression risk). A single-clause rewrite does NOT fit the document-wide guest
+  apply entry point.
+
+### Merge flow + persistent merged state
+- Merge confirmation modal (original vs proposed, RTL-aware) with a
+  **"mark risk as handled" checkbox, checked by default** — on accept it sets
+  the risk to the existing `APPROVED` status + `handled_by`/`handled_at` (no new
+  status invented); unchecked leaves status untouched.
+- **`merged_at`** (migration `1766000000003`) drives the persistent MERGED state
+  — the frontend hydrates it on load, so a merged risk shows the green
+  **"✓ Updated · v{n}"** badge (version from the clause parent-chain) + a
+  read-only **"View previous version"** toggle (the parent clause via
+  `clause.parent_clause`, hydrated in `getByContract`).
+- The recommendation block has 4 states: default / editing / merged / cancelled;
+  a lightweight confirm dialog gates recommendation- and proposed-clause-text
+  edits before saving.
+
+### Migrations (all additive, `IF NOT EXISTS`, no backfill)
+`1766000000001` (`original_recommendation`) · `1766000000002`
+(`proposed_contract_clause_id`) · `1766000000003` (`merged_at`).
+
+### i18n — pending Youssef
+`riskTab.*` keys: **en final; ar/fr are DRAFT `_TODO`** pending Youssef's
+legal-terminology review (same posture as `clauseType.*`).
+
+### Hard rules — never violate
+1. **The clause read and the risk read share ONE ordering expression** —
+   changing one without the other re-opens the multi-doc interleave. Never
+   order clause-scoped reads by a bare `order_index` when tab-parity matters.
+2. **A proposed clause is `source_document_id = NULL` while `is_proposed=true`
+   (isolation) and MUST inherit the parent's `source_document_id` on promotion
+   (grouping).** Both halves are required; dropping either breaks a real
+   surface (lesson #215).
+3. **The rewrite agent routes through `_call_model(scrub=True)`** like every
+   analysis agent — never a direct model call — and outputs the SAME language
+   as the source clause.
+4. **Merge "mark handled" reuses the existing `APPROVED` status** — do not
+   invent a new risk status.
