@@ -63,6 +63,9 @@ const mockContractRepository = {
   save: jest.fn().mockResolvedValue(SAVED_CONTRACT),
   findOne: jest.fn().mockResolvedValue(SAVED_CONTRACT),
   createQueryBuilder: jest.fn().mockReturnValue(mockQb),
+  // Signed-state pinning (Slice 2) — the mutation guard reads pin state via
+  // repo.manager.query; empty result = unpinned (these are unpinned fixtures).
+  manager: { query: jest.fn().mockResolvedValue([]) },
 };
 
 const mockContractClauseRepository = {

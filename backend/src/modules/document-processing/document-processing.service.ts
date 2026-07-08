@@ -33,6 +33,15 @@ import { computeCoverTrim } from './utils/cover-trim.util';
 // Tenant-isolation Tier 1 — service-level wall on uploadAndProcess +
 // reprocess + finalizeReview. Same `findInOrg` shape as PR #45.
 import { ContractAccessService } from '../contracts/services/contract-access.service';
+// Signed-state pinning (Slice 2) — a pinned contract's legal content is
+// frozen: upload/reprocess/extracted-text/review writers reject with 409
+// CONTRACT_PINNED; the SYSTEM extraction driver terminalizes instead of
+// writing clauses.
+import {
+  assertClauseMutable,
+  assertContractMutable,
+  isContractPinned,
+} from '../contracts/utils/contract-pin-guard.util';
 // Phase 7.18 Part 3 — second metered consumer. MeteringService is the
 // engine authority; reserve sits DOWNSTREAM of the Tier 1 wall, before
 // storage/dispatch. Engine code MUST NOT be modified — call only.
@@ -142,7 +151,17 @@ export class DocumentProcessingService {
     // probe → 404 (NOT 403 — no existence leak). In-org behaviour
     // unchanged: contract existence is still verified, the org-mismatch
     // case is the new defense.
-    await this.contractAccess.findInOrg(contractId, orgId);
+    const walledContract = await this.contractAccess.findInOrg(contractId, orgId);
+
+    // Signed-state pinning (Slice 2) — AFTER the wall (404-first), BEFORE the
+    // metering reserve (a doomed upload must not charge). A pinned contract's
+    // clause set is frozen; new-version extraction is rejected with 409
+    // CONTRACT_PINNED. This is the SHARED seam for BOTH the managing route
+    // and the guest upload path (guest-upload.service also guards pre-slot).
+    await assertContractMutable(
+      this.documentUploadRepository.manager,
+      walledContract,
+    );
 
     // ─────────────────────────────────────────────────────────────────────
     // Phase 7.18 Part 3 — METERING reserve.
@@ -391,6 +410,23 @@ export class DocumentProcessingService {
       doc.processing_status === DocumentProcessingStatus.HUMAN_REVIEW_RECOMMENDED
     ) {
       return doc;
+    }
+
+    // Signed-state pinning (Slice 2) — the SYSTEM driver (and any browser
+    // poll sharing this advance core) must NEVER advance/write clauses or
+    // backfill parties for a PINNED contract. A background writer can't
+    // surface a 409 to anyone, so instead of throwing we TERMINALIZE: the doc
+    // FAILs loudly (error_message names CONTRACT_PINNED) + the reservation is
+    // refunded — same self-termination guarantee as the staleness backstop
+    // (an in-flight extraction that outlived the signing must not re-poll
+    // forever, and its result is discarded, never written).
+    if (
+      await isContractPinned(
+        this.documentUploadRepository.manager,
+        doc.contract_id,
+      )
+    ) {
+      return this.failPinnedDoc(doc);
     }
 
     if (!doc.processing_job_id) {
@@ -682,6 +718,47 @@ export class DocumentProcessingService {
    * just completed/failed it wins and this no-ops (returns the fresh view). The
    * reservation release is engine status-guarded (at-most-once).
    */
+  /**
+   * Signed-state pinning (Slice 2) — terminalize an in-progress doc whose
+   * contract got PINNED while extraction was in flight. Same race-safe
+   * status-guarded claim as failStaleDoc: exactly one caller flips the row;
+   * the AI result is DISCARDED (no clause write, no party backfill) and the
+   * reservation is refunded.
+   */
+  private static readonly PINNED_ERROR_MESSAGE =
+    'CONTRACT_PINNED — the contract was signed while this document was ' +
+    'processing; the extraction result was discarded because a signed ' +
+    "contract's clause set is frozen.";
+
+  private async failPinnedDoc(doc: DocumentUpload): Promise<DocumentUpload> {
+    const claim = await this.documentUploadRepository.update( // lint-exempt: S2f-deferred (metering-entangled, walled); pinned-contract terminalize claim
+      { id: doc.id, processing_status: doc.processing_status },
+      {
+        processing_status: DocumentProcessingStatus.FAILED,
+        processing_job_id: null,
+        error_message: DocumentProcessingService.PINNED_ERROR_MESSAGE,
+      },
+    );
+    if (claim.affected !== 1) {
+      // A peer transitioned it first — return the fresh (terminal) view.
+      return (
+        (await this.documentUploadRepository.findOne({ // lint-exempt: S2f-deferred (metering-entangled, walled)
+          where: { id: doc.id },
+        })) ?? doc
+      );
+    }
+    this.logger.warn(
+      `[advanceDocumentState] Document ${doc.id} terminalized: contract ` +
+        `${doc.contract_id} is PINNED (signed) — extraction result discarded. ` +
+        `metering.upload_extraction.pinned_discarded`,
+    );
+    doc.processing_status = DocumentProcessingStatus.FAILED;
+    doc.processing_job_id = null;
+    doc.error_message = DocumentProcessingService.PINNED_ERROR_MESSAGE;
+    await this.releaseReservationOnFailure(doc);
+    return doc;
+  }
+
   private async failStaleDoc(doc: DocumentUpload): Promise<DocumentUpload> {
     const claim = await this.documentUploadRepository.update( // lint-exempt: S2f-deferred (metering-entangled, walled); stale-doc terminalize claim
       { id: doc.id, processing_status: doc.processing_status },
@@ -966,6 +1043,12 @@ export class DocumentProcessingService {
     const doc = await this.documentScoped.scopedFindByIdOrThrow(docId, orgId);
     // WALL (persona — Phase 1, layer 1): stays as defense-in-depth.
     await this.contractAccess.findInOrg(doc.contract_id, orgId);
+    // Signed-state pinning (Slice 2) — the extracted source text feeds the
+    // clause pipeline; frozen on a pinned contract.
+    await assertContractMutable(
+      this.documentUploadRepository.manager,
+      doc.contract_id,
+    );
     doc.extracted_text = text;
     return this.documentUploadRepository.save(doc); // lint-exempt: two-step hydration (ids validated by scoped load)
   }
@@ -1007,6 +1090,14 @@ export class DocumentProcessingService {
     // Tenant wall — walk doc → contract → org. Throws 404 if the doc's
     // contract belongs to another org.
     await this.contractAccess.findInOrg(doc.contract_id, orgId);
+
+    // Signed-state pinning (Slice 2) — AFTER the wall, BEFORE any release/
+    // reserve: reprocessing re-runs extraction and rewrites clauses; frozen
+    // on a pinned contract (409, no metering churn).
+    await assertContractMutable(
+      this.documentUploadRepository.manager,
+      doc.contract_id,
+    );
 
     // ─────────────────────────────────────────────────────────────────────
     // Phase 7.18 Part 3 — DEFENSE-IN-DEPTH: release any prior reservation
@@ -1144,6 +1235,11 @@ export class DocumentProcessingService {
     },
     userId: string,
   ): Promise<Clause> {
+    // Signed-state pinning (Slice 2) — a review edit rewrites the clause's
+    // title/content IN PLACE; blocked when the clause backs ANY pinned
+    // contract (clause-level guard: this route has no contract in scope).
+    await assertClauseMutable(this.clauseRepository.manager, clauseId);
+
     const clause = await this.clauseRepository.findOne({
       where: { id: clauseId },
     });
@@ -1169,6 +1265,9 @@ export class DocumentProcessingService {
     clauseIds: string[],
     userId: string,
   ): Promise<void> {
+    // Signed-state pinning (Slice 2) — same clause-level guard as
+    // updateClauseReview; one indexed join covers the whole batch.
+    await assertClauseMutable(this.clauseRepository.manager, clauseIds);
     await this.clauseRepository
       .createQueryBuilder()
       .update(Clause)
@@ -1219,6 +1318,14 @@ export class DocumentProcessingService {
     // Tenant wall — throws 404 on cross-tenant probe; AI dispatch never
     // fires under the attacker's org. Reserve sits DOWNSTREAM of this wall.
     await this.contractAccess.findInOrg(contractId, orgId);
+
+    // Signed-state pinning (Slice 2) — finalize drives the review→risk-writer
+    // pipeline on the clause set; frozen on a pinned contract (409 BEFORE the
+    // reserve — a doomed finalize must not charge or dispatch).
+    await assertContractMutable(
+      this.documentUploadRepository.manager,
+      contractId,
+    );
 
     // ─────────────────────────────────────────────────────────────────────
     // Phase 7.18 — METERING reserve (meter_key=finalize_review).

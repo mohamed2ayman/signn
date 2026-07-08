@@ -129,6 +129,20 @@ export class ContractsController {
     return this.contractPinning.markAsSigned(id, user.id, orgId);
   }
 
+  /**
+   * Signed-state pinning (Slice 2) — tamper-detection read path. Recomputes
+   * the canonical hash from live content + the stored pin payload and
+   * compares both to the pinned hash. Read-only; org-walled.
+   */
+  @Get(':id/verify-pin')
+  @RequirePermission(PermissionLevel.VIEWER)
+  async verifyPin(
+    @Param('id', ParseUUIDPipe) id: string,
+    @OrganizationId() orgId: string,
+  ) {
+    return this.contractPinning.verifyContractPin(id, orgId);
+  }
+
   @Delete(':id')
   @RequirePermission(PermissionLevel.EDITOR)
   async delete(

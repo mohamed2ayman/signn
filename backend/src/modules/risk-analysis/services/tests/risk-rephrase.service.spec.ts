@@ -53,6 +53,8 @@ describe('RiskRephraseService — AI clause re-phrase (STEP 3)', () => {
   function build({ risk, findInOrgRejects = false }: { risk: any; findInOrgRejects?: boolean }) {
     const riskRepo = {
       findOne: jest.fn().mockResolvedValue(risk),
+      // Slice 2: the pin guard reads riskRepo.manager.query; [] = unpinned.
+      manager: { query: jest.fn().mockResolvedValue([]) },
     };
     const contractAccess = {
       findInOrg: findInOrgRejects

@@ -18,6 +18,7 @@ import { NotificationType } from '../../../database/entities/notification.entity
 import { escapeHtml } from '../../../common/utils/escape-html-email';
 import { UploadedFile } from '../../storage/storage.service';
 import { ContractAccessService } from '../../contracts/services/contract-access.service';
+import { assertContractMutable } from '../../contracts/utils/contract-pin-guard.util';
 import { DocumentProcessingService } from '../../document-processing/document-processing.service';
 import { MeterKey } from '../../metering/enums/meter-key.enum';
 import { NotificationDispatchService } from '../../notifications/notification-dispatch.service';
@@ -115,6 +116,15 @@ export class GuestUploadService {
       // subject. 404 keeps parity with the no-existence-leak contract.
       throw new NotFoundException('Contract not found');
     }
+
+    // Signed-state pinning (Slice 2) — AFTER the binding wall (404-first),
+    // BEFORE the daily-slot claim: a pinned (signed) contract's clause set is
+    // frozen, so a guest new-version upload is rejected with the coded 409
+    // CONTRACT_PINNED (same envelope family as GUEST_UPLOAD_DAILY_LIMIT) and
+    // never touches the day's quota. Pure pin check at the mutation seam —
+    // identity/binding logic above is untouched. uploadAndProcess carries the
+    // same guard as the shared backstop seam.
+    await assertContractMutable(this.dataSource.manager, contract);
 
     // (2) RACE-SAFE DAILY CAP — atomic conditional UPSERT-counter.
     //

@@ -98,10 +98,14 @@ describe('ContractsService — Option B scoped-repo wiring (mutation paths)', ()
     });
 
     it('happy path: BOTH layers fire; the scoped row is the mutation target', async () => {
-      const target = { id: CONTRACT_IN_A, name: 'old' };
+      const target = { id: CONTRACT_IN_A, name: 'old', pinned_version_id: null };
       const contractAccess = { findInOrg: resolve({ id: CONTRACT_IN_A }) };
       const contractScoped = { scopedFindByIdOrThrow: resolve(target) };
-      const contractRepository = { save: jest.fn(async (e: any) => e) };
+      const contractRepository = {
+        save: jest.fn(async (e: any) => e),
+        // Slice 2 pin guard reads repo.manager.query on partial entities.
+        manager: { query: jest.fn().mockResolvedValue([]) },
+      };
 
       const svc = build({ contractAccess, contractScoped, contractRepository });
 

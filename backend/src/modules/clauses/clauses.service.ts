@@ -7,6 +7,7 @@ import { Repository } from 'typeorm';
 import { Clause } from '../../database/entities';
 import { CreateClauseDto, UpdateClauseDto } from './dto';
 import { escapeLikeParam } from '../../common/utils/escape-like';
+import { assertClauseMutable } from '../contracts/utils/contract-pin-guard.util';
 
 @Injectable()
 export class ClausesService {
@@ -86,6 +87,13 @@ export class ClausesService {
     orgId: string,
   ): Promise<Clause> {
     const clause = await this.findById(id, orgId);
+
+    // Signed-state pinning (Slice 2) — the clause-library BACKDOOR: an
+    // in-place edit here silently mutates the live view of EVERY contract
+    // whose contract_clauses reference this row. Blocked when any referencing
+    // contract is pinned. (The pinned RECORD itself is by-value safe — Slice 1
+    // snapshots + hashes content — this guard protects the LIVE view.)
+    await assertClauseMutable(this.clauseRepository.manager, id);
 
     if (dto.title !== undefined) clause.title = dto.title;
     if (dto.content !== undefined) clause.content = dto.content;

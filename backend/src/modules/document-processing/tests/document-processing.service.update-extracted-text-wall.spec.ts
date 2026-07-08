@@ -69,7 +69,11 @@ describe('DocumentProcessingService.updateExtractedText — tenancy (S2f, two la
   }
 
   it('cross-tenant (scoped layer denies): 404 from the data layer; NO write; wall not reached', async () => {
-    const documentUploadRepository = { save: jest.fn() };
+    const documentUploadRepository = {
+      save: jest.fn(),
+      // Slice 2: the pin guard reads repo.manager.query; [] = unpinned.
+      manager: { query: jest.fn().mockResolvedValue([]) },
+    };
     // layer 2 denies: the canonical join finds no row for this org → 404.
     const documentScoped = {
       scopedFindByIdOrThrow: jest
@@ -99,7 +103,11 @@ describe('DocumentProcessingService.updateExtractedText — tenancy (S2f, two la
       contract_id: CONTRACT_IN_A,
       extracted_text: 'original',
     };
-    const documentUploadRepository = { save: jest.fn() };
+    const documentUploadRepository = {
+      save: jest.fn(),
+      // Slice 2: the pin guard reads repo.manager.query; [] = unpinned.
+      manager: { query: jest.fn().mockResolvedValue([]) },
+    };
     const documentScoped = {
       scopedFindByIdOrThrow: jest.fn().mockResolvedValue(scopedRow),
     };
@@ -128,6 +136,8 @@ describe('DocumentProcessingService.updateExtractedText — tenancy (S2f, two la
     };
     const documentUploadRepository = {
       save: jest.fn(async (entity: any) => entity),
+      // Slice 2: the pin guard reads repo.manager.query; [] = unpinned.
+      manager: { query: jest.fn().mockResolvedValue([]) },
     };
     const documentScoped = {
       scopedFindByIdOrThrow: jest.fn().mockResolvedValue(scopedRow),
