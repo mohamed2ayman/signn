@@ -108,7 +108,19 @@ export default function EstablishIdentityModal({
         return;
       }
       if (status === 409) {
-        setError(t('guest.identity.errors.conflict'));
+        // The backend distinguishes two 409 axes by CODE (the message
+        // field is never displayed — copy lives in i18n, keyed on the
+        // code): EXISTING_ACCOUNT_EMAIL = the invited email belongs to a
+        // real (non-guest) SIGN account, so no password can ever succeed
+        // here; anything else = the established-guest password conflict.
+        const code = axios.isAxiosError(err)
+          ? (err.response?.data as { error?: string } | undefined)?.error
+          : undefined;
+        setError(
+          code === 'EXISTING_ACCOUNT_EMAIL'
+            ? t('guest.identity.errors.existingAccount')
+            : t('guest.identity.errors.conflict'),
+        );
       } else if (status === 429) {
         setError(t('guest.identity.errors.throttled'));
       } else {

@@ -1244,6 +1244,7 @@
         "mismatch": "Les mots de passe ne correspondent pas.",
         "invalid": "Cette invitation n'est plus valable. Demandez un nouveau lien à l'expéditeur.",
         "conflict": "Un compte existe déjà pour cette invitation, et le mot de passe ne correspond pas. Utilisez le mot de passe initial ou contactez l'expéditeur.",
+        "existingAccount": "Cette adresse e-mail est déjà associée à un compte SIGN. L'accès aux contrats partagés avec un compte existant n'est pas encore disponible — veuillez contacter la personne qui a partagé ce contrat avec vous.",
         "throttled": "Trop de tentatives. Veuillez patienter une minute et réessayer.",
         "generic": "Impossible de définir votre mot de passe pour le moment. Veuillez réessayer."
       },

@@ -1235,6 +1235,7 @@
         "mismatch": "Passwords do not match.",
         "invalid": "This invitation is no longer valid. Ask the sender for a fresh link.",
         "conflict": "An account already exists for this invitation, and the password did not match. Use the original password, or contact the sender.",
+        "existingAccount": "This email is already registered with a SIGN account. Accessing shared contracts with an existing account isn't available yet — please contact whoever shared this contract with you.",
         "throttled": "Too many attempts. Please wait a minute and try again.",
         "generic": "Could not set your password just now. Please try again."
       },
