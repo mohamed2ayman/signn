@@ -4956,3 +4956,69 @@ legal-terminology review (same posture as `clauseType.*`).
 Parties & team directory (full), customize mode (v1 layout persistence will
 follow the `sign_portfolio_view` localStorage pattern — there is NO backend
 layout store).
+
+---
+
+## Guest establish-identity — graceful real-account collision (shipped 2026-07-08, PR #139, merged `d4ead7b`)
+
+Slice 0 of the **unified-membership arc**: when a guest invitation's invited
+email belongs to an EXISTING non-GUEST SIGN account (a real customer, usually
+of a different org), `establishIdentity` no longer crashes — it detects the
+collision and responds honestly. **Detect-and-respond ONLY; ZERO authz change.**
+
+### The bug it fixes
+The guest-scoped race-guard lookup (`email + account_type=GUEST`) cannot see a
+MANAGING row, so the flow fell through to the guest-user INSERT → `UQ_users_email`
+→ raw `QueryFailedError` → **unhandled 500, permanently, on every retry** —
+surfaced in the modal as the generic RETRYABLE copy (misleading for a failure
+that can never succeed). NOTE for the record: an earlier session report
+described this as a 400 "invitation email does not match your account" — that
+check/message never existed in this codebase (verified by grep + flow trace);
+the real failure was the UQ-violation 500. See lesson #219.
+
+### What shipped
+- **`guest-invitation.service.ts`** — inside the establish-identity transaction,
+  immediately BEFORE the guest-user insert: `findOne({ email: invitation.invited_email,
+  account_type: Not(AccountType.GUEST) })` → on hit, handled
+  `ConflictException { statusCode: 409, error: 'EXISTING_ACCOUNT_EMAIL' }`
+  (same coded envelope as `GUEST_UPLOAD_DAILY_LIMIT`). `UQ_users_email` stays
+  as the hard backstop for the race window.
+- **`EstablishIdentityModal.tsx`** — the 409 branch keys on
+  `err.response.data.error` (the CODE — the backend message is never rendered;
+  lesson #220): `EXISTING_ACCOUNT_EMAIL` → `guest.identity.errors.existingAccount`;
+  a plain 409 keeps the established-guest password-conflict copy.
+- **i18n en/ar/fr** (exact parity): honest copy — "This email is already
+  registered with a SIGN account. Accessing shared contracts with an existing
+  account isn't available yet — please contact whoever shared this contract
+  with you." Deliberately NO "sign in to access" promise — that path is unbuilt.
+- **⭐ Real-PG proof** (`guest-establish-identity-existing-account.real-pg.spec.ts`):
+  MANAGING email → handled 409 with the code, NO new user row, NO
+  `guest_contract_access` binding, the original row byte-untouched
+  (id/hash/account_type/role/org), stable on retry; brand-new email still
+  creates GUEST+binding; existing-GUEST re-establish unchanged; Path-A
+  `exchange` still issues a viewer credential. Suite: 146/1251 green
+  (baseline 145/1247 + this spec).
+
+### Hard rules — never violate
+1. **The detection is detect-and-respond ONLY.** It must never grant access,
+   write a binding, or let the MANAGING user through — that is Slices 1–2.
+2. **The 409 carries `error: 'EXISTING_ACCOUNT_EMAIL'`** — the frontend keys on
+   the code; changing the code string breaks the honest copy silently.
+3. **Path-A view-only (token → viewer credential) stays independent** of this
+   detection — a real customer can still VIEW via `exchange` exactly as before.
+
+### The unified-membership arc (direction flagged to Ayman — pending his nod)
+Industry-validated direction (Microsoft Entra B2B / WorkOS / Auth0 pattern):
+**one identity, binding-scoped access** — NOT dual user rows per email, NOT a
+separate external-identity mechanism. Slices 1–2 (dispatch + establish-identity
+real-account-verify + binding-carries-identity-type) are PENDING Ayman's
+directional nod; each is gated by a cross-org leak battery.
+
+⭐ **THE LEAK-BATTERY INVARIANT the future slices must protect** (from recon):
+the metering subject AND the audit org must derive from the **CONTRACT's org**
+(`contract → project → organization_id`, via the binding) — NEVER from
+`user.organization_id`, which for a MANAGING-user-as-guest is the guest's OWN
+org. A naive allow-through that trusts the JWT org would mis-meter and
+mis-audit ACROSS TENANTS. This is ARCHITECTURE RULE 9 Invariant 1 applied to
+the unified-membership case — the existing resolver already derives from the
+contract; the battery must prove no future code path shortcuts it.
