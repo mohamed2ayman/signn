@@ -51,7 +51,9 @@ const CLAUSE_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccc01';
 const JOB_ID = 'job-uuid-finalize';
 const RES_ID = '99999999-9999-4999-8999-999999999999';
 
-const stubRepo = {} as any;
+// Slice 2: the pin guard reads documentUploadRepository.manager.query;
+// empty result = unpinned (these fixtures are all unpinned contracts).
+const stubRepo = { manager: { query: jest.fn().mockResolvedValue([]) } } as any;
 
 function completedJob(risks: any[]) {
   return { status: 'completed', result: { risks } };

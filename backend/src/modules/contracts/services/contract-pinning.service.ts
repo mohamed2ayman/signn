@@ -20,6 +20,7 @@ import { ContractAccessService } from './contract-access.service';
 import {
   buildPinPayload,
   computePinHash,
+  PinPayload,
 } from '../utils/canonical-pin.util';
 
 /** The two doors through which a contract reaches FULLY_EXECUTED. */
@@ -32,6 +33,20 @@ export interface PinResult {
   pinned_version_id: string;
   content_hash: string;
   pinned_at: Date;
+}
+
+/** Result of the pin-verification read path (Slice 2). */
+export interface PinVerificationResult {
+  pinned: boolean;
+  /** null when not pinned; false = live content OR stored record drifted from the pinned hash. */
+  valid: boolean | null;
+  pinned_version_id: string | null;
+  pinned_at: Date | null;
+  pinned_content_hash: string | null;
+  /** Canonical hash recomputed from the CURRENT live clauses + metadata. */
+  live_hash: string | null;
+  /** Canonical hash recomputed from the STORED pin payload (jsonb round-trip). */
+  stored_payload_hash: string | null;
 }
 
 /**
@@ -268,5 +283,89 @@ export class ContractPinningService {
       actorUserId: userId,
       door: 'MANUAL_MARK_SIGNED',
     });
+  }
+
+  /**
+   * Signed-state pinning (Slice 2) — the tamper-detection READ path.
+   * Recomputes the canonical hash TWICE and compares each to the pinned hash:
+   *   live_hash            — from the CURRENT live clauses (shared ordering,
+   *                          lesson #214) + the contract's metadata freeze
+   *                          set. Detects post-signature drift of the live
+   *                          content (e.g. a direct DB edit past the guard).
+   *   stored_payload_hash  — from the STORED pin payload re-serialized by the
+   *                          canonical serializer (jsonb round-trip is safe:
+   *                          the serializer imposes key order). Detects
+   *                          tampering of the stored record itself.
+   * Org-walled (findInOrg → cross-tenant 404). Read-only.
+   */
+  async verifyContractPin(
+    contractId: string,
+    orgId: string,
+  ): Promise<PinVerificationResult> {
+    const contract = await this.contractAccess.findInOrg(contractId, orgId);
+
+    if (!contract.pinned_version_id) {
+      return {
+        pinned: false,
+        valid: null,
+        pinned_version_id: null,
+        pinned_at: null,
+        pinned_content_hash: null,
+        live_hash: null,
+        stored_payload_hash: null,
+      };
+    }
+
+    // Live recompute — the SAME shared ordering expression + canonical
+    // builder the pin operation used (guest-proposed clauses excluded).
+    const orderedClauses = await this.dataSource.manager // lint-exempt: wall-protected (findInOrg above); read-only shared-ordering load for pin verification
+      .getRepository(ContractClause)
+      .createQueryBuilder('cc')
+      .leftJoinAndSelect('cc.clause', 'clause')
+      .leftJoinAndSelect('clause.source_document', 'doc')
+      .where('cc.contract_id = :contractId', { contractId })
+      .andWhere('cc.is_proposed = false')
+      .orderBy('CASE WHEN doc.document_priority > 0 THEN 0 ELSE 1 END', 'ASC')
+      .addOrderBy('doc.document_priority', 'ASC')
+      .addOrderBy('doc.created_at', 'ASC')
+      .addOrderBy('cc.order_index', 'ASC')
+      .addOrderBy('cc.id', 'ASC')
+      .getMany();
+    const liveHash = computePinHash(buildPinPayload(contract, orderedClauses));
+
+    const version = await this.dataSource.manager // lint-exempt: wall-protected (findInOrg above); read-only load of the contract's OWN pinned version row
+      .getRepository(ContractVersion)
+      .findOne({ where: { id: contract.pinned_version_id } });
+    const storedPayload = version?.metadata?.['pin_payload'] as
+      | PinPayload
+      | undefined;
+    const storedPayloadHash = storedPayload
+      ? computePinHash(storedPayload)
+      : null;
+
+    const valid =
+      liveHash === contract.pinned_content_hash &&
+      storedPayloadHash === contract.pinned_content_hash &&
+      version?.content_hash === contract.pinned_content_hash;
+
+    if (!valid) {
+      this.logger.warn(
+        `Pin verification FAILED for contract ${contractId}: ` +
+          `pinned=${contract.pinned_content_hash?.slice(0, 12)}… ` +
+          `live=${liveHash.slice(0, 12)}… ` +
+          `stored=${storedPayloadHash?.slice(0, 12) ?? 'null'}… ` +
+          `signed-state drift detected. contract.pin_verification_failed`,
+      );
+    }
+
+    return {
+      pinned: true,
+      valid,
+      pinned_version_id: contract.pinned_version_id,
+      pinned_at: contract.pinned_at,
+      pinned_content_hash: contract.pinned_content_hash,
+      live_hash: liveHash,
+      stored_payload_hash: storedPayloadHash,
+    };
   }
 }

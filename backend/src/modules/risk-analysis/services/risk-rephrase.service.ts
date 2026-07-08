@@ -17,6 +17,7 @@ import {
 } from '../../../database/entities';
 import { AiService } from '../../ai/ai.service';
 import { ContractAccessService } from '../../contracts/services/contract-access.service';
+import { assertContractMutable } from '../../contracts/utils/contract-pin-guard.util';
 
 /**
  * Risk-tab rework — STEP 3: AI clause re-phrase (proposed replacement).
@@ -119,6 +120,11 @@ export class RiskRephraseService {
     };
   }> {
     const risk = await this.loadWalledRisk(id, orgId);
+    // Signed-state pinning (Slice 2) — AFTER the wall (404-first). The poll
+    // WRITES clause content (creates the is_proposed ContractClause); frozen
+    // on a pinned contract. startRephrase (pure AI dispatch, no clause write)
+    // stays unguarded by design — only the WRITERS are blocked.
+    await assertContractMutable(this.riskRepo.manager, risk.contract_id);
     const original = risk.contract_clause?.clause;
     if (!original) {
       throw new BadRequestException(
@@ -262,6 +268,9 @@ export class RiskRephraseService {
     markHandled = false,
   ): Promise<{ applied: boolean; action: 'accept' | 'reject' }> {
     const risk = await this.loadWalledRisk(id, orgId);
+    // Signed-state pinning (Slice 2) — apply PROMOTES the proposed clause
+    // into the live set (parent-chain); frozen on a pinned contract.
+    await assertContractMutable(this.riskRepo.manager, risk.contract_id);
     if (!risk.proposed_contract_clause_id) {
       throw new BadRequestException('No pending re-phrase to apply for this risk');
     }
@@ -372,6 +381,9 @@ export class RiskRephraseService {
     original_content: string;
   }> {
     const risk = await this.loadWalledRisk(id, orgId);
+    // Signed-state pinning (Slice 2) — the edit persists new wording on the
+    // proposed clause (a clause-content write); frozen on a pinned contract.
+    await assertContractMutable(this.riskRepo.manager, risk.contract_id);
     const original = risk.contract_clause?.clause;
     if (!risk.proposed_contract_clause_id || !original) {
       throw new BadRequestException('No pending re-phrase to edit for this risk');

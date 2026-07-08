@@ -38,6 +38,7 @@ import {
 } from './dto';
 import { escapeLikeParam } from '../../common/utils/escape-like';
 import { assertValueCurrencyPaired } from './utils/value-currency.util';
+import { assertContractMutable } from './utils/contract-pin-guard.util';
 import { CollaborationGateway } from '../collaboration/collaboration.gateway';
 import { ContractTemplatesService, isStandardForm, getLicenseOrg } from '../contract-templates/contract-templates.service';
 import { EmailService } from '../notifications/email.service';
@@ -244,6 +245,10 @@ export class ContractsService {
     // intentional redundancy IS the "both layers fire" proof.)
     const contract = await this.contractScoped.scopedFindByIdOrThrow(id, orgId);
 
+    // Signed-state pinning (Slice 2) — AFTER the walls (cross-tenant stays
+    // 404-first), a pinned contract's legal content is frozen → 409.
+    await assertContractMutable(this.contractRepository.manager, contract);
+
     if (dto.name !== undefined) contract.name = dto.name;
     if (dto.party_type !== undefined) contract.party_type = dto.party_type;
     if (dto.contract_value !== undefined) contract.contract_value = dto.contract_value;
@@ -354,6 +359,10 @@ export class ContractsService {
     // through the scoped repo. Both layers fire; see update() for the rationale.
     const contract = await this.contractScoped.scopedFindByIdOrThrow(id, orgId);
 
+    // Signed-state pinning (Slice 2) — party names are in the pinned freeze
+    // set; a pinned contract rejects edits with 409 CONTRACT_PINNED.
+    await assertContractMutable(this.contractRepository.manager, contract);
+
     // Snapshot the AI-extracted ORIGINAL party names exactly ONCE — immediately
     // before the first human edit/swap — so original-vs-corrected is preserved.
     // Guarded on is_parties_edited_by_user so later edits keep the TRUE original.
@@ -384,6 +393,10 @@ export class ContractsService {
     userId?: string,
   ): Promise<ContractClause> {
     const contract = await this.findById(contractId, orgId);
+
+    // Signed-state pinning (Slice 2) — the clause set is frozen on a pinned
+    // contract; adding a clause is rejected with 409 CONTRACT_PINNED.
+    await assertContractMutable(this.contractRepository.manager, contract);
 
     // Get the next order index if not provided
     let orderIndex = dto.order_index;
@@ -435,7 +448,9 @@ export class ContractsService {
   ): Promise<ContractClause> {
     // Tenant-isolation Tier 1 — wall the contract BEFORE mutating any
     // contract_clause row. Cross-tenant probe → 404 from findInOrg.
-    await this.contractAccess.findInOrg(contractId, orgId);
+    const contract = await this.contractAccess.findInOrg(contractId, orgId);
+    // Signed-state pinning (Slice 2) — AFTER the wall: 404-first, then 409.
+    await assertContractMutable(this.contractRepository.manager, contract);
     const cc = await this.contractClauseRepository.findOne({ // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled (ContractClause has no scoped repo)
       where: { id: contractClauseId, contract_id: contractId },
     });
@@ -478,7 +493,9 @@ export class ContractsService {
   ): Promise<void> {
     // Tenant-isolation Tier 1 — wall the contract BEFORE deleting any
     // contract_clause row. Cross-tenant probe → 404 from findInOrg.
-    await this.contractAccess.findInOrg(contractId, orgId);
+    const contract = await this.contractAccess.findInOrg(contractId, orgId);
+    // Signed-state pinning (Slice 2) — AFTER the wall: 404-first, then 409.
+    await assertContractMutable(this.contractRepository.manager, contract);
     const cc = await this.contractClauseRepository.findOne({ // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled (ContractClause has no scoped repo)
       where: { id: contractClauseId, contract_id: contractId },
     });
@@ -514,7 +531,10 @@ export class ContractsService {
   ): Promise<void> {
     // Tenant-isolation Tier 1 — wall the contract BEFORE issuing the
     // batch order_index updates. Cross-tenant probe → 404 from findInOrg.
-    await this.contractAccess.findInOrg(contractId, orgId);
+    const contract = await this.contractAccess.findInOrg(contractId, orgId);
+    // Signed-state pinning (Slice 2) — clause ordering is part of the pinned
+    // payload (order_index is hashed); frozen on a pinned contract.
+    await assertContractMutable(this.contractRepository.manager, contract);
     for (const item of clauseOrder) {
       await this.contractClauseRepository.update( // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled (ContractClause has no scoped repo)
         { id: item.id, contract_id: contractId },
@@ -792,7 +812,10 @@ export class ContractsService {
     rejected: number;
   }> {
     // HOST wall — org-scope the contract before anything (cross-tenant → 404).
-    await this.contractAccess.findInOrg(contractId, orgId);
+    const contract = await this.contractAccess.findInOrg(contractId, orgId);
+    // Signed-state pinning (Slice 2) — a pinned contract's live clause set is
+    // frozen; applying a guest-proposed version is rejected with 409.
+    await assertContractMutable(this.contractRepository.manager, contract);
 
     const decisions = dto.decisions ?? [];
     const removals = dto.removals ?? [];

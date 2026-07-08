@@ -38,7 +38,8 @@ describe('DocumentProcessingService — cross-tenant access wall (Tier 1)', () =
     aiService?: any;
   }): DocumentProcessingService {
     return new DocumentProcessingService(
-      documentUploadRepository ?? noop,
+      // Slice 2: pin guard reads documentUploadRepository.manager.query.
+      documentUploadRepository ?? ({ manager: { query: jest.fn().mockResolvedValue([]) } } as any),
       noop,
       contractClauseRepository ?? noop,
       noop,
@@ -133,6 +134,8 @@ describe('DocumentProcessingService — cross-tenant access wall (Tier 1)', () =
       const documentUploadRepository = {
         create: jest.fn((entity: any) => entity),
         save: jest.fn(async (entity: any) => ({ ...entity, id: 'doc-1' })),
+        // Slice 2: the pin guard reads repo.manager.query; [] = unpinned.
+        manager: { query: jest.fn().mockResolvedValue([]) },
       };
       const contractAccess = {
         findInOrg: jest.fn().mockResolvedValue({ id: 'contract-in-a' }),
@@ -298,6 +301,8 @@ describe('DocumentProcessingService — cross-tenant access wall (Tier 1)', () =
           reservation_id: OLD_RES,              // prior is still reserved
         }),
         save: jest.fn(async (entity: any) => entity),
+        // Slice 2: the pin guard reads repo.manager.query; [] = unpinned.
+        manager: { query: jest.fn().mockResolvedValue([]) },
       };
       const clauseRepository = { find: jest.fn().mockResolvedValue([]) };
       const contractClauseRepository = { delete: jest.fn() };

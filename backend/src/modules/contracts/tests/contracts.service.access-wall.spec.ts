@@ -51,7 +51,9 @@ describe('ContractsService — cross-tenant access wall (Tier 1 WRITEs)', () => 
 
   function build(opts: Builder): ContractsService {
     return new ContractsService(
-      opts.contractRepository ?? noop,
+      // Slice 2: the pin guard reads repo.manager.query — default to an
+      // unpinned manager so happy-path wall tests aren't pin-blocked.
+      opts.contractRepository ?? ({ manager: { query: jest.fn().mockResolvedValue([]) } } as any),
       opts.contractClauseRepository ?? noop,
       opts.contractVersionRepository ?? noop,
       opts.contractCommentRepository ?? noop,
