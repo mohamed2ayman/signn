@@ -500,7 +500,20 @@
     "versionHistory": "Version history will be loaded here. Current version: {{version}}",
     "noClausesAvailable": "No clauses available. Create clauses in the Clause Library first.",
     "selectClause": "Select a clause to add",
-    "updateStatus": "Update Status"
+    "updateStatus": "Update Status",
+    "markSigned": {
+      "button": "Mark as signed",
+      "confirmTitle": "Mark this contract as signed?",
+      "confirmBody": "This records the contract as signed and permanently locks it. Its content can no longer be edited. Only do this if you're holding a fully signed copy of the contract.",
+      "confirmCta": "Lock contract",
+      "lockedBadge": "Executed — locked",
+      "errors": {
+        "alreadyLocked": "This contract is already signed and locked.",
+        "notReady": "This contract isn't in a state that can be marked as signed yet.",
+        "noPermission": "You don't have permission to mark this contract as signed.",
+        "generic": "Couldn't mark the contract as signed. Please try again."
+      }
+    }
   },
   "clause": {
     "title": "Clause",

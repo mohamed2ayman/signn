@@ -305,6 +305,11 @@ export default function ContractDetailPage() {
   const [signSigners, setSignSigners] = useState([{ email: '', name: '' }]);
   const [signingLoading, setSigningLoading] = useState(false);
   const [signatureSigners, setSignatureSigners] = useState<SignatureSigner[]>([]);
+
+  // Manual "Mark as signed" (signed-state pinning door 2) state
+  const [showMarkSignedModal, setShowMarkSignedModal] = useState(false);
+  const [markSignedLoading, setMarkSignedLoading] = useState(false);
+  const [markSignedError, setMarkSignedError] = useState<string | null>(null);
   const exportMenuRef = useRef<HTMLDivElement>(null);
 
   // Party names editing state
@@ -720,6 +725,54 @@ export default function ContractDetailPage() {
     }
   };
 
+  // ── Manual "Mark as signed" (signed-state pinning door 2) ──────────
+  // Client mirror of the backend's MARK_SIGNED_ALLOWED_STATUSES
+  // (contract-pinning.service.ts) — the backend stays the source of truth;
+  // its named errors are surfaced localized if the sets ever drift.
+  const MARK_SIGNED_ALLOWED_STATUSES = [
+    'APPROVED',
+    'ACTIVE',
+    'PENDING_TENDERING',
+    'SENT_TO_CONTRACTOR',
+    'CONTRACTOR_REVIEWING',
+  ];
+  const isContractLocked = Boolean(contract?.pinned_at || contract?.pinned_version_id);
+  const canMarkSigned = Boolean(
+    contract &&
+      !isContractLocked &&
+      contract.signature_status !== 'FULLY_EXECUTED' &&
+      MARK_SIGNED_ALLOWED_STATUSES.includes(contract.status),
+  );
+
+  const handleMarkSigned = async () => {
+    if (!id) return;
+    setMarkSignedLoading(true);
+    setMarkSignedError(null);
+    try {
+      await contractService.markAsSigned(id);
+      setShowMarkSignedModal(false);
+      // Reflect the now-executed/locked state (badge + hidden button).
+      await loadContract();
+    } catch (err: any) {
+      // Key on the backend's machine-readable error CODE (lesson #220) —
+      // never surface a raw 500/stack to the user.
+      const data = err?.response?.data;
+      if (data?.error === 'CONTRACT_PINNED') {
+        setMarkSignedError(t('contract.markSigned.errors.alreadyLocked'));
+        // It IS locked — refresh so the UI flips to the locked state.
+        loadContract();
+      } else if (err?.response?.status === 400) {
+        setMarkSignedError(t('contract.markSigned.errors.notReady'));
+      } else if (err?.response?.status === 403) {
+        setMarkSignedError(t('contract.markSigned.errors.noPermission'));
+      } else {
+        setMarkSignedError(t('contract.markSigned.errors.generic'));
+      }
+    } finally {
+      setMarkSignedLoading(false);
+    }
+  };
+
   // Load signature status when contract has an envelope
   useEffect(() => {
     if (contract?.docusign_envelope_id) {
@@ -996,6 +1049,19 @@ export default function ContractDetailPage() {
                 Send for Signature
               </button>
             )}
+            {/* Manual "Mark as signed" (wet-signed on paper) — beside the
+                DocuSign action; hidden once the contract is executed/locked. */}
+            {canMarkSigned && (
+              <button
+                onClick={() => { setMarkSignedError(null); setShowMarkSignedModal(true); }}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700"
+              >
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                {t('contract.markSigned.button')}
+              </button>
+            )}
             {contract.signature_status && (
               <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${
                 contract.signature_status === 'FULLY_EXECUTED'
@@ -1006,6 +1072,20 @@ export default function ContractDetailPage() {
                   <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z" />
                 </svg>
                 {contract.signature_status === 'FULLY_EXECUTED' ? 'Fully Executed' : contract.signature_status === 'AWAITING_COUNTERPARTY' ? 'Awaiting Counterparty' : 'Pending Signature'}
+              </span>
+            )}
+            {/* Signed-state pin — "Executed, locked" indicator with the date. */}
+            {isContractLocked && (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-navy-900/90 px-3 py-1 text-xs font-semibold text-white">
+                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+                </svg>
+                {t('contract.markSigned.lockedBadge')}
+                {(contract.executed_at || contract.pinned_at) && (
+                  <span className="font-normal opacity-75" dir="ltr">
+                    {new Date(contract.executed_at ?? contract.pinned_at!).toLocaleDateString()}
+                  </span>
+                )}
               </span>
             )}
           </div>
@@ -2431,6 +2511,53 @@ export default function ContractDetailPage() {
                 className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-red-700"
               >
                 Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Mark-as-Signed Confirmation Dialog (signed-state pinning) ── */}
+      {showMarkSignedModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          onClick={() => { if (!markSignedLoading) setShowMarkSignedModal(false); }}
+        >
+          <div
+            className="mx-4 w-full max-w-md rounded-2xl bg-white p-6 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex h-11 w-11 items-center justify-center rounded-full bg-amber-100">
+              <svg className="h-5 w-5 text-amber-600" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+              </svg>
+            </div>
+            <h3 className="mt-4 text-base font-semibold text-gray-900">
+              {t('contract.markSigned.confirmTitle')}
+            </h3>
+            <p className="mt-2 text-sm text-gray-500">
+              {t('contract.markSigned.confirmBody')}
+            </p>
+            {markSignedError && (
+              <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
+                {markSignedError}
+              </p>
+            )}
+            <div className="mt-5 flex justify-end gap-3">
+              <button
+                onClick={() => setShowMarkSignedModal(false)}
+                disabled={markSignedLoading}
+                className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
+              >
+                {t('common.cancel')}
+              </button>
+              <button
+                onClick={handleMarkSigned}
+                disabled={markSignedLoading}
+                className="inline-flex items-center gap-2 rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-amber-700 disabled:opacity-50"
+              >
+                {markSignedLoading && <LoadingSpinner size="sm" />}
+                {t('contract.markSigned.confirmCta')}
               </button>
             </div>
           </div>

@@ -87,6 +87,18 @@ export const contractService = {
   getSignatureStatus: (contractId: string) =>
     api.get<{ signature_status: string | null; signers: SignatureSigner[]; envelope_status?: string; executed_at?: string | null }>(`/contracts/${contractId}/signature-status`).then(r => r.data),
 
+  // Manual "Mark as signed" (wet-signed on paper) — signed-state pinning
+  // door 2. APPROVER-gated on the backend; sets FULLY_EXECUTED + pins
+  // (freeze + hash). Idempotent: an already-executed contract is a no-op.
+  markAsSigned: (contractId: string) =>
+    api.post<{
+      pinned: boolean;
+      already_pinned: boolean;
+      pinned_version_id: string;
+      content_hash: string;
+      pinned_at: string;
+    }>(`/contracts/${contractId}/mark-signed`).then(r => r.data),
+
   // Approval Workflow
   getApprovers: (contractId: string) =>
     api.get<ContractApprover[]>(`/contracts/${contractId}/approvers`).then(r => r.data),

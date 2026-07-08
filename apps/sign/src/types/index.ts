@@ -344,6 +344,12 @@ export interface Contract {
   signature_status?: SignatureStatus | null;
   signature_signers?: SignatureSigner[] | null;
   executed_at?: string | null;
+  // Signed-state pinning (Slices 1/2) — set the instant the contract becomes
+  // FULLY_EXECUTED; a pinned contract's legal content is frozen (mutations
+  // rejected with 409 CONTRACT_PINNED).
+  pinned_version_id?: string | null;
+  pinned_at?: string | null;
+  pinned_content_hash?: string | null;
   party_first_name?: string | null;
   party_second_name?: string | null;
   // Party annotation tracking (permanent product feature)

@@ -502,7 +502,20 @@
     "versionHistory": "L'historique des versions sera chargé ici. Version actuelle : {{version}}",
     "noClausesAvailable": "Aucune clause disponible. Créez d'abord des clauses dans la Bibliothèque de clauses.",
     "selectClause": "Sélectionnez une clause à ajouter",
-    "updateStatus": "Mettre à jour le statut"
+    "updateStatus": "Mettre à jour le statut",
+    "markSigned": {
+      "button": "Marquer comme signé",
+      "confirmTitle": "Marquer ce contrat comme signé ?",
+      "confirmBody": "Ceci enregistre le contrat comme signé et le verrouille définitivement. Son contenu ne pourra plus être modifié. Ne le faites que si vous détenez un exemplaire du contrat entièrement signé.",
+      "confirmCta": "Verrouiller le contrat",
+      "lockedBadge": "Exécuté — verrouillé",
+      "errors": {
+        "alreadyLocked": "Ce contrat est déjà signé et verrouillé.",
+        "notReady": "Ce contrat ne peut pas encore être marqué comme signé dans son état actuel.",
+        "noPermission": "Vous n'avez pas la permission de marquer ce contrat comme signé.",
+        "generic": "Impossible de marquer le contrat comme signé. Veuillez réessayer."
+      }
+    }
   },
   "clause": {
     "title": "Clause",
