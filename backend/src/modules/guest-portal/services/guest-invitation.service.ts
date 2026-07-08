@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, Not, Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 
 import {
@@ -362,6 +362,36 @@ export class GuestInvitationService {
         throw new ConflictException(
           'Guest identity exists without a binding — operator intervention required',
         );
+      }
+
+      // 3b. Real-account collision guard (Slice 0, detect-and-respond
+      //     ONLY). The invited email may belong to an EXISTING non-guest
+      //     SIGN account — a real customer, typically of a DIFFERENT org.
+      //     The guest-scoped lookup above cannot see that row, and
+      //     without this check the create below would hit UQ_users_email
+      //     and surface as an unhandled 500 — permanently, on every
+      //     retry. Detect it and return an honest, handled 409 instead.
+      //     NO authz change: no binding is written, no access is granted,
+      //     the existing account is untouched, and the managing user is
+      //     NOT let through. Accessing an invited contract WITH an
+      //     existing account is a later slice (unified-membership arc) —
+      //     the copy deliberately does not promise it.
+      const nonGuestUser = await userRepo.findOne({
+        where: {
+          email: invitation.invited_email,
+          account_type: Not(AccountType.GUEST),
+        },
+      });
+      if (nonGuestUser) {
+        throw new ConflictException({
+          statusCode: 409,
+          error: 'EXISTING_ACCOUNT_EMAIL',
+          message:
+            'This email is already registered with a SIGN account. ' +
+            'Accessing shared contracts with an existing account is not ' +
+            'available yet — please contact whoever shared this contract ' +
+            'with you.',
+        });
       }
 
       // 4. Insert user + binding + flip invitation status.
