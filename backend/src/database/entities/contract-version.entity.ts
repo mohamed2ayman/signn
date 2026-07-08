@@ -81,6 +81,17 @@ export class ContractVersion {
   @Column({ type: 'boolean', default: false })
   is_milestone: boolean;
 
+  /**
+   * Signed-state pinning (Slice 1) — SHA-256 hex of the canonical pin payload
+   * (clauses + substantive metadata), set ONLY when this version is the pinned
+   * signed state of its contract. NULL on every ordinary snapshot. The payload
+   * that produced it is stored in metadata.pin_payload; the hash is always
+   * recomputed via the canonical serializer, NEVER over Postgres-round-tripped
+   * JSONB (key order is not preserved by jsonb).
+   */
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  content_hash: string | null;
+
   @Column({ type: 'text', nullable: true })
   change_summary: string;
 

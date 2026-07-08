@@ -205,6 +205,29 @@ export class Contract {
   @Column({ type: 'timestamptz', nullable: true })
   executed_at: Date | null;
 
+  // ─── Signed-state pinning (Slice 1 — CAPTURE) ───────────────────────────
+  // Set atomically the instant signature_status becomes FULLY_EXECUTED (via
+  // either door: DocuSign completed webhook or manual mark-signed). The pin
+  // is PER-VERSION: the frozen snapshot + hash live on the ContractVersion
+  // row; the contract carries the pointer (leaves room for a future
+  // amendment flow = new version + new pin).
+
+  /** Pointer to the pinned (signed-state) ContractVersion. NULL until executed. */
+  @Column({ type: 'uuid', nullable: true })
+  pinned_version_id: string | null;
+
+  @ManyToOne(() => ContractVersion, { nullable: true })
+  @JoinColumn({ name: 'pinned_version_id' })
+  pinned_version: ContractVersion | null;
+
+  /** When the signed state was pinned. */
+  @Column({ type: 'timestamptz', nullable: true })
+  pinned_at: Date | null;
+
+  /** Denormalized copy of pinned_version.content_hash (SHA-256 hex). */
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  pinned_content_hash: string | null;
+
   // ─── Phase 7.1 — Obligation tracking date fields ────────────────────────
 
   /** Contract commencement date. */

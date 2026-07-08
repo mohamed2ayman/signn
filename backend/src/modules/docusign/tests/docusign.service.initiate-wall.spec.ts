@@ -32,6 +32,7 @@ describe('DocuSignService.initiateSignature — Class-C wall (S0)', () => {
       noop, // notificationsService
       noop, // emailService
       contractAccess, // contractAccess
+      noop, // contractPinning (signed-state pinning Slice 1 — unused on this path)
     );
   }
 
