@@ -21,6 +21,7 @@ import { OrganizationId } from '../../common/decorators/organization.decorator';
 import { UserRole, PermissionLevel } from '../../database/entities';
 import { ContractsService } from './contracts.service';
 import { ContractAccessService } from './services/contract-access.service';
+import { ContractPinningService } from './services/contract-pinning.service';
 import {
   CreateContractDto,
   UpdateContractDto,
@@ -42,6 +43,7 @@ export class ContractsController {
   constructor(
     private readonly contractsService: ContractsService,
     private readonly contractAccess: ContractAccessService,
+    private readonly contractPinning: ContractPinningService,
   ) {}
 
   // ─── Contract CRUD ─────────────────────────────────────────
@@ -108,6 +110,23 @@ export class ContractsController {
     @OrganizationId() orgId: string,
   ) {
     return this.contractsService.updateStatus(id, dto, user.id, orgId);
+  }
+
+  /**
+   * Signed-state pinning (Slice 1) — manual "Mark as signed" door for
+   * wet-signed-on-paper contracts (no DocuSign envelope). Funnels through
+   * the SAME shared pin operation as the DocuSign completed webhook.
+   * APPROVER permission, mirroring updateStatus. Idempotent: marking an
+   * already-executed contract is a no-op returning the existing pin.
+   */
+  @Post(':id/mark-signed')
+  @RequirePermission(PermissionLevel.APPROVER)
+  async markSigned(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: any,
+    @OrganizationId() orgId: string,
+  ) {
+    return this.contractPinning.markAsSigned(id, user.id, orgId);
   }
 
   @Delete(':id')

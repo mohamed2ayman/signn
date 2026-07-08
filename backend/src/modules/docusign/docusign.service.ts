@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { IsNull, Not, Repository } from 'typeorm';
 import {
   Contract,
   ContractStatus,
@@ -17,6 +17,7 @@ import { ExportService } from '../export/export.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { EmailService } from '../notifications/email.service';
 import { ContractAccessService } from '../contracts/services/contract-access.service';
+import { ContractPinningService } from '../contracts/services/contract-pinning.service';
 
 // DocuSign SDK — no types available
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -50,6 +51,9 @@ export class DocuSignService {
     private readonly emailService: EmailService,
     // INTERIM (S0): Class-C bypass-role wall for initiate-signature.
     private readonly contractAccess: ContractAccessService,
+    // Signed-state pinning (Slice 1) — the completed webhook funnels through
+    // the shared pin operation (snapshot + hash + executed state, atomic).
+    private readonly contractPinning: ContractPinningService,
   ) {
     this.accountId = this.configService.get<string>('DOCUSIGN_ACCOUNT_ID', '');
     this.integrationKey = this.configService.get<string>(
@@ -260,9 +264,12 @@ export class DocuSignService {
    * Signature is verified by DocuSignWebhookController before this is called.
    *
    * Supported envelope events:
-   *  - completed → contract FULLY_EXECUTED, executed_at = now()
-   *  - declined  → contract reverted to ACTIVE, decline reason logged
-   *  - voided    → contract reverted to ACTIVE, void reason logged
+   *  - completed → shared pin operation: snapshot + canonical SHA-256 pin +
+   *    FULLY_EXECUTED + executed_at + status ACTIVE (atomic; idempotent
+   *    under redelivery — exactly-once pin)
+   *  - declined / voided → STATUS-GUARDED revert to ACTIVE (only while the
+   *    envelope is still pending; after execution the event is ignored and
+   *    the pin survives)
    *  - sent / delivered → per-signer status update only
    */
   async handleWebhook(payload: any): Promise<void> {
@@ -305,82 +312,120 @@ export class DocuSignService {
     const previousSignatureStatus = contract.signature_status;
 
     if (status === 'completed') {
-      contract.signature_status = SignatureStatus.FULLY_EXECUTED;
-      contract.executed_at = new Date();
-      // Per the platform status machine: a fully-signed contract becomes ACTIVE.
-      contract.status = ContractStatus.ACTIVE;
+      // Signed-state pinning (Slice 1): the shared pin operation performs the
+      // contract-state writes atomically (snapshot → canonical hash →
+      // pin pointers → signature_status=FULLY_EXECUTED + executed_at +
+      // status=ACTIVE). Idempotent under DocuSign redelivery — an already-
+      // pinned contract is a no-op (exactly-once pin, no second snapshot).
+      const pin = await this.contractPinning.pinExecutedContract(contract.id, {
+        actorUserId: null,
+        door: 'DOCUSIGN_WEBHOOK',
+        envelopeId,
+      });
 
+      // Per-signer bookkeeping stays webhook-owned (volatile, excluded from
+      // the pinned payload). Targeted update — never a full entity save,
+      // which would clobber the pin writes with this stale loaded row.
       if (contract.signature_signers) {
-        contract.signature_signers = contract.signature_signers.map((s) => ({
-          ...s,
-          status: 'completed',
-          signed_at: s.signed_at ?? new Date().toISOString(),
-        }));
+        await this.contractRepo.update( // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
+          { id: contract.id },
+          {
+            signature_signers: contract.signature_signers.map((s) => ({
+              ...s,
+              status: 'completed',
+              signed_at: s.signed_at ?? new Date().toISOString(),
+            })),
+          },
+        );
       }
 
-      await this.contractRepo.save(contract); // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
       await this.recordAudit(contract, 'docusign.envelope.completed', {
         envelopeId,
         previousStatus,
         previousSignatureStatus,
         newStatus: ContractStatus.ACTIVE,
         newSignatureStatus: SignatureStatus.FULLY_EXECUTED,
-        executed_at: contract.executed_at,
+        pinned: pin.pinned,
+        pinned_version_id: pin.pinned_version_id,
+        content_hash: pin.content_hash,
         payload,
       });
-      await this.notifyOwner(
-        contract,
-        'Contract executed',
-        `Your contract "${contract.name}" has been signed by all parties and is now fully executed.`,
-        ContractStatus.ACTIVE,
-      );
+      // Notify only on the FIRST completion — a redelivered completed event
+      // must not re-notify the owner.
+      if (pin.pinned) {
+        await this.notifyOwner(
+          contract,
+          'Contract executed',
+          `Your contract "${contract.name}" has been signed by all parties and is now fully executed.`,
+          ContractStatus.ACTIVE,
+        );
+      }
       this.logger.log(
-        `Contract ${contract.id} fully executed, status → ACTIVE`,
+        `Contract ${contract.id} fully executed, status → ACTIVE` +
+          (pin.pinned ? ' (signed state pinned)' : ' (already pinned — redelivery no-op)'),
       );
-    } else if (status === 'declined') {
-      const reason = this.extractEventReason(payload, 'decline');
-      contract.signature_status = null;
-      // Revert: do not progress the contract; return it to ACTIVE for re-issue.
-      contract.status = ContractStatus.ACTIVE;
-      await this.contractRepo.save(contract); // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
+    } else if (status === 'declined' || status === 'voided') {
+      const kind = status === 'voided' ? 'void' : 'decline';
+      const reason = this.extractEventReason(payload, kind);
 
-      await this.recordAudit(contract, 'docusign.envelope.declined', {
+      // Signed-state pinning (Slice 1, void-guard fix): a late / replayed
+      // declined/voided event arriving AFTER completed must NEVER un-execute
+      // a signed contract — the pin survives. STATUS-GUARDED conditional
+      // UPDATE (lesson #149 family): only a still-pending envelope reverts.
+      // The guard is race-safe against a concurrent completed webhook — the
+      // pin transaction and this UPDATE serialize on the row.
+      const revert = await this.contractRepo.update( // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
+        {
+          id: contract.id,
+          signature_status: Not(SignatureStatus.FULLY_EXECUTED),
+          pinned_version_id: IsNull(),
+        },
+        {
+          // Revert: do not progress the contract; return it to ACTIVE for re-issue.
+          signature_status: null,
+          status: ContractStatus.ACTIVE,
+        },
+      );
+
+      if (!revert.affected) {
+        // Contract already FULLY_EXECUTED / pinned — IGNORE the event (no-op,
+        // logged + audited; the executed state and the pin are untouched).
+        await this.recordAudit(
+          contract,
+          `docusign.envelope.${status}.ignored_after_execution`,
+          {
+            envelopeId,
+            previousStatus,
+            previousSignatureStatus,
+            [`${kind}_reason`]: reason,
+            ignored: true,
+            payload,
+          },
+        );
+        this.logger.warn(
+          `Contract ${contract.id} envelope ${envelopeId} ${status} IGNORED — ` +
+            `contract already fully executed/pinned; the pin survives.`,
+        );
+        return;
+      }
+
+      await this.recordAudit(contract, `docusign.envelope.${status}`, {
         envelopeId,
         previousStatus,
         previousSignatureStatus,
-        decline_reason: reason,
+        [`${kind}_reason`]: reason,
         payload,
       });
       await this.notifyOwner(
         contract,
-        'Contract signature declined',
-        `Signature was declined for contract "${contract.name}". Reason: ${reason}`,
+        kind === 'void' ? 'Contract signature voided' : 'Contract signature declined',
+        kind === 'void'
+          ? `The signature envelope for contract "${contract.name}" was voided. Reason: ${reason}`
+          : `Signature was declined for contract "${contract.name}". Reason: ${reason}`,
         ContractStatus.ACTIVE,
       );
       this.logger.warn(
-        `Contract ${contract.id} envelope ${envelopeId} declined: ${reason}`,
-      );
-    } else if (status === 'voided') {
-      const reason = this.extractEventReason(payload, 'void');
-      contract.signature_status = null;
-      contract.status = ContractStatus.ACTIVE;
-      await this.contractRepo.save(contract); // lint-exempt: wall-protected (findInOrg); chokepoint migration scheduled
-
-      await this.recordAudit(contract, 'docusign.envelope.voided', {
-        envelopeId,
-        previousStatus,
-        previousSignatureStatus,
-        void_reason: reason,
-        payload,
-      });
-      await this.notifyOwner(
-        contract,
-        'Contract signature voided',
-        `The signature envelope for contract "${contract.name}" was voided. Reason: ${reason}`,
-        ContractStatus.ACTIVE,
-      );
-      this.logger.warn(
-        `Contract ${contract.id} envelope ${envelopeId} voided: ${reason}`,
+        `Contract ${contract.id} envelope ${envelopeId} ${status}: ${reason}`,
       );
     } else if (status === 'sent' || status === 'delivered') {
       const signerStatuses =
