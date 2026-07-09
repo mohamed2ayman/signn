@@ -40,10 +40,18 @@ i18n
   });
 
 // Set document direction based on language
-i18n.on('languageChanged', (lng) => {
+const applyDocumentDirection = (lng: string) => {
   const dir = lng === 'ar' ? 'rtl' : 'ltr';
   document.documentElement.setAttribute('dir', dir);
   document.documentElement.setAttribute('lang', lng);
-});
+};
+
+i18n.on('languageChanged', applyDocumentDirection);
+
+// Cold-load fix: languageChanged has already fired for the language restored
+// from localStorage by the time the listener above attaches, so apply the
+// direction once for the initial resolved language ('en' guards the async
+// edge where init has not resolved a language yet — the listener covers it).
+applyDocumentDirection(i18n.language || 'en');
 
 export default i18n;
