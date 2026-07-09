@@ -1474,6 +1474,11 @@
         "title": "This invitation cannot be used to set up access",
         "body": "It can no longer be used to set up commenting access — it may already have been used, or it may have expired. If you already set up access, reopen your original invitation link; otherwise, contact the person who invited you.",
         "dismiss": "Got it"
+      },
+      "linked": {
+        "title": "Contract linked to your SIGN account",
+        "body": "Your existing SIGN account now has access to this contract. Because your account uses two-factor authentication, please sign in as usual to view it.",
+        "cta": "Go to sign in"
       }
     },
     "comments": {

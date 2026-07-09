@@ -1,7 +1,6 @@
 import {
   Body,
   Controller,
-  ForbiddenException,
   Get,
   Param,
   ParseUUIDPipe,
@@ -12,7 +11,7 @@ import {
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { ThrottleOnly } from '../../../common/decorators/throttle-only.decorator';
-import { AccountType } from '../../../database/entities/user.entity';
+import { ContractAccessService } from '../../contracts/services/contract-access.service';
 import { GuestChatService } from '../services/guest-chat.service';
 import { SendGuestChatMessageDto } from '../dto/send-guest-chat-message.dto';
 
@@ -23,9 +22,10 @@ import { SendGuestChatMessageDto } from '../dto/send-guest-chat-message.dto';
  *   - class-level JwtAuthGuard: only a real guest JWT (Bearer) authenticates;
  *     a passwordless Path-A viewer credential (`Authorization: Viewer …`) is
  *     not a JWT and never reaches these handlers.
- *   - explicit `account_type === GUEST` assertion as the FIRST statement of
- *     every handler: a managing-user JWT routed here gets a loud 403, never
- *     a silent answer (belt-and-braces, per the guest-portal grain).
+ *   - the guest-surface gate as the FIRST statement of every handler
+ *     (unified membership): GUEST accounts pass; any other account needs a
+ *     guest_contract_access binding for the target contract — otherwise a
+ *     uniform 404, never a silent answer (belt-and-braces, guest-portal grain).
  *   - EVERY route resolves the contract through the guest binding wall
  *     inside GuestChatService (404-not-403 on any miss).
  *   - the burst throttle (`guest_ai_query`, per-IP) sits on the message-send
@@ -35,14 +35,18 @@ import { SendGuestChatMessageDto } from '../dto/send-guest-chat-message.dto';
 @Controller('guest/contracts')
 @UseGuards(JwtAuthGuard)
 export class GuestChatController {
-  constructor(private readonly guestChat: GuestChatService) {}
+  constructor(
+    private readonly guestChat: GuestChatService,
+    private readonly contractAccess: ContractAccessService,
+  ) {}
 
-  private assertGuest(user: any): void {
-    if (user?.account_type !== AccountType.GUEST) {
-      throw new ForbiddenException(
-        'Guest chat endpoint requires a guest identity',
-      );
-    }
+  /**
+   * Guest-surface gate (unified membership) — GUEST accounts pass; any other
+   * account needs a guest_contract_access binding for THIS contract. Denial
+   * is a uniform 404 (never 403 — no existence oracle).
+   */
+  private assertGuestSurface(user: any, contractId: string): Promise<void> {
+    return this.contractAccess.assertGuestSurfaceCaller(user, contractId);
   }
 
   @Post(':id/chat/sessions')
@@ -50,7 +54,7 @@ export class GuestChatController {
     @Param('id', ParseUUIDPipe) contractId: string,
     @CurrentUser() user: any,
   ) {
-    this.assertGuest(user);
+    await this.assertGuestSurface(user, contractId);
     return this.guestChat.createSession(contractId, user);
   }
 
@@ -61,7 +65,7 @@ export class GuestChatController {
     @Param('sid', ParseUUIDPipe) sessionId: string,
     @CurrentUser() user: any,
   ) {
-    this.assertGuest(user);
+    await this.assertGuestSurface(user, contractId);
     return this.guestChat.getSession(contractId, sessionId, user);
   }
 
@@ -73,7 +77,7 @@ export class GuestChatController {
     @Body() dto: SendGuestChatMessageDto,
     @CurrentUser() user: any,
   ) {
-    this.assertGuest(user);
+    await this.assertGuestSurface(user, contractId);
     return this.guestChat.sendMessage(contractId, sessionId, user, dto.message);
   }
 
@@ -83,7 +87,7 @@ export class GuestChatController {
     @Param('mid', ParseUUIDPipe) messageId: string,
     @CurrentUser() user: any,
   ) {
-    this.assertGuest(user);
+    await this.assertGuestSurface(user, contractId);
     return this.guestChat.getMessageStatus(contractId, messageId, user);
   }
 }

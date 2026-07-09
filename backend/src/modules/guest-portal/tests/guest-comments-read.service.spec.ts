@@ -27,7 +27,9 @@ import {
  *   • the authority gate fires BEFORE any query (cross-contract denial),
  *   • the visibility WHITELIST clause (is_internal_note = false) is applied,
  *   • the projection is SCRUBBED (no account_type / email / raw name leak),
- *   • a guest-vs-team flag is derived from the author's account_type.
+ *   • the guest-vs-team flag: TEAM = a non-GUEST author in the HOST org
+ *     (unified membership — an external real account acting via a binding
+ *     is NOT the host's team and labels GUEST).
  *
  * The ACTUAL row-level exclusion of an internal comment and the real
  * cross-contract 404 are proven end-to-end against real Postgres in the
@@ -38,6 +40,8 @@ import {
 const CONTRACT_ID = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 const OTHER_CONTRACT_ID = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
 const GUEST_USER_ID = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
+const HOST_ORG_ID = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';
+const OTHER_ORG_ID = 'ffffffff-ffff-ffff-ffff-ffffffffffff';
 
 type RawRow = {
   id: string;
@@ -48,6 +52,7 @@ type RawRow = {
   first_name: string | null;
   last_name: string | null;
   account_type: AccountType;
+  author_org_id: string | null;
 };
 
 describe('GuestInvitationService — readGuestVisibleComments', () => {
@@ -96,7 +101,12 @@ describe('GuestInvitationService — readGuestVisibleComments', () => {
 
     contractAccess = {
       findInOrg: jest.fn(),
-      findAccessibleContract: jest.fn().mockResolvedValue({ id: CONTRACT_ID }),
+      // The wall returns the contract WITH its project — the author labeling
+      // keys TEAM on membership of the HOST org (project.organization_id).
+      findAccessibleContract: jest.fn().mockResolvedValue({
+        id: CONTRACT_ID,
+        project: { organization_id: HOST_ORG_ID },
+      }),
     } as any;
 
     const moduleRef: TestingModule = await Test.createTestingModule({
@@ -130,13 +140,14 @@ describe('GuestInvitationService — readGuestVisibleComments', () => {
     first_name: 'Gina',
     last_name: 'Guest',
     account_type: AccountType.GUEST,
+    author_org_id: null,
     ...over,
   });
 
   it('returns guest-visible comments with a guest-vs-team flag, chronologically', async () => {
     await buildService([
       mkRow({ id: 'g1', content: 'guest message', account_type: AccountType.GUEST, first_name: 'Gina', last_name: 'Guest' }),
-      mkRow({ id: 't1', content: 'team reply', account_type: AccountType.MANAGING, first_name: 'Tom', last_name: 'Team' }),
+      mkRow({ id: 't1', content: 'team reply', account_type: AccountType.MANAGING, author_org_id: HOST_ORG_ID, first_name: 'Tom', last_name: 'Team' }),
     ]);
 
     const res = await service.readGuestVisibleComments(CONTRACT_ID, GUEST_USER_ID);
@@ -144,6 +155,24 @@ describe('GuestInvitationService — readGuestVisibleComments', () => {
     expect(res).toHaveLength(2);
     expect(res[0]).toMatchObject({ id: 'g1', content: 'guest message', author_role: 'GUEST', author_name: 'Gina Guest' });
     expect(res[1]).toMatchObject({ id: 't1', content: 'team reply', author_role: 'TEAM', author_name: 'Tom Team' });
+  });
+
+  it('UNIFIED MEMBERSHIP — a MANAGING author from a DIFFERENT org (external reviewer via binding) labels GUEST, not TEAM', async () => {
+    await buildService([
+      mkRow({
+        id: 'x1',
+        content: 'external customer comment',
+        account_type: AccountType.MANAGING,
+        author_org_id: OTHER_ORG_ID, // NOT the host org
+        first_name: 'Erin',
+        last_name: 'External',
+      }),
+    ]);
+
+    const res = await service.readGuestVisibleComments(CONTRACT_ID, GUEST_USER_ID);
+
+    expect(res).toHaveLength(1);
+    expect(res[0]).toMatchObject({ id: 'x1', author_role: 'GUEST', author_name: 'Erin External' });
   });
 
   it('SCRUBS author PII — no account_type / email / raw name fields in the projection', async () => {

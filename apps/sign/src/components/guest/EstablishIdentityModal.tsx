@@ -54,6 +54,11 @@ export default function EstablishIdentityModal({
   // form is replaced by a friendly, no-leak message and submit is removed —
   // a form that cannot possibly succeed must not stay fillable/submittable.
   const [blocked, setBlocked] = useState(false);
+  // Unified membership: the invited email belongs to an existing SIGN account
+  // WITH MFA — the binding was attached, but no session is minted here. The
+  // user signs in through the normal login (MFA honoured); their account now
+  // has access to this contract.
+  const [linked, setLinked] = useState(false);
 
   const reset = () => {
     setFirstName('');
@@ -63,6 +68,7 @@ export default function EstablishIdentityModal({
     setError('');
     setSubmitting(false);
     setBlocked(false);
+    setLinked(false);
   };
 
   const close = () => {
@@ -89,6 +95,14 @@ export default function EstablishIdentityModal({
         first_name: firstName.trim() || undefined,
         last_name: lastName.trim() || undefined,
       });
+      if (identity.requires_login || !identity.access_token) {
+        // Unified membership — existing account with MFA: the binding is
+        // attached but no tokens are issued here. Show the "linked" state;
+        // the user signs in with their real account to access the contract.
+        setSubmitting(false);
+        setLinked(true);
+        return;
+      }
       toast.success(t('guest.identity.success'));
       reset();
       onEstablished(identity);
@@ -143,7 +157,23 @@ export default function EstablishIdentityModal({
       }
       size="sm"
       footer={
-        blocked ? (
+        linked ? (
+          <>
+            <button
+              type="button"
+              onClick={close}
+              className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50"
+            >
+              {t('guest.identity.blocked.dismiss')}
+            </button>
+            <a
+              href="/auth/login"
+              className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-600"
+            >
+              {t('guest.identity.linked.cta')}
+            </a>
+          </>
+        ) : blocked ? (
           <button
             type="button"
             onClick={close}
@@ -173,7 +203,19 @@ export default function EstablishIdentityModal({
         )
       }
     >
-      {blocked ? (
+      {linked ? (
+        <div className="py-2 text-center">
+          <div className="mb-3 text-4xl" aria-hidden="true">
+            ✅
+          </div>
+          <h3 className="text-base font-semibold text-gray-900" dir="auto">
+            {t('guest.identity.linked.title')}
+          </h3>
+          <p className="mx-auto mt-1.5 max-w-sm text-sm text-gray-500" dir="auto">
+            {t('guest.identity.linked.body')}
+          </p>
+        </div>
+      ) : blocked ? (
         <div className="py-2 text-center">
           <div className="mb-3 text-4xl" aria-hidden="true">
             🔒

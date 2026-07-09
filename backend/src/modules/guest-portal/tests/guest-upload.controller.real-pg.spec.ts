@@ -344,8 +344,12 @@ describeReal('GuestUploadController / GuestUploadService (real Postgres)', () =>
     expect(uploadAndProcessMock).not.toHaveBeenCalled();
   });
 
-  // ─── RED: managing-user principal → 403 (Path B requires account_type=GUEST) ─
-  it('RED — non-guest (MANAGING) principal → 403, no upload', async () => {
+  // ─── RED: real-account principal WITHOUT a binding → uniform 404 ────────
+  // Unified membership: account_type no longer 403s. Even the HOST org's own
+  // OWNER_ADMIN cannot use the guest surface without a guest_contract_access
+  // binding — the guest door stays binding-only for real accounts, and the
+  // denial is the SAME 404 as every other wall (no existence oracle).
+  it('RED — non-guest (MANAGING, host owner, NO binding) → uniform 404, no upload', async () => {
     injectedUser = {
       id: ownerUserId,
       email: OWNER_EMAIL,
@@ -358,12 +362,12 @@ describeReal('GuestUploadController / GuestUploadService (real Postgres)', () =>
       .set('Authorization', 'Bearer valid-token')
       .attach('file', VALID_PDF, { filename: 'revised.pdf', contentType: 'application/pdf' });
 
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(404);
     expect(uploadAndProcessMock).not.toHaveBeenCalled();
   });
 
-  // ─── RED: viewer-shaped principal (Path A) cannot upload → 403 ─────────
-  it('RED — viewer principal (no account_type=GUEST) cannot upload → 403', async () => {
+  // ─── RED: viewer-shaped principal (Path A) cannot upload → 404 ─────────
+  it('RED — viewer principal (no account_type=GUEST) cannot upload → 404', async () => {
     injectedUser = {
       type: 'viewer',
       viewer: { contract_id: contractBoundId, invitation_id: randomUUID() },
@@ -373,7 +377,7 @@ describeReal('GuestUploadController / GuestUploadService (real Postgres)', () =>
       .set('Authorization', 'Bearer valid-token')
       .attach('file', VALID_PDF, { filename: 'revised.pdf', contentType: 'application/pdf' });
 
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(404);
     expect(uploadAndProcessMock).not.toHaveBeenCalled();
   });
 
