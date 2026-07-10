@@ -5042,3 +5042,96 @@ keep:
   auth pages, guest portal, landing, chat panels, `public/favicon.svg` +
   `public/app-icon.svg`); email templates carry no logo. See lesson #222
   (design-export placeholders ship as literal code).
+
+---
+
+## Signed-State Pinning — legal-content freeze on execution (shipped 2026-07-08 → 2026-07-09, PRs #141 CAPTURE `5479204` · #142 ENFORCEMENT `a0b98db` · #143 mark-signed UI `bf2d945` · #144 RTL cold-load `886ef69`)
+
+Closes the platform-wide signed-state gap tracked as NEXT_PHASES 7.18 "Signing
+Track" items 2(a) + 3 (SIGN captured **no immutable, hash-referenced record of
+"the document as signed"** at execution — clauses stayed mutable post-execution,
+a legal-integrity gap on FIDIC/NEC contracts). The instant a contract's
+`signature_status` becomes `FULLY_EXECUTED`, its substantive legal content is
+FROZEN and every legal-content mutation is rejected.
+
+### What it does
+- **CAPTURE (PR #141).** On execution, ONE shared operation
+  `ContractPinningService.pinExecutedContract` (transaction + pessimistic row
+  lock, idempotent under DocuSign redelivery / mark-signed double-submit,
+  audited with the door + actor) takes a version snapshot, computes a SHA-256
+  over a CANONICAL serialization of the live clause set (the shared ordering
+  expression — document priority → upload order → order_index → id, lesson #214)
+  + a substantive-metadata freeze set, and pins it **PER-VERSION**
+  (`contract_versions.content_hash` + `metadata.pin_payload`) with pointers on
+  the contract (`pinned_version_id` / `pinned_at` / `pinned_content_hash`, FK
+  `ON DELETE RESTRICT`). Migration `1767000000001`.
+- **TWO doors, ONE pin (lesson #224).** Door 1 = the DocuSign `completed`
+  webhook (previously set FULLY_EXECUTED via a bare `save()` with no snapshot —
+  now funnels through the pin). Door 2 = NEW `POST /contracts/:id/mark-signed`
+  (APPROVER) for wet-signed paper, preconditions rejecting DRAFT / mid-approval
+  / terminal states. Both call the same pin op so behaviour can't drift.
+- **Void-guard fix (PR #141, lesson #226).** DocuSign `declined`/`voided` are now
+  STATUS-GUARDED conditional UPDATEs — a late/replayed void arriving AFTER
+  completion is audited and IGNORED (the pin survives); a still-pending envelope
+  reverts as before. A naive unconditional revert would have un-signed an
+  executed contract.
+- **ENFORCEMENT (PR #142).** Once `pinned_version_id` is set, every
+  legal-content write rejects with the coded **`409 CONTRACT_PINNED`** envelope
+  (the GUEST_UPLOAD_DAILY_LIMIT / EXISTING_ACCOUNT_EMAIL precedent), always
+  AFTER the tenancy wall (cross-org stays **404-first**, no existence leak —
+  lesson #227). Enforced by the pure txn-aware util `contract-pin-guard.util`
+  (`assertContractMutable` / `assertClauseMutable` / `isContractPinned`) wired at
+  the **SERVICE seam** of ~16 write paths — including NON-HTTP writers (the
+  SYSTEM extraction driver `advanceDocumentState`, the shared managing+guest
+  upload seam, the rephrase writers) where a pinned contract's in-flight doc is
+  terminalized (FAILED, error names CONTRACT_PINNED, metering reservation
+  refunded) rather than throwing into a scheduler (lesson #225). The
+  clause-library backdoor is closed: a `Clause` row can back multiple contracts,
+  so `PUT /clauses/:id` + review edits are blocked when ANY referencing contract
+  is pinned.
+- **Operational layer stays WRITABLE.** Comments, risk status/annotation,
+  obligations, chat, and the lifecycle transitions ACTIVE→COMPLETED/TERMINATED
+  are deliberately NOT guarded — only substantive legal content is frozen.
+- **Tamper/drift check.** `verifyContractPin(contractId, orgId)` +
+  `GET /contracts/:id/verify-pin` (VIEWER) recompute the canonical hash from the
+  LIVE content AND from the stored `pin_payload`; a mismatch = tamper/drift,
+  logged loudly.
+- **UI (PRs #143 + #144).** "Mark as signed" manual wet-sign button on the
+  contract detail page (EN/AR/FR + RTL); #144 additionally sets `<html dir>`/lang
+  on COLD load, not only on the language toggle.
+
+### Pinning invariants — future work must respect
+1. **Hash only via the canonical serializer** (`canonical-pin.util.ts`) —
+   recursively sorted keys + normalized scalars (decimals→string,
+   dates→`'YYYY-MM-DD'`). NEVER hash a Postgres-round-tripped row (jsonb does not
+   preserve object key order — lesson #223). Clause order inside the payload MUST
+   use the shared ordering expression (lesson #214). Compute the hash from the
+   same serializer at BOTH pin time and verify time.
+2. **Both signing doors funnel through the ONE `pinExecutedContract` op** — never
+   re-implement the freeze (snapshot / hash / audit) in a second place
+   (lesson #224).
+3. **Mutation enforcement lives at the SERVICE seam** (`assertContractMutable`),
+   never a controller guard — background / queue / webhook / poll-driven writers
+   must stay covered (lesson #225).
+4. **`CONTRACT_PINNED` (409) is evaluated strictly AFTER the tenancy wall** —
+   cross-tenant stays 404, no existence leak (lesson #227); the frontend keys on
+   the CODE, not the message (lesson #220).
+5. **The pin is PER-VERSION** (payload on the version row, pointer on the
+   contract, FK `ON DELETE RESTRICT`) — a future amendment / re-execution flow
+   pins a NEW version and moves the pointer; never flatten to a single
+   overwrite-on-contract hash (lesson #228).
+6. **The freeze set is substantive legal content ONLY** — operational / volatile
+   fields (status, signature_status, envelope id, timestamps, user ids,
+   annotation-tracking) are EXCLUDED by design and must stay excluded, or the
+   hash breaks on legitimate post-signing churn.
+
+### Known follow-on (deferred, NOT built by this arc)
+- The pin correctly keys off **`signature_status = FULLY_EXECUTED`** (the real
+  execution signal), NOT `status = ACTIVE` — so pinning does not depend on the
+  `ContractStatus` model cleanup. `ContractStatus.ACTIVE` remains
+  triple-overloaded (executed / live / feature-gate-open per ARCHITECTURE
+  RULE 4); a cleaner split is a post-launch refactor filed in NEXT_PHASES (see
+  the "ContractStatus status-model cleanup" deferred entry).
+- DocuSign live-verification is still a Phase 9 deployment gate — Door 1 is
+  code-complete but has never been exercised against a live DocuSign account
+  (NEXT_PHASES Signing Track item 1).
