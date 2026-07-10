@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { documentProcessingService } from '@/services/api/documentProcessingService';
 import { contractService } from '@/services/api/contractService';
 import type { ApplyProposedVersionResult, DocumentUpload } from '@/types';
+import { BloomAppIcon } from '@/components/common/SignLogo';
 import {
   buildReviewModel,
   buildApplyDto,
@@ -333,7 +334,7 @@ export default function HostReviewMergeScreen({ contractId, doc, onClose, onAppl
       {/* HEADER */}
       <header style={{ display: 'flex', alignItems: 'center', gap: 16, height: 60, padding: '0 22px', background: C.surface, borderBottom: `1px solid ${C.border}`, flexShrink: 0, zIndex: 5 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 11, minWidth: 0 }}>
-          <div style={{ width: 28, height: 28, borderRadius: 8, background: C.primary, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontFamily: BRICOLAGE, fontWeight: 800, fontSize: 15, flexShrink: 0 }}>S</div>
+          <BloomAppIcon size={28} className="shrink-0" />
           <div style={{ minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{ fontWeight: 700, fontSize: 14.5, color: C.ink, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 280 }} dir="auto">{fileName}</span>
