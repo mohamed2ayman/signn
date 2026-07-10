@@ -42,6 +42,7 @@ import { GuestInvitation } from '../../../database/entities/guest-invitation.ent
 import { InvitationTokenService } from '../services/invitation-token.service';
 import { ViewerCredentialService } from '../services/viewer-credential.service';
 import { AuthService } from '../../auth/auth.service';
+import { AccountLockoutService } from '../../auth/services/account-lockout.service';
 import { GuestInvitationScopedRepository } from '../../scoped-repository/guest-invitation-scoped.repository';
 
 /**
@@ -292,6 +293,14 @@ describeReal('GuestChatController / GuestChatService (real Postgres)', () => {
         { provide: InvitationTokenService, useValue: {} },
         { provide: ViewerCredentialService, useValue: {} },
         { provide: AuthService, useValue: {} },
+        {
+          provide: AccountLockoutService,
+          useValue: {
+            assertNotLocked: jest.fn(),
+            recordFailedAttempt: jest.fn().mockResolvedValue(undefined),
+            clearFailedAttempts: jest.fn().mockResolvedValue(undefined),
+          },
+        },
         { provide: GuestInvitationScopedRepository, useValue: {} },
         // No org subscription → the resolver falls through to the
         // meter_definitions.default_limit (1,000,000 placeholder) — the daily

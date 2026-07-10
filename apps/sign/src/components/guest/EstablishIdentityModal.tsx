@@ -121,6 +121,14 @@ export default function EstablishIdentityModal({
         onUnusable?.();
         return;
       }
+      if (status === 403) {
+        // Account-level lockout — the invited email belongs to an account that
+        // has hit the failed-attempt threshold (the SAME lockout the login path
+        // enforces). Recoverable once the lock window elapses; keep the form.
+        setError(t('guest.identity.errors.accountLocked'));
+        setSubmitting(false);
+        return;
+      }
       if (status === 409) {
         // The backend distinguishes two 409 axes by CODE (the message
         // field is never displayed — copy lives in i18n, keyed on the

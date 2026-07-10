@@ -12,6 +12,8 @@ import {
   User,
 } from '../../../database/entities';
 import { AuthService } from '../../auth/auth.service';
+import { AccountLockoutService } from '../../auth/services/account-lockout.service';
+import { SecurityEventService } from '../../admin-security/services/security-event.service';
 import { ContractAccessService } from '../../contracts/services/contract-access.service';
 import { GuestInvitationScopedRepository } from '../../scoped-repository/guest-invitation-scoped.repository';
 import { GuestInvitationService } from '../services/guest-invitation.service';
@@ -117,7 +119,7 @@ describeReal(
     const userRowsByEmail = async (email: string) =>
       dataSource.query(
         `SELECT id, email, password_hash, role, account_type, organization_id,
-                is_active
+                is_active, failed_login_attempts, locked_until
            FROM users WHERE email = $1`,
         [email],
       );
@@ -156,6 +158,11 @@ describeReal(
           GuestInvitationService,
           InvitationTokenService,
           ViewerCredentialService,
+          // Real lockout stack (real PG): the establish-identity password-verify
+          // branch runs the SAME AccountLockoutService the login path uses, so
+          // the wrong-password path here exercises the real lockout writes.
+          AccountLockoutService,
+          SecurityEventService,
           {
             provide: AuthService,
             useValue: { issueGuestSession: issueGuestSessionMock },
@@ -238,7 +245,7 @@ describeReal(
     });
 
     // ⭐ ANTI-IMPERSONATION — runs FIRST so no binding exists yet.
-    it('existing MANAGING email + WRONG password → 401; NO binding written; account untouched', async () => {
+    it('existing MANAGING email + WRONG password → 401; NO binding written; identity untouched; failed-attempt recorded (lockout parity)', async () => {
       const token = issueToken(invitationManagingId);
 
       await expect(
@@ -248,7 +255,7 @@ describeReal(
         } as any),
       ).rejects.toBeInstanceOf(UnauthorizedException);
 
-      // NO side effects: no binding, the ONE original row byte-untouched.
+      // NO binding, and every IDENTITY field is untouched (no auth clobber).
       expect(await bindingsFor(contractMId)).toHaveLength(0);
       const rows = await userRowsByEmail(MANAGING_EMAIL);
       expect(rows).toHaveLength(1);
@@ -256,6 +263,10 @@ describeReal(
       expect(rows[0].password_hash).toBe(managingHash);
       expect(rows[0].account_type).toBe(AccountType.MANAGING);
       expect(rows[0].organization_id).toBe(orgId);
+      // Condition 1 — the SAME lockout the login path uses: the failed attempt
+      // is DURABLY recorded (survives the transaction rollback), not yet locked.
+      expect(Number(rows[0].failed_login_attempts)).toBe(1);
+      expect(rows[0].locked_until).toBeNull();
     });
 
     // ⭐ BRANCH (iii) — real-account-verify + attach binding to the EXISTING row.

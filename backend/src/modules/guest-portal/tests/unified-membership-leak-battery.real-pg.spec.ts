@@ -9,8 +9,10 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule } from '@nestjs/config';
 import { BullModule } from '@nestjs/bull';
+import { ThrottlerGuard } from '@nestjs/throttler';
 import { DataSource } from 'typeorm';
 import { randomUUID } from 'crypto';
+import * as bcrypt from 'bcrypt';
 import * as request from 'supertest';
 
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
@@ -23,6 +25,8 @@ import {
   UserRole,
 } from '../../../database/entities';
 import { AuthService } from '../../auth/auth.service';
+import { AccountLockoutService } from '../../auth/services/account-lockout.service';
+import { SecurityEventService } from '../../admin-security/services/security-event.service';
 import { ContractAccessService } from '../../contracts/services/contract-access.service';
 import { MeterKey } from '../../metering/enums/meter-key.enum';
 import { MeteringModule } from '../../metering/metering.module';
@@ -30,6 +34,7 @@ import { MeteringResolver } from '../../metering/services/metering-resolver.serv
 import { MeteringService } from '../../metering/services/metering.service';
 import { GuestInvitationScopedRepository } from '../../scoped-repository/guest-invitation-scoped.repository';
 import { GuestCommentsController } from '../controllers/guest-comments.controller';
+import { PublicGuestInvitationController } from '../controllers/public-guest-invitation.controller';
 import { GuestInvitationService } from '../services/guest-invitation.service';
 import { InvitationTokenService } from '../services/invitation-token.service';
 import { ViewerCredentialService } from '../services/viewer-credential.service';
@@ -116,6 +121,18 @@ describeReal('⭐ Unified membership — cross-org leak battery (real Postgres)'
   const clauseAId = randomUUID();
   const ccAId = randomUUID();
 
+  // ── Condition 2 (real-HTTP anti-impersonation + lockout) fixtures ──────
+  // An EXISTING account (real bcrypt hash of a known password) + a valid
+  // PENDING invitation for an org-B contract it is NOT bound to. Driven only
+  // with WRONG passwords over the real establish-identity HTTP route.
+  const lockUserId = randomUUID();
+  const lockContractId = randomUUID(); // org B — the invite target
+  const lockInvitationId = randomUUID();
+  const LOCK_EMAIL = `lock-target-${lockUserId.slice(0, 8)}@managing.test`;
+  const LOCK_PASSWORD = 'Correct#Horse9Batt';
+  const LOCK_WRONG = 'wrong#Guess1Nope';
+  let lockHash = '';
+
   // The principal the stubbed JwtAuthGuard injects (Model A: this is the
   // shape the manager's NORMAL managing JWT produces — nothing guest-minted).
   let injectedUser: any;
@@ -200,12 +217,18 @@ describeReal('⭐ Unified membership — cross-org leak battery (real Postgres)'
         ]),
         MeteringModule,
       ],
-      controllers: [GuestCommentsController],
+      // PublicGuestInvitationController hosts the PUBLIC establish-identity
+      // route — Condition 2 drives wrong-password through it over real HTTP.
+      controllers: [GuestCommentsController, PublicGuestInvitationController],
       providers: [
         ContractAccessService,
         GuestInvitationService,
         InvitationTokenService,
         ViewerCredentialService,
+        // Real lockout stack (real PG) so the establish-identity password-verify
+        // branch runs the SAME AccountLockoutService the login path uses.
+        AccountLockoutService,
+        SecurityEventService,
         {
           provide: AuthService,
           useValue: { issueGuestSession: jest.fn() },
@@ -226,6 +249,11 @@ describeReal('⭐ Unified membership — cross-org leak battery (real Postgres)'
           return true;
         },
       })
+      // The establish-identity route carries @ThrottleOnly('guest_invite_exchange');
+      // the account-level lockout under test is a SEPARATE control, so the IP
+      // throttle is neutralised here (mirrors the guest-chat controller spec).
+      .overrideGuard(ThrottlerGuard)
+      .useValue({ canActivate: () => true })
       .compile();
 
     app = moduleRef.createNestApplication();
@@ -332,10 +360,40 @@ describeReal('⭐ Unified membership — cross-org leak battery (real Postgres)'
     await insertComment(randomUUID(), ownerBId, VISIBLE_SENTINEL, false);
     await insertComment(randomUUID(), ownerBId, INTERNAL_SENTINEL, true);
     await insertComment(randomUUID(), guestGId, GUEST_SENTINEL, false);
+
+    // ── Condition 2 fixtures — existing account (real hash) + org-B contract
+    //    + PENDING invitation to that email. Only WRONG passwords are sent.
+    lockHash = await bcrypt.hash(LOCK_PASSWORD, 6);
+    await insertUser(lockUserId, LOCK_EMAIL, 'OWNER_ADMIN', 'MANAGING', orgBId);
+    await dataSource.query(`UPDATE users SET password_hash = $1 WHERE id = $2`, [
+      lockHash,
+      lockUserId,
+    ]);
+    await dataSource.query(
+      `INSERT INTO contracts (id, project_id, name, contract_type, created_by)
+       VALUES ($1, $2, 'Battery Lockout Contract', 'FIDIC_RED_BOOK', $3)`,
+      [lockContractId, projectBId, ownerBId],
+    );
+    await dataSource.query(
+      `INSERT INTO guest_invitations
+         (id, contract_id, invited_email, invited_language, status,
+          expires_at, created_by)
+       VALUES ($1, $2, $3, 'en', 'PENDING', NOW() + interval '1 day', $4)`,
+      [lockInvitationId, lockContractId, LOCK_EMAIL, ownerBId],
+    );
   });
 
   afterAll(async () => {
     if (dataSource?.isInitialized) {
+      // Audit rows the lockout wrote for the impersonation target (LOGIN_FAILED
+      // ×N + ACCOUNT_LOCKED). users FK is ON DELETE SET NULL, so this is hygiene
+      // rather than a FK requirement — clear them while user_id is still set.
+      await dataSource.query(`DELETE FROM audit_logs WHERE user_id = $1`, [
+        lockUserId,
+      ]);
+      await dataSource.query(`DELETE FROM guest_invitations WHERE id = $1`, [
+        lockInvitationId,
+      ]);
       await dataSource.query(
         `DELETE FROM metering_ledger WHERE contract_ref = ANY($1)`,
         [[contractXId, contractYId, contractAId]],
@@ -350,7 +408,7 @@ describeReal('⭐ Unified membership — cross-org leak battery (real Postgres)'
       );
       await dataSource.query(
         `DELETE FROM guest_contract_access WHERE contract_id = ANY($1)`,
-        [[contractXId, contractYId, contractAId]],
+        [[contractXId, contractYId, contractAId, lockContractId]],
       );
       await dataSource.query(
         `DELETE FROM contract_clauses WHERE contract_id = ANY($1)`,
@@ -360,13 +418,13 @@ describeReal('⭐ Unified membership — cross-org leak battery (real Postgres)'
         [liveClauseId, proposedClauseId, clauseAId],
       ]);
       await dataSource.query(`DELETE FROM contracts WHERE id = ANY($1)`, [
-        [contractAId, contractXId, contractYId, contractDelId],
+        [contractAId, contractXId, contractYId, contractDelId, lockContractId],
       ]);
       await dataSource.query(`DELETE FROM projects WHERE id = ANY($1)`, [
         [projectAId, projectBId],
       ]);
       await dataSource.query(`DELETE FROM users WHERE id = ANY($1)`, [
-        [userAId, ownerBId, guestGId],
+        [userAId, ownerBId, guestGId, lockUserId],
       ]);
       await dataSource.query(`DELETE FROM organizations WHERE id = ANY($1)`, [
         [orgAId, orgBId],
@@ -616,5 +674,79 @@ describeReal('⭐ Unified membership — cross-org leak battery (real Postgres)'
     await request(app.getHttpServer())
       .get(`/guest/contracts/${contractXId}/comments`)
       .expect(401);
+  });
+
+  // ═══ 8. CONDITION 2 — REAL-HTTP ANTI-IMPERSONATION + ACCOUNT LOCKOUT ═══
+  // Drives WRONG passwords through the REAL establish-identity HTTP route
+  // (controller → guard → throttle), proving: 401 (never a binding / clobber),
+  // and the SAME account-level lockout the login path uses trips after the
+  // shared threshold. NOT service.establishIdentity() directly — the boundary
+  // is the point (the pattern that hid the boot bug + knowledge_context drop).
+  it('⭐ ANTI-IMPERSONATION (real HTTP) — wrong password → 401, account untouched, no binding; the login-parity lockout trips after the threshold', async () => {
+    const tokenService = moduleRef.get(InvitationTokenService);
+    const token = tokenService.issue(
+      lockInvitationId,
+      new Date(Date.now() + 24 * 3600 * 1000),
+    );
+    const post = (password: string) =>
+      request(app.getHttpServer())
+        .post('/public/guest-invitations/establish-identity')
+        .send({ token, password });
+
+    const lockUserRow = async () =>
+      (
+        await dataSource.query(
+          `SELECT password_hash, account_type, organization_id, role,
+                  failed_login_attempts, locked_until
+             FROM users WHERE id = $1`,
+          [lockUserId],
+        )
+      )[0];
+    const lockBindings = async () =>
+      dataSource.query(
+        `SELECT id FROM guest_contract_access WHERE contract_id = $1`,
+        [lockContractId],
+      );
+
+    // ── Attempt 1 (wrong) → 401; failed attempt DURABLY recorded (survives the
+    //    transaction rollback); NO binding; identity byte-untouched. ──────────
+    await post(LOCK_WRONG).expect(401);
+    let row = await lockUserRow();
+    expect(Number(row.failed_login_attempts)).toBe(1);
+    expect(row.locked_until).toBeNull();
+    expect(await lockBindings()).toHaveLength(0);
+    expect(row.password_hash).toBe(lockHash);
+    expect(row.account_type).toBe(AccountType.MANAGING);
+    expect(row.organization_id).toBe(orgBId);
+    expect(row.role).toBe('OWNER_ADMIN');
+
+    // ── Attempts 2–4 (wrong) → 401 each; counter climbs, still not locked. ───
+    for (let n = 2; n <= 4; n++) {
+      await post(LOCK_WRONG).expect(401);
+      row = await lockUserRow();
+      expect(Number(row.failed_login_attempts)).toBe(n);
+      expect(row.locked_until).toBeNull();
+    }
+
+    // ── Attempt 5 (wrong) → 401; threshold reached → account LOCKED. ─────────
+    await post(LOCK_WRONG).expect(401);
+    row = await lockUserRow();
+    expect(Number(row.failed_login_attempts)).toBe(5);
+    expect(row.locked_until).not.toBeNull();
+    expect(new Date(row.locked_until).getTime()).toBeGreaterThan(Date.now());
+
+    // ── Attempt 6 → 403 LOCKED (refused BEFORE the password check), even with
+    //    the CORRECT password: a locked account is locked for establish-identity
+    //    exactly as it is for login. Counter does NOT climb past the threshold.
+    await post(LOCK_PASSWORD).expect(403);
+    row = await lockUserRow();
+    expect(Number(row.failed_login_attempts)).toBe(5);
+
+    // ── Invariant across the whole sequence: identity never clobbered, and the
+    //    invitation never minted a binding onto the impersonation target. ─────
+    expect(await lockBindings()).toHaveLength(0);
+    expect(row.password_hash).toBe(lockHash);
+    expect(row.account_type).toBe(AccountType.MANAGING);
+    expect(row.organization_id).toBe(orgBId);
   });
 });

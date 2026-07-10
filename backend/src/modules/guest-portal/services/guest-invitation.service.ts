@@ -20,6 +20,7 @@ import {
   UserRole,
 } from '../../../database/entities';
 import { AuthService } from '../../auth/auth.service';
+import { AccountLockoutService } from '../../auth/services/account-lockout.service';
 import { ContractAccessService } from '../../contracts/services/contract-access.service';
 import { GuestInvitationScopedRepository } from '../../scoped-repository/guest-invitation-scoped.repository';
 import { CreateGuestInvitationDto } from '../dto/create-guest-invitation.dto';
@@ -93,6 +94,10 @@ export class GuestInvitationService {
     private readonly authService: AuthService,
     // Option B chokepoint (migration 2/4) — layer 2 for the revoke by-id load.
     private readonly invitationScoped: GuestInvitationScopedRepository,
+    // Shared account-level lockout — the SAME control the login path uses, so
+    // the establish-identity password-verify branch (which grants cross-org
+    // bindings) is not a weaker brute-force door than login.
+    private readonly accountLockout: AccountLockoutService,
   ) {}
 
   async create(
@@ -293,6 +298,15 @@ export class GuestInvitationService {
     const invitationId = verify.invitation.id;
     const passwordHash = await bcrypt.hash(dto.password, BCRYPT_SALT_ROUNDS);
 
+    // Account-lockout bookkeeping is captured inside the transaction but
+    // applied OUTSIDE it: the failed-attempt increment must survive the
+    // rollback the 401 triggers (so the counter persists), exactly as login
+    // increments outside any transaction. The success reset runs post-commit.
+    let wrongPasswordUser:
+      | Pick<User, 'id' | 'email' | 'failed_login_attempts'>
+      | null = null;
+    let resetLockoutUser: Pick<User, 'id'> | null = null;
+
     // The atomic block. Anything that throws inside this rolls back.
     const result = await this.dataSource.transaction(async (manager) => {
       const invitationRepo = manager.getRepository(GuestInvitation); // lint-exempt: PUBLIC token-gated path (establish-identity); transactional SELECT-FOR-UPDATE by token-derived id, no request org — chokepoint is read-only/org-scoped
@@ -355,6 +369,13 @@ export class GuestInvitationService {
         where: { email: invitation.invited_email },
       });
       if (existingUser) {
+        // Account-level lockout — the SAME control login uses (shared
+        // AccountLockoutService). A locked account is refused BEFORE the
+        // password is checked (403), so this cross-org-binding door is not a
+        // weaker brute-force path than login. Runs inside the txn: on a locked
+        // account nothing has been written, so the rollback is a no-op.
+        this.accountLockout.assertNotLocked(existingUser);
+
         // Verify the caller owns the account BEFORE any state change. The
         // stored hash is the existing account's password (guest or real
         // alike) — it is never modified here.
@@ -363,7 +384,17 @@ export class GuestInvitationService {
           existingUser.password_hash,
         );
         if (!passwordOk) {
+          // Capture the target so the durable failed-attempt increment can run
+          // AFTER this transaction rolls back (see the .catch below) — the
+          // counter must persist even though the 401 undoes the txn.
+          wrongPasswordUser = existingUser;
           throw new UnauthorizedException('Invalid password');
+        }
+
+        // Correct password → clear any prior failed attempts on success (the
+        // login-parity reset), applied post-commit.
+        if (existingUser.failed_login_attempts > 0 || existingUser.locked_until) {
+          resetLockoutUser = existingUser;
         }
 
         const existingBinding = await accessRepo.findOne({
@@ -425,9 +456,39 @@ export class GuestInvitationService {
         contract_id: invitation.contract_id,
         wasExisting: false,
       };
+    }).catch(async (err) => {
+      // Durable lockout increment AFTER the transaction has rolled the 401
+      // back, so the failed-attempt counter persists (mirrors login, which
+      // increments outside any transaction). Best-effort — a lockout-bookkeeping
+      // hiccup must never mask the original auth error.
+      if (wrongPasswordUser) {
+        await this.accountLockout
+          .recordFailedAttempt(wrongPasswordUser, {
+            ip: ctx.ip ?? null,
+            user_agent: ctx.user_agent ?? null,
+          })
+          .catch((e) =>
+            this.logger.warn(
+              `[establish-identity] lockout record failed: ${(e as Error).message}`,
+            ),
+          );
+      }
+      throw err;
     });
 
     // ── POST-COMMIT ───────────────────────────────────────────────────
+    // Login-parity reset: a successful verify clears any accumulated failed
+    // attempts / lock on the account. Best-effort (never blocks the success).
+    if (resetLockoutUser) {
+      await this.accountLockout
+        .clearFailedAttempts(resetLockoutUser)
+        .catch((e) =>
+          this.logger.warn(
+            `[establish-identity] lockout reset failed: ${(e as Error).message}`,
+          ),
+        );
+    }
+
     this.logger.log(
       `Guest identity ${result.wasExisting ? 're-established' : 'established'} for user ${result.user.id} → contract ${result.contract_id}`,
     );

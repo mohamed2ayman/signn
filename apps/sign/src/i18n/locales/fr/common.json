@@ -1477,6 +1477,7 @@
         "conflict": "Un compte existe déjà pour cette invitation, et le mot de passe ne correspond pas. Utilisez le mot de passe initial ou contactez l'expéditeur.",
         "existingAccount": "Cette adresse e-mail est déjà associée à un compte SIGN. L'accès aux contrats partagés avec un compte existant n'est pas encore disponible — veuillez contacter la personne qui a partagé ce contrat avec vous.",
         "throttled": "Trop de tentatives. Veuillez patienter une minute et réessayer.",
+        "accountLocked": "Ce compte est temporairement verrouillé après trop de tentatives de mot de passe échouées. Veuillez réessayer dans environ 30 minutes.",
         "generic": "Impossible de définir votre mot de passe pour le moment. Veuillez réessayer."
       },
       "blocked": {

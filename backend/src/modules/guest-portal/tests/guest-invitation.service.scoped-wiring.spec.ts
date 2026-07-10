@@ -33,9 +33,19 @@ const INVITE = '22222222-2222-4222-8222-222222222222';
 function buildService(invitationRepo: any, contractAccess: any, scoped: any): any {
   const Ctor: any = GuestInvitationService;
   // (config, invitationRepo, contractAccess, tokenService, viewerService,
-  //  dataSource, authService, invitationScoped)
+  //  dataSource, authService, invitationScoped, accountLockout)
   const noop = {} as any;
-  return new Ctor(noop, invitationRepo, contractAccess, noop, noop, noop, noop, scoped);
+  return new Ctor(
+    noop,
+    invitationRepo,
+    contractAccess,
+    noop,
+    noop,
+    noop,
+    noop,
+    scoped,
+    noop,
+  );
 }
 
 describe('GuestInvitationService.revoke — scoped BY-ID load (layer 2 under the inline wall)', () => {

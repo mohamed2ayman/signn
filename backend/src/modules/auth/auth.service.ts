@@ -33,6 +33,7 @@ import { GeoLookupService } from '../admin-security/services/geo-lookup.service'
 import { UserAgentService } from '../admin-security/services/user-agent.service';
 import { SecurityEventService } from '../admin-security/services/security-event.service';
 import { SECURITY_EVENT_TYPES } from '../../common/enums/security-event-types';
+import { AccountLockoutService } from './services/account-lockout.service';
 import { TokenBlacklistService } from '../../common/services/token-blacklist.service';
 import { CryptoService } from '../../common/utils/crypto';
 import { baseEmailLayout } from '../notifications/templates/base-layout';
@@ -46,8 +47,8 @@ import {
 } from './dto';
 
 const BCRYPT_SALT_ROUNDS = 10;
-const MAX_FAILED_ATTEMPTS = 5;
-const LOCKOUT_DURATION_MINUTES = 30;
+// Account-level lockout threshold/window now live in AccountLockoutService
+// (the single source of truth shared with the guest establish-identity path).
 const OTP_VALIDITY_MINUTES = 10;
 
 /**
@@ -90,6 +91,7 @@ export class AuthService {
     private readonly securityEvents: SecurityEventService,
     private readonly tokenBlacklist: TokenBlacklistService,
     private readonly cryptoService: CryptoService,
+    private readonly accountLockout: AccountLockoutService,
   ) {}
 
   // ─── Phase 7.35 — MFA TOTP secret encryption-at-rest helpers ────────────────
@@ -309,27 +311,6 @@ export class AuthService {
     return baseEmailLayout(content, { preheader: 'New device signed in to your Sign account' });
   }
 
-  /** Records a failed login attempt as a security event. Best-effort. */
-  private async _recordLoginFailure(input: {
-    email: string;
-    ip: string | null;
-    user_agent: string | null;
-    user_id?: string | null;
-  }): Promise<void> {
-    try {
-      await this.securityEvents.record({
-        type: SECURITY_EVENT_TYPES.LOGIN_FAILED,
-        user_id: input.user_id ?? null,
-        ip_address: input.ip,
-        metadata: { email: input.email, user_agent: input.user_agent },
-      });
-    } catch (error) {
-      this.logger.warn(
-        `[login] Failed to record failed-login security event: ${(error as Error).message}`,
-        (error as Error).stack,
-      );
-    }
-  }
 
   async register(dto: RegisterDto, ctx: { ip?: string | null; user_agent?: string | null } = {}) {
     const existingUser = await this.userRepository.findOne({
@@ -422,14 +403,9 @@ export class AuthService {
       throw new ForbiddenException('Account has been deactivated');
     }
 
-    if (user.locked_until && user.locked_until > new Date()) {
-      const remainingMinutes = Math.ceil(
-        (user.locked_until.getTime() - Date.now()) / 60000,
-      );
-      throw new ForbiddenException(
-        `Account is locked due to too many failed login attempts. Try again in ${remainingMinutes} minute(s).`,
-      );
-    }
+    // Account-level lockout (shared with guest establish-identity via
+    // AccountLockoutService — a locked account is locked for BOTH paths).
+    this.accountLockout.assertNotLocked(user);
 
     const isPasswordValid = await this.validatePassword(
       dto.password,
@@ -437,43 +413,14 @@ export class AuthService {
     );
 
     if (!isPasswordValid) {
-      const failedAttempts = user.failed_login_attempts + 1;
-      const updateData: Record<string, any> = {
-        failed_login_attempts: failedAttempts,
-      };
-
-      if (failedAttempts >= MAX_FAILED_ATTEMPTS) {
-        const lockUntil = new Date();
-        lockUntil.setMinutes(lockUntil.getMinutes() + LOCKOUT_DURATION_MINUTES);
-        updateData.locked_until = lockUntil;
-        this.logger.warn(
-          `Account locked for user ${user.email} after ${failedAttempts} failed attempts`,
-        );
-      }
-
-      await this.userRepository.update(user.id, updateData as any);
-      await this._recordLoginFailure({
-        email: dto.email,
+      await this.accountLockout.recordFailedAttempt(user, {
         ip: ctx.ip ?? null,
         user_agent: ctx.user_agent ?? null,
-        user_id: user.id,
       });
-      if (failedAttempts >= MAX_FAILED_ATTEMPTS) {
-        await this.securityEvents.record({
-          type: SECURITY_EVENT_TYPES.ACCOUNT_LOCKED,
-          actor_id: user.id,
-          user_id: user.id,
-          ip_address: ctx.ip ?? null,
-          metadata: { failed_attempts: failedAttempts },
-        });
-      }
       throw new UnauthorizedException('Invalid email or password');
     }
 
-    await this.userRepository.update(user.id, {
-      failed_login_attempts: 0,
-      locked_until: null as unknown as Date,
-    });
+    await this.accountLockout.clearFailedAttempts(user);
 
     // Check if MFA is enabled for this user
     if (user.mfa_enabled) {

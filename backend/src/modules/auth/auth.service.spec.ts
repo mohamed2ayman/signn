@@ -10,6 +10,7 @@ import * as bcrypt from 'bcrypt';
 import { authenticator } from 'otplib';
 
 import { AuthService } from './auth.service';
+import { AccountLockoutService } from './services/account-lockout.service';
 import { CryptoService } from '../../common/utils/crypto';
 import {
   User,
@@ -178,6 +179,10 @@ describe('AuthService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AuthService,
+        // Real lockout service — resolved from the mocked User repo +
+        // SecurityEventService above, so the login lockout logic is exercised
+        // for real (same code the guest establish-identity path now uses).
+        AccountLockoutService,
         { provide: getRepositoryToken(User),                 useValue: mockUserRepository },
         { provide: getRepositoryToken(Organization),         useValue: mockOrganizationRepository },
         { provide: getRepositoryToken(SubscriptionPlan),     useValue: mockSubscriptionPlanRepository },

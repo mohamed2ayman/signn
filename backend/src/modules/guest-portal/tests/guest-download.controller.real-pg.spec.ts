@@ -302,6 +302,26 @@ describeReal('GuestDownloadController (real Postgres — binding wall + watermar
       .expect(404);
   });
 
+  // ─── RED: a MEMBER of the HOST org (owns the contract) but NO binding → 404 ─
+  // The binding is the SOLE grant on the guest surface — org membership over the
+  // contract does NOT confer guest-download access. This is the stronger denial
+  // (a host-org member, not a random stranger), matching what the upload /
+  // extraction specs cover: only a guest_contract_access row opens this door.
+  it('RED — host-org member (owns the contract) with NO binding → uniform 404 (binding is the sole grant, not org membership)', async () => {
+    injectedUser = {
+      id: randomUUID(), // a real member of the contract's OWN org, no binding
+      email: 'host-member@managing.test',
+      role: UserRole.OWNER_ADMIN,
+      organization_id: orgId, // the SAME org that owns contractBoundId
+      account_type: AccountType.MANAGING,
+    };
+
+    await request(app.getHttpServer())
+      .get(`/guest/contracts/${contractBoundId}/pdf`)
+      .set('Authorization', 'Bearer valid-token')
+      .expect(404);
+  });
+
   // ─── RED: viewer-shaped principal (Path A, no established identity) → 404 ─
   it('RED — viewer principal (no account_type=GUEST) cannot download → 404', async () => {
     // The real /viewer/* path never produces account_type=GUEST. Even if such a
