@@ -5022,3 +5022,23 @@ org. A naive allow-through that trusts the JWT org would mis-meter and
 mis-audit ACROSS TENANTS. This is ARCHITECTURE RULE 9 Invariant 1 applied to
 the unified-membership case — the existing resolver already derives from the
 contract; the battery must prove no future code path shortcuts it.
+
+---
+
+## Review-header brand logo fix (shipped 2026-07-10, PR #145, `615e48e`)
+
+The 2c host review screen (`HostReviewMergeScreen`) rendered a placeholder
+"S" box (copied literally from the Claude Design export) instead of the brand
+mark; replaced with the shared `<BloomAppIcon size={28} />`. Conventions to
+keep:
+- **The SIGN brand mark is a COMPONENT, not a file asset** —
+  `apps/sign/src/components/common/SignLogo.tsx` (`SignLogo` / `BloomIcon` /
+  `WhiteBloomIcon` / `BloomAppIcon`, brand indigo `#4F6EF7`). Any logo change
+  goes in the component and propagates to every surface.
+- `sign_logo_final.svg` is a brand **SPEC SHEET** (multi-lockup sheet with
+  backgrounds/labels/size scale), not a drop-in asset — do not commit it into
+  the frontend or reference it from code.
+- All other brand surfaces audited correct at this fix (sidebar, admin rail,
+  auth pages, guest portal, landing, chat panels, `public/favicon.svg` +
+  `public/app-icon.svg`); email templates carry no logo. See lesson #222
+  (design-export placeholders ship as literal code).
