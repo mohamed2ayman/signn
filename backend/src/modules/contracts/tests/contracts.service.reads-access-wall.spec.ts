@@ -64,6 +64,7 @@ describe('ContractsService — Tier 2 READ access wall', () => {
       opts.contractApproverScoped ?? noop, // Option B S2a
       noop, // contractCommentScoped (Option B S2b — unused by these Tier 2 READ paths)
       noop, // clauseRepository (2a — unused here)
+      {} as any, // 19 relationshipTypes (T0a) — not exercised: no fixture passes relationship_type
     );
   }
 

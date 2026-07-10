@@ -23,6 +23,7 @@ import {
 } from '../../database/entities';
 import { CollaborationGateway } from '../collaboration/collaboration.gateway';
 import { ContractTemplatesService } from '../contract-templates/contract-templates.service';
+import { ContractRelationshipTypesService } from '../contract-relationship-types/contract-relationship-types.service';
 import { EmailService } from '../notifications/email.service';
 import { ContractAccessService } from './services/contract-access.service';
 
@@ -163,6 +164,13 @@ const mockContractTemplatesService = {
   instantiateTemplate: jest.fn().mockResolvedValue(undefined),
 };
 
+// Multi-tier T0a — registry validation dependency. Unit fixtures never pass
+// relationship_type; resolving any code as active keeps create() unblocked.
+const mockRelationshipTypesService = {
+  findAll: jest.fn().mockResolvedValue([]),
+  findActiveByCode: jest.fn().mockResolvedValue({ code: 'MAIN', is_active: true }),
+};
+
 const mockEmailService = {
   sendContractApprovalRequest: jest.fn().mockResolvedValue(undefined),
 };
@@ -260,6 +268,9 @@ describe('ContractsService', () => {
         { provide: ContractApproverScopedRepository,       useValue: mockContractApproverScopedRepository },
         // Option B — S2b: scoped ContractComment repo.
         { provide: ContractCommentScopedRepository,        useValue: mockContractCommentScopedRepository },
+        // Multi-tier T0a — relationship-type registry validation. The unit
+        // fixtures never pass relationship_type, so any active code resolves.
+        { provide: ContractRelationshipTypesService,       useValue: mockRelationshipTypesService },
       ],
     }).compile();
 

@@ -41,6 +41,7 @@ import { assertValueCurrencyPaired } from './utils/value-currency.util';
 import { assertContractMutable } from './utils/contract-pin-guard.util';
 import { CollaborationGateway } from '../collaboration/collaboration.gateway';
 import { ContractTemplatesService, isStandardForm, getLicenseOrg } from '../contract-templates/contract-templates.service';
+import { ContractRelationshipTypesService } from '../contract-relationship-types/contract-relationship-types.service';
 import { EmailService } from '../notifications/email.service';
 import { ContractAccessService } from './services/contract-access.service';
 import { ContractScopedRepository } from '../scoped-repository/contract-scoped.repository';
@@ -93,6 +94,10 @@ export class ContractsService {
     // always reached through a contract-walled apply (findInOrg), inside a txn.
     @InjectRepository(Clause)
     private readonly clauseRepository: Repository<Clause>,
+    // Multi-tier trunk T0a — create() validates dto.relationship_type against
+    // the ACTIVE registry codes (the registry is the single source of truth;
+    // no enum, no hardcoded code list here).
+    private readonly relationshipTypes: ContractRelationshipTypesService,
   ) {}
 
   // ─── Contract CRUD ─────────────────────────────────────────
@@ -180,10 +185,34 @@ export class ContractsService {
     // (CreateContractDto already enforces it at the DTO layer).
     assertValueCurrencyPaired(dto.contract_value, dto.currency);
 
+    // Multi-tier T0a — relationship_type must be a KNOWN + ACTIVE registry
+    // code. Unknown codes and seeded-but-inactive ("coming soon") codes are
+    // both rejected. The registry is the single source of truth — no
+    // hardcoded code list here.
+    // Normalize FIRST: ''/whitespace-only means "no selection" — the same
+    // absence as an omitted field → NULL (never persist '' in the column).
+    const relationshipType = dto.relationship_type?.trim() || null;
+    if (relationshipType) {
+      const relType =
+        await this.relationshipTypes.findActiveByCode(relationshipType);
+      if (!relType) {
+        throw new BadRequestException(
+          `Unknown or inactive relationship type: ${relationshipType}. ` +
+            'Valid codes are the active rows of the contract_relationship_types registry ' +
+            '(GET /contract-relationship-types).',
+        );
+      }
+    }
+
     const contract = this.contractRepository.create({
       project_id: dto.project_id,
       name: dto.name,
       contract_type: dto.contract_type,
+      // Multi-tier T0a — explicit mapping (this service never spreads the
+      // DTO; a field added only to the DTO would silently never persist).
+      // The NORMALIZED value — ''/whitespace became NULL above, and the
+      // persisted code is exactly the trimmed, registry-validated one.
+      relationship_type: relationshipType,
       party_type: dto.party_type,
       license_acknowledged: dto.license_acknowledged || false,
       license_organization: isStandardForm(dto.contract_type)

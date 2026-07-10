@@ -144,6 +144,46 @@ export enum ContractType {
   UPLOADED = 'UPLOADED',
 }
 
+// ─── Multi-tier T0a — relationship-type CODES (mirror; codes only) ─────────
+// SOURCE OF TRUTH: the contract_relationship_types registry table (seeded by
+// backend migration 1768000000001), served via GET /contract-relationship-types.
+// Labels (en/ar/fr) + per-type metadata (parent_link_rule, allowed parents,
+// default signatory roles, is_active) come from the ENDPOINT — never mirror
+// them here (lesson #218: codes only, no logic). Any change to the seeded
+// codes must be replicated here in the same PR.
+export const CONTRACT_RELATIONSHIP_TYPE_CODES = [
+  'MAIN',
+  'SUBCONTRACT',
+  'NOMINATED_SUB',
+  'NOMINATED_SUPPLIER',
+  'SUPPLY_DIRECT',
+  'CONSULTANT',
+  'USUFRUCT',
+  // Seeded but inactive ("coming soon") — rejected on create until activated:
+  'JOINT_VENTURE',
+  'FRAMEWORK',
+  'NOVATION',
+] as const;
+export type ContractRelationshipTypeCode =
+  (typeof CONTRACT_RELATIONSHIP_TYPE_CODES)[number];
+
+/** Registry row shape returned by GET /contract-relationship-types. */
+export interface ContractRelationshipType {
+  id: string;
+  code: string;
+  label_en: string;
+  label_ar: string;
+  label_fr: string;
+  domain_group: 'delivery_chain' | 'appointment' | 'property_rights' | 'party_agreement';
+  parent_link_rule: 'none' | 'required' | 'optional';
+  allowed_parent_types: string[];
+  default_signatory_role_1: string | null;
+  default_signatory_role_2: string | null;
+  is_active: boolean;
+  sort_order: number;
+  created_at: string;
+}
+
 export enum RiskLevel {
   LOW = 'LOW',
   MEDIUM = 'MEDIUM',
@@ -336,6 +376,9 @@ export interface Contract {
   party_type: string | null;
   license_acknowledged?: boolean;
   license_organization?: LicenseOrganization | null;
+  // Multi-tier T0a — relationship-type code from the registry
+  // (GET /contract-relationship-types). null = unclassified/legacy.
+  relationship_type?: string | null;
   created_by: string;
   approved_by: string | null;
   approved_at: string | null;

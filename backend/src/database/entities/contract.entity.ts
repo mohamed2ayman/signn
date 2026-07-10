@@ -149,6 +149,18 @@ export class Contract {
   @Column({ type: 'varchar', length: 20, nullable: true })
   license_organization: LicenseOrganization | null;
 
+  /**
+   * Multi-tier T0a — relationship-type dimension. Soft varchar CODE from the
+   * contract_relationship_types registry (MAIN / SUBCONTRACT / …): the
+   * contract's position in the delivery chain / legal relationship —
+   * ORTHOGONAL to contract_type (the standard form, e.g. FIDIC Red).
+   * NULL = unclassified/legacy (pre-T0a contracts are never backfilled).
+   * Validated against ACTIVE registry rows in ContractsService.create();
+   * deliberately no hard FK (matches the contract_type varchar convention).
+   */
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  relationship_type: string | null;
+
   @Column({ type: 'uuid' })
   created_by: string;
 

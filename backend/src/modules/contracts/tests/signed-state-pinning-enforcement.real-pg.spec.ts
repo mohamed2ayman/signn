@@ -232,6 +232,7 @@ describeReal('Signed-state pinning — Slice 2 enforcement (real Postgres)', () 
       {} as any,
       {} as any,
       dataSource.getRepository(Clause),
+      {} as any, // 19 relationshipTypes (T0a) — not exercised: no fixture passes relationship_type
     );
 
     pinning = new ContractPinningService(

@@ -36,6 +36,7 @@ import { ChatModule } from './modules/chat/chat.module';
 import { DocuSignModule } from './modules/docusign/docusign.module';
 import { CollaborationModule } from './modules/collaboration/collaboration.module';
 import { ContractTemplatesModule } from './modules/contract-templates/contract-templates.module';
+import { ContractRelationshipTypesModule } from './modules/contract-relationship-types/contract-relationship-types.module';
 import { ClaimsModule } from './modules/claims/claims.module';
 import { NoticesModule } from './modules/notices/notices.module';
 import { SubContractsModule } from './modules/subcontracts/subcontracts.module';
@@ -304,6 +305,8 @@ import { dataSourceOptions } from './config/data-source';
     DocuSignModule,
     CollaborationModule,
     ContractTemplatesModule,
+    // Multi-tier trunk T0a — relationship-type registry (GET /contract-relationship-types).
+    ContractRelationshipTypesModule,
     ClaimsModule,
     NoticesModule,
     SubContractsModule,
