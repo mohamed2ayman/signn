@@ -7,6 +7,7 @@ import { contractService } from '@/services/api/contractService';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
 import ChatPanel from '@/components/chat/ChatPanel';
 import ContractTypeSelector from '@/components/contracts/ContractTypeSelector';
+import RelationshipTypeSelector from '@/components/contracts/RelationshipTypeSelector';
 import ProjectHealthBar from '@/components/project/ProjectHealthBar';
 import ProjectAttentionZone from '@/components/project/ProjectAttentionZone';
 import ProjectAnalyticsRow from '@/components/project/ProjectAnalyticsRow';
@@ -53,8 +54,12 @@ export default function ProjectDetailPage() {
   const [showCreateContract, setShowCreateContract] = useState(false);
   const [createStep, setCreateStep] = useState<'type' | 'details'>('type');
   const [selectedType, setSelectedType] = useState<ContractType | null>(null);
+  // Multi-tier T0a.2 — relationship-type CODE (registry code, e.g. MAIN).
+  // Required for new contracts (backend column stays nullable for legacy).
+  const [relationshipType, setRelationshipType] = useState<string | null>(null);
   const [contractForm, setContractForm] = useState({ name: '', party_type: '' });
   const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
   const [chatOpen, setChatOpen] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
@@ -100,13 +105,17 @@ export default function ProjectDetailPage() {
 
   const handleCreateContract = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!id || !selectedType) return;
+    // Relationship type is required for new contracts (submit is also disabled
+    // until one is chosen — this guard is the safety net).
+    if (!id || !selectedType || !relationshipType) return;
     setCreating(true);
+    setCreateError(null);
     try {
       const contract = await contractService.create({
         project_id: id,
         name: contractForm.name,
         contract_type: selectedType,
+        relationship_type: relationshipType,
         party_type: contractForm.party_type || undefined,
         license_acknowledged: isStandardForm(selectedType) ? true : undefined,
         license_organization: isStandardForm(selectedType) ? getLicenseOrg(selectedType) : undefined,
@@ -115,10 +124,14 @@ export default function ProjectDetailPage() {
       setShowCreateContract(false);
       setCreateStep('type');
       setSelectedType(null);
+      setRelationshipType(null);
       setContractForm({ name: '', party_type: '' });
       navigate(`/app/contracts/${contract.id}`);
     } catch (err) {
+      // Surface a clean message (e.g. an unknown/inactive relationship code
+      // rejected by the backend as a 400) — never a raw stack / 500.
       console.error('Failed to create contract:', err);
+      setCreateError(t('relationshipType.createError'));
     } finally {
       setCreating(false);
     }
@@ -381,7 +394,7 @@ export default function ProjectDetailPage() {
       {/* Create Contract Modal — Multi-step */}
       {showCreateContract && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-navy-900/40 backdrop-blur-sm">
-          <div className={`w-full rounded-2xl border border-gray-200/50 bg-white p-6 shadow-elevated ${createStep === 'type' ? 'max-w-2xl' : 'max-w-md'}`}>
+          <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl border border-gray-200/50 bg-white p-6 shadow-elevated">
             <div className="mb-5 flex items-center justify-between">
               <div>
                 <h2 className="text-lg font-semibold text-gray-900">
@@ -394,7 +407,7 @@ export default function ProjectDetailPage() {
                 </p>
               </div>
               <button
-                onClick={() => { setShowCreateContract(false); setCreateStep('type'); setSelectedType(null); setContractForm({ name: '', party_type: '' }); }}
+                onClick={() => { setShowCreateContract(false); setCreateStep('type'); setSelectedType(null); setRelationshipType(null); setCreateError(null); setContractForm({ name: '', party_type: '' }); }}
                 className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
               >
                 <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
@@ -430,6 +443,17 @@ export default function ProjectDetailPage() {
                   </div>
                 )}
 
+                {/* Multi-tier T0a.2 — RELATIONSHIP type (distinct from the FORM
+                    badge above). Required for new contracts. */}
+                <div>
+                  <label className="mb-1 flex items-center gap-1 text-sm font-medium text-gray-700">
+                    {t('relationshipType.fieldLabel')}
+                    <span className="text-red-500">*</span>
+                  </label>
+                  <p className="mb-2.5 text-xs text-gray-400">{t('relationshipType.fieldHint')}</p>
+                  <RelationshipTypeSelector value={relationshipType} onChange={setRelationshipType} />
+                </div>
+
                 <div>
                   <label className="mb-1.5 block text-sm font-medium text-gray-700">Contract Name</label>
                   <input
@@ -439,7 +463,6 @@ export default function ProjectDetailPage() {
                     className="w-full rounded-lg border border-gray-200 bg-white px-3.5 py-2.5 text-sm transition-colors placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
                     placeholder="e.g. Main Construction Agreement"
                     required
-                    autoFocus
                   />
                 </div>
                 <div>
@@ -452,10 +475,15 @@ export default function ProjectDetailPage() {
                     placeholder="e.g. Employer, Contractor"
                   />
                 </div>
+                {createError && (
+                  <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert" dir="auto">
+                    {createError}
+                  </div>
+                )}
                 <div className="flex justify-between border-t border-gray-100 pt-4">
                   <button
                     type="button"
-                    onClick={() => { setCreateStep('type'); setSelectedType(null); }}
+                    onClick={() => { setCreateStep('type'); setSelectedType(null); setCreateError(null); }}
                     className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-4 py-2.5 text-sm font-medium text-gray-700 transition hover:bg-gray-50"
                   >
                     <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
@@ -463,8 +491,8 @@ export default function ProjectDetailPage() {
                   </button>
                   <button
                     type="submit"
-                    disabled={creating}
-                    className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-primary-600 disabled:opacity-50"
+                    disabled={creating || !relationshipType}
+                    className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-primary-600 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {creating && <LoadingSpinner size="sm" />}
                     Create Contract

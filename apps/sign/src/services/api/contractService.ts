@@ -1,6 +1,25 @@
 import api from './axios';
 import { Contract, ContractClause, ContractVersion, ContractComment, ContractorResponse, SignatureSigner, VersionComparisonResult, ContractApprover } from '@/types';
 
+/**
+ * Multi-tier T0a — a row of the contract_relationship_types registry, served by
+ * GET /contract-relationship-types. The registry is the SINGLE source for the
+ * relationship-type codes + labels (×3 locales) + grouping metadata; the
+ * frontend picker reads labels straight from here (no FE/BE duplication).
+ * `is_active === false` rows are the seeded "coming soon" types (rendered
+ * greyed/disabled). One-line per-type descriptions are NOT in the registry —
+ * they live as frontend i18n keyed by `code` (`relationshipType.desc.<CODE>`).
+ */
+export interface RelationshipType {
+  code: string;
+  label_en: string;
+  label_ar: string;
+  label_fr: string;
+  domain_group: string;
+  is_active: boolean;
+  sort_order: number;
+}
+
 export const contractService = {
   // Contract CRUD
   getAll: (projectId: string, params?: { status?: string; contract_type?: string; search?: string }) =>
@@ -9,8 +28,18 @@ export const contractService = {
   getById: (id: string) =>
     api.get<Contract>(`/contracts/${id}`).then(r => r.data),
 
-  create: (data: { project_id: string; name: string; contract_type: string; party_type?: string; license_acknowledged?: boolean; license_organization?: string }) =>
+  create: (data: { project_id: string; name: string; contract_type: string; relationship_type?: string; party_type?: string; license_acknowledged?: boolean; license_organization?: string }) =>
     api.post<Contract>('/contracts', data).then(r => r.data),
+
+  // Multi-tier T0a — relationship-type registry (create-flow picker source).
+  // includeInactive=true additionally returns the seeded "coming soon" types
+  // so the picker can render them greyed/disabled.
+  getRelationshipTypes: (includeInactive = true) =>
+    api
+      .get<RelationshipType[]>('/contract-relationship-types', {
+        params: includeInactive ? { include_inactive: 'true' } : undefined,
+      })
+      .then(r => r.data),
 
   update: (id: string, data: { name?: string; party_type?: string }) =>
     api.put<Contract>(`/contracts/${id}`, data).then(r => r.data),

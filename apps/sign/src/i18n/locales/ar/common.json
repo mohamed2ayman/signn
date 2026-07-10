@@ -40,6 +40,33 @@
     "hidePrevious": "إخفاء النسخة السابقة",
     "previousVersion": "النسخة السابقة"
   },
+  "relationshipType": {
+    "_TODO": "PENDING LEGAL REVIEW (Youssef): the Arabic relationship-type descriptions below are DRAFT starting values — verify/correct legal terminology before finalizing. (Type NAMES come from the registry label_ar, not from here.)",
+    "fieldLabel": "نوع العلاقة",
+    "fieldHint": "موضع هذا العقد في سلسلة التنفيذ أو العلاقة القانونية.",
+    "comingSoon": "قريبًا",
+    "loadError": "تعذّر تحميل أنواع العلاقات.",
+    "retry": "إعادة المحاولة",
+    "createError": "تعذّر إنشاء العقد. يُرجى مراجعة البيانات والمحاولة مرة أخرى.",
+    "group": {
+      "delivery_chain": "سلسلة التنفيذ",
+      "appointment": "التعيين",
+      "property_rights": "حقوق الملكية",
+      "party_agreement": "اتفاقية الأطراف"
+    },
+    "desc": {
+      "MAIN": "الاتفاق الرئيسي بين صاحب العمل والمقاول الرئيسي.",
+      "SUBCONTRACT": "اتفاق المقاول مع مقاول من الباطن ضمن عقد رئيسي.",
+      "NOMINATED_SUB": "مقاول من الباطن يُسمّيه صاحب العمل ويُتعاقد معه ضمن العقد الرئيسي.",
+      "NOMINATED_SUPPLIER": "مورّد يُسمّيه صاحب العمل ويُتعاقد معه ضمن العقد الرئيسي.",
+      "SUPPLY_DIRECT": "توريد أو شراء مباشر للبضائع والمواد.",
+      "CONSULTANT": "تعيين استشاري أو مهندس لتقديم خدمات مهنية.",
+      "USUFRUCT": "حق استعمال عقار مملوك للغير والانتفاع به.",
+      "JOINT_VENTURE": "اجتماع طرفين أو أكثر في مشروع مشترك.",
+      "FRAMEWORK": "اتفاقية إطارية لعقود متكررة تُبرم عند الطلب.",
+      "NOVATION": "نقل حقوق العقد والتزاماته إلى طرف جديد."
+    }
+  },
   "clauseType": {
     "_TODO": "PENDING LEGAL REVIEW (Youssef): the Arabic clause-type / risk-category terms below are DRAFT starting values — verify/correct FIDIC legal terminology before finalizing.",
     "general": "عام",
