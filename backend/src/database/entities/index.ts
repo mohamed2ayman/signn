@@ -81,3 +81,5 @@ export {
 } from './legal-document.entity';
 export { LegalDocumentChunk } from './legal-document-chunk.entity';
 export { LegalSource } from './legal-source.entity';
+// ─── Multi-tier trunk T0a — relationship-type registry ────────────────────
+export { ContractRelationshipType } from './contract-relationship-type.entity';

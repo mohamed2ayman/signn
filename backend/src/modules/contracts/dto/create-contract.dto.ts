@@ -26,6 +26,21 @@ export class CreateContractDto {
   @IsEnum(ContractType)
   contract_type: ContractType;
 
+  /**
+   * Multi-tier T0a — relationship-type CODE from the
+   * contract_relationship_types registry (MAIN / SUBCONTRACT / …).
+   * Optional; omitted = unclassified/legacy (column stays NULL).
+   * DELIBERATELY not an @IsEnum/@IsIn — the registry (DB rows) is the single
+   * source of valid codes, so adding a type is a seed row, not a code change.
+   * ContractsService.create() normalizes first (''/whitespace-only = "no
+   * selection" → NULL, code trimmed) then validates the code exists AND is
+   * active, rejecting unknown/inactive codes with a clear 400.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  relationship_type?: string;
+
   @IsOptional()
   @IsString()
   @MaxLength(50)

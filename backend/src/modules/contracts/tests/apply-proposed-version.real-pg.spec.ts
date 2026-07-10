@@ -160,6 +160,7 @@ describeReal('applyProposedVersion — Part B (real Postgres)', () => {
       {} as any,
       {} as any,
       dataSource.getRepository(Clause),
+      {} as any, // 19 relationshipTypes (T0a) — not exercised: no fixture passes relationship_type
     );
 
     await dataSource.query(`INSERT INTO organizations (id, name) VALUES ($1,$2)`, [
