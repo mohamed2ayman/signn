@@ -148,4 +148,22 @@ describeReal('ContractScopedRepository.scopedFindByIdWithRelations (real Postgre
     const row = await scoped.scopedFindByIdWithRelations(contractA, orgA, []);
     expect(row?.id).toBe(contractA);
   });
+
+  // ── scopedFindByIdWithClauses (Phase 7.27 — chat contract-context load) ──
+  // Same tenancy gate as scopedFindByIdWithRelations; adds the nested
+  // contract_clauses → clause hydration. No clauses are seeded here, so the
+  // in-org row returns with an empty contract_clauses array; the org gate is
+  // what these probes assert.
+
+  it('scopedFindByIdWithClauses in-org: returns the contract WITH project hydrated', async () => {
+    const row = await scoped.scopedFindByIdWithClauses(contractA, orgA);
+    expect(row?.id).toBe(contractA);
+    expect(row?.project?.country).toBe('Egypt');
+    expect(Array.isArray(row?.contract_clauses)).toBe(true);
+  });
+
+  it('scopedFindByIdWithClauses cross-org: contractA under orgB resolves to null (silent fallback, no throw)', async () => {
+    const row = await scoped.scopedFindByIdWithClauses(contractA, orgB);
+    expect(row).toBeNull();
+  });
 });

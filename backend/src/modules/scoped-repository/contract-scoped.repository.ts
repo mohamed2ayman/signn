@@ -88,4 +88,57 @@ export class ContractScopedRepository extends ScopedContractRepository<Contract>
       // TENANCY GATE — always the caller's real org. Non-negotiable.
       .andWhere('project.organization_id = :orgId', { orgId });
   }
+
+  // ── BY-ID WITH HYDRATED CLAUSES (silent-null, for chat contract context) ──
+
+  /**
+   * The chokepoint for AI Chat's CONTRACT-CONTEXT load (Phase 7.27). Loads the
+   * contract by id, org-walled, with the `project` (for jurisdiction) AND its
+   * live clause set HYDRATED, so `ChatService.buildContractContext` can render
+   * `[§section] title (type) + content` blocks for the conversational agent.
+   *
+   * Why a purpose-built method instead of {@link scopedFindByIdWithRelations}:
+   * that helper flat-joins single-level relations (`rel_<name>`) and CANNOT
+   * hydrate the NESTED `contract_clauses → clause` path the assembler needs
+   * (the clause's `content` / `title` / `clause_type` live on `Clause`, one hop
+   * past the `contract_clauses` junction). This method adds that nested hop.
+   *
+   * Same tenancy gate as every other method here — it reuses
+   * {@link buildScopedQuery} (`contract → project → organization_id = :orgId`),
+   * so an out-of-org id yields zero rows. Returns `null` on a miss — NEVER
+   * throws — matching {@link scopedFindByIdWithRelations}: chat treats null as
+   * "no contract context" and proceeds (best-effort grounding).
+   *
+   * Filters + ordering, and why:
+   *  - `contract_clauses.is_proposed = false` — proposed clauses are a bound
+   *    guest's un-merged new-version pile (Slice 1 Option C); they are excluded
+   *    from every host-facing read, so chat context must not see them either.
+   *  - `clause.is_active = true` — retired clause versions (superseded by the
+   *    parent-chain promotion) must not appear in the grounding.
+   *  - `ORDER BY contract_clauses.order_index ASC` — deterministic section
+   *    order so the assembled `[§N]` blocks read top-to-bottom like the contract.
+   *
+   * `rel_project` is a DISTINCT hydration alias so it can't collide with the
+   * gate's own `innerJoin('contract.project', 'project')` — same aliasing
+   * discipline as {@link scopedFindByIdWithRelations}.
+   */
+  async scopedFindByIdWithClauses(
+    id: string,
+    orgId: string,
+  ): Promise<Contract | null> {
+    return this.buildScopedQuery(id, orgId)
+      .leftJoinAndSelect('contract.project', 'rel_project')
+      .leftJoinAndSelect(
+        'contract.contract_clauses',
+        'contract_clauses',
+        'contract_clauses.is_proposed = false',
+      )
+      .leftJoinAndSelect(
+        'contract_clauses.clause',
+        'clause',
+        'clause.is_active = true',
+      )
+      .orderBy('contract_clauses.order_index', 'ASC')
+      .getOne();
+  }
 }

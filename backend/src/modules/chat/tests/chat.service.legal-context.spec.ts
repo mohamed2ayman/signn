@@ -5,8 +5,9 @@ import { ChatService } from '../chat.service';
 import { ChatSession, ChatMessage } from '../../../database/entities';
 import { AiService } from '../../ai/ai.service';
 import { LegalDocumentsService } from '../../legal-documents/legal-documents.service';
-// Option B chokepoint (compliance finale) — buildLegalContext now routes its
-// parent-Contract+project load through the scoped ROOT gate, not a bare repo.
+// Option B chokepoint — sendMessage loads the parent Contract through the
+// scoped ROOT gate (scopedFindByIdWithClauses: project + live clause set),
+// feeding both legal grounding and contract grounding from one walled load.
 import { ContractScopedRepository } from '../../scoped-repository/contract-scoped.repository';
 
 /**
@@ -31,7 +32,7 @@ describe('ChatService — legal-context grounding (Phase E)', () => {
   const sessionRepo = { findOne: jest.fn(), save: jest.fn(), create: jest.fn() };
   const messageRepo = { findOne: jest.fn(), find: jest.fn(), save: jest.fn(), create: jest.fn() };
   // Option B chokepoint — the scoped ROOT gate replaces the bare Contract repo.
-  const contractScoped = { scopedFindByIdWithRelations: jest.fn() };
+  const contractScoped = { scopedFindByIdWithClauses: jest.fn() };
   // triggerChat resolves with a direct {response} so sendMessage takes the
   // synchronous branch (no polling delay in the unit test).
   const aiService = {
@@ -65,9 +66,10 @@ describe('ChatService — legal-context grounding (Phase E)', () => {
     messageRepo.save.mockImplementation(async (x) => x);
     messageRepo.find.mockResolvedValue([]);
     sessionRepo.save.mockResolvedValue({});
-    contractScoped.scopedFindByIdWithRelations.mockResolvedValue({
+    contractScoped.scopedFindByIdWithClauses.mockResolvedValue({
       id: CONTRACT_ID,
       project: country === undefined ? undefined : { country },
+      contract_clauses: [],
     });
   }
 
@@ -96,12 +98,11 @@ describe('ChatService — legal-context grounding (Phase E)', () => {
     await service.sendMessage(SESSION_ID, USER_ID, ORG_ID, 'force majeure?');
 
     // Option B chokepoint: the parent-Contract load routes through the scoped
-    // ROOT gate, keyed on the CALLER's org (ORG_ID) — not a bare repo. This is
-    // the cross-module closure of the read chat (3 of 4) deferred to the finale.
-    expect(contractScoped.scopedFindByIdWithRelations).toHaveBeenCalledWith(
+    // ROOT gate, keyed on the CALLER's org (ORG_ID) — not a bare repo. The
+    // single walled load feeds both legal and contract grounding.
+    expect(contractScoped.scopedFindByIdWithClauses).toHaveBeenCalledWith(
       CONTRACT_ID,
       ORG_ID,
-      ['project'],
     );
     expect(legalService.retrieveRelevantChunks).toHaveBeenCalledWith(
       'force majeure?',

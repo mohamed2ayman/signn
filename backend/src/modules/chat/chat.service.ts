@@ -6,15 +6,18 @@ import {
   ChatMessage,
   ChatMessageRole,
   ChatMessageStatus,
+  Contract,
 } from '../../database/entities';
 import { AiService } from '../ai/ai.service';
 import { LegalDocumentsService } from '../legal-documents/legal-documents.service';
 import { ALLOWED_JURISDICTIONS } from '../legal-documents/dto/create-legal-document.dto';
-// Option B — chokepoint migration (compliance finale, 4 of 4) CLOSES the read
-// chat (3 of 4) DEFERRED: buildLegalContext's parent-Contract+project jurisdiction
-// load now routes through the SAME ROOT data-layer gate the compliance finale
-// added (scopedFindByIdWithRelations — silent-null, project hydrated). This is the
-// one cross-module edit the finale was scoped to make.
+// Option B — chokepoint. sendMessage loads the session's parent Contract ONCE
+// through the ROOT data-layer gate: scopedFindByIdWithClauses (silent-null,
+// org-walled) hydrates `project` (for jurisdiction) AND the live clause set
+// (is_proposed=false + is_active, order_index-sorted). Both grounding blocks —
+// legal-corpus (buildLegalContext) and contract (buildContractContext) — derive
+// from that single load. (Phase 7.27 extended the earlier project-only
+// scopedFindByIdWithRelations load the compliance finale handed forward.)
 import { ContractScopedRepository } from '../scoped-repository/contract-scoped.repository';
 
 /** Number of legal-corpus passages to retrieve per chat question (Phase E). */
@@ -59,38 +62,29 @@ export class ChatService {
   ) {}
 
   /**
-   * Phase E — derive the legal jurisdiction for a chat session from its
-   * contract's project country, then retrieve relevant legal-corpus passages
-   * and format them as a <legal_context> block for the chat prompt.
+   * Phase E — derive the legal jurisdiction from a PRE-LOADED contract's project
+   * country, then retrieve relevant legal-corpus passages and format them as a
+   * <legal_context> block for the chat prompt.
    *
-   * Returns null (silent fallback) when: the session has no contract, the
-   * contract is not in the caller's org, the project has no country, the country
-   * isn't in the supported allowlist, or retrieval returns zero chunks. Never
-   * throws — chat must proceed regardless.
+   * Takes the contract already loaded by sendMessage (via the org-walled
+   * scopedFindByIdWithClauses chokepoint) rather than loading it itself — the
+   * single load feeds both this legal grounding AND buildContractContext, so we
+   * never double-hit the DB. Returns null (silent fallback) when: no contract,
+   * the project has no country, the country isn't in the supported allowlist, or
+   * retrieval returns zero chunks. Never throws — chat must proceed regardless.
    *
-   * Option B chokepoint (compliance finale): the parent Contract + its project
-   * hydrate through ContractScopedRepository.scopedFindByIdWithRelations — the
-   * SAME silent-null ROOT gate compliance's jurisdiction load uses. The org gate
-   * is the caller's own `orgId` (the sendMessage JWT org); an out-of-org contract
-   * resolves to null → no legal context (the safe best-effort fallback). This
-   * tightens the prior bare load, which applied NO org filter when deriving
-   * jurisdiction.
+   * The org gate lives in the load (scopedFindByIdWithClauses walls by the
+   * sendMessage JWT org; an out-of-org contract resolves to null → no context).
    */
   private async buildLegalContext(
-    contractId: string | null,
-    orgId: string,
+    contract: Contract | null,
     message: string,
   ): Promise<string | null> {
-    if (!contractId) return null;
+    if (!contract) return null;
     try {
-      const contract = await this.contractScoped.scopedFindByIdWithRelations(
-        contractId,
-        orgId,
-        ['project'],
-      );
       // Project.country is a free-text display name ("Egypt") or ISO code;
       // map it to a supported corpus jurisdiction (EG/AE/SA/QA/UK) or bail.
-      const jurisdiction = resolveJurisdiction(contract?.project?.country);
+      const jurisdiction = resolveJurisdiction(contract.project?.country);
       if (!jurisdiction) return null;
       if (!(ALLOWED_JURISDICTIONS as readonly string[]).includes(jurisdiction)) {
         return null;
@@ -121,10 +115,87 @@ export class ChatService {
     } catch (err) {
       // Retrieval is best-effort grounding — never let it break chat.
       this.logger.warn(
-        `[buildLegalContext] legal retrieval failed for contract ${contractId}: ${(err as Error).message}`,
+        `[buildLegalContext] legal retrieval failed for contract ${contract.id}: ${(err as Error).message}`,
       );
       return null;
     }
+  }
+
+  /**
+   * Phase 7.27 — assemble the contract's metadata + live clause set as a
+   * plain-text block for the conversational agent's `### Contract Context`
+   * section, so chat answers are grounded in the ACTUAL contract, not just the
+   * legal corpus.
+   *
+   * Adapted from the guest-portal assembler
+   * (guest-portal/services/guest-chat.service.ts:buildContractContext) but kept
+   * HOST-OWNED to avoid a host→guest module dependency. This is the CLAUSES-ONLY
+   * path: comments are intentionally NOT included (deferred — the guest path
+   * needs the internal-note filter wall; host clause-grounding does not need it).
+   *
+   * The contract is pre-loaded by sendMessage via scopedFindByIdWithClauses
+   * (org-walled; is_proposed=false + is_active clauses; order_index-sorted), so
+   * this method only FORMATS — no DB access, no tenancy decision here. Returns
+   * null when there are no renderable active clauses.
+   *
+   * `maxChars` (default 60_000, matching the guest budget) caps total size with
+   * graceful per-clause omission: an over-budget clause is dropped and listed in
+   * a closing note, never truncated mid-clause.
+   */
+  private buildContractContext(
+    contract: Contract,
+    maxChars = 60_000,
+  ): string | null {
+    const meta: string[] = ['### Contract metadata'];
+    meta.push(`Name: ${contract.name ?? 'Untitled'}`);
+    if (contract.contract_type) meta.push(`Type: ${contract.contract_type}`);
+    if (contract.status) meta.push(`Status: ${contract.status}`);
+    if (contract.party_first_name || contract.party_second_name) {
+      meta.push(
+        `Parties: ${contract.party_first_name ?? '—'} / ${contract.party_second_name ?? '—'}`,
+      );
+    }
+    if (contract.start_date) meta.push(`Start date: ${contract.start_date}`);
+    if (contract.end_date) meta.push(`End date: ${contract.end_date}`);
+
+    // Deterministic section order (the load already sorts, but a copy-then-sort
+    // keeps this helper correct even if handed an unsorted clause set).
+    const junctions = [...(contract.contract_clauses ?? [])].sort(
+      (a, b) => (a.order_index ?? 0) - (b.order_index ?? 0),
+    );
+
+    const parts: string[] = [meta.join('\n'), '\n### Clauses'];
+    let used = parts.join('\n').length;
+    const omitted: string[] = [];
+    let rendered = 0;
+
+    for (const cc of junctions) {
+      const clause = cc.clause;
+      if (!clause) continue;
+      if (clause.is_active === false) continue;
+      const section = cc.section_number ?? String((cc.order_index ?? 0) + 1);
+      const typeNote = clause.clause_type ? ` (type: ${clause.clause_type})` : '';
+      const block = `\n[§${section}] ${clause.title ?? ''}${typeNote}\n${clause.content ?? ''}`;
+      if (used + block.length > maxChars) {
+        omitted.push(`§${section}`);
+        continue;
+      }
+      parts.push(block);
+      used += block.length;
+      rendered += 1;
+    }
+
+    // No renderable clauses → no contract context (caller passes undefined).
+    if (rendered === 0) return null;
+
+    if (omitted.length > 0) {
+      parts.push(
+        `\n[Note: ${omitted.length} clause(s) omitted for length: ${omitted.join(', ')}. ` +
+          `Tell the user to consult the contract viewer for their full text.]`,
+      );
+    }
+
+    return parts.join('\n');
   }
 
   async createSession(
@@ -210,14 +281,34 @@ export class ChatService {
         content: m.content as string,
       }));
 
-    // Phase E — legal-corpus grounding (silent fallback on no-country/no-chunks).
-    // orgId (the caller's JWT org) is the data-layer tenancy gate for the
-    // parent-Contract jurisdiction load inside buildLegalContext.
-    const legalContext = await this.buildLegalContext(
-      session.contract_id,
-      orgId,
-      message,
-    );
+    // Phase 7.27 — load the session's parent contract ONCE through the
+    // Option-B chokepoint (org-walled; is_proposed=false + is_active clauses;
+    // order_index-sorted), then derive BOTH grounding blocks from that single
+    // load: legal-corpus context (from the project's jurisdiction) and contract
+    // context (from the clause set). orgId (the caller's JWT org) is the
+    // data-layer tenancy gate inside the chokepoint.
+    const contract = session.contract_id
+      ? await this.contractScoped.scopedFindByIdWithClauses(
+          session.contract_id,
+          orgId,
+        )
+      : null;
+
+    const legalContext = await this.buildLegalContext(contract, message);
+    const contractContext = contract
+      ? this.buildContractContext(contract)
+      : null;
+
+    // Observability (defense-in-depth): if contract grounding ever silently
+    // stops flowing again, these lines surface it during smoke testing.
+    if (session.contract_id) {
+      this.logger.debug(
+        `Contract context built: ${contractContext ? contractContext.length : 0} chars, ` +
+          `${contract?.contract_clauses?.length || 0} clauses considered`,
+      );
+    } else {
+      this.logger.debug('Contract context skipped (no contract in session)');
+    }
 
     // 2. Dispatch the AI job (do NOT await its result).
     let jobId: string | null = null;
@@ -230,6 +321,7 @@ export class ChatService {
         org_id: orgId,
         history: historyForAi,
         knowledge_context: legalContext || undefined,
+        contract_context: contractContext || undefined,
       });
       jobId = (aiResponse as any).job_id || null;
       if (!jobId) {

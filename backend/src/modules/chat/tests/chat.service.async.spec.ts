@@ -32,7 +32,7 @@ describe('ChatService — async send + status advancer', () => {
     create: jest.fn((x) => x),
     save: jest.fn(),
   };
-  const contractScoped = { scopedFindByIdWithRelations: jest.fn() };
+  const contractScoped = { scopedFindByIdWithClauses: jest.fn() };
   const aiService = { triggerChat: jest.fn(), getJobStatus: jest.fn() };
   const legalService = { retrieveRelevantChunks: jest.fn() };
 

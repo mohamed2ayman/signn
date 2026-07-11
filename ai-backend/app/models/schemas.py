@@ -290,6 +290,18 @@ class ChatRequest(BaseModel):
             "'### Contract Context' block by the conversational agent."
         ),
     )
+    # 7.27 fix — CLOSE the host-chat silent-drop gap flagged above. This field
+    # was undeclared, so ChatRequest (pydantic extra=ignore) dropped it at the
+    # HTTP boundary and request.model_dump() never carried it into run_chat —
+    # meaning Phase E's <legal_context> grounding never reached the model. Now
+    # declared, mirroring contract_context, so legal-corpus grounding flows.
+    knowledge_context: Optional[str] = Field(
+        None,
+        description=(
+            "Optional legal-corpus / KB grounding assembled server-side; "
+            "injected as the '### Knowledge Base Context' block by the agent."
+        ),
+    )
 
 
 class Citation(BaseModel):
