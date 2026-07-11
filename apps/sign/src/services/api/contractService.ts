@@ -16,6 +16,12 @@ export interface RelationshipType {
   label_ar: string;
   label_fr: string;
   domain_group: string;
+  // Multi-tier T0b — parent-link metadata consumed by the create-flow parent
+  // step. 'none' = no parent step; 'required'/'optional' = show the picker.
+  // allowed_parent_types = the relationship-type codes eligible as parent
+  // (e.g. ['MAIN'] for SUBCONTRACT). Both come straight from the registry.
+  parent_link_rule: 'none' | 'required' | 'optional';
+  allowed_parent_types: string[];
   is_active: boolean;
   sort_order: number;
 }
@@ -28,7 +34,7 @@ export const contractService = {
   getById: (id: string) =>
     api.get<Contract>(`/contracts/${id}`).then(r => r.data),
 
-  create: (data: { project_id: string; name: string; contract_type: string; relationship_type?: string; party_type?: string; license_acknowledged?: boolean; license_organization?: string }) =>
+  create: (data: { project_id: string; name: string; contract_type: string; relationship_type?: string; parent_contract_id?: string; party_type?: string; license_acknowledged?: boolean; license_organization?: string }) =>
     api.post<Contract>('/contracts', data).then(r => r.data),
 
   // Multi-tier T0a — relationship-type registry (create-flow picker source).

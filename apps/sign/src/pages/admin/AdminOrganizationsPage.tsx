@@ -33,7 +33,7 @@ const FEATURE_FLAG_KEYS: { key: string; label: string; description: string }[] =
   { key: 'risk_analysis',           label: 'Risk Analysis',           description: 'Automated contract risk scoring and flags' },
   { key: 'claims_management',       label: 'Claims Management',       description: 'Track and manage project claims' },
   { key: 'notice_management',       label: 'Notice Management',       description: 'Track and manage contractual notices' },
-  { key: 'sub_contracts',           label: 'Sub-Contracts',           description: 'Sub-contract tracking and management' },
+  { key: 'sub_contracts',           label: 'Sub-Contract Packages',   description: 'Sub-contract tracking and management (legacy lightweight packages)' },
   { key: 'obligations_tracking',    label: 'Obligations Tracking',    description: 'Track contract obligations with reminders' },
   { key: 'version_history',         label: 'Version History',         description: 'Full contract version history and diffs' },
   { key: 'approval_workflow',       label: 'Approval Workflow',       description: 'Multi-step contract approval chains' },

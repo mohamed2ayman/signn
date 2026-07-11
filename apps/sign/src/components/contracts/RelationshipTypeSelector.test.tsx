@@ -25,10 +25,10 @@ vi.mock('@/services/api/contractService', () => ({
 }));
 
 const REGISTRY = [
-  { code: 'MAIN', label_en: 'Main Contract', label_ar: 'عقد رئيسي', label_fr: 'Contrat principal', domain_group: 'delivery_chain', is_active: true, sort_order: 10 },
-  { code: 'SUBCONTRACT', label_en: 'Sub-Contract', label_ar: 'عقد فرعي', label_fr: 'Sous-contrat', domain_group: 'delivery_chain', is_active: true, sort_order: 20 },
-  { code: 'CONSULTANT', label_en: 'Consultant Appointment', label_ar: 'تعيين استشاري', label_fr: 'Nomination de consultant', domain_group: 'appointment', is_active: true, sort_order: 60 },
-  { code: 'JOINT_VENTURE', label_en: 'Joint Venture', label_ar: 'مشروع مشترك', label_fr: 'Coentreprise', domain_group: 'party_agreement', is_active: false, sort_order: 80 },
+  { code: 'MAIN', label_en: 'Main Contract', label_ar: 'عقد رئيسي', label_fr: 'Contrat principal', domain_group: 'delivery_chain', parent_link_rule: 'none' as const, allowed_parent_types: [], is_active: true, sort_order: 10 },
+  { code: 'SUBCONTRACT', label_en: 'Sub-Contract', label_ar: 'عقد فرعي', label_fr: 'Sous-contrat', domain_group: 'delivery_chain', parent_link_rule: 'required' as const, allowed_parent_types: ['MAIN'], is_active: true, sort_order: 20 },
+  { code: 'CONSULTANT', label_en: 'Consultant Appointment', label_ar: 'تعيين استشاري', label_fr: 'Nomination de consultant', domain_group: 'appointment', parent_link_rule: 'optional' as const, allowed_parent_types: ['MAIN'], is_active: true, sort_order: 60 },
+  { code: 'JOINT_VENTURE', label_en: 'Joint Venture', label_ar: 'مشروع مشترك', label_fr: 'Coentreprise', domain_group: 'party_agreement', parent_link_rule: 'none' as const, allowed_parent_types: [], is_active: false, sort_order: 80 },
 ];
 
 function renderPicker(value: string | null, onChange = vi.fn()) {
