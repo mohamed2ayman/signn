@@ -7,6 +7,7 @@ import { contractService } from '@/services/api/contractService';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
 import ChatPanel from '@/components/chat/ChatPanel';
 import ContractTypeSelector from '@/components/contracts/ContractTypeSelector';
+import RelationshipTypeSelector from '@/components/contracts/RelationshipTypeSelector';
 import ProjectHealthBar from '@/components/project/ProjectHealthBar';
 import ProjectAttentionZone from '@/components/project/ProjectAttentionZone';
 import ProjectAnalyticsRow from '@/components/project/ProjectAnalyticsRow';
@@ -53,8 +54,12 @@ export default function ProjectDetailPage() {
   const [showCreateContract, setShowCreateContract] = useState(false);
   const [createStep, setCreateStep] = useState<'type' | 'details'>('type');
   const [selectedType, setSelectedType] = useState<ContractType | null>(null);
+  // Multi-tier T0a.2 — relationship-type CODE (registry code, e.g. MAIN).
+  // Required for new contracts (backend column stays nullable for legacy).
+  const [relationshipType, setRelationshipType] = useState<string | null>(null);
   const [contractForm, setContractForm] = useState({ name: '', party_type: '' });
   const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
   const [chatOpen, setChatOpen] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
@@ -86,6 +91,16 @@ export default function ProjectDetailPage() {
 
   const isStandardForm = (ct: ContractType) => ct !== ContractType.ADHOC && ct !== ContractType.UPLOADED;
 
+  // Localized label for the chosen FORM in the "… selected" subtitle. Standard
+  // forms keep their proper-noun humanized name (FIDIC/NEC editions are not
+  // translated); the non-standard codes get real translations.
+  const formLabel = (ct: ContractType | null): string => {
+    if (!ct) return '';
+    if (ct === ContractType.ADHOC) return t('contractCreate.formName.ADHOC');
+    if (ct === ContractType.UPLOADED) return t('contractCreate.formName.UPLOADED');
+    return (ct as string).replace(/_/g, ' ');
+  };
+
   const getLicenseOrg = (ct: ContractType): LicenseOrganization | undefined => {
     const s = ct as string;
     if (s.startsWith('FIDIC_')) return LicenseOrganization.FIDIC;
@@ -100,13 +115,17 @@ export default function ProjectDetailPage() {
 
   const handleCreateContract = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!id || !selectedType) return;
+    // Relationship type is required for new contracts (submit is also disabled
+    // until one is chosen — this guard is the safety net).
+    if (!id || !selectedType || !relationshipType) return;
     setCreating(true);
+    setCreateError(null);
     try {
       const contract = await contractService.create({
         project_id: id,
         name: contractForm.name,
         contract_type: selectedType,
+        relationship_type: relationshipType,
         party_type: contractForm.party_type || undefined,
         license_acknowledged: isStandardForm(selectedType) ? true : undefined,
         license_organization: isStandardForm(selectedType) ? getLicenseOrg(selectedType) : undefined,
@@ -115,10 +134,14 @@ export default function ProjectDetailPage() {
       setShowCreateContract(false);
       setCreateStep('type');
       setSelectedType(null);
+      setRelationshipType(null);
       setContractForm({ name: '', party_type: '' });
       navigate(`/app/contracts/${contract.id}`);
     } catch (err) {
+      // Surface a clean message (e.g. an unknown/inactive relationship code
+      // rejected by the backend as a 400) — never a raw stack / 500.
       console.error('Failed to create contract:', err);
+      setCreateError(t('relationshipType.createError'));
     } finally {
       setCreating(false);
     }
@@ -234,7 +257,7 @@ export default function ProjectDetailPage() {
               <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
               </svg>
-              Add Contract
+              {t('contractCreate.addContract')}
             </button>
           </div>
         </div>
@@ -371,7 +394,7 @@ export default function ProjectDetailPage() {
               <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
               </svg>
-              Add Contract
+              {t('contractCreate.addContract')}
             </button>
           </div>
         )}
@@ -381,20 +404,20 @@ export default function ProjectDetailPage() {
       {/* Create Contract Modal — Multi-step */}
       {showCreateContract && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-navy-900/40 backdrop-blur-sm">
-          <div className={`w-full rounded-2xl border border-gray-200/50 bg-white p-6 shadow-elevated ${createStep === 'type' ? 'max-w-2xl' : 'max-w-md'}`}>
+          <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl border border-gray-200/50 bg-white p-6 shadow-elevated">
             <div className="mb-5 flex items-center justify-between">
               <div>
                 <h2 className="text-lg font-semibold text-gray-900">
-                  {createStep === 'type' ? 'New Contract' : 'Contract Details'}
+                  {createStep === 'type' ? t('contractCreate.newContract') : t('contractCreate.contractDetails')}
                 </h2>
-                <p className="mt-0.5 text-sm text-gray-400">
+                <p className="mt-0.5 text-sm text-gray-400" dir="auto">
                   {createStep === 'type'
-                    ? 'Choose a standard form or create a custom contract'
-                    : `${(selectedType as string)?.replace(/_/g, ' ')} selected`}
+                    ? t('contractCreate.chooseForm')
+                    : t('contractCreate.formSelected', { form: formLabel(selectedType) })}
                 </p>
               </div>
               <button
-                onClick={() => { setShowCreateContract(false); setCreateStep('type'); setSelectedType(null); setContractForm({ name: '', party_type: '' }); }}
+                onClick={() => { setShowCreateContract(false); setCreateStep('type'); setSelectedType(null); setRelationshipType(null); setCreateError(null); setContractForm({ name: '', party_type: '' }); }}
                 className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
               >
                 <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
@@ -420,54 +443,71 @@ export default function ProjectDetailPage() {
                     }`}>
                       {(selectedType as string).startsWith('FIDIC_') ? 'FIDIC' : 'NEC'}
                     </span>
-                    <span className="text-gray-500">Clauses will be pre-populated from the standard form template</span>
+                    <span className="text-gray-500" dir="auto">{t('contractCreate.prePopulatedNote')}</span>
                     <div className="relative ml-auto group">
                       <svg className="h-4 w-4 text-gray-400 cursor-help" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827m0 0v.75m0-2.577c0-.828.705-1.466 1.45-1.827.24-.116.467-.263.67-.442 1.172-1.025 1.172-2.687 0-3.712-1.171-1.025-3.071-1.025-4.242 0" /></svg>
-                      <div className="absolute bottom-full right-0 mb-2 hidden w-64 rounded-lg border border-gray-200 bg-white p-3 text-xs text-gray-600 shadow-lg group-hover:block z-10">
-                        Standard forms provide the internationally recognized clause structure. Customize using Particular Conditions without modifying the General Conditions.
+                      <div className="absolute bottom-full right-0 mb-2 hidden w-64 rounded-lg border border-gray-200 bg-white p-3 text-xs text-gray-600 shadow-lg group-hover:block z-10" dir="auto">
+                        {t('contractCreate.standardFormTooltip')}
                       </div>
                     </div>
                   </div>
                 )}
 
+                {/* Multi-tier T0a.2 — RELATIONSHIP type (distinct from the FORM
+                    badge above). Required for new contracts. */}
                 <div>
-                  <label className="mb-1.5 block text-sm font-medium text-gray-700">Contract Name</label>
+                  <label className="mb-1 flex items-center gap-1 text-sm font-medium text-gray-700">
+                    {t('relationshipType.fieldLabel')}
+                    <span className="text-red-500">*</span>
+                  </label>
+                  <p className="mb-2.5 text-xs text-gray-400">{t('relationshipType.fieldHint')}</p>
+                  <RelationshipTypeSelector value={relationshipType} onChange={setRelationshipType} />
+                </div>
+
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-gray-700">{t('contractCreate.contractName')}</label>
                   <input
                     type="text"
                     value={contractForm.name}
                     onChange={(e) => setContractForm({ ...contractForm, name: e.target.value })}
                     className="w-full rounded-lg border border-gray-200 bg-white px-3.5 py-2.5 text-sm transition-colors placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                    placeholder="e.g. Main Construction Agreement"
+                    placeholder={t('contractCreate.contractNamePlaceholder')}
+                    dir="auto"
                     required
-                    autoFocus
                   />
                 </div>
                 <div>
-                  <label className="mb-1.5 block text-sm font-medium text-gray-700">Party Type <span className="text-gray-400 font-normal">(optional)</span></label>
+                  <label className="mb-1.5 block text-sm font-medium text-gray-700">{t('contractCreate.partyType')} <span className="text-gray-400 font-normal">{t('contractCreate.optional')}</span></label>
                   <input
                     type="text"
                     value={contractForm.party_type}
                     onChange={(e) => setContractForm({ ...contractForm, party_type: e.target.value })}
                     className="w-full rounded-lg border border-gray-200 bg-white px-3.5 py-2.5 text-sm transition-colors placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                    placeholder="e.g. Employer, Contractor"
+                    placeholder={t('contractCreate.partyTypePlaceholder')}
+                    dir="auto"
                   />
                 </div>
+                {createError && (
+                  <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert" dir="auto">
+                    {createError}
+                  </div>
+                )}
                 <div className="flex justify-between border-t border-gray-100 pt-4">
                   <button
                     type="button"
-                    onClick={() => { setCreateStep('type'); setSelectedType(null); }}
+                    onClick={() => { setCreateStep('type'); setSelectedType(null); setCreateError(null); }}
                     className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-4 py-2.5 text-sm font-medium text-gray-700 transition hover:bg-gray-50"
                   >
                     <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
-                    Back
+                    {t('contractCreate.back')}
                   </button>
                   <button
                     type="submit"
-                    disabled={creating}
-                    className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-primary-600 disabled:opacity-50"
+                    disabled={creating || !relationshipType}
+                    className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-primary-600 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {creating && <LoadingSpinner size="sm" />}
-                    Create Contract
+                    {t('contractCreate.create')}
                   </button>
                 </div>
               </form>

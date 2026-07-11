@@ -40,6 +40,53 @@
     "hidePrevious": "Masquer la version précédente",
     "previousVersion": "Version précédente"
   },
+  "relationshipType": {
+    "_TODO": "PENDING LEGAL REVIEW (Youssef): the French relationship-type descriptions below are DRAFT starting values — verify/correct legal terminology before finalizing. (Type NAMES come from the registry label_fr, not from here.)",
+    "fieldLabel": "Type de relation",
+    "fieldHint": "La position de ce contrat dans la chaîne de réalisation ou la relation juridique.",
+    "comingSoon": "Bientôt disponible",
+    "loadError": "Impossible de charger les types de relation.",
+    "retry": "Réessayer",
+    "createError": "Impossible de créer le contrat. Veuillez vérifier les informations et réessayer.",
+    "group": {
+      "delivery_chain": "Chaîne de réalisation",
+      "appointment": "Nomination",
+      "property_rights": "Droits de propriété",
+      "party_agreement": "Accord entre parties"
+    },
+    "desc": {
+      "MAIN": "L'accord principal entre le maître d'ouvrage et l'entrepreneur principal.",
+      "SUBCONTRACT": "Un accord par lequel une partie engage un sous-traitant pour réaliser une partie des travaux.",
+      "NOMINATED_SUB": "Un sous-traitant désigné par le maître d'ouvrage et engagé par l'entrepreneur principal.",
+      "NOMINATED_SUPPLIER": "Un fournisseur désigné par le maître d'ouvrage et engagé par l'entrepreneur principal.",
+      "SUPPLY_DIRECT": "Une fourniture ou un achat direct de biens et de matériaux.",
+      "CONSULTANT": "Nomination d'un consultant ou d'un ingénieur pour des services professionnels.",
+      "USUFRUCT": "Un droit d'usage et de jouissance d'un bien appartenant à autrui.",
+      "JOINT_VENTURE": "Un accord entre deux parties ou plus pour coopérer sur un projet commun.",
+      "FRAMEWORK": "Un accord-cadre pour conclure des contrats récurrents à la demande.",
+      "NOVATION": "Transfert des droits et obligations d'un contrat à une nouvelle partie qui se substitue à l'une des parties."
+    }
+  },
+  "contractCreate": {
+    "addContract": "Ajouter un contrat",
+    "newContract": "Nouveau contrat",
+    "contractDetails": "Détails du contrat",
+    "chooseForm": "Choisissez un formulaire standard ou créez un contrat personnalisé",
+    "formSelected": "{{form}} sélectionné",
+    "formName": {
+      "ADHOC": "Personnalisé",
+      "UPLOADED": "Téléversé"
+    },
+    "prePopulatedNote": "Les clauses seront préremplies à partir du modèle du formulaire standard",
+    "standardFormTooltip": "Les formulaires standard fournissent la structure de clauses reconnue internationalement. Personnalisez à l'aide des Conditions particulières sans modifier les Conditions générales.",
+    "contractName": "Nom du contrat",
+    "contractNamePlaceholder": "ex. : Accord de construction principal",
+    "partyType": "Type de partie",
+    "optional": "(facultatif)",
+    "partyTypePlaceholder": "ex. : Maître d'ouvrage, Entrepreneur",
+    "back": "Retour",
+    "create": "Créer le contrat"
+  },
   "clauseType": {
     "_TODO": "PENDING LEGAL REVIEW: the French clause-type / risk-category terms below are DRAFT values pending verification.",
     "general": "Général",

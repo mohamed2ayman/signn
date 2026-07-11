@@ -39,6 +39,52 @@
     "hidePrevious": "Hide previous version",
     "previousVersion": "Previous version"
   },
+  "relationshipType": {
+    "fieldLabel": "Relationship type",
+    "fieldHint": "How this contract sits in the delivery chain or legal relationship.",
+    "comingSoon": "Coming soon",
+    "loadError": "Couldn't load relationship types.",
+    "retry": "Retry",
+    "createError": "Couldn't create the contract. Please check the details and try again.",
+    "group": {
+      "delivery_chain": "Delivery chain",
+      "appointment": "Appointment",
+      "property_rights": "Property rights",
+      "party_agreement": "Party agreement"
+    },
+    "desc": {
+      "MAIN": "The head agreement between the employer and the main contractor.",
+      "SUBCONTRACT": "A contractor's agreement with a subcontractor under a main contract.",
+      "NOMINATED_SUB": "A subcontractor named by the employer, engaged under the main contract.",
+      "NOMINATED_SUPPLIER": "A supplier named by the employer, engaged under the main contract.",
+      "SUPPLY_DIRECT": "A direct supply or purchase of goods and materials.",
+      "CONSULTANT": "Appointment of a consultant or engineer for professional services.",
+      "USUFRUCT": "A right to use and benefit from a property owned by another.",
+      "JOINT_VENTURE": "Two or more parties combining for a shared project.",
+      "FRAMEWORK": "An umbrella agreement for repeated call-off contracts.",
+      "NOVATION": "Transfer of a contract's rights and obligations to a new party."
+    }
+  },
+  "contractCreate": {
+    "addContract": "Add Contract",
+    "newContract": "New Contract",
+    "contractDetails": "Contract Details",
+    "chooseForm": "Choose a standard form or create a custom contract",
+    "formSelected": "{{form}} selected",
+    "formName": {
+      "ADHOC": "Custom",
+      "UPLOADED": "Uploaded"
+    },
+    "prePopulatedNote": "Clauses will be pre-populated from the standard form template",
+    "standardFormTooltip": "Standard forms provide the internationally recognized clause structure. Customize using Particular Conditions without modifying the General Conditions.",
+    "contractName": "Contract Name",
+    "contractNamePlaceholder": "e.g. Main Construction Agreement",
+    "partyType": "Party Type",
+    "optional": "(optional)",
+    "partyTypePlaceholder": "e.g. Employer, Contractor",
+    "back": "Back",
+    "create": "Create Contract"
+  },
   "clauseType": {
     "general": "General",
     "payment": "Payment",

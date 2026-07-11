@@ -40,6 +40,52 @@
     "hidePrevious": "إخفاء النسخة السابقة",
     "previousVersion": "النسخة السابقة"
   },
+  "relationshipType": {
+    "fieldLabel": "نوع العلاقة",
+    "fieldHint": "موضع هذا العقد في سلسلة التنفيذ أو العلاقة القانونية.",
+    "comingSoon": "قريبًا",
+    "loadError": "تعذّر تحميل أنواع العلاقات.",
+    "retry": "إعادة المحاولة",
+    "createError": "تعذّر إنشاء العقد. يُرجى مراجعة البيانات والمحاولة مرة أخرى.",
+    "group": {
+      "delivery_chain": "سلسلة التنفيذ",
+      "appointment": "التعيين",
+      "property_rights": "حقوق الملكية",
+      "party_agreement": "اتفاقية الأطراف"
+    },
+    "desc": {
+      "MAIN": "الاتفاق الرئيسي بين صاحب العمل والمقاول الرئيسي",
+      "SUBCONTRACT": "اتفاق يتعاقد بموجبه أحد الطرفين مع مقاول من الباطن لتنفيذ جزء من الأعمال",
+      "NOMINATED_SUB": "مقاول من الباطن يُعيّنه صاحب العمل ويتعاقد معه المقاول الرئيسي",
+      "NOMINATED_SUPPLIER": "مورّد يُعيّنه صاحب العمل ويتعاقد معه المقاول الرئيسي",
+      "SUPPLY_DIRECT": "توريد أو شراء مباشر للبضائع والمواد",
+      "CONSULTANT": "تعيين استشاري أو مهندس لتقديم خدمات مهنية",
+      "USUFRUCT": "حق استعمال عقار مملوك للغير والانتفاع به",
+      "JOINT_VENTURE": "اتفاق بين طرفين أو أكثر للتعاون في مشروع مشترك",
+      "FRAMEWORK": "اتفاقية إطارية لإبرام عقود متكررة عند الطلب",
+      "NOVATION": "نقل حقوق العقد والتزاماته إلى طرف جديد يحل محل أحد الطرفين"
+    }
+  },
+  "contractCreate": {
+    "addContract": "إضافة عقد",
+    "newContract": "عقد جديد",
+    "contractDetails": "تفاصيل العقد",
+    "chooseForm": "اختر نموذجًا قياسيًا أو أنشئ عقدًا مخصّصًا",
+    "formSelected": "النموذج المحدد: {{form}}",
+    "formName": {
+      "ADHOC": "مخصّص",
+      "UPLOADED": "مُحمَّل"
+    },
+    "prePopulatedNote": "سيتم تعبئة البنود تلقائيًا من قالب النموذج القياسي",
+    "standardFormTooltip": "توفّر النماذج القياسية هيكل البنود المعتمَد دوليًا. يمكن تخصيصها من خلال الشروط الخاصة دون المساس بالشروط العامة.",
+    "contractName": "اسم العقد",
+    "contractNamePlaceholder": "مثال: اتفاقية الإنشاء الرئيسية",
+    "partyType": "نوع الطرف",
+    "optional": "(اختياري)",
+    "partyTypePlaceholder": "مثال: صاحب العمل، المقاول",
+    "back": "رجوع",
+    "create": "إنشاء العقد"
+  },
   "clauseType": {
     "_TODO": "PENDING LEGAL REVIEW (Youssef): the Arabic clause-type / risk-category terms below are DRAFT starting values — verify/correct FIDIC legal terminology before finalizing.",
     "general": "عام",
