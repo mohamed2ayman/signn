@@ -21,6 +21,7 @@ import {
   ApproverStatus,
   Clause,
   ClauseReviewStatus,
+  ContractRelationshipType,
 } from '../../database/entities';
 import { ApplyProposedVersionDto } from './dto/apply-proposed-version.dto';
 import {
@@ -53,6 +54,13 @@ import { ContractCommentScopedRepository } from '../scoped-repository/contract-c
 @Injectable()
 export class ContractsService {
   private readonly logger = new Logger(ContractsService.name);
+
+  /**
+   * Multi-tier T0b — max parent-chain depth the acyclic walk traverses before
+   * treating the hierarchy as pathological. Real construction delivery chains
+   * are 2–4 deep; 64 is a generous bound that also caps the walk cost.
+   */
+  private static readonly MAX_PARENT_CHAIN_DEPTH = 64;
 
   constructor(
     @InjectRepository(Contract) // lint-exempt: two-step hydration (ids validated by scoped load)
@@ -192,16 +200,68 @@ export class ContractsService {
     // Normalize FIRST: ''/whitespace-only means "no selection" — the same
     // absence as an omitted field → NULL (never persist '' in the column).
     const relationshipType = dto.relationship_type?.trim() || null;
+    let relTypeRow: ContractRelationshipType | null = null;
     if (relationshipType) {
-      const relType =
+      relTypeRow =
         await this.relationshipTypes.findActiveByCode(relationshipType);
-      if (!relType) {
+      if (!relTypeRow) {
         throw new BadRequestException(
           `Unknown or inactive relationship type: ${relationshipType}. ` +
             'Valid codes are the active rows of the contract_relationship_types registry ' +
             '(GET /contract-relationship-types).',
         );
       }
+    }
+
+    // Multi-tier T0b — parent-contract linking. The chosen relationship type's
+    // registry row (parent_link_rule + allowed_parent_types) is the SINGLE
+    // source that drives whether a parent is required / optional / forbidden and
+    // which parent types are allowed. ALL checks run BEFORE the insert.
+    // Normalize like relationship_type: ''/whitespace = absent → NULL.
+    const parentContractId = dto.parent_contract_id?.trim() || null;
+    // A type with no registry row (relationship_type omitted) has no parent
+    // rule → 'none' → a parent is not allowed.
+    const parentRule = relTypeRow?.parent_link_rule ?? 'none';
+
+    if (parentRule === 'required' && !parentContractId) {
+      throw new BadRequestException(
+        `A parent contract is required for relationship type ${relationshipType}.`,
+      );
+    }
+    if (parentRule === 'none' && parentContractId) {
+      throw new BadRequestException(
+        'A parent contract is not allowed for relationship type ' +
+          `${relationshipType ?? '(none)'}.`,
+      );
+    }
+
+    if (parentContractId) {
+      // Cross-tenant wall — the parent is an EXISTING contract, so authorize it
+      // through the findInOrg wall (404-not-403), NOT the project scope above.
+      // Never trust a client-supplied org id: a parent in another org 404s here.
+      const parent = await this.contractAccess.findInOrg(
+        parentContractId,
+        orgId,
+      );
+
+      // The parent's relationship_type must be an allowed parent for the child
+      // type (e.g. a SUBCONTRACT's parent MUST be a MAIN).
+      const allowed = relTypeRow?.allowed_parent_types ?? [];
+      if (
+        !parent.relationship_type ||
+        !allowed.includes(parent.relationship_type)
+      ) {
+        throw new BadRequestException(
+          "Parent contract's relationship type " +
+            `(${parent.relationship_type ?? 'none'}) is not an allowed parent ` +
+            `for ${relationshipType}. Allowed: ${allowed.join(', ') || '(none)'}.`,
+        );
+      }
+
+      // Self / cycle guard — walk the parent's ancestry and reject a loop.
+      // See assertParentLinkAcyclic for why this cannot fire through the v1
+      // create-time-only path unless the parent's EXISTING ancestry is corrupt.
+      await this.assertParentLinkAcyclic(parent, orgId);
     }
 
     const contract = this.contractRepository.create({
@@ -213,6 +273,9 @@ export class ContractsService {
       // The NORMALIZED value — ''/whitespace became NULL above, and the
       // persisted code is exactly the trimmed, registry-validated one.
       relationship_type: relationshipType,
+      // Multi-tier T0b — explicit mapping (same never-spread rule). NULL when
+      // no parent (validated above against the type's parent_link_rule).
+      parent_contract_id: parentContractId,
       party_type: dto.party_type,
       license_acknowledged: dto.license_acknowledged || false,
       license_organization: isStandardForm(dto.contract_type)
@@ -252,6 +315,53 @@ export class ContractsService {
     this.logger.log(`Contract created: ${saved.id} by user ${userId}`);
 
     return this.findById(saved.id, orgId);
+  }
+
+  /**
+   * Multi-tier T0b — reject a parent link that would create a cycle. Walks the
+   * proposed parent's ancestry (parent → its parent → …) through the org-scoped
+   * findInOrg wall and throws if it revisits any already-seen id (a self-loop
+   * or an A↔B / A→…→A cycle in existing data) or exceeds
+   * MAX_PARENT_CHAIN_DEPTH.
+   *
+   * `selfId` (the child) is optional and undefined on the v1 CREATE-TIME-ONLY
+   * path — the new contract has no id yet and nothing can reference it, so a
+   * genuine "new contract is its own parent / part of a cycle" is STRUCTURALLY
+   * IMPOSSIBLE through create(). The walk is still meaningful there: it rejects
+   * creating a child under a parent whose EXISTING ancestry is corrupt (self-
+   * loop / reciprocal) and bounds the chain depth. `selfId` is threaded so the
+   * SAME guard is correct the day an editable-parent slice lands (passing the
+   * child's id rejects parent===self and any cycle routing back through it).
+   * Level implemented: FULL chain walk (not just direct-self / immediate
+   * reciprocal), depth-capped.
+   */
+  private async assertParentLinkAcyclic(
+    firstParent: Contract,
+    orgId: string,
+    selfId?: string,
+  ): Promise<void> {
+    const seen = new Set<string>();
+    if (selfId) seen.add(selfId);
+
+    let cursor: Contract | null = firstParent;
+    let depth = 0;
+    while (cursor) {
+      if (seen.has(cursor.id)) {
+        throw new BadRequestException(
+          'Parent linking would create a cycle in the contract hierarchy.',
+        );
+      }
+      seen.add(cursor.id);
+      if (++depth > ContractsService.MAX_PARENT_CHAIN_DEPTH) {
+        throw new BadRequestException(
+          'Parent contract chain exceeds the maximum depth of ' +
+            `${ContractsService.MAX_PARENT_CHAIN_DEPTH}.`,
+        );
+      }
+      const nextId = cursor.parent_contract_id;
+      if (!nextId) break;
+      cursor = await this.contractAccess.findInOrg(nextId, orgId);
+    }
   }
 
   async update(
