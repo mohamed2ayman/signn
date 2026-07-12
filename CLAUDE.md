@@ -5135,3 +5135,74 @@ FROZEN and every legal-content mutation is rejected.
 - DocuSign live-verification is still a Phase 9 deployment gate — Door 1 is
   code-complete but has never been exercised against a live DocuSign account
   (NEXT_PHASES Signing Track item 1).
+
+---
+
+## Multi-Tier Contract Relationships — T0a (relationship type) + T0b (parent linking)
+
+The multi-tier trunk gives a contract a **position in the delivery chain / legal
+relationship** that is SEPARATE from its standard form. Shipped so far: **T0a**
+(relationship-type registry + soft `relationship_type` code + create-flow picker,
+PRs #147/#149) and **T0b** (parent linking, PR #150, squash-merged to `main` at
+`04a2ba2`). The seeded registry lives in `contract_relationship_types` (migration
+`1768000000001`); T0b's parent column in migration `1769000000001`.
+
+### The two dimensions are ORTHOGONAL — never merge them
+- **`contract_type`** = the standard FORM (`ContractType`: FIDIC Red/Yellow, NEC,
+  ADHOC, …). This is the licensed clause structure.
+- **`contracts.relationship_type`** = the delivery-chain / legal position (a SOFT
+  varchar CODE from the registry: `MAIN` / `SUBCONTRACT` / `NOMINATED_SUB` /
+  `NOMINATED_SUPPLIER` / `SUPPLY_DIRECT` / `CONSULTANT` / `USUFRUCT`, plus seeded-
+  inactive `JOINT_VENTURE` / `FRAMEWORK` / `NOVATION`). NOT a PG enum, NOT a hard
+  FK — the registry (DB rows) is the single source of valid codes, so adding a
+  type is a seed row, not a code/`ALTER TYPE` change.
+- A FIDIC Red MAIN and a FIDIC Red SUBCONTRACT are the SAME form, DIFFERENT
+  relationship. Do not collapse the two fields or drive one off the other.
+
+### Parent linking (T0b) — the rules
+- **`contracts.parent_contract_id`** is a self-referential FK → `contracts(id)`,
+  **`ON DELETE RESTRICT`** (a parent with children cannot be deleted/orphaned —
+  deliberately NOT the `LegalDocument.parent_law_id` SET NULL template; see
+  lesson #229), with a partial index `WHERE parent_contract_id IS NOT NULL`.
+  `NULL` = no parent (MAIN / USUFRUCT, or an optional-parent type left unlinked).
+- **Create-time only in v1.** `parent_contract_id` is on `CreateContractDto` but
+  **NOT on `UpdateContractDto`** — parent is fixed at creation. Editable-parent
+  is future work; the self/cycle guard already threads a `selfId` so it is ready
+  (lesson #230). Do not add parent to `update()` without designing the
+  editable-parent flow (re-pin/hierarchy implications).
+- **Parent validation is ONE chain, applied in `ContractsService.create()` BEFORE
+  the insert — reuse it, do not fork it** anywhere a type/parent is set later:
+  1. Resolve the registry row (`ContractRelationshipTypesService.findActiveByCode`)
+     → read `parent_link_rule` (`none` / `required` / `optional`) +
+     `allowed_parent_types`.
+  2. `required` + no parent → 400; `none` + parent → 400; `optional` → either.
+  3. Resolve the parent via **`ContractAccessService.findInOrg(parentId, orgId)`
+     — 404-not-403** cross-org (the parent is an existing contract; never trust a
+     client org id — the create() project scope wall does NOT cover it).
+  4. The parent's `relationship_type` must be in the child's
+     `allowed_parent_types` (e.g. a `SUBCONTRACT`'s parent MUST be a `MAIN`) → 400.
+  5. **Self/cycle guard** — full parent-chain walk, depth-capped 64.
+- `parent_contract_id` (and `relationship_type`) are **mapped EXPLICITLY in the
+  `create()` object literal** — this service NEVER spreads the DTO, so a field
+  added only to the DTO silently never persists (lesson #231). Prove any new
+  persisted column with a reload-from-Postgres test.
+- Frontend: the create modal shows a **conditional Parent step** (searchable,
+  RTL-aware `ParentContractPicker`) only for `required`/`optional` types, filtered
+  to `allowed_parent_types`, reading the registry via the shared
+  `['relationship-types']` React Query key (no redundant fetch).
+
+### COEXIST with the legacy `sub_contracts` module — do NOT retire it here
+- T0b is purely ADDITIVE to full contracts. The legacy lightweight `sub_contracts`
+  entity/module/endpoints/table/data are **UNTOUCHED**. A new `SUBCONTRACT`
+  full-contract (relationship-type + parent link) is a DIFFERENT thing from a
+  legacy `sub_contracts` package record.
+- To disambiguate the name collision, the legacy tab is **relabeled
+  "Sub-Contract Packages"** (EN / AR «حزم عقود الباطن» / FR «Lots de
+  sous-traitance») — **label/i18n only** (`contract.tabs.subcontractPackages`);
+  its tab key (`subcontracts`), data, endpoints, and behavior are unchanged. The
+  `AdminOrganizationsPage` feature LABEL is aligned; the flag KEY (`sub_contracts`)
+  and the `AdminPlansPage` `subcontracting` plan-catalog label are untouched.
+- **REPLACE** (folding legacy packages into full child contracts + retiring the
+  module) is a SEPARATE future plan-gated slice — it is NOT started, and needs a
+  real `sub_contracts` row-count check + founder sign-off (plan/feature-flag
+  implications) first.
