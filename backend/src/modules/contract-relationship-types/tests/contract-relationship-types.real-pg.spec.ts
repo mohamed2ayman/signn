@@ -182,7 +182,9 @@ describeReal('contract_relationship_types — Slice T0a (real Postgres)', () => 
       );
       expect(row.label_en).toBe('Sub-Contract');
       expect(row.label_ar).toBeTruthy();
-      expect(row.label_fr).toBe('Sous-contrat');
+      // label_fr finalized (DRAFT 'Sous-contrat' → final) by migration
+      // 1770000000002 (i18n French finalization).
+      expect(row.label_fr).toBe('Contrat de sous-traitance');
       expect(row.domain_group).toBe('delivery_chain');
       expect(row.parent_link_rule).toBe('required');
       expect(row.allowed_parent_types).toEqual(['MAIN']);
