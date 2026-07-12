@@ -22,6 +22,12 @@ import { ContractScopedRepository } from '../scoped-repository/contract-scoped.r
 
 /** Number of legal-corpus passages to retrieve per chat question (Phase E). */
 const LEGAL_TOP_K = 5;
+// 60,000-char budget for the assembled <legal_context> block — mirrors
+// buildContractContext's cap. Latent-tail insurance only: the Phase 1 token-cost
+// measurement showed a real top-5 block is ~3.5k–15k chars (article-sized
+// chunks), so this NEVER fires on the current corpus; it caps a future
+// large-chunk tail (chunks near the ~6k-token ingestion cap → top-5 ~30k tokens).
+const LEGAL_CONTEXT_MAX_CHARS = 60_000;
 
 /**
  * Phase E — map a project's `country` to a supported legal-corpus jurisdiction
@@ -97,21 +103,48 @@ export class ChatService {
       );
       if (!chunks || chunks.length === 0) return null;
 
-      const passages = chunks
-        .map((c, i) => {
-          const ref = c.article_reference?.trim() || '(preamble)';
-          return `[Passage ${i + 1} — ${c.document_title}, ${ref}]\n${c.chunk_text}`;
-        })
-        .join('\n\n');
-
-      return (
+      // 60,000-char budget with graceful per-PASSAGE omission — mirrors
+      // buildContractContext. Drop WHOLE trailing passages to fit; NEVER
+      // truncate mid-passage. On the current corpus this never triggers (see
+      // LEGAL_CONTEXT_MAX_CHARS); it only caps a future large-chunk tail.
+      const header =
         `<legal_context jurisdiction="${jurisdiction}">\n` +
         `The following passages are from ${jurisdiction} law and may be relevant to ` +
         `the user's question. Cite the specific article number (e.g., "Article 217 ` +
-        `of the Egyptian Civil Code") when using these passages.\n\n` +
-        `${passages}\n` +
-        `</legal_context>`
-      );
+        `of the Egyptian Civil Code") when using these passages.\n\n`;
+      const footer = `\n</legal_context>`;
+
+      const kept: string[] = [];
+      const omitted: number[] = [];
+      let used = header.length + footer.length;
+      chunks.forEach((c, i) => {
+        const ref = c.article_reference?.trim() || '(preamble)';
+        const passage = `[Passage ${i + 1} — ${c.document_title}, ${ref}]\n${c.chunk_text}`;
+        // +2 for the '\n\n' join that precedes this passage once ≥1 is kept.
+        const cost = passage.length + (kept.length > 0 ? 2 : 0);
+        if (used + cost > LEGAL_CONTEXT_MAX_CHARS) {
+          omitted.push(i + 1);
+          return;
+        }
+        kept.push(passage);
+        used += cost;
+      });
+
+      // Budget too small for even one passage (degenerate — never with a 60k
+      // budget on real data): treat as no grounding rather than an empty block.
+      if (kept.length === 0) return null;
+
+      let body = kept.join('\n\n');
+      if (omitted.length > 0) {
+        // Graceful omission note (mirrors buildContractContext) — the small
+        // overage from the note itself is accepted, exactly as that path does.
+        body +=
+          `\n\n[Note: ${omitted.length} passage(s) omitted for length: ` +
+          `${omitted.map((n) => `Passage ${n}`).join(', ')}. ` +
+          `Tell the user to consult the full law text for the omitted passages.]`;
+      }
+
+      return `${header}${body}${footer}`;
     } catch (err) {
       // Retrieval is best-effort grounding — never let it break chat.
       this.logger.warn(
