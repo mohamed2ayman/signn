@@ -20,12 +20,14 @@ import { RiskAnalysisService } from './risk-analysis.service';
 import { RiskExplanationService } from './services/risk-explanation.service';
 import { RiskOverrideService } from './services/risk-override.service';
 import { RiskRephraseService } from './services/risk-rephrase.service';
+import { RiskVisibilityService } from './services/risk-visibility.service';
 import {
   AnnotateRiskDto,
   ApplyRephraseDto,
   EditProposalDto,
   CreateRiskRuleDto,
   OverrideRiskDto,
+  SetClauseVisibilityDto,
   UpdateRiskStatusDto,
 } from './dto';
 
@@ -40,6 +42,8 @@ export class RiskAnalysisController {
     private readonly riskExplanation: RiskExplanationService,
     // Risk-tab rework — STEP 3: AI clause re-phrase (dispatch / poll / apply).
     private readonly riskRephrase: RiskRephraseService,
+    // Risk-tab clutter reduction — per-clause visible set (swap) + completeness.
+    private readonly riskVisibility: RiskVisibilityService,
   ) {}
 
   @Get('contract/:contractId')
@@ -50,6 +54,41 @@ export class RiskAnalysisController {
     // Tenant-isolation Tier 2 — service walls URL contractId against
     // caller's org.
     return this.riskAnalysisService.getByContract(contractId, user.organization_id);
+  }
+
+  // ─── Risk-tab clutter reduction — top-2 visible + swap + completeness ──
+
+  /** Per-clause swap overrides for a contract: { [clauseId]: [visibleId,visibleId] }. */
+  @Get('contract/:contractId/visibility')
+  async getVisibility(
+    @Param('contractId', ParseUUIDPipe) contractId: string,
+    @CurrentUser() user: User,
+  ) {
+    return this.riskVisibility.getOverrides(contractId, user.organization_id);
+  }
+
+  /** Annotation completeness = every VISIBLE risk (top-2 after swaps) verified. */
+  @Get('contract/:contractId/completeness')
+  async getCompleteness(
+    @Param('contractId', ParseUUIDPipe) contractId: string,
+    @CurrentUser() user: User,
+  ) {
+    return this.riskVisibility.getCompleteness(contractId, user.organization_id);
+  }
+
+  /** Persist a SWAP — the 2 chosen visible risk ids for a clause. */
+  @Put('clause/:contractClauseId/visibility')
+  async setVisibility(
+    @Param('contractClauseId', ParseUUIDPipe) contractClauseId: string,
+    @Body() dto: SetClauseVisibilityDto,
+    @CurrentUser() user: User,
+  ) {
+    return this.riskVisibility.setVisibility(
+      contractClauseId,
+      dto.visible_risk_ids,
+      user.organization_id,
+      user.id,
+    );
   }
 
   @Get('contract/:contractId/summary')

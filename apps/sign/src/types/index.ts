@@ -914,6 +914,8 @@ export interface RiskAnalysis {
   handled_by: string | null;
   handled_at: string | null;
   created_at: string;
+  // Risk-tab clutter reduction — soft delete (excluded from all reads when true)
+  is_deleted?: boolean;
   // Phase 8.3 — human annotation tracking (editable Risk Analysis tab)
   is_edited_by_user?: boolean;
   edited_by_user_id?: string | null;

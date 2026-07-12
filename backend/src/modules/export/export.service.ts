@@ -198,11 +198,13 @@ export class ExportService {
     // contractId for this caller. SCOPED LIST (tenancy — Option B S2d) — the
     // risk rows load through the scoped repo (canonical
     // risk→contract→project→org); both layers fire.
-    const risks = await this.riskScoped.scopedFind(
+    const allRisks = await this.riskScoped.scopedFind(
       { contract_id: contractId },
       orgId,
       { order: { created_at: 'DESC' } },
     );
+    // Soft-delete: flagged-duplicate risks are excluded from the export.
+    const risks = allRisks.filter((r) => !r.is_deleted);
 
     const highCount = risks.filter((r) => r.risk_level === 'HIGH').length;
     const mediumCount = risks.filter((r) => r.risk_level === 'MEDIUM').length;
@@ -331,10 +333,12 @@ export class ExportService {
     // risk rows load through the scoped repo (canonical
     // risk→contract→project→org), replacing the former bare find. Both layers
     // fire; mirrors the obligation scoped read below.
-    const risks = await this.riskScoped.scopedFind(
+    const allRisksSummary = await this.riskScoped.scopedFind(
       { contract_id: contractId },
       orgId,
     );
+    // Soft-delete: flagged-duplicate risks are excluded from the summary export.
+    const risks = allRisksSummary.filter((r) => !r.is_deleted);
 
     // SCOPED LIST (tenancy — Option B S2c-1) — the obligation rows load through
     // the scoped repo, which independently re-applies

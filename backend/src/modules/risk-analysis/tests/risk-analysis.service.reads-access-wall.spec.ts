@@ -100,6 +100,8 @@ describe('RiskAnalysisService — READ wall (layer 1) + S2d scoped data layer (l
           whereSpy(sql, params);
           return qb;
         }),
+        // Soft-delete: getByContract now chains .andWhere('r.is_deleted = false').
+        andWhere: jest.fn().mockReturnThis(),
         orderBy: jest.fn().mockReturnThis(),
         addOrderBy: jest.fn().mockReturnThis(),
         getMany: jest.fn().mockResolvedValue(hydrated),

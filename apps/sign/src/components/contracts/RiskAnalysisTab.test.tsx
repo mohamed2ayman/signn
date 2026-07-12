@@ -21,6 +21,8 @@ vi.mock('@/services/api/riskAnalysisService', () => ({
     pollRephrase: vi.fn(),
     applyRephrase: vi.fn(),
     editProposal: vi.fn(),
+    getVisibility: vi.fn(),
+    setVisibility: vi.fn(),
   },
 }));
 
@@ -38,6 +40,8 @@ const svc = riskAnalysisService as unknown as {
   pollRephrase: ReturnType<typeof vi.fn>;
   applyRephrase: ReturnType<typeof vi.fn>;
   editProposal: ReturnType<typeof vi.fn>;
+  getVisibility: ReturnType<typeof vi.fn>;
+  setVisibility: ReturnType<typeof vi.fn>;
 };
 
 function mkRisk(over: Partial<RiskAnalysis> & { id: string }): RiskAnalysis {
@@ -103,6 +107,9 @@ function withClause(
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Overrides load on mount; default to "no overrides" + a resolving persist.
+  svc.getVisibility.mockResolvedValue({});
+  svc.setVisibility.mockResolvedValue({});
 });
 
 describe('RiskAnalysisTab — grouping + order', () => {
@@ -112,7 +119,7 @@ describe('RiskAnalysisTab — grouping + order', () => {
       withClause(mkRisk({ id: 'b' }), 'docB', 'Conditions', 'Clause B1'),
     ];
     render(
-      <RiskAnalysisTab risks={risks} onAnnotate={vi.fn()} onRephraseApplied={vi.fn()} />,
+      <RiskAnalysisTab contractId="c1" risks={risks} onAnnotate={vi.fn()} onRephraseApplied={vi.fn()} />,
     );
     // Both document section headers render.
     expect(screen.getByText('Agreement')).toBeInTheDocument();
@@ -131,7 +138,7 @@ describe('RiskAnalysisTab — recommendation states', () => {
     const onAnnotate = vi.fn().mockResolvedValue(undefined);
     const risks = [withClause(mkRisk({ id: 'a' }), 'docA', 'Agreement', 'Clause A1')];
     render(
-      <RiskAnalysisTab risks={risks} onAnnotate={onAnnotate} onRephraseApplied={vi.fn()} />,
+      <RiskAnalysisTab contractId="c1" risks={risks} onAnnotate={onAnnotate} onRephraseApplied={vi.fn()} />,
     );
     fireEvent.click(screen.getByText('Edit'));
     const textarea = screen.getByPlaceholderText('Recommendation…') as HTMLTextAreaElement;
@@ -151,7 +158,7 @@ describe('RiskAnalysisTab — recommendation states', () => {
     const onAnnotate = vi.fn().mockResolvedValue(undefined);
     const risks = [withClause(mkRisk({ id: 'a' }), 'docA', 'Agreement', 'Clause A1')];
     render(
-      <RiskAnalysisTab risks={risks} onAnnotate={onAnnotate} onRephraseApplied={vi.fn()} />,
+      <RiskAnalysisTab contractId="c1" risks={risks} onAnnotate={onAnnotate} onRephraseApplied={vi.fn()} />,
     );
     fireEvent.click(screen.getByText('Edit'));
     fireEvent.change(screen.getByPlaceholderText('Recommendation…'), {
@@ -171,7 +178,7 @@ describe('RiskAnalysisTab — recommendation states', () => {
     const base = withClause(mkRisk({ id: 'a' }), 'docA', 'Agreement', 'Clause A1');
     const risk: RiskAnalysis = { ...base, merged_at: '2026-07-07T00:00:00Z' };
     render(
-      <RiskAnalysisTab risks={[risk]} onAnnotate={vi.fn()} onRephraseApplied={vi.fn()} />,
+      <RiskAnalysisTab contractId="c1" risks={[risk]} onAnnotate={vi.fn()} onRephraseApplied={vi.fn()} />,
     );
     // Collapsed MERGED note is shown; the editable recommendation area is not.
     expect(
@@ -195,7 +202,7 @@ describe('RiskAnalysisTab — recommendation states', () => {
       } as any,
     };
     render(
-      <RiskAnalysisTab risks={[risk]} onAnnotate={vi.fn()} onRephraseApplied={onRephraseApplied} />,
+      <RiskAnalysisTab contractId="c1" risks={[risk]} onAnnotate={vi.fn()} onRephraseApplied={onRephraseApplied} />,
     );
     // Proposed replacement panel is visible.
     expect(screen.getByText('safer rewritten body')).toBeInTheDocument();
@@ -221,7 +228,7 @@ describe('RiskAnalysisTab — recommendation states', () => {
       proposed_contract_clause_id: 'pcc-a',
       proposed_contract_clause: { id: 'pcc-a', clause: { title: 'Clause A1', content: 'body' } } as any,
     };
-    render(<RiskAnalysisTab risks={[risk]} onAnnotate={vi.fn()} onRephraseApplied={vi.fn()} />);
+    render(<RiskAnalysisTab contractId="c1" risks={[risk]} onAnnotate={vi.fn()} onRephraseApplied={vi.fn()} />);
     fireEvent.click(screen.getByText('Merge'));
     fireEvent.click(screen.getByRole('checkbox')); // uncheck
     fireEvent.click(screen.getByText('Merge & Apply'));
@@ -237,7 +244,7 @@ describe('RiskAnalysisTab — recommendation states', () => {
       proposed_contract_clause_id: 'pcc-a',
       proposed_contract_clause: { id: 'pcc-a', clause: { title: 'Clause A1', content: 'persisted proposal body' } } as any,
     };
-    render(<RiskAnalysisTab risks={[risk]} onAnnotate={vi.fn()} onRephraseApplied={vi.fn()} />);
+    render(<RiskAnalysisTab contractId="c1" risks={[risk]} onAnnotate={vi.fn()} onRephraseApplied={vi.fn()} />);
     // Shown up-front on load — no re-generation needed.
     expect(screen.getByText('persisted proposal body')).toBeInTheDocument();
     expect(screen.getByText('Merge')).toBeInTheDocument();
@@ -257,7 +264,7 @@ describe('RiskAnalysisTab — recommendation states', () => {
       proposed_contract_clause_id: 'pcc-a',
       proposed_contract_clause: { id: 'pcc-a', clause: { title: 'Clause A1', content: 'orig proposal' } } as any,
     };
-    render(<RiskAnalysisTab risks={[risk]} onAnnotate={vi.fn()} onRephraseApplied={vi.fn()} />);
+    render(<RiskAnalysisTab contractId="c1" risks={[risk]} onAnnotate={vi.fn()} onRephraseApplied={vi.fn()} />);
     fireEvent.click(screen.getByText('Edit'));
     const ta = screen.getByDisplayValue('orig proposal') as HTMLTextAreaElement;
     fireEvent.change(ta, { target: { value: 'my edited proposal' } });
@@ -277,7 +284,7 @@ describe('RiskAnalysisTab — recommendation states', () => {
     const risk: RiskAnalysis = { ...base, merged_at: '2026-07-07T00:00:00Z' };
     (risk.contract_clause!.clause as any).version = 2;
     (risk.contract_clause!.clause as any).parent_clause = { content: 'the previous clause text' };
-    render(<RiskAnalysisTab risks={[risk]} onAnnotate={vi.fn()} onRephraseApplied={vi.fn()} />);
+    render(<RiskAnalysisTab contractId="c1" risks={[risk]} onAnnotate={vi.fn()} onRephraseApplied={vi.fn()} />);
     expect(screen.getByText(/Updated/)).toBeInTheDocument();
     expect(screen.getByText(/v2/)).toBeInTheDocument();
     // View previous toggles the prior text.
@@ -299,7 +306,7 @@ describe('RiskAnalysisTab — recommendation states', () => {
       } as any,
     };
     render(
-      <RiskAnalysisTab risks={[risk]} onAnnotate={vi.fn()} onRephraseApplied={vi.fn()} />,
+      <RiskAnalysisTab contractId="c1" risks={[risk]} onAnnotate={vi.fn()} onRephraseApplied={vi.fn()} />,
     );
     // The proposed panel's Cancel button discards the proposal.
     fireEvent.click(screen.getByText('Cancel'));
@@ -314,9 +321,88 @@ describe('RiskAnalysisTab — recommendation states', () => {
     svc.startRephrase.mockResolvedValue({ job_id: 'JOB1', status: 'queued' });
     const risks = [withClause(mkRisk({ id: 'a' }), 'docA', 'Agreement', 'Clause A1')];
     render(
-      <RiskAnalysisTab risks={risks} onAnnotate={vi.fn()} onRephraseApplied={vi.fn()} />,
+      <RiskAnalysisTab contractId="c1" risks={risks} onAnnotate={vi.fn()} onRephraseApplied={vi.fn()} />,
     );
     fireEvent.click(screen.getByText('Re-phrase clause (AI)'));
     await waitFor(() => expect(svc.startRephrase).toHaveBeenCalledWith('a'));
+  });
+});
+
+// Multiple risks sharing ONE clause (same contract_clause_id) for top-2 tests.
+function inOneClause(
+  specs: Array<{ id: string; risk_level: string; description?: string }>,
+): RiskAnalysis[] {
+  return specs.map((s) =>
+    withClause(
+      mkRisk({
+        id: s.id,
+        contract_clause_id: 'cc-1',
+        risk_level: s.risk_level,
+        description: s.description ?? 'desc ' + s.id,
+        recommendation: 'rec ' + s.id,
+      }),
+      'docA',
+      'Agreement',
+      'Clause A1',
+    ),
+  );
+}
+
+describe('RiskAnalysisTab — top-2 / Show more / swap', () => {
+  it('shows only the top-2 (by severity) with a "Show more (N)"; expanding reveals the rest', async () => {
+    const risks = inOneClause([
+      { id: 'a', risk_level: 'HIGH' },
+      { id: 'b', risk_level: 'HIGH' },
+      { id: 'c', risk_level: 'MEDIUM' },
+      { id: 'd', risk_level: 'LOW' },
+    ]);
+    render(<RiskAnalysisTab contractId="c1" risks={risks} onAnnotate={vi.fn()} onRephraseApplied={vi.fn()} />);
+    // Only the 2 HIGH visible by default.
+    expect(screen.getByText('rec a')).toBeInTheDocument();
+    expect(screen.getByText('rec b')).toBeInTheDocument();
+    expect(screen.queryByText('rec c')).not.toBeInTheDocument();
+    expect(screen.queryByText('rec d')).not.toBeInTheDocument();
+    // Show more (2) reveals the hidden ones.
+    fireEvent.click(screen.getByText('Show more (2)'));
+    expect(screen.getByText('rec c')).toBeInTheDocument();
+    expect(screen.getByText('rec d')).toBeInTheDocument();
+  });
+
+  it('SWAP: "Show in top" on a hidden risk persists via setVisibility, replacing the lower-severity visible', async () => {
+    const risks = inOneClause([
+      { id: 'a', risk_level: 'HIGH' },
+      { id: 'b', risk_level: 'MEDIUM' },
+      { id: 'c', risk_level: 'LOW' },
+    ]);
+    render(<RiskAnalysisTab contractId="c1" risks={risks} onAnnotate={vi.fn()} onRephraseApplied={vi.fn()} />);
+    // Visible: a (HIGH) + b (MEDIUM); hidden: c (LOW).
+    fireEvent.click(screen.getByText('Show more (1)'));
+    fireEvent.click(screen.getByText('Show in top'));
+    // Keeps the higher-severity visible (a), replaces the lower (b) with c.
+    await waitFor(() =>
+      expect(svc.setVisibility).toHaveBeenCalledWith('cc-1', ['a', 'c']),
+    );
+  });
+
+  it('a persisted swap override hydrates on load (survives reload) — the overridden pair is visible', async () => {
+    svc.getVisibility.mockResolvedValue({ 'cc-1': ['a', 'c'] });
+    const risks = inOneClause([
+      { id: 'a', risk_level: 'HIGH' },
+      { id: 'b', risk_level: 'HIGH' },
+      { id: 'c', risk_level: 'LOW' },
+    ]);
+    render(<RiskAnalysisTab contractId="c1" risks={risks} onAnnotate={vi.fn()} onRephraseApplied={vi.fn()} />);
+    // Override wins over the default (a,b): visible = a + c; b is now hidden.
+    await waitFor(() => expect(screen.getByText('rec c')).toBeInTheDocument());
+    expect(screen.getByText('rec a')).toBeInTheDocument();
+    expect(screen.queryByText('rec b')).not.toBeInTheDocument();
+    expect(screen.getByText('Show more (1)')).toBeInTheDocument();
+  });
+
+  it('a single-risk clause shows no "Show more" (nothing hidden)', () => {
+    const risks = inOneClause([{ id: 'a', risk_level: 'HIGH' }]);
+    render(<RiskAnalysisTab contractId="c1" risks={risks} onAnnotate={vi.fn()} onRephraseApplied={vi.fn()} />);
+    expect(screen.getByText('rec a')).toBeInTheDocument();
+    expect(screen.queryByText(/Show more/)).not.toBeInTheDocument();
   });
 });

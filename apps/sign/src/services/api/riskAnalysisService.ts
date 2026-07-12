@@ -11,6 +11,32 @@ export const riskAnalysisService = {
   getByClause: (clauseId: string) =>
     api.get<RiskAnalysis[]>(`/risk-analysis/clause/${clauseId}`).then(r => r.data),
 
+  // Risk-tab clutter reduction — per-clause swap overrides + completeness.
+  getVisibility: (contractId: string) =>
+    api
+      .get<Record<string, string[]>>(`/risk-analysis/contract/${contractId}/visibility`)
+      .then(r => r.data),
+
+  setVisibility: (contractClauseId: string, visibleRiskIds: string[]) =>
+    api
+      .put(`/risk-analysis/clause/${contractClauseId}/visibility`, {
+        visible_risk_ids: visibleRiskIds,
+      })
+      .then(r => r.data),
+
+  getCompleteness: (contractId: string) =>
+    api
+      .get<{
+        complete: boolean;
+        clauses: number;
+        visible_total: number;
+        visible_verified: number;
+        visible_unverified: number;
+        hidden_total: number;
+        incomplete_clause_ids: string[];
+      }>(`/risk-analysis/contract/${contractId}/completeness`)
+      .then(r => r.data),
+
   updateStatus: (id: string, status: string) =>
     api.put<RiskAnalysis>(`/risk-analysis/${id}/status`, { status }).then(r => r.data),
 

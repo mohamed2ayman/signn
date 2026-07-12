@@ -12,6 +12,7 @@ export { ContractClause } from './contract-clause.entity';
 export { ContractVersion, ContractVersionEventType } from './contract-version.entity';
 export { ContractorResponse } from './contractor-response.entity';
 export { RiskAnalysis, RiskLevel, RiskAnalysisStatus } from './risk-analysis.entity';
+export { RiskClauseVisibility } from './risk-clause-visibility.entity';
 export { KnowledgeAsset, AssetType, AssetReviewStatus } from './knowledge-asset.entity';
 export { Obligation, ObligationStatus, ObligationType } from './obligation.entity';
 export { ObligationAssignee } from './obligation-assignee.entity';

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import type { RiskAnalysis } from '@/types';
 import { riskAnalysisService } from '@/services/api/riskAnalysisService';
 import RiskCard from './RiskCard';
+import { splitVisibleHidden, severityRank } from './riskVisibility';
 
 /**
  * Risk-tab rework — STEP 5. The single home for risk + recommendations, listed
@@ -19,6 +20,8 @@ import RiskCard from './RiskCard';
  */
 
 interface RiskAnalysisTabProps {
+  /** The contract id — needed to load/persist per-clause swap overrides. */
+  contractId: string;
   risks: RiskAnalysis[];
   onAnnotate: (
     riskId: string,
@@ -27,6 +30,9 @@ interface RiskAnalysisTabProps {
   /** Called after a rewrite is merged (clause changed) so the parent reloads. */
   onRephraseApplied: () => void;
 }
+
+/** Per-clause swap override map: { [contract_clause_id]: [visibleId, visibleId] }. */
+type OverrideMap = Record<string, string[]>;
 
 interface ClauseGroup {
   clauseKey: string;
@@ -728,15 +734,146 @@ function RecommendationBlock({
   );
 }
 
+/* ── One risk card (card + editable recommendation) ── */
+function RiskRow({
+  risk,
+  onAnnotate,
+  onRephraseApplied,
+}: {
+  risk: RiskAnalysis;
+  onAnnotate: RiskAnalysisTabProps['onAnnotate'];
+  onRephraseApplied: () => void;
+}) {
+  return (
+    <div>
+      <RiskCard risk={risk} onAnnotate={onAnnotate} hideRecommendation />
+      <RecommendationBlock
+        risk={risk}
+        onAnnotate={onAnnotate}
+        onRephraseApplied={onRephraseApplied}
+      />
+    </div>
+  );
+}
+
+/* ── Per-clause risks: top-2 visible + "Show more (N)" + swap ──
+   Clutter reduction: only the top-2 (severity + distinct) show by default; the
+   rest collapse under a per-session toggle. In the expanded list, "Show in top"
+   promotes a hidden risk (auto-replacing the LOWER-severity of the 2 visible) —
+   a DISPLAY/selection choice persisted per clause (never mutates risk data). */
+function ClauseRisks({
+  clauseId,
+  risks,
+  override,
+  onSwap,
+  onAnnotate,
+  onRephraseApplied,
+}: {
+  clauseId: string;
+  risks: RiskAnalysis[];
+  override: string[] | null;
+  onSwap: (clauseId: string, visibleIds: string[]) => void;
+  onAnnotate: RiskAnalysisTabProps['onAnnotate'];
+  onRephraseApplied: () => void;
+}) {
+  const { t } = useTranslation();
+  const [expanded, setExpanded] = useState(false); // per-session; collapsed by default
+
+  const { visible, hidden, visibleIds } = useMemo(
+    () => splitVisibleHidden(risks, override),
+    [risks, override],
+  );
+
+  const promote = (hiddenId: string) => {
+    if (visibleIds.length < 2) {
+      onSwap(clauseId, [...visibleIds, hiddenId].slice(0, 2));
+      return;
+    }
+    // Keep the higher-severity visible; replace the lower (tie → replace 2nd).
+    const [a, b] = visible;
+    const keepId = severityRank(a.risk_level) >= severityRank(b.risk_level) ? a.id : b.id;
+    onSwap(clauseId, [keepId, hiddenId]);
+  };
+
+  return (
+    <div className="space-y-3 p-4">
+      {visible.map((risk) => (
+        <RiskRow
+          key={risk.id}
+          risk={risk}
+          onAnnotate={onAnnotate}
+          onRephraseApplied={onRephraseApplied}
+        />
+      ))}
+
+      {hidden.length > 0 && (
+        <div className="space-y-3">
+          <button
+            type="button"
+            onClick={() => setExpanded((e) => !e)}
+            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-primary hover:bg-primary/5"
+          >
+            <svg
+              className={`h-3.5 w-3.5 transition-transform ${expanded ? 'rotate-180' : ''}`}
+              fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+            </svg>
+            {expanded
+              ? t('riskTab.showLess', { defaultValue: 'Show less' })
+              : `${t('riskTab.showMore', { defaultValue: 'Show more' })} (${hidden.length})`}
+          </button>
+
+          {expanded &&
+            hidden.map((risk) => (
+              <div
+                key={risk.id}
+                className="rounded-lg border border-dashed border-gray-200 bg-gray-50/40 p-2"
+              >
+                <div className="mb-1 flex items-center justify-between">
+                  <span className="text-[11px] italic text-gray-400">
+                    {t('riskTab.hiddenRisk', { defaultValue: 'Hidden — not in the top 2' })}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => promote(risk.id)}
+                    className="inline-flex items-center gap-1 rounded-md border border-primary/30 px-2 py-0.5 text-[11px] font-medium text-primary hover:bg-primary/10"
+                    title={t('riskTab.showInTopHint', {
+                      defaultValue: 'Promote into the visible top 2 (replaces the lower-severity one)',
+                    })}
+                  >
+                    <svg className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
+                    </svg>
+                    {t('riskTab.showInTop', { defaultValue: 'Show in top' })}
+                  </button>
+                </div>
+                <RiskRow
+                  risk={risk}
+                  onAnnotate={onAnnotate}
+                  onRephraseApplied={onRephraseApplied}
+                />
+              </div>
+            ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ── Collapsible per-document section ── */
 function DocumentSection({
   group,
   defaultOpen,
+  overrides,
+  onSwap,
   onAnnotate,
   onRephraseApplied,
 }: {
   group: DocGroup;
   defaultOpen: boolean;
+  overrides: OverrideMap;
+  onSwap: (clauseId: string, visibleIds: string[]) => void;
   onAnnotate: RiskAnalysisTabProps['onAnnotate'];
   onRephraseApplied: () => void;
 }) {
@@ -784,18 +921,14 @@ function DocumentSection({
                   <ClauseText content={cg.clauseContent} />
                 </div>
               </div>
-              <div className="space-y-3 p-4">
-                {cg.risks.map((risk) => (
-                  <div key={risk.id}>
-                    <RiskCard risk={risk} onAnnotate={onAnnotate} hideRecommendation />
-                    <RecommendationBlock
-                      risk={risk}
-                      onAnnotate={onAnnotate}
-                      onRephraseApplied={onRephraseApplied}
-                    />
-                  </div>
-                ))}
-              </div>
+              <ClauseRisks
+                clauseId={cg.clauseKey}
+                risks={cg.risks}
+                override={overrides[cg.clauseKey] ?? null}
+                onSwap={onSwap}
+                onAnnotate={onAnnotate}
+                onRephraseApplied={onRephraseApplied}
+              />
             </div>
           ))}
         </div>
@@ -805,11 +938,43 @@ function DocumentSection({
 }
 
 export default function RiskAnalysisTab({
+  contractId,
   risks,
   onAnnotate,
   onRephraseApplied,
 }: RiskAnalysisTabProps) {
   const groups = useMemo(() => groupRisks(risks), [risks]);
+
+  // Per-clause swap overrides (which 2 risks are visible). Loaded once; a swap
+  // updates it optimistically and persists via the backend (survives reload).
+  const [overrides, setOverrides] = useState<OverrideMap>({});
+  useEffect(() => {
+    let cancelled = false;
+    riskAnalysisService
+      .getVisibility(contractId)
+      .then((m) => { if (!cancelled) setOverrides(m || {}); })
+      .catch(() => { /* no overrides → defaults apply */ });
+    return () => { cancelled = true; };
+  }, [contractId]);
+
+  const handleSwap = useCallback(
+    async (clauseId: string, visibleIds: string[]) => {
+      const prev = overrides[clauseId];
+      setOverrides((o) => ({ ...o, [clauseId]: visibleIds })); // optimistic
+      try {
+        await riskAnalysisService.setVisibility(clauseId, visibleIds);
+      } catch {
+        setOverrides((o) => {
+          const n = { ...o };
+          if (prev) n[clauseId] = prev;
+          else delete n[clauseId];
+          return n;
+        });
+      }
+    },
+    [overrides],
+  );
+
   return (
     <div className="space-y-4">
       {groups.map((g, i) => (
@@ -817,6 +982,8 @@ export default function RiskAnalysisTab({
           key={g.docKey}
           group={g}
           defaultOpen={i === 0}
+          overrides={overrides}
+          onSwap={handleSwap}
           onAnnotate={onAnnotate}
           onRephraseApplied={onRephraseApplied}
         />

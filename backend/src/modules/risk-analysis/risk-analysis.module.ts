@@ -11,6 +11,7 @@ import {
   RiskCategory,
   RiskCategoryOrgLearnedBaseline,
   RiskCategoryPlatformDefault,
+  RiskClauseVisibility,
   RiskRule,
 } from '../../database/entities';
 import { KnowledgeAssetsModule } from '../knowledge-assets/knowledge-assets.module';
@@ -23,6 +24,7 @@ import { RiskExplanationService } from './services/risk-explanation.service';
 import { RiskMethodologyResolverService } from './services/risk-methodology-resolver.service';
 import { RiskOverrideService } from './services/risk-override.service';
 import { RiskRephraseService } from './services/risk-rephrase.service';
+import { RiskVisibilityService } from './services/risk-visibility.service';
 // Tenant-isolation Tier 2 — wall GET /risk-analysis/contract/:contractId
 // and `.../summary` reads at the service layer via
 // ContractAccessService.findInOrg.
@@ -55,6 +57,8 @@ import { ScopedRepositoryModule } from '../scoped-repository/scoped-repository.m
       // chain onto the risk's live clause.
       Clause,
       ContractClause,
+      // Risk-tab clutter reduction — per-clause visible set (swap) persistence.
+      RiskClauseVisibility,
     ]),
     // Phase 7.17 — Prompt 1, B.2: KnowledgeAssetsModule exports
     // RiskMethodologyReaderService, which the resolver injects to
@@ -104,6 +108,9 @@ import { ScopedRepositoryModule } from '../scoped-repository/scoped-repository.m
     // Risk-tab rework — STEP 3: AI clause re-phrase (dispatch / poll / apply +
     // non-guest proposed-clause creation + parent-chain promotion).
     RiskRephraseService,
+    // Risk-tab clutter reduction — resolves the visible top-2 per clause
+    // (severity + distinct + swap override), completeness, and swap persistence.
+    RiskVisibilityService,
   ],
   exports: [
     RiskAnalysisService,

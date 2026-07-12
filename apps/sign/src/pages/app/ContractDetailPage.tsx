@@ -1810,6 +1810,7 @@ export default function ContractDetailPage() {
               recommendation + AI re-phrase (Risk-tab rework, STEP 5). Backend
               returns them ordered document-priority → clause order. */}
           <RiskAnalysisTab
+            contractId={id!}
             risks={risks.filter((r) => r.risk_category !== 'DOCUMENT_CONFLICT')}
             onAnnotate={handleAnnotateRisk}
             onRephraseApplied={() => {

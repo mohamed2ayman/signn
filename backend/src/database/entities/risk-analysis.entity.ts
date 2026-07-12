@@ -68,6 +68,15 @@ export class RiskAnalysis {
   @Column({ type: 'varchar', length: 50, default: RiskAnalysisStatus.OPEN })
   status: string;
 
+  /**
+   * Risk-tab clutter reduction — soft delete. `true` = the row is a redundant
+   * duplicate flagged out of every risk read (Risk tab, counts, summary,
+   * export). The row is KEPT (reversible; FKs/annotation history intact) but
+   * excluded from all reads. Default false. NEVER hard-delete a risk.
+   */
+  @Column({ type: 'boolean', default: false })
+  is_deleted: boolean;
+
   @Column({ type: 'uuid', nullable: true })
   handled_by: string;
 

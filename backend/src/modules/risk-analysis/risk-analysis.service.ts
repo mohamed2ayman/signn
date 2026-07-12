@@ -87,6 +87,8 @@ export class RiskAnalysisService {
       .leftJoinAndSelect('r.proposed_contract_clause', 'pcc')
       .leftJoinAndSelect('pcc.clause', 'pclause')
       .where('r.id IN (:...ids)', { ids: scoped.map((r) => r.id) })
+      // Soft-delete: flagged-duplicate risks are excluded from the Risk tab.
+      .andWhere('r.is_deleted = false')
       .orderBy('CASE WHEN doc.document_priority > 0 THEN 0 ELSE 1 END', 'ASC')
       .addOrderBy('doc.document_priority', 'ASC')
       .addOrderBy('doc.created_at', 'ASC')
@@ -100,7 +102,8 @@ export class RiskAnalysisService {
     orgId: string,
   ): Promise<RiskAnalysis[]> {
     const risks = await this.riskAnalysisRepository.find({ // lint-exempt: two-step hydration (ids validated by scoped load)
-      where: { contract_clause_id: contractClauseId },
+      // Soft-delete: exclude flagged-duplicate risks.
+      where: { contract_clause_id: contractClauseId, is_deleted: false },
       relations: ['handler'],
       order: { created_at: 'DESC' },
     });
@@ -254,10 +257,12 @@ export class RiskAnalysisService {
     // SCOPED LIST (tenancy — Option B S2d, layer 2): the per-contract risk rows
     // load through the scoped chokepoint (canonical risk→contract→project→org);
     // the in-memory aggregation below is unchanged.
-    const risks = await this.riskScoped.scopedFind(
+    const scopedRisks = await this.riskScoped.scopedFind(
       { contract_id: contractId },
       orgId,
     );
+    // Soft-delete: flagged-duplicate risks never count in the summary.
+    const risks = scopedRisks.filter((r) => !r.is_deleted);
 
     const byLevel: Record<string, number> = {};
     const byStatus: Record<string, number> = {};
