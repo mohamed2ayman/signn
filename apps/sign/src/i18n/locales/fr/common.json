@@ -65,6 +65,15 @@
       "JOINT_VENTURE": "Un accord entre deux parties ou plus pour coopérer sur un projet commun.",
       "FRAMEWORK": "Un accord-cadre pour conclure des contrats récurrents à la demande.",
       "NOVATION": "Transfert des droits et obligations d'un contrat à une nouvelle partie qui se substitue à l'une des parties."
+    },
+    "parent": {
+      "label": "Contrat parent",
+      "hintRequired": "Ce type de relation doit être lié à un contrat parent.",
+      "hintOptional": "Liez éventuellement ce contrat à un parent.",
+      "searchPlaceholder": "Sélectionner un contrat principal",
+      "none": "Aucun parent",
+      "noneAvailable": "Aucun contrat parent éligible dans ce projet pour l'instant.",
+      "noMatches": "Aucun contrat correspondant."
     }
   },
   "contractCreate": {
@@ -537,7 +546,8 @@
       "comments": "Commentaires",
       "risks": "Analyse des risques",
       "obligations": "Obligations",
-      "versions": "Versions"
+      "versions": "Versions",
+      "subcontractPackages": "Lots de sous-traitance"
     },
     "noClauses": "Aucune clause pour l'instant. Ajoutez des clauses depuis la bibliothèque.",
     "addClause": "Ajouter une clause",

@@ -161,6 +161,30 @@ export class Contract {
   @Column({ type: 'varchar', length: 50, nullable: true })
   relationship_type: string | null;
 
+  /**
+   * Multi-tier T0b — parent-contract link. Self-referential FK: a child
+   * contract (SUBCONTRACT / NOMINATED_SUB / …) points to its parent (a MAIN,
+   * per the chosen relationship type's registry allowed_parent_types). NULL =
+   * no parent (MAIN / USUFRUCT, or an optional-parent type left unlinked).
+   * Validated in ContractsService.create() against the registry's
+   * parent_link_rule + allowed_parent_types, org-scoped via the findInOrg wall
+   * (404-not-403), with self/cycle guards. Create-time only in v1 (deliberately
+   * absent from UpdateContractDto). FK is ON DELETE RESTRICT — a parent with
+   * children cannot be deleted (differs from LegalDocument.parent_law_id's
+   * SET NULL, on purpose).
+   */
+  @Column({ type: 'uuid', nullable: true })
+  parent_contract_id: string | null;
+
+  @ManyToOne(() => Contract, (contract) => contract.child_contracts, {
+    nullable: true,
+  })
+  @JoinColumn({ name: 'parent_contract_id' })
+  parent_contract: Contract | null;
+
+  @OneToMany(() => Contract, (contract) => contract.parent_contract)
+  child_contracts: Contract[];
+
   @Column({ type: 'uuid' })
   created_by: string;
 

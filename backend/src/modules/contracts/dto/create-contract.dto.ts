@@ -41,6 +41,19 @@ export class CreateContractDto {
   @MaxLength(50)
   relationship_type?: string;
 
+  /**
+   * Multi-tier T0b — parent-contract link. Supplied when the chosen
+   * relationship_type's registry parent_link_rule is 'required' or 'optional'
+   * (e.g. a SUBCONTRACT's parent MAIN). MUST be absent for 'none' types
+   * (MAIN / USUFRUCT). ContractsService.create() enforces the rule +
+   * allowed_parent_types + org scope (findInOrg wall) + self/cycle guards.
+   * Create-time only in v1 — deliberately NOT on UpdateContractDto (parent is
+   * set at creation, not editable post-create).
+   */
+  @IsOptional()
+  @IsUUID()
+  parent_contract_id?: string;
+
   @IsOptional()
   @IsString()
   @MaxLength(50)

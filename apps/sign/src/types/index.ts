@@ -379,6 +379,9 @@ export interface Contract {
   // Multi-tier T0a — relationship-type code from the registry
   // (GET /contract-relationship-types). null = unclassified/legacy.
   relationship_type?: string | null;
+  // Multi-tier T0b — parent-contract link (self-referential). null = no parent
+  // (MAIN / USUFRUCT, or an optional-parent type left unlinked). Set at create.
+  parent_contract_id?: string | null;
   created_by: string;
   approved_by: string | null;
   approved_at: string | null;

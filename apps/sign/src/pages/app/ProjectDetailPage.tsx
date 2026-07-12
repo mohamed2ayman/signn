@@ -8,6 +8,7 @@ import LoadingSpinner from '@/components/common/LoadingSpinner';
 import ChatPanel from '@/components/chat/ChatPanel';
 import ContractTypeSelector from '@/components/contracts/ContractTypeSelector';
 import RelationshipTypeSelector from '@/components/contracts/RelationshipTypeSelector';
+import ParentContractPicker from '@/components/contracts/ParentContractPicker';
 import ProjectHealthBar from '@/components/project/ProjectHealthBar';
 import ProjectAttentionZone from '@/components/project/ProjectAttentionZone';
 import ProjectAnalyticsRow from '@/components/project/ProjectAnalyticsRow';
@@ -57,6 +58,9 @@ export default function ProjectDetailPage() {
   // Multi-tier T0a.2 — relationship-type CODE (registry code, e.g. MAIN).
   // Required for new contracts (backend column stays nullable for legacy).
   const [relationshipType, setRelationshipType] = useState<string | null>(null);
+  // Multi-tier T0b — parent-contract link (null = no parent). Captured only
+  // when the chosen type's parent_link_rule is 'required' or 'optional'.
+  const [parentContractId, setParentContractId] = useState<string | null>(null);
   const [contractForm, setContractForm] = useState({ name: '', party_type: '' });
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -89,6 +93,25 @@ export default function ProjectDetailPage() {
   });
   const contracts = contractsQ.data ?? [];
 
+  // Multi-tier T0b — relationship-type registry metadata for the create-flow
+  // parent step. SAME queryKey as RelationshipTypeSelector — React Query
+  // dedupes, so this reuses the picker's fetch (no redundant request).
+  const relTypesQ = useQuery({
+    queryKey: ['relationship-types'],
+    queryFn: () => contractService.getRelationshipTypes(true),
+    staleTime: 1000 * 60 * 60,
+  });
+  const selectedRelType =
+    (relTypesQ.data ?? []).find((rt) => rt.code === relationshipType) ?? null;
+  const parentRule = selectedRelType?.parent_link_rule ?? 'none';
+  const allowedParentTypes = selectedRelType?.allowed_parent_types ?? [];
+  // Eligible parents: contracts in THIS project whose relationship_type is in
+  // the child type's allowed_parent_types (e.g. only MAIN for a SUBCONTRACT).
+  const eligibleParents = contracts.filter(
+    (c) =>
+      !!c.relationship_type && allowedParentTypes.includes(c.relationship_type),
+  );
+
   const isStandardForm = (ct: ContractType) => ct !== ContractType.ADHOC && ct !== ContractType.UPLOADED;
 
   // Localized label for the chosen FORM in the "… selected" subtitle. Standard
@@ -116,8 +139,10 @@ export default function ProjectDetailPage() {
   const handleCreateContract = async (e: React.FormEvent) => {
     e.preventDefault();
     // Relationship type is required for new contracts (submit is also disabled
-    // until one is chosen — this guard is the safety net).
+    // until one is chosen — this guard is the safety net). T0b: a 'required'
+    // parent rule also blocks submit until a parent is chosen.
     if (!id || !selectedType || !relationshipType) return;
+    if (parentRule === 'required' && !parentContractId) return;
     setCreating(true);
     setCreateError(null);
     try {
@@ -126,6 +151,9 @@ export default function ProjectDetailPage() {
         name: contractForm.name,
         contract_type: selectedType,
         relationship_type: relationshipType,
+        // Multi-tier T0b — only send a parent when one is chosen. 'none' types
+        // never show the picker (parentContractId stays null → omitted).
+        parent_contract_id: parentContractId ?? undefined,
         party_type: contractForm.party_type || undefined,
         license_acknowledged: isStandardForm(selectedType) ? true : undefined,
         license_organization: isStandardForm(selectedType) ? getLicenseOrg(selectedType) : undefined,
@@ -135,6 +163,7 @@ export default function ProjectDetailPage() {
       setCreateStep('type');
       setSelectedType(null);
       setRelationshipType(null);
+      setParentContractId(null);
       setContractForm({ name: '', party_type: '' });
       navigate(`/app/contracts/${contract.id}`);
     } catch (err) {
@@ -417,7 +446,7 @@ export default function ProjectDetailPage() {
                 </p>
               </div>
               <button
-                onClick={() => { setShowCreateContract(false); setCreateStep('type'); setSelectedType(null); setRelationshipType(null); setCreateError(null); setContractForm({ name: '', party_type: '' }); }}
+                onClick={() => { setShowCreateContract(false); setCreateStep('type'); setSelectedType(null); setRelationshipType(null); setParentContractId(null); setCreateError(null); setContractForm({ name: '', party_type: '' }); }}
                 className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
               >
                 <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
@@ -461,8 +490,35 @@ export default function ProjectDetailPage() {
                     <span className="text-red-500">*</span>
                   </label>
                   <p className="mb-2.5 text-xs text-gray-400">{t('relationshipType.fieldHint')}</p>
-                  <RelationshipTypeSelector value={relationshipType} onChange={setRelationshipType} />
+                  <RelationshipTypeSelector
+                    value={relationshipType}
+                    onChange={(code) => { setRelationshipType(code); setParentContractId(null); }}
+                  />
                 </div>
+
+                {/* Multi-tier T0b — conditional PARENT step. Shown only for
+                    'required'/'optional' types; hidden entirely for 'none'
+                    (MAIN / USUFRUCT). Parent list is filtered to the type's
+                    allowed_parent_types (e.g. only MAIN for a SUBCONTRACT). */}
+                {relationshipType && parentRule !== 'none' && (
+                  <div>
+                    <label className="mb-1 flex items-center gap-1 text-sm font-medium text-gray-700">
+                      {t('relationshipType.parent.label')}
+                      {parentRule === 'required' && <span className="text-red-500">*</span>}
+                    </label>
+                    <p className="mb-2.5 text-xs text-gray-400" dir="auto">
+                      {parentRule === 'required'
+                        ? t('relationshipType.parent.hintRequired')
+                        : t('relationshipType.parent.hintOptional')}
+                    </p>
+                    <ParentContractPicker
+                      contracts={eligibleParents}
+                      value={parentContractId}
+                      onChange={setParentContractId}
+                      required={parentRule === 'required'}
+                    />
+                  </div>
+                )}
 
                 <div>
                   <label className="mb-1.5 block text-sm font-medium text-gray-700">{t('contractCreate.contractName')}</label>
@@ -503,7 +559,7 @@ export default function ProjectDetailPage() {
                   </button>
                   <button
                     type="submit"
-                    disabled={creating || !relationshipType}
+                    disabled={creating || !relationshipType || (parentRule === 'required' && !parentContractId)}
                     className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-primary-600 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {creating && <LoadingSpinner size="sm" />}

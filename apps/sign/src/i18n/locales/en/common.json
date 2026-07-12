@@ -63,6 +63,15 @@
       "JOINT_VENTURE": "Two or more parties combining for a shared project.",
       "FRAMEWORK": "An umbrella agreement for repeated call-off contracts.",
       "NOVATION": "Transfer of a contract's rights and obligations to a new party."
+    },
+    "parent": {
+      "label": "Parent contract",
+      "hintRequired": "This relationship type must be linked to a parent contract.",
+      "hintOptional": "Optionally link this contract to a parent.",
+      "searchPlaceholder": "Select a main contract",
+      "none": "No parent",
+      "noneAvailable": "No eligible parent contracts in this project yet.",
+      "noMatches": "No matching contracts."
     }
   },
   "contractCreate": {
@@ -534,7 +543,8 @@
       "comments": "Comments",
       "risks": "Risk Analysis",
       "obligations": "Obligations",
-      "versions": "Versions"
+      "versions": "Versions",
+      "subcontractPackages": "Sub-Contract Packages"
     },
     "noClauses": "No clauses yet. Add clauses from the library.",
     "addClause": "Add Clause",
