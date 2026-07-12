@@ -45,8 +45,10 @@ import { UpdateContractPartyDto } from './dto/update-contract-party.dto';
 @Injectable()
 export class ContractPartiesService {
   constructor(
+    // lint-exempt: wall-protected (findInOrg on every entry point); chokepoint migration scheduled
     @InjectRepository(ContractParty)
     private readonly partyRepository: Repository<ContractParty>,
+    // lint-exempt: wall-protected (findInOrg on every entry point); chokepoint migration scheduled
     @InjectRepository(ContractPartyContact)
     private readonly contactRepository: Repository<ContractPartyContact>,
     @InjectRepository(Organization)
@@ -57,6 +59,7 @@ export class ContractPartiesService {
 
   async list(contractId: string, orgId: string): Promise<ContractParty[]> {
     await this.contractAccess.findInOrg(contractId, orgId);
+    // lint-exempt: wall-protected (findInOrg above); chokepoint migration scheduled
     return this.partyRepository.find({
       where: { contract_id: contractId },
       relations: ['contacts'],
@@ -104,6 +107,7 @@ export class ContractPartiesService {
         await em.save(contacts);
       }
 
+      // lint-exempt: wall-protected (findInOrg above); chokepoint migration scheduled
       return em.findOneOrFail(ContractParty, {
         where: { id: saved.id },
         relations: ['contacts'],
@@ -120,6 +124,7 @@ export class ContractPartiesService {
     const contract = await this.contractAccess.findInOrg(contractId, orgId);
     await assertContractMutable(this.partyRepository.manager, contract);
 
+    // lint-exempt: wall-protected (findInOrg above); chokepoint migration scheduled
     const party = await this.partyRepository.findOne({
       where: { id: partyId, contract_id: contractId },
       relations: ['contacts'],
@@ -164,6 +169,7 @@ export class ContractPartiesService {
 
       // contacts !== undefined = FULL REPLACE (embedded-contacts contract).
       if (dto.contacts !== undefined) {
+        // lint-exempt: wall-protected (findInOrg above); chokepoint migration scheduled
         await em.delete(ContractPartyContact, { contract_party_id: party.id });
         if (dto.contacts.length) {
           const contacts = dto.contacts.map((c) =>
@@ -179,6 +185,7 @@ export class ContractPartiesService {
         }
       }
 
+      // lint-exempt: wall-protected (findInOrg above); chokepoint migration scheduled
       return em.findOneOrFail(ContractParty, {
         where: { id: party.id },
         relations: ['contacts'],
@@ -194,6 +201,7 @@ export class ContractPartiesService {
     const contract = await this.contractAccess.findInOrg(contractId, orgId);
     await assertContractMutable(this.partyRepository.manager, contract);
 
+    // lint-exempt: wall-protected (findInOrg above); chokepoint migration scheduled
     const party = await this.partyRepository.findOne({
       where: { id: partyId, contract_id: contractId },
     });
@@ -202,6 +210,7 @@ export class ContractPartiesService {
     }
 
     // Contacts go with the party (DB ON DELETE CASCADE).
+    // lint-exempt: wall-protected (findInOrg above); chokepoint migration scheduled
     await this.partyRepository.delete({ id: party.id });
   }
 

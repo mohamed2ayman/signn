@@ -82,6 +82,11 @@ const DEFAULT_ENTITIES = [
   'RiskAnalysisOverrideLog', // → RiskAnalysis → Contract
   'ObligationAssignee', // → Obligation → Contract
   'ObligationReminderLog', // → Obligation → Contract
+  // Multi-tier T0c-1 — contract parties spine
+  'ContractParty', // direct contract_id
+  'ContractPartyContact', // → ContractParty → Contract
+  // NOTE: PartyRole is deliberately NOT listed — it is a GLOBAL registry
+  // (no org/contract rooting), same class as ContractRelationshipType.
 ];
 
 const DEFAULT_REPO_TYPES = [

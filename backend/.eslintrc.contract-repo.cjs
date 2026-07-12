@@ -85,6 +85,11 @@ module.exports = {
           'RiskAnalysisOverrideLog',
           'ObligationAssignee',
           'ObligationReminderLog',
+          // ── Multi-tier T0c-1 — contract parties spine ──
+          'ContractParty', // direct contract_id
+          'ContractPartyContact', // → ContractParty → Contract
+          // PartyRole deliberately NOT listed — global registry, no
+          // org/contract rooting (ContractRelationshipType class).
         ],
         // Category B — chokepoint internals, excluded by SCOPE (not annotation).
         chokepointPathFragments: [

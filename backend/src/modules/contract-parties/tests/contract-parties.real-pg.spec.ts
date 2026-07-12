@@ -1,7 +1,14 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule } from '@nestjs/config';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ExecutionContext,
+  ForbiddenException,
+  NotFoundException,
+  ValidationPipe,
+} from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { DataSource } from 'typeorm';
 import { randomUUID } from 'crypto';
 
@@ -12,10 +19,20 @@ import {
   GuestContractAccess,
   Organization,
   PartyRole,
+  PermissionDefault,
+  PermissionLevel,
+  ProjectMember,
+  User,
 } from '../../../database/entities';
 import { ContractAccessService } from '../../contracts/services/contract-access.service';
+import {
+  PermissionLevelGuard,
+  PERMISSION_LEVEL_KEY,
+} from '../../../common/guards/permission-level.guard';
 import { PartyRolesService } from '../party-roles.service';
 import { ContractPartiesService } from '../contract-parties.service';
+import { ContractPartiesController } from '../contract-parties.controller';
+import { CreateContractPartyDto, UpdateContractPartyDto } from '../dto';
 
 /**
  * Multi-tier trunk — Slice T0c-1 (ContractParty backend spine), real Postgres.
@@ -86,6 +103,11 @@ describeReal('contract_parties — Slice T0c-1 (real Postgres)', () => {
   const orgAId = randomUUID();
   const orgBId = randomUUID();
   const ownerAId = randomUUID();
+  // Non-bypass-role members for the PermissionLevelGuard tests (OWNER_ADMIN /
+  // SYSTEM_ADMIN / OPERATIONS bypass the guard, so the floor is only
+  // observable on a non-admin role).
+  const viewerUserId = randomUUID();
+  const editorUserId = randomUUID();
   const projectAId = randomUUID();
   const projectBId = randomUUID();
   const contractIds: string[] = [];
@@ -95,7 +117,7 @@ describeReal('contract_parties — Slice T0c-1 (real Postgres)', () => {
   const INACTIVE_CODE = `TEST_INACTIVE_${randomUUID().slice(0, 8)}`;
   const PROJECT_ONLY_CODE = `TEST_PROJ_${randomUUID().slice(0, 8)}`;
 
-  const insertUser = (id: string, org: string | null) =>
+  const insertUser = (id: string, org: string | null, role = 'OWNER_ADMIN') =>
     dataSource.query(
       `INSERT INTO users (
          id, email, password_hash, first_name, last_name, role, account_type,
@@ -103,13 +125,14 @@ describeReal('contract_parties — Slice T0c-1 (real Postgres)', () => {
          preferred_language, failed_login_attempts, onboarding_completed,
          onboarding_level, email_digest_opt_out, marketing_email_opt_in,
          ai_training_opt_in
-       ) VALUES ($1,$2,$3,'T0c','Test','OWNER_ADMIN','MANAGING',$4,
+       ) VALUES ($1,$2,$3,'T0c','Test',$5,'MANAGING',$4,
                  TRUE,TRUE,FALSE,'en',0,TRUE,'none',FALSE,FALSE,FALSE)`,
       [
         id,
         `t0c-${id.slice(0, 8)}@test.local`,
         '$2a$10$dummy.hash.placeholder.t0c',
         org,
+        role,
       ],
     );
 
@@ -196,6 +219,16 @@ describeReal('contract_parties — Slice T0c-1 (real Postgres)', () => {
       [projectBId, orgBId, ownerAId],
     );
 
+    // Project members with explicit permission levels for the guard tests:
+    // VIEWER = sub-PM; EDITOR = the PROJECT_MANAGER-tier default.
+    await insertUser(viewerUserId, orgAId, 'OWNER_CREATOR');
+    await insertUser(editorUserId, orgAId, 'OWNER_CREATOR');
+    await dataSource.query(
+      `INSERT INTO project_members (project_id, user_id, permission_level)
+       VALUES ($1,$2,'VIEWER'), ($1,$3,'EDITOR')`,
+      [projectAId, viewerUserId, editorUserId],
+    );
+
     // Synthetic registry rows for the rejection branches.
     await dataSource.query(
       `INSERT INTO party_roles (code, label_en, label_ar, label_fr, applies_to, is_active, sort_order)
@@ -221,10 +254,16 @@ describeReal('contract_parties — Slice T0c-1 (real Postgres)', () => {
           contractIds,
         ]);
       }
+      await dataSource.query(
+        `DELETE FROM project_members WHERE user_id = ANY($1)`,
+        [[viewerUserId, editorUserId]],
+      );
       await dataSource.query(`DELETE FROM projects WHERE id = ANY($1)`, [
         [projectAId, projectBId],
       ]);
-      await dataSource.query(`DELETE FROM users WHERE id = $1`, [ownerAId]);
+      await dataSource.query(`DELETE FROM users WHERE id = ANY($1)`, [
+        [ownerAId, viewerUserId, editorUserId],
+      ]);
       await dataSource.query(`DELETE FROM organizations WHERE id = ANY($1)`, [
         [orgAId, orgBId],
       ]);
@@ -532,5 +571,132 @@ describeReal('contract_parties — Slice T0c-1 (real Postgres)', () => {
     // Reads stay open on a pinned contract.
     const listed = await partiesService.list(contractId, orgAId);
     expect(listed).toHaveLength(1);
+  });
+  // ── (ix) mutation floor — the Phase 7.15 obligation guard stack ──────────
+
+  describe('party mutations floored at EDITOR (PROJECT_MANAGER+)', () => {
+    /** Stub ExecutionContext pointing at the REAL controller handler, so the
+     *  Reflector reads the REAL @RequirePermission metadata from the code. */
+    const guardContext = (
+      user: Pick<User, 'id' | 'role'>,
+      handler: (...args: never[]) => unknown,
+    ): ExecutionContext =>
+      ({
+        getHandler: () => handler,
+        getClass: () => ContractPartiesController,
+        switchToHttp: () => ({
+          getRequest: () => ({ user, params: { project_id: projectAId } }),
+        }),
+      }) as unknown as ExecutionContext;
+
+    const realGuard = () =>
+      new PermissionLevelGuard(
+        new Reflector(),
+        dataSource.getRepository(ProjectMember),
+        dataSource.getRepository(PermissionDefault),
+      );
+
+    it('PermissionLevelGuard + EDITOR metadata are wired on POST/PUT/DELETE; GET carries none', () => {
+      const guards: unknown[] =
+        Reflect.getMetadata('__guards__', ContractPartiesController) ?? [];
+      expect(guards).toContain(PermissionLevelGuard);
+
+      const proto = ContractPartiesController.prototype;
+      expect(Reflect.getMetadata(PERMISSION_LEVEL_KEY, proto.create)).toBe(
+        PermissionLevel.EDITOR,
+      );
+      expect(Reflect.getMetadata(PERMISSION_LEVEL_KEY, proto.update)).toBe(
+        PermissionLevel.EDITOR,
+      );
+      expect(Reflect.getMetadata(PERMISSION_LEVEL_KEY, proto.remove)).toBe(
+        PermissionLevel.EDITOR,
+      );
+      // GET stays open to project members — no permission requirement.
+      expect(
+        Reflect.getMetadata(PERMISSION_LEVEL_KEY, proto.list),
+      ).toBeUndefined();
+    });
+
+    it('⭐ sub-PM (VIEWER member) → 403 on create; PM+ (EDITOR member) passes and creates', async () => {
+      const guard = realGuard();
+      const viewer = { id: viewerUserId, role: 'OWNER_CREATOR' } as User;
+      const editor = { id: editorUserId, role: 'OWNER_CREATOR' } as User;
+      const proto = ContractPartiesController.prototype;
+
+      // Sub-PM: the REAL guard, REAL membership row (VIEWER) → 403.
+      await expect(
+        guard.canActivate(guardContext(viewer, proto.create)),
+      ).rejects.toThrow(ForbiddenException);
+
+      // PM+ tier (EDITOR): guard passes…
+      await expect(
+        guard.canActivate(guardContext(editor, proto.create)),
+      ).resolves.toBe(true);
+      // …and the create succeeds end-to-end.
+      const contractId = await insertContract(projectAId);
+      const party = await partiesService.create(contractId, orgAId, {
+        role_code: 'CONTRACTOR',
+        org_name: 'PM Created Co',
+      });
+      expect(party.id).toBeDefined();
+
+      // GET stays open: the VIEWER member passes the guard on list.
+      await expect(
+        guard.canActivate(guardContext(viewer, proto.list)),
+      ).resolves.toBe(true);
+    });
+  });
+
+  // ── (x) contact email format validation (the HTTP DTO boundary) ──────────
+
+  describe('contact.email format validation (global ValidationPipe config)', () => {
+    // Exactly the main.ts global pipe options — proves the 400 the way the
+    // HTTP boundary produces it.
+    const pipe = new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
+      transformOptions: { enableImplicitConversion: true },
+    });
+
+    const createBody = (email: string) => ({
+      role_code: 'EMPLOYER',
+      org_name: 'X',
+      is_signatory: false,
+      contacts: [{ name: 'C', email }],
+    });
+
+    it('malformed contact email on CREATE → 400', async () => {
+      await expect(
+        pipe.transform(createBody('not-an-email'), {
+          type: 'body',
+          metatype: CreateContractPartyDto,
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('malformed contact email on UPDATE → 400', async () => {
+      await expect(
+        pipe.transform(
+          { contacts: [{ name: 'C', email: 'still@not@an@email' }] },
+          { type: 'body', metatype: UpdateContractPartyDto },
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('well-formed contact email passes both DTOs', async () => {
+      await expect(
+        pipe.transform(createBody('ok@example.com'), {
+          type: 'body',
+          metatype: CreateContractPartyDto,
+        }),
+      ).resolves.toBeDefined();
+      await expect(
+        pipe.transform(
+          { contacts: [{ name: 'C', email: 'ok@example.com' }] },
+          { type: 'body', metatype: UpdateContractPartyDto },
+        ),
+      ).resolves.toBeDefined();
+    });
   });
 });
