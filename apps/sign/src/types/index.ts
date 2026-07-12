@@ -184,6 +184,52 @@ export interface ContractRelationshipType {
   created_at: string;
 }
 
+// ─── Multi-tier T0c-1 — contract parties spine (backend entity mirrors) ────
+// SOURCE OF TRUTH: backend migration 1770000000001 (party_roles registry,
+// seeded with 11 roles) + the ContractParty / ContractPartyContact entities.
+// Labels (en/ar/fr) come from GET /party-roles — never mirror them here.
+// No UI consumes these yet (T0c-1 is backend-only; the picker is a later slice).
+
+/** Registry row shape returned by GET /party-roles. */
+export interface PartyRole {
+  id: string;
+  code: string;
+  label_en: string;
+  label_ar: string;
+  label_fr: string;
+  applies_to: 'project' | 'contract' | 'both';
+  is_active: boolean;
+  sort_order: number;
+  created_at: string;
+}
+
+/** Contact person under a contract party (GET /contracts/:id/parties). */
+export interface ContractPartyContact {
+  id: string;
+  contract_party_id: string;
+  name: string;
+  email: string;
+  title: string | null;
+  is_designated_signatory: boolean;
+}
+
+/** A party on a contract (GET /contracts/:id/parties). */
+export interface ContractParty {
+  id: string;
+  contract_id: string;
+  /** Soft code from the party_roles registry (EMPLOYER, CONTRACTOR, …). */
+  role_code: string;
+  org_name: string;
+  is_signatory: boolean;
+  /** Optional link to a SIGN organization (v1: host org only). */
+  organization_id: string | null;
+  legal_tax_card: string | null;
+  legal_address: string | null;
+  contacts?: ContractPartyContact[];
+  created_at: string;
+  updated_at: string;
+}
+
 export enum RiskLevel {
   LOW = 'LOW',
   MEDIUM = 'MEDIUM',

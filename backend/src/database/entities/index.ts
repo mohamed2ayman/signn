@@ -83,3 +83,7 @@ export { LegalDocumentChunk } from './legal-document-chunk.entity';
 export { LegalSource } from './legal-source.entity';
 // ─── Multi-tier trunk T0a — relationship-type registry ────────────────────
 export { ContractRelationshipType } from './contract-relationship-type.entity';
+// ─── Multi-tier trunk T0c-1 — contract parties spine ──────────────────────
+export { PartyRole } from './party-role.entity';
+export { ContractParty } from './contract-party.entity';
+export { ContractPartyContact } from './contract-party-contact.entity';
