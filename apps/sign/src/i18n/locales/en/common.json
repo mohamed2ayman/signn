@@ -37,7 +37,10 @@
     "updatedVersion": "Updated",
     "viewPrevious": "View previous version",
     "hidePrevious": "Hide previous version",
-    "previousVersion": "Previous version"
+    "previousVersion": "Previous version",
+    "showInTop": "Show in top",
+    "showInTopHint": "Promote into the visible top 2 (replaces the lower-severity one)",
+    "hiddenRisk": "Hidden — not in the top 2"
   },
   "relationshipType": {
     "fieldLabel": "Relationship type",

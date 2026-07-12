@@ -38,7 +38,10 @@
     "updatedVersion": "Mis à jour",
     "viewPrevious": "Voir la version précédente",
     "hidePrevious": "Masquer la version précédente",
-    "previousVersion": "Version précédente"
+    "previousVersion": "Version précédente",
+    "showInTop": "Afficher en haut",
+    "showInTopHint": "Promouvoir dans les 2 principaux visibles (remplace celui de moindre gravité)",
+    "hiddenRisk": "Masqué — pas dans les 2 principaux"
   },
   "relationshipType": {
     "_TODO": "PENDING LEGAL REVIEW (Youssef): the French relationship-type descriptions below are DRAFT starting values — verify/correct legal terminology before finalizing. (Type NAMES come from the registry label_fr, not from here.)",

@@ -38,7 +38,10 @@
     "updatedVersion": "تم التحديث",
     "viewPrevious": "عرض النسخة السابقة",
     "hidePrevious": "إخفاء النسخة السابقة",
-    "previousVersion": "النسخة السابقة"
+    "previousVersion": "النسخة السابقة",
+    "showInTop": "إظهار ضمن الأعلى",
+    "showInTopHint": "ترقية هذا الخطر إلى أعلى خطرين ظاهرين (يحل محل الأقل خطورة)",
+    "hiddenRisk": "مخفي — ليس ضمن أعلى خطرين"
   },
   "relationshipType": {
     "fieldLabel": "نوع العلاقة",
