@@ -75,6 +75,78 @@
       "noMatches": "لا توجد عقود مطابقة."
     }
   },
+  "partiesEditor": {
+    "title": "تعديل أطراف العقد",
+    "subtitle": "إدارة المؤسسات الملتزمة بهذا العقد، والأشخاص الذين يوقّعون نيابةً عنها.",
+    "partyCount": "الأطراف: {{count}}",
+    "signatoriesChip": "{{designated}}/{{total}} موقّعون",
+    "signatoriesHint": "الموقّعون يوقّعون نيابةً عن مؤسساتهم.",
+    "frozen": "هذا العقد موقّع — أطرافه مجمّدة ولا يمكن تعديلها بعد الآن.",
+    "addManually": "إضافة يدوياً",
+    "addParty": "إضافة طرف",
+    "uploadDocument": "رفع مستند",
+    "comingSoon": "قريباً",
+    "save": "حفظ الأطراف",
+    "saved": "تم حفظ الأطراف.",
+    "saveError": "تعذّر حفظ الأطراف. يرجى المحاولة مرة أخرى.",
+    "loadError": "تعذّر تحميل الأطراف.",
+    "retry": "إعادة المحاولة",
+    "issuesToFix": "{{count}} مشكلات بحاجة إلى إصلاح",
+    "empty": {
+      "title": "لا توجد أطراف بعد",
+      "hint": "أضِفها يدوياً، أو ارفع مستند العقد لاستخراجها تلقائياً."
+    },
+    "role": {
+      "placeholder": "اختر دوراً",
+      "loadError": "تعذّر تحميل الأدوار"
+    },
+    "fields": {
+      "orgName": "اسم المؤسسة",
+      "orgNamePlaceholder": "مثال: المروج للتطوير العقاري",
+      "role": "الدور",
+      "signs": "هذا الطرف يوقّع",
+      "signsHint": "فعّله إذا كان هذا الطرف يوقّع العقد.",
+      "ownOrg": "هذه مؤسستك",
+      "ownOrgHint": "اربط هذا الطرف بمؤسستك على SIGN.",
+      "ownOrgHintNamed": "اربط هذا الطرف بـ {{org}}."
+    },
+    "confirm": {
+      "roleNeedsConfirmation": "الدور بحاجة إلى تأكيد",
+      "confirm": "تأكيد",
+      "gate": "أكّد {{count}} أدوار للمتابعة"
+    },
+    "card": {
+      "partyN": "الطرف {{n}}",
+      "remove": "إزالة الطرف",
+      "unnamedParty": "طرف بدون اسم",
+      "signsBadge": "يوقّع"
+    },
+    "contacts": {
+      "title": "جهات الاتصال المفوّضة",
+      "hint": "الأشخاص المفوّضون بالتصرّف نيابةً عن هذا الطرف. يتلقّى الموقّع المعيَّن الدعوة.",
+      "name": "الاسم الكامل",
+      "role": "المسمّى الوظيفي",
+      "email": "البريد الإلكتروني",
+      "designated": "الموقّع المعيَّن · يتلقّى الدعوة",
+      "designatedShort": "موقّع",
+      "addContact": "إضافة جهة اتصال",
+      "removeContact": "إزالة"
+    },
+    "legal": {
+      "title": "التفاصيل القانونية (اختياري)",
+      "taxCard": "البطاقة الضريبية",
+      "taxCardPlaceholder": "رقم التسجيل الضريبي",
+      "address": "العنوان القانوني",
+      "addressPlaceholder": "العنوان المسجّل"
+    },
+    "errors": {
+      "orgNameRequired": "أدخل اسم المؤسسة",
+      "roleRequired": "اختر دوراً",
+      "emailRequired": "أدخل بريداً إلكترونياً",
+      "emailInvalid": "أدخل بريداً إلكترونياً صحيحاً",
+      "multipleDesignated": "يُسمح بموقّع معيَّن واحد فقط لكل طرف."
+    }
+  },
   "contractCreate": {
     "addContract": "إضافة عقد",
     "newContract": "عقد جديد",
@@ -545,7 +617,8 @@
       "risks": "تحليل المخاطر",
       "obligations": "الالتزامات",
       "versions": "النسخ",
-      "subcontractPackages": "حزم عقود الباطن"
+      "subcontractPackages": "حزم عقود الباطن",
+      "parties": "الأطراف"
     },
     "noClauses": "لا توجد بنود بعد. أضف بنوداً من المكتبة.",
     "addClause": "إضافة بند",
