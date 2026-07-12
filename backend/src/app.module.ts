@@ -37,6 +37,7 @@ import { DocuSignModule } from './modules/docusign/docusign.module';
 import { CollaborationModule } from './modules/collaboration/collaboration.module';
 import { ContractTemplatesModule } from './modules/contract-templates/contract-templates.module';
 import { ContractRelationshipTypesModule } from './modules/contract-relationship-types/contract-relationship-types.module';
+import { ContractPartiesModule } from './modules/contract-parties/contract-parties.module';
 import { ClaimsModule } from './modules/claims/claims.module';
 import { NoticesModule } from './modules/notices/notices.module';
 import { SubContractsModule } from './modules/subcontracts/subcontracts.module';
@@ -307,6 +308,8 @@ import { dataSourceOptions } from './config/data-source';
     ContractTemplatesModule,
     // Multi-tier trunk T0a — relationship-type registry (GET /contract-relationship-types).
     ContractRelationshipTypesModule,
+    // Multi-tier trunk T0c-1 — contract parties + party-role registry (GET /party-roles).
+    ContractPartiesModule,
     ClaimsModule,
     NoticesModule,
     SubContractsModule,
