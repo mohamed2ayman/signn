@@ -86,16 +86,25 @@ export function memberDisplay(member: ProjectMember): MemberDisplay {
     email: member.user?.email ?? '',
     isPendingInvitation: name.length === 0,
     permissionLevel: member.permission_level ?? PermissionLevel.VIEWER,
-    jobTitle: member.user?.job_title ?? null,
+    // `||` (not `??`) — matches the existing matrix idiom so an
+    // empty-string job_title also reads as "Not set".
+    jobTitle: member.user?.job_title || null,
     systemRole: member.user?.role ?? '',
   };
 }
 
 // ─── Initials avatar ─────────────────────────────────────────────
 
-/** Up to two initials from the first two words; '?' when empty. */
+/**
+ * Up to two initials from the first two words; '?' when empty.
+ * Words with no letter/digit are skipped — a separator token like the
+ * em-dash in "QA — Metro Corp" must not become an "initial" (Q—).
+ */
 export function initialsOf(name: string): string {
-  const words = name.trim().split(/\s+/).filter(Boolean);
+  const words = name
+    .trim()
+    .split(/\s+/)
+    .filter((w) => /[\p{L}\p{N}]/u.test(w));
   if (words.length === 0) return '?';
   return words
     .slice(0, 2)

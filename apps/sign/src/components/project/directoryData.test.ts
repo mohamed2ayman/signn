@@ -168,6 +168,11 @@ describe('memberDisplay', () => {
     );
     expect(d.permissionLevel).toBe('APPROVER');
   });
+
+  it('normalizes an empty-string job_title to null (renders "Not set")', () => {
+    const d = memberDisplay(mkMember({ user: { ...mkMember().user!, job_title: '' } }));
+    expect(d.jobTitle).toBeNull();
+  });
 });
 
 describe('initialsOf', () => {
@@ -179,5 +184,14 @@ describe('initialsOf', () => {
   it('returns ? for an empty name', () => {
     expect(initialsOf('')).toBe('?');
     expect(initialsOf('   ')).toBe('?');
+  });
+
+  it('skips separator-only words (em-dash) — "QA — Metro Corp" → QM, not Q—', () => {
+    expect(initialsOf('QA — Metro Development Corp')).toBe('QM');
+    expect(initialsOf('— —')).toBe('?');
+  });
+
+  it('takes initials from Arabic names', () => {
+    expect(initialsOf('شركة المقاولات')).toBe('شا');
   });
 });
