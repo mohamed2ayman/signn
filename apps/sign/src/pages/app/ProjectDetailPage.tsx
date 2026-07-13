@@ -12,6 +12,7 @@ import ParentContractPicker from '@/components/contracts/ParentContractPicker';
 import ProjectHealthBar from '@/components/project/ProjectHealthBar';
 import ProjectAttentionZone from '@/components/project/ProjectAttentionZone';
 import ProjectAnalyticsRow from '@/components/project/ProjectAnalyticsRow';
+import ProjectPartiesDirectory from '@/components/project/ProjectPartiesDirectory';
 import { ContractType, LicenseOrganization } from '@/types';
 import type { Project } from '@/types';
 
@@ -353,14 +354,9 @@ export default function ProjectDetailPage() {
         </div>
       )}
 
-      {/* ── Parties & Team tab — placeholder this slice ── */}
-      {activeTab === 'parties' && (
-        <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-6 py-12 text-center">
-          <p className="text-sm font-medium text-gray-500">
-            {t('projectDashboard.parties.comingSoon')}
-          </p>
-        </div>
-      )}
+      {/* ── Parties & Team tab — full directory (7.20 slice 4a, display-only;
+          invite/write actions are Slice 4b) ── */}
+      {activeTab === 'parties' && <ProjectPartiesDirectory projectId={id!} />}
 
       {/* ── Contracts tab — the pre-existing contracts card, moved verbatim ── */}
       {activeTab === 'contracts' && (
