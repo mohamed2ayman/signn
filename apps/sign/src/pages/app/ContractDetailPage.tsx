@@ -24,6 +24,7 @@ import NoticesTab from '@/components/notices/NoticesTab';
 import SubContractsTab from '@/components/subcontracts/SubContractsTab';
 import ComplianceTab from '@/components/contracts/ComplianceTab';
 import ObligationsTab from '@/components/contracts/ObligationsTab';
+import ContractPartiesEditor from '@/components/contracts/parties/ContractPartiesEditor';
 import GuestProposedVersionsPanel from '@/components/contracts/GuestProposedVersionsPanel';
 import { documentProcessingService } from '@/services/api/documentProcessingService';
 import { useDocumentProcessing } from '@/hooks/useDocumentProcessing';
@@ -240,6 +241,9 @@ function DocumentConflictCard({
 /* ── Tab Button ──────────────────────────────────────────────── */
 const tabConfig = [
   { key: 'clauses' as const, label: 'Clauses', icon: 'M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25z' },
+  // Multi-tier T0c-2 — Parties Editor. NOT status-gated (parties exist from
+  // DRAFT onward). Label localized via t('contract.tabs.parties').
+  { key: 'parties' as const, label: 'Parties', icon: 'M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z' },
   { key: 'comments' as const, label: 'Comments', icon: 'M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.129.166 2.27.293 3.423.379.35.026.67.21.865.501L12 21l2.755-4.133a1.14 1.14 0 01.865-.501 48.172 48.172 0 003.423-.379c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z' },
   { key: 'risks' as const, label: 'Risk Analysis', icon: 'M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z' },
   // Phase 7.1 Step 2 — Obligations tab inserted between Risk Analysis and Claims.
@@ -270,7 +274,7 @@ export default function ContractDetailPage() {
   const [risks, setRisks] = useState<RiskAnalysis[]>([]);
   const [availableClauses, setAvailableClauses] = useState<Clause[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'clauses' | 'comments' | 'risks' | 'obligations' | 'claims' | 'notices' | 'subcontracts' | 'compliance' | 'history' | 'approvals'>('clauses');
+  const [activeTab, setActiveTab] = useState<'clauses' | 'parties' | 'comments' | 'risks' | 'obligations' | 'claims' | 'notices' | 'subcontracts' | 'compliance' | 'history' | 'approvals'>('clauses');
   // Obligation count mirrored from ObligationsTab for the tab-label badge.
   const [obligationCount, setObligationCount] = useState<number>(0);
   const [diffPair, setDiffPair] = useState<{ a: string; b: string } | null>(null);
@@ -1430,7 +1434,11 @@ export default function ContractDetailPage() {
                 {/* Multi-tier T0b — the Sub-Contract Packages tab is the one
                     localized tab (EN/AR/FR); the other tabs remain hardcoded
                     English (pre-existing — the tab bar is otherwise unlocalized). */}
-                {tab.key === 'subcontracts' ? t('contract.tabs.subcontractPackages') : tab.label}
+                {tab.key === 'subcontracts'
+                  ? t('contract.tabs.subcontractPackages')
+                  : tab.key === 'parties'
+                    ? t('contract.tabs.parties')
+                    : tab.label}
                 {tab.key === 'clauses' && <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold text-gray-500">{clauses.length}</span>}
                 {tab.key === 'comments' && comments.length > 0 && <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold text-gray-500">{comments.length}</span>}
                 {tab.key === 'risks' && risks.length > 0 && (
@@ -1841,6 +1849,15 @@ export default function ContractDetailPage() {
           projectId={contract.project_id}
           onCountChange={setObligationCount}
         />
+      )}
+
+      {/* ── Parties Tab ──────────────────────────────────────────── */}
+      {/* Multi-tier T0c-2 — NOT status-gated; read-only for viewers below
+          EDITOR and for signed (pinned) contracts. */}
+      {activeTab === 'parties' && (
+        <div className="rounded-xl border border-gray-200/80 bg-white p-6 shadow-card">
+          <ContractPartiesEditor contractId={contract.id} contract={contract} />
+        </div>
       )}
 
       {/* ── Claims Tab ───────────────────────────────────────────── */}

@@ -44,7 +44,6 @@
     "hiddenRisk": "Masqué — pas dans les 2 principaux"
   },
   "relationshipType": {
-    "_TODO": "PENDING LEGAL REVIEW (Youssef): the French relationship-type descriptions below are DRAFT starting values — verify/correct legal terminology before finalizing. (Type NAMES come from the registry label_fr, not from here.)",
     "fieldLabel": "Type de relation",
     "fieldHint": "La position de ce contrat dans la chaîne de réalisation ou la relation juridique.",
     "comingSoon": "Bientôt disponible",
@@ -59,15 +58,15 @@
     },
     "desc": {
       "MAIN": "L'accord principal entre le maître d'ouvrage et l'entrepreneur principal.",
-      "SUBCONTRACT": "Un accord par lequel une partie engage un sous-traitant pour réaliser une partie des travaux.",
-      "NOMINATED_SUB": "Un sous-traitant désigné par le maître d'ouvrage et engagé par l'entrepreneur principal.",
-      "NOMINATED_SUPPLIER": "Un fournisseur désigné par le maître d'ouvrage et engagé par l'entrepreneur principal.",
+      "SUBCONTRACT": "L'accord entre un entrepreneur et un sous-traitant dans le cadre d'un contrat principal.",
+      "NOMINATED_SUB": "Un sous-traitant désigné par le maître d'ouvrage, engagé dans le cadre du contrat principal.",
+      "NOMINATED_SUPPLIER": "Un fournisseur désigné par le maître d'ouvrage, engagé dans le cadre du contrat principal.",
       "SUPPLY_DIRECT": "Une fourniture ou un achat direct de biens et de matériaux.",
-      "CONSULTANT": "Nomination d'un consultant ou d'un ingénieur pour des services professionnels.",
+      "CONSULTANT": "Désignation d'un consultant ou d'un ingénieur pour des prestations professionnelles.",
       "USUFRUCT": "Un droit d'usage et de jouissance d'un bien appartenant à autrui.",
-      "JOINT_VENTURE": "Un accord entre deux parties ou plus pour coopérer sur un projet commun.",
-      "FRAMEWORK": "Un accord-cadre pour conclure des contrats récurrents à la demande.",
-      "NOVATION": "Transfert des droits et obligations d'un contrat à une nouvelle partie qui se substitue à l'une des parties."
+      "JOINT_VENTURE": "Deux ou plusieurs parties s'associant pour un projet commun.",
+      "FRAMEWORK": "Un accord général régissant des contrats d'application répétés.",
+      "NOVATION": "Transfert des droits et obligations d'un contrat à une nouvelle partie."
     },
     "parent": {
       "label": "Contrat parent",
@@ -77,6 +76,78 @@
       "none": "Aucun parent",
       "noneAvailable": "Aucun contrat parent éligible dans ce projet pour l'instant.",
       "noMatches": "Aucun contrat correspondant."
+    }
+  },
+  "partiesEditor": {
+    "title": "Modifier les parties du contrat",
+    "subtitle": "Gérez les organisations liées par ce contrat et les personnes qui signent en leur nom.",
+    "partyCount": "Parties : {{count}}",
+    "signatoriesChip": "{{designated}}/{{total}} signataires",
+    "signatoriesHint": "Les signataires signent au nom de leur organisation.",
+    "frozen": "Ce contrat est signé — ses parties sont figées et ne peuvent plus être modifiées.",
+    "addManually": "Ajouter manuellement",
+    "addParty": "Ajouter une partie",
+    "uploadDocument": "Téléverser un document",
+    "comingSoon": "Bientôt disponible",
+    "save": "Enregistrer les parties",
+    "saved": "Parties enregistrées.",
+    "saveError": "Impossible d'enregistrer les parties. Veuillez réessayer.",
+    "loadError": "Impossible de charger les parties.",
+    "retry": "Réessayer",
+    "issuesToFix": "{{count}} problèmes à corriger",
+    "empty": {
+      "title": "Aucune partie pour l'instant",
+      "hint": "Ajoutez-les manuellement, ou téléversez un document de contrat pour les extraire automatiquement."
+    },
+    "role": {
+      "placeholder": "Sélectionner un rôle",
+      "loadError": "Impossible de charger les rôles"
+    },
+    "fields": {
+      "orgName": "Nom de l'organisation",
+      "orgNamePlaceholder": "ex. Al Murooj Real Estate Development",
+      "role": "Rôle",
+      "signs": "Cette partie signe",
+      "signsHint": "Activez si cette partie signe le contrat.",
+      "ownOrg": "Il s'agit de votre organisation",
+      "ownOrgHint": "Liez cette partie à votre organisation SIGN.",
+      "ownOrgHintNamed": "Liez cette partie à {{org}}."
+    },
+    "confirm": {
+      "roleNeedsConfirmation": "Le rôle doit être confirmé",
+      "confirm": "Confirmer",
+      "gate": "Confirmez {{count}} rôles pour continuer"
+    },
+    "card": {
+      "partyN": "Partie {{n}}",
+      "remove": "Supprimer la partie",
+      "unnamedParty": "Partie sans nom",
+      "signsBadge": "Signe"
+    },
+    "contacts": {
+      "title": "Contacts autorisés",
+      "hint": "Les personnes autorisées à agir pour cette partie. Le signataire désigné reçoit l'invitation.",
+      "name": "Nom complet",
+      "role": "Fonction",
+      "email": "Adresse e-mail",
+      "designated": "Signataire désigné · reçoit l'invitation",
+      "designatedShort": "Signataire",
+      "addContact": "Ajouter un contact",
+      "removeContact": "Supprimer"
+    },
+    "legal": {
+      "title": "Détails juridiques (facultatif)",
+      "taxCard": "Carte fiscale",
+      "taxCardPlaceholder": "Numéro d'identification fiscale",
+      "address": "Adresse légale",
+      "addressPlaceholder": "Adresse enregistrée"
+    },
+    "errors": {
+      "orgNameRequired": "Saisissez un nom d'organisation",
+      "roleRequired": "Sélectionnez un rôle",
+      "emailRequired": "Saisissez une adresse e-mail",
+      "emailInvalid": "Saisissez une adresse e-mail valide",
+      "multipleDesignated": "Un seul signataire désigné est autorisé par partie."
     }
   },
   "contractCreate": {
@@ -550,7 +621,8 @@
       "risks": "Analyse des risques",
       "obligations": "Obligations",
       "versions": "Versions",
-      "subcontractPackages": "Lots de sous-traitance"
+      "subcontractPackages": "Lots de sous-traitance",
+      "parties": "Parties"
     },
     "noClauses": "Aucune clause pour l'instant. Ajoutez des clauses depuis la bibliothèque.",
     "addClause": "Ajouter une clause",

@@ -77,6 +77,78 @@
       "noMatches": "No matching contracts."
     }
   },
+  "partiesEditor": {
+    "title": "Edit contract parties",
+    "subtitle": "Manage the organisations bound by this contract, and the people who sign on their behalf.",
+    "partyCount": "Parties: {{count}}",
+    "signatoriesChip": "{{designated}}/{{total}} signatories",
+    "signatoriesHint": "Signatories sign on behalf of their organisation.",
+    "frozen": "This contract is signed — its parties are frozen and can no longer be edited.",
+    "addManually": "Add manually",
+    "addParty": "Add party",
+    "uploadDocument": "Upload document",
+    "comingSoon": "Coming soon",
+    "save": "Save parties",
+    "saved": "Parties saved.",
+    "saveError": "Couldn't save the parties. Please try again.",
+    "loadError": "Couldn't load the parties.",
+    "retry": "Retry",
+    "issuesToFix": "{{count}} issues to fix",
+    "empty": {
+      "title": "No parties yet",
+      "hint": "Add them manually, or upload a contract document to auto-extract."
+    },
+    "role": {
+      "placeholder": "Select a role",
+      "loadError": "Couldn't load roles"
+    },
+    "fields": {
+      "orgName": "Organisation name",
+      "orgNamePlaceholder": "e.g. Al Murooj Real Estate Development",
+      "role": "Role",
+      "signs": "This party signs",
+      "signsHint": "Turn on if this party signs the contract.",
+      "ownOrg": "This is your organisation",
+      "ownOrgHint": "Link this party to your SIGN organisation.",
+      "ownOrgHintNamed": "Link this party to {{org}}."
+    },
+    "confirm": {
+      "roleNeedsConfirmation": "Role needs confirmation",
+      "confirm": "Confirm",
+      "gate": "Confirm {{count}} roles to continue"
+    },
+    "card": {
+      "partyN": "Party {{n}}",
+      "remove": "Remove party",
+      "unnamedParty": "Unnamed party",
+      "signsBadge": "Signs"
+    },
+    "contacts": {
+      "title": "Authorised contacts",
+      "hint": "The people authorised to act for this party. The designated signatory receives the invitation.",
+      "name": "Full name",
+      "role": "Title",
+      "email": "Email address",
+      "designated": "Designated signatory · receives the invitation",
+      "designatedShort": "Signatory",
+      "addContact": "Add contact",
+      "removeContact": "Remove"
+    },
+    "legal": {
+      "title": "Legal details (optional)",
+      "taxCard": "Tax card",
+      "taxCardPlaceholder": "Tax registration number",
+      "address": "Legal address",
+      "addressPlaceholder": "Registered address"
+    },
+    "errors": {
+      "orgNameRequired": "Enter an organisation name",
+      "roleRequired": "Select a role",
+      "emailRequired": "Enter an email address",
+      "emailInvalid": "Enter a valid email address",
+      "multipleDesignated": "Only one designated signatory is allowed per party."
+    }
+  },
   "contractCreate": {
     "addContract": "Add Contract",
     "newContract": "New Contract",
@@ -547,7 +619,8 @@
       "risks": "Risk Analysis",
       "obligations": "Obligations",
       "versions": "Versions",
-      "subcontractPackages": "Sub-Contract Packages"
+      "subcontractPackages": "Sub-Contract Packages",
+      "parties": "Parties"
     },
     "noClauses": "No clauses yet. Add clauses from the library.",
     "addClause": "Add Clause",
