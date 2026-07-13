@@ -4849,10 +4849,49 @@ Additional hard rules (on top of 1–8 above):
     them for any future party-type display; SUBCONTRACTOR renders as
     "Sub-Contractor" per naming rule 5.
 
+### Slice 4a — Parties & Team directory DISPLAY (gated PR, awaiting CEO visual merge)
+
+**`ProjectPartiesDirectory`** (`apps/sign/src/components/project/ProjectPartiesDirectory.tsx`
++ pure helpers in `directoryData.ts`) replaces the Parties & Team tab
+placeholder with the three-section directory. **DISPLAY-ONLY** — every write
+action is Slice 4b:
+
+- **External parties** — card grid off `['project-parties', projectId]`
+  (`projectPartyService.getAll(projectId)` — the param is camelCase
+  `projectId`). Initials avatar (NO org logo — `getAll` does not hydrate
+  `party_organization`), party_type badge via the SHARED
+  `projectDashboard.analytics.directory.partyType.*` keys (rule 10),
+  3-state status badge from `invitation_status`: `ACCEPTED`→Active
+  (emerald), `INVITED`→Invited (amber), `PENDING`→Pending (gray) — the
+  column is a varchar, unknown values fall back to pending. Null handling:
+  `contact_person` → italic "No contact person", `phone` → "—". Footer is
+  status-contextual WITHOUT fabricated dates (the entity has NO
+  `accepted_at`/`invited_at` — only the honest `created_at` "Added" date;
+  lesson #203). All+6-type filter chips with counts (0-count disabled).
+- **Internal team** — matrix off `['project-members', projectId]`
+  (`projectService.getMembers`). Nulls: `job_title` (null OR '') → "Not
+  set"; `permission_level` null → VIEWER fallback; empty-name invitee →
+  pending-teammate row with dashed avatar. levelBadge palette mirrored
+  from ProjectPermissionsPage; "Manage permissions ↗" links to
+  `/app/projects/:id/permissions`.
+- **Portal Guests** — labelled VISION placeholder ("Planned · next
+  phase"), NEVER fetched/populated: guest access is contract-scoped
+  (`guest_contract_access` has no project_id) and no project-scoped guest
+  endpoint exists. Do not wire this section without that backend first.
+
+Hard rules: reuses Slice 3's TWO query keys verbatim (lesson #213 — no
+parallel fetches, no lifting); per-source error isolation (parties error
+never blanks team, and vice versa); i18n under
+`projectDashboard.directory.*` (41-key en/ar/fr parity; the old
+`projectDashboard.parties.comingSoon` was REMOVED with the placeholder).
+**Slice 4b (NOT built): invite/resend POST, add-party flow** — the
+buttons render disabled with an explanatory title; there is NO existing
+party-invite UI surface to navigate to.
+
 ### Deferred (later 7.20 slices — do NOT assume built)
-Risk mix, obligation rollup, contracts-by-status widget,
-parties & team directory, customize mode (v1 layout persistence will follow the
-`sign_portfolio_view` localStorage pattern — there is NO backend layout store).
+Slice 4b (inline invite/add-party write actions), customize mode (v1
+layout persistence will follow the `sign_portfolio_view` localStorage
+pattern — there is NO backend layout store).
 
 ---
 
@@ -4952,10 +4991,6 @@ legal-terminology review (same posture as `clauseType.*`).
    as the source clause.
 4. **Merge "mark handled" reuses the existing `APPROVED` status** — do not
    invent a new risk status.
-
-Parties & team directory (full), customize mode (v1 layout persistence will
-follow the `sign_portfolio_view` localStorage pattern — there is NO backend
-layout store).
 
 ---
 
