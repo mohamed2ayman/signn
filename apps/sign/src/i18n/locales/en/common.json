@@ -575,8 +575,62 @@
         }
       }
     },
-    "parties": {
-      "comingSoon": "The parties & team directory is coming in a later release."
+    "directory": {
+      "retry": "Retry",
+      "parties": {
+        "title": "External Parties",
+        "error": "Could not load external parties",
+        "filterAll": "All",
+        "noneOfType": "No parties of this type",
+        "status": {
+          "active": "Active",
+          "invited": "Invited",
+          "pending": "Pending"
+        },
+        "footer": {
+          "active": "Active on this project",
+          "invited": "Invitation sent — awaiting response",
+          "notInvited": "Not yet invited"
+        },
+        "noContactPerson": "No contact person",
+        "copyEmail": "Copy email",
+        "emailCopied": "Copied",
+        "added": "Added {{date}}",
+        "invite": "Send invite",
+        "resendInvite": "Resend invite",
+        "inviteComingSoon": "Invite actions ship in the next release",
+        "empty": "No external parties yet",
+        "emptyHint": "Parties added to this project will appear here.",
+        "addParty": "Add party"
+      },
+      "team": {
+        "title": "Internal Team",
+        "error": "Could not load team members",
+        "managePermissions": "Manage permissions",
+        "empty": "No team members yet",
+        "emptyHint": "Members added to this project will appear here.",
+        "columns": {
+          "member": "Member",
+          "jobTitle": "Job Title",
+          "role": "System Role",
+          "permission": "Permission",
+          "added": "Added"
+        },
+        "jobTitleNotSet": "Not set",
+        "pendingTeammate": "Pending teammate",
+        "pendingInvitation": "(pending invitation)",
+        "permissionLevel": {
+          "VIEWER": "Viewer",
+          "COMMENTER": "Commenter",
+          "EDITOR": "Editor",
+          "APPROVER": "Approver"
+        }
+      },
+      "guests": {
+        "title": "Portal Guests",
+        "plannedBadge": "Planned · next phase",
+        "explanation": "Guest access is contract-scoped today, so a project-wide guest list isn't available yet. Guests invited to this project's contracts will appear here once project-level guest visibility ships."
+      }
     }
   },
   "contract": {

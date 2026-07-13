@@ -169,11 +169,13 @@ describe('ProjectDetailPage — tabbed shell (7.20 slice 1)', () => {
     expect(await screen.findByText('Main Construction Agreement')).toBeInTheDocument();
   });
 
-  it('switching to Parties & Team shows the placeholder', async () => {
+  it('switching to Parties & Team shows the directory (7.20 slice 4a)', async () => {
     renderPage();
     await screen.findAllByText('Metro Line 4');
     await userEvent.click(screen.getByRole('tab', { name: 'projectDashboard.tabs.partiesTeam' }));
-    expect(await screen.findByText('projectDashboard.parties.comingSoon')).toBeInTheDocument();
+    // The Portal Guests vision section always renders — the directory's
+    // stable marker regardless of parties/members data.
+    expect(await screen.findByText('projectDashboard.directory.guests.title')).toBeInTheDocument();
   });
 
   it('renders a real score once dashboard + contracts + obligations resolve', async () => {
@@ -421,7 +423,9 @@ describe('ProjectDetailPage — analytics row (7.20 slice 3)', () => {
     await userEvent.click(
       await screen.findByRole('button', { name: /projectDashboard\.analytics\.directory\.viewAll/ }),
     );
-    expect(await screen.findByText('projectDashboard.parties.comingSoon')).toBeInTheDocument();
+    // Lands on the full directory (slice 4a) — guests section is its
+    // always-rendered marker.
+    expect(await screen.findByText('projectDashboard.directory.guests.title')).toBeInTheDocument();
   });
 
   it('shows per-widget empty states with no data', async () => {

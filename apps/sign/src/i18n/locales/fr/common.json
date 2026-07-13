@@ -577,8 +577,62 @@
         }
       }
     },
-    "parties": {
-      "comingSoon": "L'annuaire des parties et de l'équipe arrive dans une prochaine version."
+    "directory": {
+      "retry": "Réessayer",
+      "parties": {
+        "title": "Parties externes",
+        "error": "Impossible de charger les parties externes",
+        "filterAll": "Toutes",
+        "noneOfType": "Aucune partie de ce type",
+        "status": {
+          "active": "Active",
+          "invited": "Invitée",
+          "pending": "En attente"
+        },
+        "footer": {
+          "active": "Active sur ce projet",
+          "invited": "Invitation envoyée — en attente de réponse",
+          "notInvited": "Pas encore invitée"
+        },
+        "noContactPerson": "Aucun contact",
+        "copyEmail": "Copier l'e-mail",
+        "emailCopied": "Copié",
+        "added": "Ajoutée le {{date}}",
+        "invite": "Envoyer l'invitation",
+        "resendInvite": "Renvoyer l'invitation",
+        "inviteComingSoon": "Les actions d'invitation arrivent dans la prochaine version",
+        "empty": "Aucune partie externe pour l'instant",
+        "emptyHint": "Les parties ajoutées à ce projet apparaîtront ici.",
+        "addParty": "Ajouter une partie"
+      },
+      "team": {
+        "title": "Équipe interne",
+        "error": "Impossible de charger les membres de l'équipe",
+        "managePermissions": "Gérer les permissions",
+        "empty": "Aucun membre d'équipe pour l'instant",
+        "emptyHint": "Les membres ajoutés à ce projet apparaîtront ici.",
+        "columns": {
+          "member": "Membre",
+          "jobTitle": "Fonction",
+          "role": "Rôle système",
+          "permission": "Permission",
+          "added": "Ajouté le"
+        },
+        "jobTitleNotSet": "Non défini",
+        "pendingTeammate": "Membre en attente",
+        "pendingInvitation": "(invitation en attente)",
+        "permissionLevel": {
+          "VIEWER": "Lecteur",
+          "COMMENTER": "Commentateur",
+          "EDITOR": "Éditeur",
+          "APPROVER": "Approbateur"
+        }
+      },
+      "guests": {
+        "title": "Invités du portail",
+        "plannedBadge": "Prévu · phase suivante",
+        "explanation": "L'accès invité est aujourd'hui limité au contrat ; une liste des invités à l'échelle du projet n'est pas encore disponible. Les invités des contrats de ce projet apparaîtront ici lorsque cette visibilité sera disponible."
+      }
     }
   },
   "contract": {
