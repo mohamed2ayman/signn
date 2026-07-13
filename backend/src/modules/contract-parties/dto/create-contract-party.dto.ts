@@ -1,8 +1,9 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   IsArray,
   IsBoolean,
+  IsNotEmpty,
   IsOptional,
   IsString,
   IsUUID,
@@ -17,7 +18,12 @@ export class CreateContractPartyDto {
   @MaxLength(50)
   role_code: string;
 
+  // Trim first (global ValidationPipe has transform: true), then require
+  // non-empty so a whitespace-only name is a 400 — matching the frontend's
+  // "Enter an organisation name". The service re-checks for direct callers.
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   @IsString()
+  @IsNotEmpty()
   @MaxLength(255)
   org_name: string;
 

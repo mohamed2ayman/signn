@@ -75,6 +75,7 @@ export class ContractPartiesService {
     const contract = await this.contractAccess.findInOrg(contractId, orgId);
     await assertContractMutable(this.partyRepository.manager, contract);
 
+    this.assertOrgNamePresent(dto.org_name);
     await this.assertValidRoleCode(dto.role_code);
     await this.assertOrgLinkInHostOrg(dto.organization_id, orgId);
     this.assertDesignatedSignatoryInvariant(
@@ -86,7 +87,7 @@ export class ContractPartiesService {
       const party = em.create(ContractParty, {
         contract_id: contractId,
         role_code: dto.role_code,
-        org_name: dto.org_name,
+        org_name: dto.org_name.trim(),
         is_signatory: dto.is_signatory ?? false,
         organization_id: dto.organization_id ?? null,
         legal_tax_card: dto.legal_tax_card ?? null,
@@ -136,6 +137,8 @@ export class ContractPartiesService {
     if (dto.role_code !== undefined) {
       await this.assertValidRoleCode(dto.role_code);
     }
+    // org_name, when supplied on update, must be non-empty (matches create).
+    this.assertOrgNamePresent(dto.org_name);
     if (dto.organization_id !== undefined && dto.organization_id !== null) {
       await this.assertOrgLinkInHostOrg(dto.organization_id, orgId);
     }
@@ -154,7 +157,7 @@ export class ContractPartiesService {
 
     return this.partyRepository.manager.transaction(async (em) => {
       if (dto.role_code !== undefined) party.role_code = dto.role_code;
-      if (dto.org_name !== undefined) party.org_name = dto.org_name;
+      if (dto.org_name !== undefined) party.org_name = dto.org_name.trim();
       if (dto.is_signatory !== undefined) party.is_signatory = dto.is_signatory;
       if (dto.organization_id !== undefined) {
         party.organization_id = dto.organization_id;
@@ -212,6 +215,23 @@ export class ContractPartiesService {
     // Contacts go with the party (DB ON DELETE CASCADE).
     // lint-exempt: wall-protected (findInOrg above); chokepoint migration scheduled
     await this.partyRepository.delete({ id: party.id });
+  }
+
+  /**
+   * org_name is required and must be non-empty after trimming — a
+   * whitespace-only name is rejected with 400, matching the frontend's
+   * "Enter an organisation name". `undefined` is a no-op (an update that
+   * does not touch org_name leaves the persisted value unchanged); the
+   * create DTO makes org_name required so it is always defined there. The
+   * DTO also carries `@Transform(trim) + @IsNotEmpty()` for the HTTP layer;
+   * this service guard is the authority for direct callers (and trims on
+   * persist so stored values are clean regardless of entry path).
+   */
+  private assertOrgNamePresent(orgName: string | undefined): void {
+    if (orgName === undefined) return;
+    if (!orgName.trim()) {
+      throw new BadRequestException('An organisation name is required.');
+    }
   }
 
   /**

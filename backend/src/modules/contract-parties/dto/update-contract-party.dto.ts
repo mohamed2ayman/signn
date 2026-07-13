@@ -1,8 +1,9 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   IsArray,
   IsBoolean,
+  IsNotEmpty,
   IsOptional,
   IsString,
   IsUUID,
@@ -26,8 +27,12 @@ export class UpdateContractPartyDto {
   @MaxLength(50)
   role_code?: string;
 
+  // Optional on update, but when supplied it must be non-empty after trimming
+  // (matches create + the frontend). undefined = leave org_name unchanged.
   @IsOptional()
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   @IsString()
+  @IsNotEmpty()
   @MaxLength(255)
   org_name?: string;
 

@@ -455,6 +455,59 @@ describeReal('contract_parties — Slice T0c-1 (real Postgres)', () => {
     expect(await partyCount(contractId)).toBe(0);
   });
 
+  // ── (iv-b) org_name required (client↔server alignment) ────────────────────
+
+  it('rejects an EMPTY org_name with 400 and writes no row', async () => {
+    const contractId = await insertContract(projectAId);
+    await expect(
+      partiesService.create(contractId, orgAId, {
+        role_code: 'EMPLOYER',
+        org_name: '',
+      }),
+    ).rejects.toThrow(BadRequestException);
+    expect(await partyCount(contractId)).toBe(0);
+  });
+
+  it('rejects a WHITESPACE-ONLY org_name with 400 and writes no row', async () => {
+    const contractId = await insertContract(projectAId);
+    await expect(
+      partiesService.create(contractId, orgAId, {
+        role_code: 'EMPLOYER',
+        org_name: '   ',
+      }),
+    ).rejects.toThrow(BadRequestException);
+    expect(await partyCount(contractId)).toBe(0);
+  });
+
+  it('trims org_name on create (stored value has no surrounding whitespace)', async () => {
+    const contractId = await insertContract(projectAId);
+    const created = await partiesService.create(contractId, orgAId, {
+      role_code: 'EMPLOYER',
+      org_name: '  Trimmed Co  ',
+    });
+    const [row] = await dataSource.query(
+      `SELECT org_name FROM contract_parties WHERE id = $1`,
+      [created.id],
+    );
+    expect(row.org_name).toBe('Trimmed Co');
+  });
+
+  it('update: an EMPTY org_name → 400 and the party is unchanged', async () => {
+    const contractId = await insertContract(projectAId);
+    const created = await partiesService.create(contractId, orgAId, {
+      role_code: 'EMPLOYER',
+      org_name: 'Original Co',
+    });
+    await expect(
+      partiesService.update(contractId, created.id, orgAId, { org_name: '  ' }),
+    ).rejects.toThrow(BadRequestException);
+    const [row] = await dataSource.query(
+      `SELECT org_name FROM contract_parties WHERE id = $1`,
+      [created.id],
+    );
+    expect(row.org_name).toBe('Original Co');
+  });
+
   // ── (v) tenancy walls ─────────────────────────────────────────────────────
 
   it('⭐ cross-org contract → 404 (findInOrg wall), never 403, no row written', async () => {
