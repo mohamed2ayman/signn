@@ -5138,7 +5138,7 @@ FROZEN and every legal-content mutation is rejected.
 
 ---
 
-## Multi-Tier Contract Relationships — T0a (relationship type) + T0b (parent linking)
+## Multi-Tier Contract Relationships — T0a (relationship type) + T0b (parent linking) + T0c (parties)
 
 The multi-tier trunk gives a contract a **position in the delivery chain / legal
 relationship** that is SEPARATE from its standard form. Shipped so far: **T0a**
@@ -5206,3 +5206,86 @@ PRs #147/#149) and **T0b** (parent linking, PR #150, squash-merged to `main` at
   module) is a SEPARATE future plan-gated slice — it is NOT started, and needs a
   real `sub_contracts` row-count check + founder sign-off (plan/feature-flag
   implications) first.
+
+### T0c — Parties (party-role registry + ContractParty spine + Parties Editor)
+
+The THIRD orthogonal dimension: WHO is bound by a contract and who signs on
+their behalf. Shipped as T0c-1 (backend spine, PR #152, squash `380d675`), the
+French-label finalization (PR #154, squash `00d317a`), and T0c-2 (Parties Editor
+frontend, PR #155, squash `fefbfcc`). Migration `1770000000001` (three tables) +
+`1770000000002` (French `label_fr` finalization for `party_roles` +
+`contract_relationship_types`). This is **Option 3-lite** — the legacy
+`ProjectParty`/`PartyType` model is UNTOUCHED (a shared party-vocabulary
+consolidation is a later slice).
+
+**`party_roles` — the role REGISTRY (mirrors `contract_relationship_types`).**
+11 seeded roles (`EMPLOYER`, `CONTRACTOR`, `ENGINEERING_CONSULTANT`,
+`DESIGN_CONSULTANT`, `COST_CONSULTANT`, `SUBCONTRACTOR`, `SUPPLIER`, `ENGINEER`,
+`GRANTOR`, `BENEFICIARY`, `OTHER`), each with `label_en/label_ar/label_fr`
+(EN/AR founder-final; FR finalized by `1770000000002`), an `applies_to` scope
+(`project` | `contract` | `both`, DB `CHECK`-enforced), `is_active`, `sort_order`.
+The registry is the SINGLE source of valid role codes — `contract_parties.role_code`
+is a SOFT varchar reference (no hard FK — the `contract_type`/`relationship_type`
+convention). Adding a role = a seed row, not a code/`ALTER TYPE` change. Served by
+**`GET /party-roles`** (active-only default; `?include_inactive=true`;
+`?applies_to=contract` → rows where `applies_to IN ('contract','both')` — the
+contract-party picker set). `JwtAuthGuard` only (global reference data).
+
+**`contract_parties` — the parties on a contract.** `contract_id` FK
+**`ON DELETE CASCADE`** (owned children — deliberately OPPOSITE the
+`parent_contract_id` RESTRICT; FK on-delete follows ownership, lesson #233);
+soft `role_code`; `org_name` (free text); `is_signatory`; optional
+`organization_id` FK → organizations **`ON DELETE SET NULL`** (v1 **host-org-only**
+— a foreign org id, even a real one, resolves 404, no existence leak);
+`legal_tax_card`; `legal_address`. **`contract_party_contacts`** — named contacts
+under a party, `ON DELETE CASCADE`, with `is_designated_signatory`. Contacts are
+**EMBEDDED in the party payload** (create carries a contacts array; update
+`contacts !== undefined` = FULL REPLACE — contact ids churn on edit, safe only
+because the pin-freeze blocks edits once signed, lesson #234).
+
+**Service ordering on EVERY party entry point** (`ContractPartiesService`):
+1. **Tenancy wall** — `ContractAccessService.findInOrg(contractId, orgId)`,
+   cross-org → **404-not-403** FIRST (no existence leak).
+2. **Pin guard (mutations)** — `assertContractMutable` → **409 CONTRACT_PINNED**
+   on a signed contract (parties are substantive legal content; same service-seam
+   gate as the ~16 existing write paths).
+3. **Field validation (400)** — `role_code` must be active + `applies_to`
+   contract-scoped; `organization_id` host-org-only; the designated-signatory
+   invariant (only on a signatory party, at most ONE per party). Fields mapped
+   EXPLICITLY, never spread (lesson #231).
+Routes are contract-scoped (`/contracts/:contractId/parties` GET/POST + `:partyId`
+PUT/DELETE); **party MUTATIONS are floored at PROJECT_MANAGER+ (EDITOR)** via the
+Phase 7.15 obligation stack (`PermissionLevelGuard` + `ResolveObligationProjectMiddleware`);
+reads are open to project members. **`contract_parties` + `contract_party_contacts`
+are in the contract-repo lint protected set** (wall-protected exemption
+annotations); **`PartyRole` is EXCLUDED** (global registry, no org/contract root —
+same class as `ContractRelationshipType`).
+
+**Parties Editor frontend (T0c-2).** The Contract Detail **"Parties" tab**
+(`ContractPartiesEditor` + `PartyCard` + `PartyRoleSelect` + pure `partiesModel`,
+wired to a new `partyService`). Registry-driven role picker (labels by locale from
+`GET /party-roles`, **never hardcoded**). Five bounded mock-additions, each held to
+its boundary: (1) **client-only role-confirm gate** (`needs_role_confirm`, no
+persisted column; blocks Save until confirmed); (2) **display-only signatory chip**
+(`{designated}/{total}` — never gates Save; 1 signatory is valid); (3) **disabled
+"upload-to-extract"** "coming soon" (NO pipeline built/called); (4) **org_name free
+text** for all parties + a **host-only "your organisation"** `organization_id`
+toggle (no counterparty directory picker); (5) **inline validation mirroring the
+real 400s** (role, contact email required+format, one-designated). **EDITOR-floor +
+pinned = read-only** (mirrors the backend guards). i18n `partiesEditor.*` in en/ar/fr
+(54-key parity, full Arabic RTL) + `contract.tabs.parties`; the French
+`relationshipType.desc` descriptions were finalized in `fr/common.json` (the labels
+were already finalized in the DB by `1770000000002`). Role labels come from the API
+registry, never i18n.
+
+**NOMINATED label note (verified, no action):** `contract_relationship_types`
+`label_ar` for `NOMINATED_SUB` / `NOMINATED_SUPPLIER` already reads `مُعيَّن`
+(correct — the T0a.2 migration `1768000000002` fixed the earlier `مُسمّى`); no
+separate label migration is needed. `party_roles` has no "Nominated" role.
+
+**Known follow-up (flagged, NOT done):** the backend does NOT currently 400 on an
+empty `org_name` (`CreateContractPartyDto.org_name` is `@IsString` — `''` passes,
+and the service does not check non-empty); only role / contact-email / one-designated
+are real 400s. The Parties Editor enforces `org_name`-required CLIENT-side per the
+mock; a 1-line `@IsNotEmpty()` on the DTO (+ a service non-empty check) would align
+client↔server. Left as a follow-up (T0c-2 was frontend-only).
