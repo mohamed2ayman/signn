@@ -4884,14 +4884,69 @@ parallel fetches, no lifting); per-source error isolation (parties error
 never blanks team, and vice versa); i18n under
 `projectDashboard.directory.*` (41-key en/ar/fr parity; the old
 `projectDashboard.parties.comingSoon` was REMOVED with the placeholder).
-**Slice 4b (NOT built): invite/resend POST, add-party flow** — the
-buttons render disabled with an explanatory title; there is NO existing
-party-invite UI surface to navigate to.
+**Slice 4b (see next): invite/resend POST** — shipped as a gated PR
+below. **Add-party stays backend-gated** (no project-scoped create UI
+flow) — its button remains disabled with the `addPartyGated` title.
+
+### Slice 4b — Parties directory INVITE / RESEND action (gated PR, awaiting CEO visual merge)
+
+Wires the Send/Resend invite buttons on the external-parties cards to the
+real endpoint. **INVITE ONLY** — add-party is still out (backend-gated).
+Frontend-only; branch off `004053a`.
+
+⚠️ **SAFETY CONTRACT — the frontend is the SOLE guard against duplicate
+real emails.** `POST /project-parties/:id/invite`
+(`project-parties.service.ts:117-148`) sends a REAL email on EVERY call
+with **no idempotency, no rate limit, no already-invited guard**, and
+**regenerates `invitation_token` each call** (the previously-sent link
+dies). It also sets `invitation_status='INVITED'` UNCONDITIONALLY — so
+re-inviting an ACCEPTED party silently downgrades it. Two MANDATORY
+guards (both mutation-tested, not polish):
+- **(a) Confirmation dialog** — `InvitePartyDialog.tsx` on the shared
+  `obligations/ModalShell`. Nothing sends without an explicit Confirm;
+  states WHO (name + email, `dir="auto"`) + WHAT (send vs resend copy;
+  resend warns the old link dies). Cancel/Escape/backdrop/× are inert
+  mid-flight (`onClose` gated by `isPending`).
+- **(b) Synchronous in-flight guard** — a `useRef` (`inviteInFlight`)
+  flips to `true` BEFORE `mutate()` in `confirmInvite`, so two same-tick
+  clicks (a real double-click, before React commits the disabled attr)
+  produce exactly ONE POST; it RESETS in `onSettled` so a deliberate
+  retry after failure genuinely re-POSTs. `isPending` disables the
+  confirm + card buttons as the visible second layer. **BOTH halves are
+  mutation-tested** — remove the ref → the double-click test goes RED;
+  remove the `onSettled` reset → the retry-after-failure test goes RED
+  (see lesson #238: a re-entry guard needs BOTH acquire AND release
+  covered — a stuck release silently swallows all future sends while
+  acquire tests stay green).
+
+Success → `qc.invalidateQueries(['project-parties', projectId])` (card
+flips PENDING→INVITED via refetch) + success toast. Error → 403/404
+mapped to specific toasts, dialog stays open for a deliberate retry, NO
+state flip. **Role gate mirrors the backend RolesGuard EXACT-match**:
+`@Roles(OWNER_ADMIN, OWNER_CREATOR)` is membership, NOT hierarchy — even
+`SYSTEM_ADMIN` is excluded (would 403), so the button is disabled with an
+`inviteNoPermission` title for anyone else. **ACCEPTED parties get NO
+invite affordance** (re-invite would downgrade them). Uses the
+established `useMutation` + `react-hot-toast` + `invalidateQueries`
+pattern (copied from `obligations/AssignUserModal.tsx`) — no new modal,
+toast, or dep. 14 new keys under `projectDashboard.directory.parties` in
+en/ar/fr (exact parity, script-verified). The `inviteComingSoon` key was
+removed (its only consumer was this file). Verified: full frontend suite
+37 files / 321 tests green; tsc ZERO new vs origin/main worktree baseline
+(lesson #237 method); browser pass under a real SYSTEM_ADMIN session
+confirmed the disabled-with-reason state live (2 PENDING → 2 disabled
+"Send invite" with the `inviteNoPermission` title; 2 ACCEPTED → 0
+buttons); the dev mailer is dead (`localhost:1025` ECONNREFUSED) and
+`sendInvitation` swallows the SMTP error best-effort, so no email leaves
+this environment — the enabled-path send is proven by tests only and the
+controlled live send is left for the CEO.
 
 ### Deferred (later 7.20 slices — do NOT assume built)
-Slice 4b (inline invite/add-party write actions), customize mode (v1
-layout persistence will follow the `sign_portfolio_view` localStorage
-pattern — there is NO backend layout store).
+Add-party inline create (still backend-gated — no project-scoped create
+endpoint; `CreatePartyDto` requires `project_id` + would need a create
+UI flow), customize mode (v1 layout persistence will follow the
+`sign_portfolio_view` localStorage pattern — there is NO backend layout
+store).
 
 ---
 
