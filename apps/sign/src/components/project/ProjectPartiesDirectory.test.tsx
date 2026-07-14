@@ -18,8 +18,21 @@ import type { ProjectParty, ProjectMember } from '@/types';
 
 // ─────────────────────────────────────────────────────────────────
 // Mocks — service level (lesson #37), t() returns the key (codebase
-// convention, matches ObligationsTab.test.tsx).
+// convention, matches ObligationsTab.test.tsx). Since Slice 4b the
+// component reads the current user's role for the invite gate — mock
+// react-redux with an OWNER_ADMIN so display tests see enabled invite
+// buttons (role-gating specifics live in the .invite.test.tsx suite).
 // ─────────────────────────────────────────────────────────────────
+
+vi.mock('react-redux', () => ({
+  useSelector: (sel: (s: unknown) => unknown) =>
+    sel({ auth: { user: { id: 'u-1', role: 'OWNER_ADMIN' } } }),
+  useDispatch: () => vi.fn(),
+}));
+
+vi.mock('react-hot-toast', () => ({
+  toast: { success: vi.fn(), error: vi.fn() },
+}));
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -29,7 +42,7 @@ vi.mock('react-i18next', () => ({
 }));
 
 vi.mock('@/services/api/projectPartyService', () => {
-  const svc = { getAll: vi.fn() };
+  const svc = { getAll: vi.fn(), invite: vi.fn() };
   return { projectPartyService: svc, default: svc };
 });
 
@@ -209,9 +222,11 @@ describe('ProjectPartiesDirectory', () => {
     ).toBeGreaterThanOrEqual(2);
   });
 
-  // ── Invite buttons: display-only this slice (4b does the POST) ─
+  // ── Invite buttons: Slice 4b safety contract — a click opens the
+  //    confirmation dialog; the endpoint is NEVER called without an
+  //    explicit Confirm (full behavior in .invite.test.tsx). ─────────
 
-  it('renders invite buttons DISABLED — no inline POST this slice', async () => {
+  it('clicking an invite button opens the confirmation dialog and does NOT POST', async () => {
     vi.mocked(projectPartyService.getAll).mockResolvedValue(THREE_STATUS_PARTIES);
     renderDirectory();
 
@@ -219,10 +234,13 @@ describe('ProjectPartiesDirectory', () => {
     // PENDING → "Send invite", INVITED → "Resend invite"; ACCEPTED → none.
     const send = screen.getByText('projectDashboard.directory.parties.invite');
     const resend = screen.getByText('projectDashboard.directory.parties.resendInvite');
-    expect(send.closest('button')).toBeDisabled();
-    expect(resend.closest('button')).toBeDisabled();
-    // The invite endpoint must never be called from this slice.
-    expect(vi.mocked(projectPartyService.getAll)).toHaveBeenCalled();
+    expect(send.closest('button')).not.toBeDisabled();
+    expect(resend.closest('button')).not.toBeDisabled();
+
+    fireEvent.click(send.closest('button')!);
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    // The REAL-email endpoint must never fire without explicit Confirm.
+    expect(vi.mocked(projectPartyService.invite)).not.toHaveBeenCalled();
   });
 
   // ── Party-type filter ──────────────────────────────────────────

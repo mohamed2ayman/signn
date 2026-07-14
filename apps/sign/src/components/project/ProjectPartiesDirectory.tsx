@@ -1,12 +1,16 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { useQuery } from '@tanstack/react-query';
+import { useSelector } from 'react-redux';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'react-hot-toast';
+import { isAxiosError } from 'axios';
 
 import { projectPartyService } from '@/services/api/projectPartyService';
 import { projectService } from '@/services/api/projectService';
-import { PartyType, PermissionLevel } from '@/types';
+import { PartyType, PermissionLevel, UserRole } from '@/types';
 import type { ProjectParty, ProjectMember } from '@/types';
+import type { RootState } from '@/store';
 import {
   partyStatusKind,
   PARTY_STATUS_BADGE,
@@ -16,9 +20,10 @@ import {
   initialsOf,
 } from './directoryData';
 import type { PartyTypeFilter, PartyStatusKind } from './directoryData';
+import InvitePartyDialog from './InvitePartyDialog';
 
 /**
- * Parties & Team directory — 7.20 slice 4a (DISPLAY-ONLY).
+ * Parties & Team directory — 7.20 slice 4a (display) + 4b (INVITE action).
  *
  * Replaces the "Parties & Team" tab placeholder with the three-section
  * directory: (1) external parties card grid, (2) internal team matrix,
@@ -31,10 +36,21 @@ import type { PartyTypeFilter, PartyStatusKind } from './directoryData';
  * Per-source error isolation: a parties failure never blanks the team
  * section and vice versa (the Slice 2/3 isolation pattern).
  *
- * DEFERRED to Slice 4b: ALL write actions. The Send/Resend invite
- * buttons are rendered per the design but DISABLED — there is no
- * existing party-invite UI surface to navigate to, and inline POSTs
- * are out of scope this slice.
+ * ⚠️ SLICE 4B SAFETY CONTRACT — the invite endpoint
+ * (POST /project-parties/:id/invite) sends a REAL email on EVERY call
+ * with NO backend idempotency, NO rate limit, and NO "already invited"
+ * guard; it also regenerates the invitation token each call (the old
+ * link dies). The FRONTEND is the only guard against duplicate real
+ * emails, so two protections here are MANDATORY, not polish:
+ *   (a) a confirmation dialog — nothing is sent without explicit Confirm;
+ *   (b) a synchronous in-flight guard (ref + isPending disable) — a
+ *       double-click can never fire a second POST.
+ * Role gate mirrors the backend RolesGuard EXACT-match on the route:
+ * @Roles(OWNER_ADMIN, OWNER_CREATOR) — membership, not hierarchy, so
+ * even SYSTEM_ADMIN is excluded (would 403). Keep in lock-step.
+ *
+ * STILL DEFERRED (backend-gated): "Add party" — there is no project-
+ * scoped create UI flow this slice; the button stays disabled.
  */
 export default function ProjectPartiesDirectory({ projectId }: { projectId: string }) {
   const partiesQ = useQuery({
@@ -51,6 +67,7 @@ export default function ProjectPartiesDirectory({ projectId }: { projectId: stri
   return (
     <div className="space-y-6">
       <PartiesSection
+        projectId={projectId}
         parties={partiesQ.data}
         loading={partiesQ.isLoading}
         error={partiesQ.isError}
@@ -131,18 +148,73 @@ function SectionError({ message, onRetry }: { message: string; onRetry: () => vo
 // ─── 1. External parties ─────────────────────────────────────────
 
 function PartiesSection({
+  projectId,
   parties,
   loading,
   error,
   onRetry,
 }: {
+  projectId: string;
   parties: ProjectParty[] | undefined;
   loading: boolean;
   error: boolean;
   onRetry: () => void;
 }) {
   const { t } = useTranslation();
+  const qc = useQueryClient();
   const [filter, setFilter] = useState<PartyTypeFilter>('ALL');
+  const [confirmParty, setConfirmParty] = useState<ProjectParty | null>(null);
+
+  // Role gate mirrors the backend RolesGuard EXACT-match on the invite
+  // route: @Roles(OWNER_ADMIN, OWNER_CREATOR). Membership, not hierarchy —
+  // SYSTEM_ADMIN would 403, so it is disabled here too. Keep in lock-step
+  // with project-parties.controller.ts.
+  const currentUser = useSelector((s: RootState) => s.auth.user);
+  const canInvite =
+    currentUser?.role === UserRole.OWNER_ADMIN ||
+    currentUser?.role === UserRole.OWNER_CREATOR;
+
+  // SYNCHRONOUS double-send guard (mandatory — see the header comment).
+  // `isPending` from the hook is a render-time snapshot: two clicks in the
+  // same tick both see false. The ref flips before mutate() is called, so
+  // a second same-tick click is a no-op. Belt (ref) + suspenders (disabled
+  // buttons via isPending) — a double-click is structurally unable to POST twice.
+  const inviteInFlight = useRef(false);
+
+  const inviteMutation = useMutation({
+    mutationFn: (party: ProjectParty) => projectPartyService.invite(party.id),
+    onSuccess: (_res, party) => {
+      toast.success(
+        t('projectDashboard.directory.parties.inviteSuccess', {
+          email: party.email,
+        }),
+      );
+      // Refetch flips the card PENDING → INVITED via the shared key.
+      void qc.invalidateQueries({ queryKey: ['project-parties', projectId] });
+      setConfirmParty(null);
+    },
+    onError: (err) => {
+      let key = 'projectDashboard.directory.parties.inviteError';
+      if (isAxiosError(err)) {
+        if (err.response?.status === 403) {
+          key = 'projectDashboard.directory.parties.inviteErrorForbidden';
+        } else if (err.response?.status === 404) {
+          key = 'projectDashboard.directory.parties.inviteErrorNotFound';
+        }
+      }
+      toast.error(t(key));
+      // Dialog stays open: a retry must be a DELIBERATE second Confirm.
+    },
+    onSettled: () => {
+      inviteInFlight.current = false;
+    },
+  });
+
+  const confirmInvite = () => {
+    if (!confirmParty || inviteInFlight.current) return;
+    inviteInFlight.current = true;
+    inviteMutation.mutate(confirmParty);
+  };
 
   const counts = partyTypeCounts(parties ?? []);
   const visible = filterPartiesByType(parties ?? [], filter);
@@ -184,10 +256,23 @@ function PartiesSection({
           ) : (
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
               {visible.map((party) => (
-                <PartyCard key={party.id} party={party} />
+                <PartyCard
+                  key={party.id}
+                  party={party}
+                  canInvite={canInvite}
+                  invitePending={inviteMutation.isPending}
+                  onInviteClick={setConfirmParty}
+                />
               ))}
             </div>
           )}
+
+          <InvitePartyDialog
+            party={confirmParty}
+            isPending={inviteMutation.isPending}
+            onConfirm={confirmInvite}
+            onCancel={() => setConfirmParty(null)}
+          />
         </div>
       )}
     </SectionCard>
@@ -239,7 +324,20 @@ const STATUS_FOOTER_KEY: Record<PartyStatusKind, string> = {
   pending: 'projectDashboard.directory.parties.footer.notInvited',
 };
 
-function PartyCard({ party }: { party: ProjectParty }) {
+function PartyCard({
+  party,
+  canInvite,
+  invitePending,
+  onInviteClick,
+}: {
+  party: ProjectParty;
+  /** Backend exact-match role gate (OWNER_ADMIN | OWNER_CREATOR only). */
+  canInvite: boolean;
+  /** True while ANY invite request is in flight — disables all triggers. */
+  invitePending: boolean;
+  /** Opens the confirmation dialog — never POSTs directly. */
+  onInviteClick: (party: ProjectParty) => void;
+}) {
   const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
   const kind = partyStatusKind(party.invitation_status);
@@ -330,14 +428,22 @@ function PartyCard({ party }: { party: ProjectParty }) {
             })}
           </p>
         </div>
-        {/* Display-only this slice: no existing invite surface to navigate
-            to, and inline POST is Slice 4b — render disabled per spec. */}
+        {/* Slice 4b: opens the CONFIRMATION dialog — never POSTs directly.
+            Disabled without the exact backend roles (would 403) and while
+            any invite is in flight (double-send guard). ACCEPTED parties
+            get no button at all: re-inviting one would silently downgrade
+            it back to INVITED on the backend (no status guard there). */}
         {kind === 'pending' && (
           <button
             type="button"
-            disabled
-            title={t('projectDashboard.directory.parties.inviteComingSoon')}
-            className="shrink-0 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-white opacity-50"
+            onClick={() => onInviteClick(party)}
+            disabled={!canInvite || invitePending}
+            title={
+              !canInvite
+                ? t('projectDashboard.directory.parties.inviteNoPermission')
+                : undefined
+            }
+            className="shrink-0 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-primary-600 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {t('projectDashboard.directory.parties.invite')}
           </button>
@@ -345,9 +451,14 @@ function PartyCard({ party }: { party: ProjectParty }) {
         {kind === 'invited' && (
           <button
             type="button"
-            disabled
-            title={t('projectDashboard.directory.parties.inviteComingSoon')}
-            className="shrink-0 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-500 opacity-60"
+            onClick={() => onInviteClick(party)}
+            disabled={!canInvite || invitePending}
+            title={
+              !canInvite
+                ? t('projectDashboard.directory.parties.inviteNoPermission')
+                : undefined
+            }
+            className="shrink-0 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {t('projectDashboard.directory.parties.resendInvite')}
           </button>
@@ -367,11 +478,13 @@ function PartiesEmptyState() {
       <p className="mt-1 text-xs text-gray-400">
         {t('projectDashboard.directory.parties.emptyHint')}
       </p>
-      {/* Labelled affordance only — no add-party flow exists yet (4b). */}
+      {/* Labelled affordance only — add-party stays BACKEND-GATED after 4b
+          (no project-scoped create UI flow exists; deliberately not built
+          in the invite slice). */}
       <button
         type="button"
         disabled
-        title={t('projectDashboard.directory.parties.inviteComingSoon')}
+        title={t('projectDashboard.directory.parties.addPartyGated')}
         className="mt-4 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white opacity-50"
       >
         {t('projectDashboard.directory.parties.addParty')}

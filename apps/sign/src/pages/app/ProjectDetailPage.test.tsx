@@ -1,3 +1,4 @@
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
@@ -12,8 +13,20 @@ import type { ProjectDashboard } from '@/services/api/projectService';
 
 // ─────────────────────────────────────────────────────────────────
 // Mocks — service level only (axios.ts side-effect-loads the Redux
-// store, per lesson #37)
+// store, per lesson #37). Since Slice 4b the Parties & Team tab reads
+// the current user's role (invite gate) — mock react-redux like the
+// directory's own suites do.
 // ─────────────────────────────────────────────────────────────────
+
+vi.mock('react-redux', () => ({
+  useSelector: (sel: (s: unknown) => unknown) =>
+    sel({ auth: { user: { id: 'u-1', role: 'OWNER_ADMIN' } } }),
+  useDispatch: () => vi.fn(),
+}));
+
+vi.mock('react-hot-toast', () => ({
+  toast: { success: vi.fn(), error: vi.fn() },
+}));
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -36,6 +49,7 @@ vi.mock('@/services/api/projectService', () => ({
 vi.mock('@/services/api/projectPartyService', () => ({
   projectPartyService: {
     getAll: vi.fn(),
+    invite: vi.fn(),
   },
 }));
 
