@@ -5379,3 +5379,70 @@ and the service does not check non-empty); only role / contact-email / one-desig
 are real 400s. The Parties Editor enforces `org_name`-required CLIENT-side per the
 mock; a 1-line `@IsNotEmpty()` on the DTO (+ a service non-empty check) would align
 client↔server. Left as a follow-up (T0c-2 was frontend-only).
+
+---
+
+## Risk Tab — Top-2 Visible + Show-more + Swap + Soft-delete (PR #156, merged `6388e57`) + Phase 8.3 Gold Set (built 2026-07-14)
+
+Follow-on to the PR #137 Risk-tab rework. The Risk Analysis tab now shows only the
+**top-2 risks per clause by severity** by default, collapsing the rest behind
+**"Show more (N)"**; a human can **swap** a hidden risk into the visible pair and the
+choice is **persisted**. Soft-delete plumbing shipped alongside — **with ZERO rows
+deleted** (infra only). The Phase 8.3 gold set was then exported from the annotated
+corpus (read-only), completing the Option-2 annotation scope.
+
+### What shipped (PR #156)
+- **Top-2 visible per clause — ONE rule, client + server.** Severity HIGH>MEDIUM>LOW
+  (null last), then a **distinct 40-char-description-prefix tiebreaker** (skip
+  near-duplicate wording), then **backfill** so a clause with ≥2 risks always shows 2.
+  Authority: `backend/src/modules/risk-analysis/utils/risk-visibility.util.ts`,
+  **mirrored** in `apps/sign/src/components/contracts/riskVisibility.ts` (a drift test
+  guards the pair). Client-side top-2 preserves the PR #137 shared clause ordering;
+  server-side persistence lets completeness/export resolve the SAME visible set.
+- **Manual swap, persisted globally.** New `risk_clause_visibility` table (migration
+  `1770000000004`; PK `contract_clause_id`, `visible_risk_ids uuid[2]`, `updated_by`)
+  via `RiskVisibilityService` + `PUT /risk-analysis/clause/:contractClauseId/visibility`
+  (`SetClauseVisibilityDto`, exactly-2-distinct-live-ids, `findInOrg`-walled).
+  `resolveVisibleIds(risks, override)` — a valid 2-id override wins; a stale id is
+  dropped and the default backfills.
+- **Soft-delete infra — 0 rows deleted.** `risk_analyses.is_deleted BOOLEAN NOT NULL
+  DEFAULT false` + partial index (migration `1770000000003`), additive, no backfill.
+  **The "~34 duplicates" were NOT deleted** — investigation found 0 exact/near-identical
+  TEXTUAL duplicates and only ~160 LLM-*semantic* "same-issue-different-words" (many
+  genuinely distinct); decision: ship the plumbing but **flag ZERO rows** and hide
+  clutter via the top-2/Show-more UI instead of destroying data. Every risk read filters
+  `is_deleted = false` (`getByContract`, `getByClause`, `getRiskSummary`, both export
+  reads).
+- **Completeness + export redefined to count ONLY the visible top-2.**
+  `GET /risk-analysis/contract/:id/completeness` (+ `/visibility`) count/verify only the
+  resolved visible set; hidden risks are never required. Exports tag each risk
+  `verified` vs `unverified`.
+
+### Phase 8.3 Gold Set (built 2026-07-14 — `docs/phase-8.3-gold/`, UNTRACKED working files)
+Read-only export of the annotated corpus, 15 contracts (excl. "Leak Contract"). Counts
+are a **snapshot** (the corpus was annotated live during the export session):
+- **Clauses:** 468 included (461 APPROVED + 7 EDITED) / 40 excluded (REJECTED) / 508 total.
+- **Risks:** 1,246 non-deleted — **236 verified** (`is_edited_by_user`) / 1,010 unverified ·
+  835 visible / 411 hidden · **all 166 visible-High human-verified** (the Option-2
+  milestone) · 97 tagged `clause_rejected` · **212 `clean_training_signal`**
+  (verified ∧ ¬clause_rejected).
+- **Files:** `gold_clauses.jsonl`, `gold_risks.jsonl`, `excluded_clauses.jsonl`,
+  `gold_manifest.json`, `README.md`, plus `_build.js` + `_raw_*.jsonl` for
+  **deterministic re-export** from the same feeds.
+- **Provenance in the manifest:** parties source (extracted / manually-entered / swapped),
+  extraction gaps, the (reconstructed) annotation ruleset, and honest caveats (clause_type
+  has NO original-AI snapshot for EDITED rows; REJECTED per-clause reasons aren't stored).
+
+### Hard rules — never violate
+1. **The client top-2 rule and `risk-visibility.util.ts` are ONE rule** — never let them
+   drift; the mirror test is the guard. Completeness/export must resolve visibility through
+   the SAME server util the UI mirrors.
+2. **`is_deleted` is soft-delete-only and shipped at 0 rows** — do NOT bulk-flag
+   "duplicate" risks on semantic similarity; hide clutter via the top-2/Show-more UI
+   (lesson #243). Any future soft-delete needs per-row human judgement.
+3. **The gold export tags verified vs unverified EXPLICITLY** — downstream (8.4/8.5) MUST
+   filter `verified=true` for clean signal; AI-labeled rows are NEVER silently counted as
+   human-verified (lesson #244).
+4. **Do NOT regenerate risks before the gold export is safely captured** — regenerating
+   wipes the human corrections. (Captured 2026-07-14, so the risk-analyzer same-language
+   backlog item is now UNGATED.)
