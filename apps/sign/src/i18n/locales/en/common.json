@@ -644,6 +644,25 @@
         "plannedBadge": "Planned · next phase",
         "explanation": "Guest access is contract-scoped today, so a project-wide guest list isn't available yet. Guests invited to this project's contracts will appear here once project-level guest visibility ships."
       }
+    },
+    "customize": {
+      "sectionLabel": "Analytics",
+      "button": "Customize",
+      "heading": "Customize widgets",
+      "done": "Done",
+      "reset": "Reset to default",
+      "dragHint": "Drag, or use the arrows, to reorder. Hide or show each widget.",
+      "moveUp": "Move up",
+      "moveDown": "Move down",
+      "hide": "Hide",
+      "show": "Show",
+      "hiddenBadge": "Hidden",
+      "browserNote": "Saved to this browser only.",
+      "empty": {
+        "heading": "All widgets are hidden",
+        "body": "You've hidden every analytics widget. Restore one to see it here.",
+        "action": "Restore widgets"
+      }
     }
   },
   "contract": {

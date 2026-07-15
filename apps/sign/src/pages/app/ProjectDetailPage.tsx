@@ -345,12 +345,16 @@ export default function ProjectDetailPage() {
             onNavigateToTab={() => setActiveTab('contracts')}
           />
           {/* Slice 3 — supporting analytics row (risk mix / obligations /
-              contracts-by-status via the 12→6 fold / directory summary). */}
+              contracts-by-status via the 12→6 fold / directory summary).
+              Slice 5 — customize mode (reorder/hide/restore, localStorage
+              per-user-and-project). key={id} remounts on project switch so the
+              new project's saved layout loads via the useState initializer and
+              the stored layout never crosses projects. */}
           <ProjectAnalyticsRow
+            key={id}
             projectId={id!}
             onNavigateToTab={() => setActiveTab('parties')}
           />
-          {/* Final slice: customize mode (localStorage layout persistence). */}
         </div>
       )}
 

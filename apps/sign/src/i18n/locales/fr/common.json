@@ -646,6 +646,25 @@
         "plannedBadge": "Prévu · phase suivante",
         "explanation": "L'accès invité est aujourd'hui limité au contrat ; une liste des invités à l'échelle du projet n'est pas encore disponible. Les invités des contrats de ce projet apparaîtront ici lorsque cette visibilité sera disponible."
       }
+    },
+    "customize": {
+      "sectionLabel": "Analyses",
+      "button": "Personnaliser",
+      "heading": "Personnaliser les widgets",
+      "done": "Terminé",
+      "reset": "Réinitialiser",
+      "dragHint": "Glissez, ou utilisez les flèches, pour réordonner. Masquez ou affichez chaque widget.",
+      "moveUp": "Déplacer vers le haut",
+      "moveDown": "Déplacer vers le bas",
+      "hide": "Masquer",
+      "show": "Afficher",
+      "hiddenBadge": "Masqué",
+      "browserNote": "Enregistré uniquement sur ce navigateur.",
+      "empty": {
+        "heading": "Tous les widgets sont masqués",
+        "body": "Vous avez masqué tous les widgets d'analyse. Restaurez-en un pour l'afficher ici.",
+        "action": "Restaurer les widgets"
+      }
     }
   },
   "contract": {

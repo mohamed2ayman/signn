@@ -4941,12 +4941,61 @@ buttons); the dev mailer is dead (`localhost:1025` ECONNREFUSED) and
 this environment — the enabled-path send is proven by tests only and the
 controlled live send is left for the CEO.
 
+### Slice 5 — Dashboard analytics CUSTOMIZE MODE (gated PR, awaiting CEO visual merge)
+
+The FINAL 7.20 slice. Makes the **four SUPPORTING ANALYTICS widgets** on the
+Dashboard tab (`riskMix` / `obligations` / `contractsByStatus` / `directory`)
+reorderable, hideable, restorable, and reset-to-default. Frontend-only
+(`apps/sign`); ZERO backend / ai-backend. Branch off `f719356`.
+
+- **The fixed spine is non-customizable BY EXCLUSION, not by a guard.** The
+  ProjectHealthBar and ProjectAttentionZone (the "30-second test" — health +
+  what-needs-you-today, always lead) are a deliberate product decision to keep
+  FIXED. They are NOT in the customizable widget registry and live ABOVE
+  `ProjectAnalyticsRow` in ProjectDetailPage with no manage controls — so no
+  reorder/hide code path can reach them (lesson #245). Do NOT make them
+  customizable.
+- **No widget catalogue.** There are exactly 4 widgets, all visible by default.
+  "Add/restore" means bringing back a HIDDEN widget — not a library of new
+  widgets. Never invent widgets that don't exist.
+- **Pure model:** `apps/sign/src/components/project/dashboardLayout.ts` —
+  `WidgetId` union, `DEFAULT_WIDGET_ORDER`, `KNOWN_WIDGET_IDS`, and
+  `normalizeLayout` (the resilience chokepoint: corrupt→default, unknown-id→
+  dropped, missing-id→appended-VISIBLE — lesson #246) + pure transforms
+  (`moveWidget`/`reorderTo`/`hideWidget`/`showWidget`/`resetLayout`) + never-throw
+  localStorage wrappers.
+- **Persistence is localStorage ONLY, per-user-and-project.** Key
+  `sign_project_dashboard_layout:v1:<userId>:<projectId>` (userId from redux;
+  the `sign_portfolio_view` precedent is not user-scoped — this is the more
+  correct default). Stored shape `{v:1, order:WidgetId[], hidden:WidgetId[]}`.
+  **There is NO backend preferences store — server-side layout sync is DEFERRED
+  to Ayman.** UI copy ("Saved to this browser only.") never implies cross-device
+  sync. `ProjectAnalyticsRow` carries `key={projectId}` in ProjectDetailPage so a
+  project switch remounts and loads the new project's layout cleanly — do NOT
+  replace that with a reload-on-prop-change effect (it races the save effect —
+  lesson #247).
+- **UI:** `ProjectAnalyticsRow.tsx` gained a "Customize" entry point + an edit
+  panel (single reorderable list of all 4 in `order`; move up/down buttons are
+  the keyboard-accessible + RTL-safe reorder mechanism — native HTML5 drag is a
+  progressive enhancement calling the same `reorderTo`; eye toggle = hide/show;
+  Reset-to-default disabled when already default). VIEW mode renders visible
+  widgets in order; **all-four-hidden → an empty state with a restore
+  affordance**, never a blank void (the spine still renders — the dashboard is
+  never empty). i18n `projectDashboard.customize.*` (en/ar/fr, exact parity).
+- **Tests:** `dashboardLayout.test.ts` (24, strict RED→GREEN) +
+  `ProjectAnalyticsRow.customize.test.tsx` (13) — reorder/hide/restore/
+  persistence-roundtrip/**corrupt-value→default resilience**/all-hidden-empty/
+  reset/spine-not-customizable. Full FE suite 39/39 (358); tsc zero new source
+  errors vs origin/main baseline. Live QA-seed pass ("QA — Healthy Project")
+  confirmed toggle/reorder/hide/persist-across-reload/reset + spine has no
+  controls; the localStorage key + shape were byte-verified live.
+
 ### Deferred (later 7.20 slices — do NOT assume built)
 Add-party inline create (still backend-gated — no project-scoped create
 endpoint; `CreatePartyDto` requires `project_id` + would need a create
-UI flow), customize mode (v1 layout persistence will follow the
-`sign_portfolio_view` localStorage pattern — there is NO backend layout
-store).
+UI flow). **Server-side layout persistence for the Slice 5 customize mode is
+deferred to Ayman** — v1 is localStorage per-browser only; there is NO backend
+layout store.
 
 ---
 
