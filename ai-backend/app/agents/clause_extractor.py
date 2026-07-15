@@ -65,7 +65,14 @@ with the following fields:
                    complete clause, from 0.0 to 1.0
 
 Important guidelines:
-1. Preserve the EXACT original text — never paraphrase or rewrite
+1. Preserve the EXACT original text — never paraphrase or rewrite.  "EXACT" \
+   includes LAYOUT, not just the words: keep the original line breaks, bullet \
+   markers (•, -), and numbered / lettered sub-clauses each on their own line, \
+   exactly as they appear in the source.  Do NOT collapse a multi-line or \
+   bulleted list into a single flat paragraph, and do NOT merge separate lines \
+   into one.  This layout-preservation rule applies to EVERY clause you extract \
+   (the definitions-clause formatting in guideline 12 is one specific case of \
+   this general rule).
 2. Handle both structured contracts (e.g. FIDIC with numbered clauses) and \
    unstructured contracts (narrative form without numbering)
 3. Do not merge separate TOP-LEVEL clauses (مادة / بند) — each مادة is one \
@@ -444,20 +451,46 @@ class ClauseExtractorAgent(BaseAgent):
             logger.info("No article boundaries found — returning text as single chunk")
             return [text]
 
-        # --- Phase 1: split at article boundaries ---
+        # --- Phase 1: pack COMPLETE articles into ≤ _CHUNK_SIZE chunks ---
+        # Issue 1 (Defect B) fix — chunk-boundary tail loss.
+        # The previous packing set the chunk end to the FIRST boundary that
+        # OVERSHOOTS _CHUNK_SIZE, so the chunk INCLUDED that overshooting article
+        # whole and Phase 2 then hard-split the chunk mid-body — cutting the last
+        # article. The per-chunk "skip continuations" note then made the model
+        # drop the orphaned tail (no second partial → nothing for
+        # _stitch_split_clauses to rejoin), deterministically losing long clauses
+        # at the chunk edge (e.g. a GC section truncated at "… for example:" with
+        # its enumerated list dropped).
+        # We now cut BEFORE an article that would overshoot, so every
+        # multi-article chunk holds only COMPLETE articles that fit; the
+        # overshooting article moves WHOLE into the next chunk and is never
+        # orphaned. The ONLY chunk allowed to exceed _CHUNK_SIZE is a SINGLE
+        # article larger than the limit — that genuinely-oversized case is handed
+        # to Phase 2 (_break_oversized_chunk + 200-char overlap + _stitch),
+        # exactly as before. Large docs still chunk (>30k), the method hierarchy /
+        # overlap / PR #117 stitch+dedup guards are all untouched.
+        bounds = boundaries + [len(text)]  # article k spans bounds[k]:bounds[k+1]
+        n_articles = len(boundaries)
         raw_chunks: list[str] = []
         i = 0
-        while i < len(boundaries):
-            start = boundaries[i]
-
-            # Advance j while the next boundary still fits within _CHUNK_SIZE
-            j = i + 1
-            while j < len(boundaries) and (boundaries[j] - start) <= _CHUNK_SIZE:
-                j += 1
-
-            end = boundaries[j] if j < len(boundaries) else len(text)
+        while i < n_articles:
+            start = bounds[i]
+            # Grow one COMPLETE article at a time while the chunk still fits.
+            k = i
+            while k + 1 < len(bounds) and (bounds[k + 1] - start) <= _CHUNK_SIZE:
+                k += 1
+            if k == i:
+                # A single article is itself larger than _CHUNK_SIZE — emit it
+                # alone; Phase 2 breaks it (the only genuinely-oversized case).
+                end = bounds[i + 1]
+                next_i = i + 1
+            else:
+                # Articles i..k-1 fit and end at bounds[k]; article k (if any)
+                # would overshoot, so it starts the NEXT chunk whole.
+                end = bounds[k]
+                next_i = k
             raw_chunks.append(text[start:end])
-            i = j
+            i = next_i
 
         # --- Phase 2: break oversized chunks further ---
         final_chunks: list[str] = []

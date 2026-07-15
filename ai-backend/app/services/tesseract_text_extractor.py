@@ -15,11 +15,13 @@ do not vary across extraction backends.
 from __future__ import annotations
 
 import logging
+import re
 import subprocess
 from typing import Any
 
 from PyPDF2 import PdfReader
 from docx import Document as DocxDocument
+from docx.oxml.ns import qn
 
 from app.config.settings import get_settings
 from app.services.base_text_extractor import BaseTextExtractor
@@ -29,6 +31,161 @@ _logger = logging.getLogger(__name__)
 # DPI for the force-OCR path.  300 produced clean Arabic in the Phase 7.27
 # investigation; lower DPI tested poorly.  Single edit point for future tuning.
 FORCE_OCR_DPI = 300
+
+
+# ---------------------------------------------------------------------------
+# Word list-numbering reconstruction (Issue 1 — Defects A + C)
+# ---------------------------------------------------------------------------
+# python-docx's ``paragraph.text`` returns ONLY the concatenated run text. A
+# Word list item's displayed marker — the auto-number ("1.", "1)", "1-1") OR the
+# bullet glyph ("•") — lives in the numbering definitions (numbering.xml) via the
+# paragraph's ``numPr`` reference, NOT in the run text. So auto-numbered clauses
+# arrive number-less (→ empty section_number, Defect C) and bulleted lists arrive
+# structure-less (→ flattening, Defect A). The helper below rebuilds each marker
+# from the <w:num>/<w:abstractNum>/<w:lvl> definitions plus a running per-list
+# counter, so the model SEES the numbering/bullets and can preserve them.
+#
+# Best-effort by design: ANY resolution failure falls back to "no label" (the
+# pre-fix behaviour). Text extraction must never crash on unusual numbering XML.
+
+
+def _paragraph_numpr(paragraph: Any) -> tuple[str, int] | None:
+    """Return ``(numId, ilvl)`` when *paragraph* is a Word list item, else None.
+
+    Pure XML navigation (``w:pPr/w:numPr``) so it is robust across python-docx
+    versions and never raises on a missing element.
+    """
+    try:
+        p_el = paragraph._p
+        pPr = p_el.find(qn("w:pPr"))
+        if pPr is None:
+            return None
+        numPr = pPr.find(qn("w:numPr"))
+        if numPr is None:
+            return None
+        num_id_el = numPr.find(qn("w:numId"))
+        if num_id_el is None:
+            return None
+        num_id = num_id_el.get(qn("w:val"))
+        if not num_id:
+            return None
+        ilvl_el = numPr.find(qn("w:ilvl"))
+        ilvl_val = ilvl_el.get(qn("w:val")) if ilvl_el is not None else None
+        ilvl = int(ilvl_val) if ilvl_val is not None else 0
+        return num_id, ilvl
+    except Exception:  # noqa: BLE001 — never crash extraction on odd XML
+        return None
+
+
+class _DocxListNumbering:
+    """Reconstructs the rendered marker for Word list items (see module note).
+
+    Parses the document's numbering part once, then renders labels on demand
+    while advancing a running per-``(numId, level)`` counter — mirroring how Word
+    displays the list. Numbered levels honour their ``numFmt`` (decimal / letter /
+    roman) and ``lvlText`` template (e.g. ``"%1."`` → ``"1."``, ``"%1-%2"`` →
+    ``"1-1"``); bullet levels render ``"• "``.
+    """
+
+    _ROMAN = [
+        (1000, "m"), (900, "cm"), (500, "d"), (400, "cd"), (100, "c"),
+        (90, "xc"), (50, "l"), (40, "xl"), (10, "x"), (9, "ix"),
+        (5, "v"), (4, "iv"), (1, "i"),
+    ]
+
+    def __init__(self, doc: Any) -> None:
+        self._num_to_abs: dict[str, str] = {}                 # numId -> abstractNumId
+        self._abs_levels: dict[str, dict[int, dict[str, Any]]] = {}  # absId -> {ilvl: lvl}
+        self._counters: dict[str, dict[int, int]] = {}        # numId -> {ilvl: current}
+        try:
+            self._load(doc)
+        except Exception:  # noqa: BLE001 — a doc with no/odd numbering just gets no labels
+            self._num_to_abs = {}
+            self._abs_levels = {}
+
+    def _load(self, doc: Any) -> None:
+        numbering = doc.part.numbering_part.element  # raises if the doc has no lists
+        for num in numbering.findall(qn("w:num")):
+            num_id = num.get(qn("w:numId"))
+            abs_ref = num.find(qn("w:abstractNumId"))
+            if num_id is not None and abs_ref is not None:
+                self._num_to_abs[num_id] = abs_ref.get(qn("w:val"))
+        for abs_num in numbering.findall(qn("w:abstractNum")):
+            abs_id = abs_num.get(qn("w:abstractNumId"))
+            levels: dict[int, dict[str, Any]] = {}
+            for lvl in abs_num.findall(qn("w:lvl")):
+                try:
+                    ilvl = int(lvl.get(qn("w:ilvl")) or 0)
+                except (TypeError, ValueError):
+                    ilvl = 0
+                fmt_el = lvl.find(qn("w:numFmt"))
+                txt_el = lvl.find(qn("w:lvlText"))
+                start_el = lvl.find(qn("w:start"))
+                start_val = start_el.get(qn("w:val")) if start_el is not None else None
+                levels[ilvl] = {
+                    "numFmt": fmt_el.get(qn("w:val")) if fmt_el is not None else "decimal",
+                    "lvlText": txt_el.get(qn("w:val")) if txt_el is not None else "%1.",
+                    "start": int(start_val) if start_val and start_val.isdigit() else 1,
+                }
+            self._abs_levels[abs_id] = levels
+
+    @property
+    def available(self) -> bool:
+        """True when the document carries resolvable numbering definitions."""
+        return bool(self._abs_levels)
+
+    def _fmt_num(self, n: int, fmt: str) -> str:
+        if n < 1:
+            n = 1
+        if fmt in ("lowerLetter", "upperLetter"):
+            s, x = "", n
+            while x > 0:
+                x, r = divmod(x - 1, 26)
+                s = chr(ord("a") + r) + s
+            return s.upper() if fmt == "upperLetter" else s
+        if fmt in ("lowerRoman", "upperRoman"):
+            x, out = n, ""
+            for val, sym in self._ROMAN:
+                while x >= val:
+                    out += sym
+                    x -= val
+            return out.upper() if fmt == "upperRoman" else out
+        # decimal / arabicAlpha / anything else → plain integer
+        return str(n)
+
+    def label(self, num_id: str, ilvl: int) -> str | None:
+        """Rendered marker (e.g. ``"1. "``, ``"1-1 "``, ``"• "``) for the NEXT
+        item of list *num_id* at level *ilvl*, advancing the counters. Returns
+        None when this list/level can't be resolved (caller then adds no label).
+        """
+        abs_id = self._num_to_abs.get(num_id)
+        if abs_id is None:
+            return None
+        levels = self._abs_levels.get(abs_id)
+        if not levels or ilvl not in levels:
+            return None
+        lvl = levels[ilvl]
+
+        # Advance THIS level's counter; reset all DEEPER levels (Word restarts a
+        # nested list each time its parent advances). Ancestor levels are kept.
+        ctr = self._counters.setdefault(num_id, {})
+        ctr[ilvl] = ctr.get(ilvl, lvl["start"] - 1) + 1
+        for deeper in [d for d in ctr if d > ilvl]:
+            del ctr[deeper]
+
+        if lvl["numFmt"] == "bullet":
+            return "• "
+
+        # Numbered: substitute %1..%9 in lvlText with each level's counter,
+        # each formatted per that level's own numFmt (so "%1.%2" → "1-b" etc.).
+        def _repl(m: "re.Match[str]") -> str:
+            lv = int(m.group(1)) - 1  # %1 → level 0
+            lv_def = levels.get(lv, {})
+            n = ctr.get(lv, lv_def.get("start", 1))
+            return self._fmt_num(int(n), lv_def.get("numFmt", "decimal"))
+
+        rendered = re.sub(r"%(\d)", _repl, lvl["lvlText"] or "%1.").strip()
+        return f"{rendered} " if rendered else None
 
 
 class TesseractTextExtractor(BaseTextExtractor):
@@ -467,7 +624,24 @@ class TesseractTextExtractor(BaseTextExtractor):
 
     def _extract_docx(self, path: str) -> dict[str, Any]:
         doc = DocxDocument(path)
-        paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]
+
+        # Issue 1 (Defects A + C): reconstruct Word list markers dropped by
+        # ``p.text``. Numbered clauses regain their number (so the model can fill
+        # section_number); bulleted lists regain "• " (so structure survives).
+        numbering = _DocxListNumbering(doc)
+        paragraphs: list[str] = []
+        for p in doc.paragraphs:
+            text = p.text
+            if not text.strip():
+                continue
+            info = _paragraph_numpr(p)
+            if info is not None:
+                label = numbering.label(info[0], info[1])
+                # Guard against double-prefixing when the marker was ALSO typed
+                # literally into the run text (e.g. a manual "1-").
+                if label and not text.lstrip().startswith(label.strip()):
+                    text = f"{label}{text}"
+            paragraphs.append(text)
 
         # Extract text from table cells (contract terms, payment schedules, etc.
         # are often in tables and are missed by doc.paragraphs alone)
