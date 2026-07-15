@@ -17,6 +17,11 @@ import {
  *   MANAGING (bucket 1a) → org-scope via contract → project → organization_id.
  *     (Mirrors the inlined logic from PR #42 — extracted here so every
  *      contract read goes through one helper.)
+ *     UNIFIED MEMBERSHIP (Slice 1): after the own-org path denies, a real
+ *     account holding a guest_contract_access binding for THIS contract is
+ *     served the binding-scoped read (findForGuest) — org-first,
+ *     binding-fallback. Own-org access is byte-identical to pre-unified;
+ *     the binding is the SOLE cross-org grant; every denial stays 404.
  *
  *   GUEST USER ROW (bucket 1a) → contract-level binding via
  *     guest_contract_access. Guest scope is CONTRACT-level, never
@@ -86,14 +91,62 @@ export class ContractAccessService {
       return this.findForGuest(contractId, caller.id);
     }
 
-    // Managing user — org-scoped via contract → project → organization_id.
-    if (!caller.organization_id) {
-      // Managing caller without an org cannot own contracts.
-      // Return 404 (not 403) to avoid leaking the contract's existence.
-      throw new NotFoundException('Contract not found');
+    // Managing (or FREE) user — ORG-FIRST, BINDING-FALLBACK (unified
+    // membership). The own-org path runs FIRST and is byte-identical to the
+    // pre-unified behaviour: same findInOrg query, same result, zero extra
+    // reads in the common case (managing user, own-org contract). ONLY where
+    // that path already denied (cross-org / no-org — previously a terminal
+    // 404) do we consult guest_contract_access: a real account holding a
+    // binding for THIS contract is served the SAME binding-scoped read a
+    // guest gets (findForGuest — binding or 404). The BINDING is the sole
+    // grant for cross-org access; account_type grants nothing. Both denial
+    // paths throw the identical NotFoundException('Contract not found') —
+    // no existence oracle, no 403.
+    if (caller.organization_id) {
+      try {
+        return await this.findInOrg(contractId, caller.organization_id);
+      } catch (err) {
+        if (!(err instanceof NotFoundException)) {
+          throw err;
+        }
+        // Own-org denial → fall through to the binding check.
+      }
     }
 
-    return this.findInOrg(contractId, caller.organization_id);
+    return this.findForGuest(contractId, caller.id);
+  }
+
+  /**
+   * Unified membership — guest-SURFACE caller gate for the /guest/*
+   * controllers. Replaces the old per-controller `account_type === GUEST`
+   * persona assertion: the guest surface is authorized by GUEST-ness OR a
+   * guest_contract_access binding for THIS contract, never by account_type
+   * alone.
+   *
+   *   - GUEST account → pass. The service-level wall (findAccessibleContract
+   *     → findForGuest) still enforces the binding downstream, exactly as
+   *     before — this gate adds nothing for pure guests.
+   *   - Any other account (MANAGING / FREE) → requires a binding row for the
+   *     target contract. This keeps the guest surface BINDING-ONLY for real
+   *     accounts: a host-org member with no binding must NOT reach guest
+   *     machinery on their own org's contracts (watermarked downloads, the
+   *     shared per-contract daily counters, guest-channel uploads).
+   *
+   * Denial is NotFoundException (404) — NEVER the old 403 — so a real
+   * account without a binding cannot learn that the route recognises the
+   * contract (uniform-404, no existence oracle).
+   */
+  async assertGuestSurfaceCaller(
+    user: { id?: string | null; account_type?: AccountType | null } | null,
+    contractId: string,
+  ): Promise<void> {
+    if (!user?.id) {
+      throw new NotFoundException('Contract not found');
+    }
+    if (user.account_type === AccountType.GUEST) {
+      return;
+    }
+    await this.assertGuestContractAccess(contractId, user.id);
   }
 
   /**
@@ -143,12 +196,22 @@ export class ContractAccessService {
     contractId: string,
     userId: string,
   ): Promise<void> {
+    if (!(await this.hasGuestBinding(contractId, userId))) {
+      throw new NotFoundException('Contract not found');
+    }
+  }
+
+  /**
+   * Boolean binding probe (unified membership) — true when a
+   * guest_contract_access row binds this user to this contract. For call
+   * sites that need a non-throwing check (e.g. the doc-derived
+   * proposed-vs-live decision in DocumentProcessingService).
+   */
+  async hasGuestBinding(contractId: string, userId: string): Promise<boolean> {
     const binding = await this.guestAccessRepository.findOne({
       where: { user_id: userId, contract_id: contractId },
     });
-    if (!binding) {
-      throw new NotFoundException('Contract not found');
-    }
+    return !!binding;
   }
 
   /**

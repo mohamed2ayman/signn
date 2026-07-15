@@ -63,7 +63,7 @@ import { DocumentProcessingService } from '../document-processing.service';
  * marker and the fields start empty).
  *
  * RED: cross-contract → 404; wrong guest (ownership) → 404; unbound guest
- * (binding wall) → 404; managing/viewer principal on the guest endpoint → 403;
+ * (binding wall) → 404; managing (no binding)/viewer principal on the guest endpoint → 404;
  * no credential → 401. Plus the MANAGING path still drives to completion
  * writing LIVE (non-proposed) clauses — proving the refactor left it unchanged.
  */
@@ -493,8 +493,11 @@ describeReal('Guest extraction completion (real Postgres)', () => {
     expect(res.status).toBe(404);
   });
 
-  // ─── RED — managing principal on the guest endpoint → 403 ──────────────
-  it('RED — managing principal on the guest status endpoint → 403', async () => {
+  // ─── RED — managing principal (no binding) on the guest endpoint → 404 ──
+  // Unified membership: account_type no longer 403s — a real account without
+  // a guest_contract_access binding gets the SAME uniform 404 as every other
+  // denial (no existence oracle).
+  it('RED — managing principal (no binding) on the guest status endpoint → uniform 404', async () => {
     const { docId } = await seedGuestDoc();
     injectedUser = {
       id: ownerUserId,
@@ -506,11 +509,11 @@ describeReal('Guest extraction completion (real Postgres)', () => {
     const res = await request(app.getHttpServer())
       .get(`/guest/contracts/${contractId}/documents/${docId}/status`)
       .set('Authorization', 'Bearer valid-token');
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(404);
   });
 
-  // ─── RED — viewer-shaped principal (Path A, no account_type=GUEST) → 403 ─
-  it('RED — viewer principal on the guest status endpoint → 403', async () => {
+  // ─── RED — viewer-shaped principal (Path A, no account_type=GUEST) → 404 ─
+  it('RED — viewer principal on the guest status endpoint → uniform 404', async () => {
     const { docId } = await seedGuestDoc();
     injectedUser = {
       type: 'viewer',
@@ -519,7 +522,7 @@ describeReal('Guest extraction completion (real Postgres)', () => {
     const res = await request(app.getHttpServer())
       .get(`/guest/contracts/${contractId}/documents/${docId}/status`)
       .set('Authorization', 'Bearer valid-token');
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(404);
   });
 
   // ─── RED — no credential → 401 ─────────────────────────────────────────
@@ -807,5 +810,41 @@ describeReal('Guest extraction completion (real Postgres)', () => {
     );
     const r = await docService.advanceInProgressAsSystem(docId);
     expect(r?.processing_status).toBe('TEXT_EXTRACTED'); // not prematurely failed
+  });
+
+  // ─── UNIFIED MEMBERSHIP — proposed-vs-live for a MANAGING-as-guest uploader ──
+  // Conscious-call #5: a REAL account (MANAGING) holding a guest_contract_access
+  // binding uploads through the guest door and is guest-channel FOR THAT
+  // CONTRACT (proposed clauses, no party backfill) — while the same account
+  // stays live-channel on contracts it is NOT bound to. Still doc-derived.
+  it('UNIFIED MEMBERSHIP — isGuestUploadedDoc: MANAGING uploader WITH a binding → guest channel (proposed); without → live; scoped per contract', async () => {
+    const probe = { uploaded_by: ownerUserId, contract_id: contractId } as any;
+
+    // No binding → live channel (the pre-unified managing behaviour).
+    expect(await (docService as any).isGuestUploadedDoc(probe)).toBe(false);
+
+    // Attach a binding → the SAME uploader becomes guest-channel for THIS contract.
+    const bindingProbeId = randomUUID();
+    await dataSource.query(
+      `INSERT INTO guest_contract_access (id, user_id, contract_id, granted_by)
+       VALUES ($1, $2, $3, $4)`,
+      [bindingProbeId, ownerUserId, contractId, ownerUserId],
+    );
+    try {
+      expect(await (docService as any).isGuestUploadedDoc(probe)).toBe(true);
+      // Contract-scoped: the binding to `contractId` does NOT flip the same
+      // uploader's docs on a DIFFERENT contract to the guest channel.
+      expect(
+        await (docService as any).isGuestUploadedDoc({
+          uploaded_by: ownerUserId,
+          contract_id: contractManagingId,
+        } as any),
+      ).toBe(false);
+    } finally {
+      await dataSource.query(
+        `DELETE FROM guest_contract_access WHERE id = $1`,
+        [bindingProbeId],
+      );
+    }
   });
 });

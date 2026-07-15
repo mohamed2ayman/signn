@@ -38,6 +38,7 @@ import { GuestInvitationService } from '../services/guest-invitation.service';
 import { InvitationTokenService } from '../services/invitation-token.service';
 import { ViewerCredentialService } from '../services/viewer-credential.service';
 import { AuthService } from '../../auth/auth.service';
+import { AccountLockoutService } from '../../auth/services/account-lockout.service';
 import { GuestInvitationScopedRepository } from '../../scoped-repository/guest-invitation-scoped.repository';
 
 /**
@@ -251,6 +252,14 @@ describeReal('⭐ Guest chat Slice 3 — internal-note leak battery (real Postgr
         { provide: InvitationTokenService, useValue: {} },
         { provide: ViewerCredentialService, useValue: {} },
         { provide: AuthService, useValue: {} },
+        {
+          provide: AccountLockoutService,
+          useValue: {
+            assertNotLocked: jest.fn(),
+            recordFailedAttempt: jest.fn().mockResolvedValue(undefined),
+            clearFailedAttempts: jest.fn().mockResolvedValue(undefined),
+          },
+        },
         { provide: GuestInvitationScopedRepository, useValue: {} },
         {
           provide: SubscriptionsService,

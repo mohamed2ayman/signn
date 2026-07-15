@@ -19,8 +19,15 @@ export interface GuestIdentityResume {
 
 export interface GuestIdentity {
   user: User;
-  access_token: string;
-  refresh_token: string;
+  /**
+   * Null when `requires_login` is true — unified membership: an existing
+   * REAL account with MFA enabled gets its binding attached but NO session
+   * from this endpoint (they sign in through the normal login, MFA intact).
+   */
+  access_token: string | null;
+  refresh_token: string | null;
+  /** Set for MFA-enabled real accounts: binding attached, sign in normally. */
+  requires_login?: boolean;
   contract_id: string;
   resume: GuestIdentityResume;
 }

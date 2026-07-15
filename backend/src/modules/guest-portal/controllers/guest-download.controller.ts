@@ -1,6 +1,5 @@
 import {
   Controller,
-  ForbiddenException,
   Get,
   Param,
   ParseUUIDPipe,
@@ -11,7 +10,6 @@ import { Response } from 'express';
 
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
-import { AccountType } from '../../../database/entities';
 import { ContractAccessService } from '../../contracts/services/contract-access.service';
 import { ExportService } from '../../export/export.service';
 
@@ -26,9 +24,9 @@ import { ExportService } from '../../export/export.service';
  *  • JwtAuthGuard — standard "Authorization: Bearer <jwt>". A passwordless
  *    viewer credential ("Authorization: Viewer <token>", Path A) is NOT a JWT
  *    and never authenticates here — download REQUIRES established identity.
- *  • Explicit `account_type === GUEST` assertion — a managing-user JWT routed
- *    here gets a clear 403 instead of silently downloading through the wrong
- *    path.
+ *  • Guest-surface gate (unified membership) — GUEST accounts pass; any other
+ *    account needs a guest_contract_access binding for the target contract.
+ *    Denial is a uniform 404 (no existence oracle), never a 403.
  *  • Contract scope is walled inside ContractAccessService.findAccessibleContract
  *    → findForGuest (the guest_contract_access binding). A guest requesting any
  *    contract they are not bound to gets 404 — never 403 — so existence is not
@@ -59,16 +57,17 @@ export class GuestDownloadController {
     @CurrentUser() user: any,
     @Res() res: Response,
   ) {
-    // Only guest-user identities may use this path. A viewer credential (Path A)
-    // never reaches here (JwtAuthGuard accepts Bearer JWTs only); a managing-user
-    // JWT is rejected loudly rather than silently downloading.
-    if (user?.account_type !== AccountType.GUEST) {
-      throw new ForbiddenException('Guest download endpoint requires a guest identity');
-    }
+    // Guest-surface gate (unified membership) — a GUEST account passes; any
+    // other account must hold a guest_contract_access binding for THIS
+    // contract (uniform 404 otherwise, never 403). A viewer credential
+    // (Path A) never reaches here (JwtAuthGuard accepts Bearer JWTs only).
+    await this.contractAccess.assertGuestSurfaceCaller(user, contractId);
 
     // Binding wall — findForGuest throws NotFoundException (404) when no
     // guest_contract_access row binds this guest to this contract. Cross-contract
-    // requests therefore 404, never 403.
+    // requests therefore 404, never 403. (For a real-account caller the
+    // org-first dispatch runs findInOrg first; cross-org falls through to the
+    // same binding check.)
     await this.contractAccess.findAccessibleContract(contractId, {
       id: user.id,
       organization_id: user.organization_id ?? null,

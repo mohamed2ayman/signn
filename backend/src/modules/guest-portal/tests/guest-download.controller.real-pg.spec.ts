@@ -282,26 +282,51 @@ describeReal('GuestDownloadController (real Postgres — binding wall + watermar
       .expect(404);
   });
 
-  // ─── RED: managing-user principal → 403 ────────────────────────────────
-  it('RED — non-guest (MANAGING) principal → 403', async () => {
+  // ─── RED: managing principal WITHOUT a binding → uniform 404 ────────────
+  // Unified membership: account_type no longer 403s. A real account may use
+  // the guest surface ONLY with a guest_contract_access binding for the
+  // contract; a binding-less real account gets the SAME 404 as any other
+  // denial (no existence oracle, never 403).
+  it('RED — non-guest (MANAGING) principal with NO binding → uniform 404', async () => {
     injectedUser = {
-      id: guestUserId,
+      id: randomUUID(), // a real account with NO binding to this contract
       email: 'manager@managing.test',
       role: UserRole.OWNER_ADMIN,
-      organization_id: orgId,
+      organization_id: randomUUID(), // not the host org either
       account_type: AccountType.MANAGING,
     };
 
     await request(app.getHttpServer())
       .get(`/guest/contracts/${contractBoundId}/pdf`)
       .set('Authorization', 'Bearer valid-token')
-      .expect(403);
+      .expect(404);
   });
 
-  // ─── RED: viewer-shaped principal (Path A, no established identity) → 403 ─
-  it('RED — viewer principal (no account_type=GUEST) cannot download → 403', async () => {
+  // ─── RED: a MEMBER of the HOST org (owns the contract) but NO binding → 404 ─
+  // The binding is the SOLE grant on the guest surface — org membership over the
+  // contract does NOT confer guest-download access. This is the stronger denial
+  // (a host-org member, not a random stranger), matching what the upload /
+  // extraction specs cover: only a guest_contract_access row opens this door.
+  it('RED — host-org member (owns the contract) with NO binding → uniform 404 (binding is the sole grant, not org membership)', async () => {
+    injectedUser = {
+      id: randomUUID(), // a real member of the contract's OWN org, no binding
+      email: 'host-member@managing.test',
+      role: UserRole.OWNER_ADMIN,
+      organization_id: orgId, // the SAME org that owns contractBoundId
+      account_type: AccountType.MANAGING,
+    };
+
+    await request(app.getHttpServer())
+      .get(`/guest/contracts/${contractBoundId}/pdf`)
+      .set('Authorization', 'Bearer valid-token')
+      .expect(404);
+  });
+
+  // ─── RED: viewer-shaped principal (Path A, no established identity) → 404 ─
+  it('RED — viewer principal (no account_type=GUEST) cannot download → 404', async () => {
     // The real /viewer/* path never produces account_type=GUEST. Even if such a
-    // sparse principal reached this route, the account_type gate rejects it.
+    // sparse principal reached this route, the guest-surface gate rejects it
+    // (no user id → uniform 404, never 403).
     injectedUser = {
       type: 'viewer',
       viewer: { contract_id: contractBoundId, invitation_id: randomUUID() },
@@ -310,7 +335,7 @@ describeReal('GuestDownloadController (real Postgres — binding wall + watermar
     await request(app.getHttpServer())
       .get(`/guest/contracts/${contractBoundId}/pdf`)
       .set('Authorization', 'Bearer valid-token')
-      .expect(403);
+      .expect(404);
   });
 
   // ─── RED: no auth → 401 ────────────────────────────────────────────────

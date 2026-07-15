@@ -1,6 +1,5 @@
 import {
   BadRequestException,
-  ConflictException,
   Injectable,
   Logger,
   NotFoundException,
@@ -8,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Not, Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 
 import {
@@ -21,6 +20,7 @@ import {
   UserRole,
 } from '../../../database/entities';
 import { AuthService } from '../../auth/auth.service';
+import { AccountLockoutService } from '../../auth/services/account-lockout.service';
 import { ContractAccessService } from '../../contracts/services/contract-access.service';
 import { GuestInvitationScopedRepository } from '../../scoped-repository/guest-invitation-scoped.repository';
 import { CreateGuestInvitationDto } from '../dto/create-guest-invitation.dto';
@@ -94,6 +94,10 @@ export class GuestInvitationService {
     private readonly authService: AuthService,
     // Option B chokepoint (migration 2/4) — layer 2 for the revoke by-id load.
     private readonly invitationScoped: GuestInvitationScopedRepository,
+    // Shared account-level lockout — the SAME control the login path uses, so
+    // the establish-identity password-verify branch (which grants cross-org
+    // bindings) is not a weaker brute-force door than login.
+    private readonly accountLockout: AccountLockoutService,
   ) {}
 
   async create(
@@ -267,8 +271,12 @@ export class GuestInvitationService {
     ctx: { ip?: string | null; user_agent?: string | null } = {},
   ): Promise<{
     user: any;
-    access_token: string;
-    refresh_token: string;
+    // Null when requires_login is true (MFA-enabled real account — no
+    // session is minted on this endpoint; see the POST-COMMIT branch).
+    access_token: string | null;
+    refresh_token: string | null;
+    /** Set for MFA-enabled real accounts: binding attached, sign in normally. */
+    requires_login?: boolean;
     contract_id: string;
     resume: {
       kind: GuestIntentKind | null;
@@ -289,6 +297,15 @@ export class GuestInvitationService {
     }
     const invitationId = verify.invitation.id;
     const passwordHash = await bcrypt.hash(dto.password, BCRYPT_SALT_ROUNDS);
+
+    // Account-lockout bookkeeping is captured inside the transaction but
+    // applied OUTSIDE it: the failed-attempt increment must survive the
+    // rollback the 401 triggers (so the counter persists), exactly as login
+    // increments outside any transaction. The success reset runs post-commit.
+    let wrongPasswordUser:
+      | Pick<User, 'id' | 'email' | 'failed_login_attempts'>
+      | null = null;
+    let resetLockoutUser: Pick<User, 'id'> | null = null;
 
     // The atomic block. Anything that throws inside this rolls back.
     const result = await this.dataSource.transaction(async (manager) => {
@@ -322,76 +339,89 @@ export class GuestInvitationService {
         throw new UnauthorizedException('Invalid invitation token');
       }
 
-      // 3. Race guard — does a guest user for this invited email already
-      //    exist with a binding to this contract? If so, this is a
-      //    repeat call. Verify the password against the stored hash and
-      //    return the existing user instead of creating a duplicate.
+      // 3. UNIFIED MEMBERSHIP — one identity per email (UQ_users_email).
+      //    Look up ANY existing account with the invited email — GUEST or
+      //    real (MANAGING/FREE). Whatever row exists is the ONE identity the
+      //    invitation attaches to; we never create a second row for the same
+      //    email (that was Slice 0's 500) and never fork a parallel guest
+      //    identity for a real customer.
+      //
+      //    Branch matrix:
+      //      (i)   no row            → create GUEST user + binding (step 4).
+      //      (ii)  GUEST row         → verify password against the EXISTING
+      //                                hash; attach a binding for THIS
+      //                                contract if missing (multi-contract
+      //                                guests — the schema always allowed it).
+      //      (iii) MANAGING/FREE row → REAL-ACCOUNT VERIFY: the password is
+      //                                checked against their EXISTING hash
+      //                                (never set, never overwritten — no
+      //                                auth clobber; org / sessions
+      //                                untouched); the binding attaches to
+      //                                their EXISTING row. Replaces Slice 0's
+      //                                EXISTING_ACCOUNT_EMAIL 409 dead-end.
+      //      wrong password          → 401 (anti-impersonation: a stolen
+      //                                invitation token cannot hijack the
+      //                                account or bind onto it).
+      //    The old "identity exists without a binding — operator
+      //    intervention" 409 is gone: that state is now simply branch
+      //    (ii)/(iii) — verify, then attach the missing binding.
       const existingUser = await userRepo.findOne({
-        where: {
-          email: invitation.invited_email,
-          account_type: AccountType.GUEST,
-        },
+        where: { email: invitation.invited_email },
       });
       if (existingUser) {
+        // Account-level lockout — the SAME control login uses (shared
+        // AccountLockoutService). A locked account is refused BEFORE the
+        // password is checked (403), so this cross-org-binding door is not a
+        // weaker brute-force path than login. Runs inside the txn: on a locked
+        // account nothing has been written, so the rollback is a no-op.
+        this.accountLockout.assertNotLocked(existingUser);
+
+        // Verify the caller owns the account BEFORE any state change. The
+        // stored hash is the existing account's password (guest or real
+        // alike) — it is never modified here.
+        const passwordOk = await bcrypt.compare(
+          dto.password,
+          existingUser.password_hash,
+        );
+        if (!passwordOk) {
+          // Capture the target so the durable failed-attempt increment can run
+          // AFTER this transaction rolls back (see the .catch below) — the
+          // counter must persist even though the 401 undoes the txn.
+          wrongPasswordUser = existingUser;
+          throw new UnauthorizedException('Invalid password');
+        }
+
+        // Correct password → clear any prior failed attempts on success (the
+        // login-parity reset), applied post-commit.
+        if (existingUser.failed_login_attempts > 0 || existingUser.locked_until) {
+          resetLockoutUser = existingUser;
+        }
+
         const existingBinding = await accessRepo.findOne({
           where: {
             user_id: existingUser.id,
             contract_id: invitation.contract_id,
           },
         });
-        if (existingBinding) {
-          // Verify the password matches — without this, anyone who got
-          // the token could overwrite or impersonate the original guest.
-          const passwordOk = await bcrypt.compare(
-            dto.password,
-            existingUser.password_hash,
-          );
-          if (!passwordOk) {
-            throw new UnauthorizedException('Invalid password');
-          }
-          return {
-            user: existingUser,
+        if (!existingBinding) {
+          const newBinding = accessRepo.create({
+            user_id: existingUser.id,
             contract_id: invitation.contract_id,
-            wasExisting: true,
-          };
+            granted_by: invitation.created_by, // audit chain: inviter → grantor
+          });
+          await accessRepo.save(newBinding);
         }
-        // User row exists but no binding — that's a real anomaly (a
-        // previous transaction crashed half-way). Surface as conflict;
-        // operator intervention can clean it up. Should be extremely
-        // rare because the create+binding live in one transaction.
-        throw new ConflictException(
-          'Guest identity exists without a binding — operator intervention required',
-        );
-      }
 
-      // 3b. Real-account collision guard (Slice 0, detect-and-respond
-      //     ONLY). The invited email may belong to an EXISTING non-guest
-      //     SIGN account — a real customer, typically of a DIFFERENT org.
-      //     The guest-scoped lookup above cannot see that row, and
-      //     without this check the create below would hit UQ_users_email
-      //     and surface as an unhandled 500 — permanently, on every
-      //     retry. Detect it and return an honest, handled 409 instead.
-      //     NO authz change: no binding is written, no access is granted,
-      //     the existing account is untouched, and the managing user is
-      //     NOT let through. Accessing an invited contract WITH an
-      //     existing account is a later slice (unified-membership arc) —
-      //     the copy deliberately does not promise it.
-      const nonGuestUser = await userRepo.findOne({
-        where: {
-          email: invitation.invited_email,
-          account_type: Not(AccountType.GUEST),
-        },
-      });
-      if (nonGuestUser) {
-        throw new ConflictException({
-          statusCode: 409,
-          error: 'EXISTING_ACCOUNT_EMAIL',
-          message:
-            'This email is already registered with a SIGN account. ' +
-            'Accessing shared contracts with an existing account is not ' +
-            'available yet — please contact whoever shared this contract ' +
-            'with you.',
-        });
+        // Idempotent ACCEPTED flip (exchange() usually did this already).
+        invitation.status = GuestInvitationStatus.ACCEPTED;
+        invitation.accepted_at = invitation.accepted_at ?? new Date();
+        await invitationRepo.save(invitation);
+
+        return {
+          user: existingUser,
+          contract_id: invitation.contract_id,
+          wasExisting: true,
+        };
       }
 
       // 4. Insert user + binding + flip invitation status.
@@ -426,27 +456,85 @@ export class GuestInvitationService {
         contract_id: invitation.contract_id,
         wasExisting: false,
       };
+    }).catch(async (err) => {
+      // Durable lockout increment AFTER the transaction has rolled the 401
+      // back, so the failed-attempt counter persists (mirrors login, which
+      // increments outside any transaction). Best-effort — a lockout-bookkeeping
+      // hiccup must never mask the original auth error.
+      if (wrongPasswordUser) {
+        await this.accountLockout
+          .recordFailedAttempt(wrongPasswordUser, {
+            ip: ctx.ip ?? null,
+            user_agent: ctx.user_agent ?? null,
+          })
+          .catch((e) =>
+            this.logger.warn(
+              `[establish-identity] lockout record failed: ${(e as Error).message}`,
+            ),
+          );
+      }
+      throw err;
     });
 
     // ── POST-COMMIT ───────────────────────────────────────────────────
-    // Issue JWT via the SAME machinery login / register / acceptInvitation
-    // use. If _finalizeLogin has a hiccup it logs but doesn't throw — so
-    // the identity transition stays committed.
-    const session = await this.authService.issueGuestSession(
-      result.user,
-      ctx,
-    );
+    // Login-parity reset: a successful verify clears any accumulated failed
+    // attempts / lock on the account. Best-effort (never blocks the success).
+    if (resetLockoutUser) {
+      await this.accountLockout
+        .clearFailedAttempts(resetLockoutUser)
+        .catch((e) =>
+          this.logger.warn(
+            `[establish-identity] lockout reset failed: ${(e as Error).message}`,
+          ),
+        );
+    }
+
     this.logger.log(
       `Guest identity ${result.wasExisting ? 're-established' : 'established'} for user ${result.user.id} → contract ${result.contract_id}`,
     );
 
     // Resume-intent dispatch. Comment is handled INLINE (the recipient
-    // doesn't want to click through a second time); sign / upload land
-    // authenticated with a route hint and TODO seams.
+    // doesn't want to click through a second time) — the write was
+    // password-verified above, so it is safe even when no session is
+    // minted below. Sign / upload land as route hints.
     const resume = await this.dispatchIntent(
       dto.intent,
       result.contract_id,
       result.user.id,
+    );
+
+    // MFA-enabled real account: this endpoint verifies only the password —
+    // minting a session here would BYPASS the account's MFA gate (login
+    // withholds tokens until verifyMfa). The binding is attached (that is
+    // what the invitation grants); the caller signs in through the real
+    // login flow, and their normal JWT works on the guest surface via the
+    // binding (Model A — one identity, one token, access-by-binding).
+    if (result.user.mfa_enabled) {
+      return {
+        // Explicit whitelist — never spread a User row into a response.
+        user: {
+          id: result.user.id,
+          email: result.user.email,
+          first_name: result.user.first_name,
+          last_name: result.user.last_name,
+          account_type: result.user.account_type,
+        },
+        access_token: null,
+        refresh_token: null,
+        requires_login: true,
+        contract_id: result.contract_id,
+        resume,
+      };
+    }
+
+    // Issue JWT via the SAME machinery login / register / acceptInvitation
+    // use (account-agnostic: for a real account these are its NORMAL tokens,
+    // not a parallel guest credential — Model A). If _finalizeLogin has a
+    // hiccup it logs but doesn't throw — so the identity transition stays
+    // committed.
+    const session = await this.authService.issueGuestSession(
+      result.user,
+      ctx,
     );
 
     return {
@@ -621,13 +709,20 @@ export class GuestInvitationService {
     if (!guest) {
       throw new NotFoundException('Contract not found');
     }
-    // Authority check — throws 404 if guest is not bound to this contract.
-    await this.contractAccess.findAccessibleContract(contractId, {
-      id: guest.id,
-      organization_id: guest.organization_id ?? null,
-      role: guest.role,
-      account_type: guest.account_type,
-    });
+    // Authority check — throws 404 if the caller is not bound to this
+    // contract (for a real account, the org-first dispatch falls through to
+    // the same binding check). The returned contract carries the HOST org id,
+    // which the author-labeling below keys on.
+    const contract = await this.contractAccess.findAccessibleContract(
+      contractId,
+      {
+        id: guest.id,
+        organization_id: guest.organization_id ?? null,
+        role: guest.role,
+        account_type: guest.account_type,
+      },
+    );
+    const hostOrgId = contract?.project?.organization_id ?? null;
 
     const commentRepo = this.dataSource.getRepository(ContractComment); // lint-exempt: guest READ (visibility-whitelist) walled by findAccessibleContract; guest has no org — chokepoint is org-scoped
     const rows = await commentRepo
@@ -641,6 +736,7 @@ export class GuestInvitationService {
       .addSelect('author.first_name', 'first_name')
       .addSelect('author.last_name', 'last_name')
       .addSelect('author.account_type', 'account_type')
+      .addSelect('author.organization_id', 'author_org_id')
       .where('comment.contract_id = :contractId', { contractId })
       .andWhere('comment.is_internal_note = :visible', { visible: false })
       .orderBy('comment.created_at', 'ASC')
@@ -653,6 +749,7 @@ export class GuestInvitationService {
         first_name: string | null;
         last_name: string | null;
         account_type: AccountType;
+        author_org_id: string | null;
       }>();
 
     // NOTE — `parent_comment_id` is deliberately NOT projected. The guest UI is
@@ -661,7 +758,14 @@ export class GuestInvitationService {
     // reply happens to thread off. Re-add only with per-row parent-visibility
     // handling if threaded display is ever needed.
     return rows.map((r) => {
-      const isGuest = r.account_type === AccountType.GUEST;
+      // TEAM = a member of the HOST org (the contract's owning org). Unified
+      // membership: a real (MANAGING) account acting via a guest binding is
+      // EXTERNAL to the host org and must NOT be labeled as the host's team —
+      // account_type alone no longer discriminates, org membership does.
+      const isTeam =
+        r.account_type !== AccountType.GUEST &&
+        r.author_org_id != null &&
+        r.author_org_id === hostOrgId;
       const name = [r.first_name, r.last_name].filter(Boolean).join(' ').trim();
       return {
         id: r.id,
@@ -669,8 +773,8 @@ export class GuestInvitationService {
         contract_clause_id: r.contract_clause_id ?? null,
         content: r.content,
         created_at: r.created_at,
-        author_name: name || (isGuest ? 'Guest' : 'SIGN Team'),
-        author_role: isGuest ? 'GUEST' : 'TEAM',
+        author_name: name || (isTeam ? 'SIGN Team' : 'Guest'),
+        author_role: isTeam ? ('TEAM' as const) : ('GUEST' as const),
       };
     });
   }

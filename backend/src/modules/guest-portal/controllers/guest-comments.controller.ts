@@ -2,7 +2,6 @@ import {
   BadRequestException,
   Body,
   Controller,
-  ForbiddenException,
   Get,
   HttpCode,
   HttpStatus,
@@ -14,7 +13,7 @@ import {
 
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
-import { AccountType } from '../../../database/entities';
+import { ContractAccessService } from '../../contracts/services/contract-access.service';
 import { GuestInvitationService } from '../services/guest-invitation.service';
 import { GuestCommentDraftDto } from '../dto/establish-identity.dto';
 
@@ -28,12 +27,12 @@ import { GuestCommentDraftDto } from '../dto/establish-identity.dto';
  * on non-ProjectMember callers.
  *
  * Viewer credentials are NEVER accepted here — the only way in is a
- * standard JWT for a USER ROW with account_type=GUEST (i.e. a guest
- * that has already established identity). This is enforced two ways:
+ * standard JWT (established identity). This is enforced two ways:
  *  • JwtAuthGuard rejects "Authorization: Viewer <token>" — passport-
  *    jwt only extracts "Bearer <jwt>".
- *  • An explicit account_type guard below 403s any non-GUEST JWT so a
- *    managing-user JWT cannot accidentally route through this endpoint.
+ *  • The guest-surface gate (unified membership): GUEST accounts pass;
+ *    any other account needs a guest_contract_access binding for the
+ *    target contract — otherwise a uniform 404 (never 403).
  *
  * Authorization for the contract scope itself flows through the 1a
  * authority inside GuestInvitationService.writeGuestComment — a guest
@@ -43,7 +42,10 @@ import { GuestCommentDraftDto } from '../dto/establish-identity.dto';
 @Controller('guest/contracts')
 @UseGuards(JwtAuthGuard)
 export class GuestCommentsController {
-  constructor(private readonly invitations: GuestInvitationService) {}
+  constructor(
+    private readonly invitations: GuestInvitationService,
+    private readonly contractAccess: ContractAccessService,
+  ) {}
 
   /**
    * Guest Portal comments-list (feature #1) — the guest-VISIBLE conversation
@@ -59,9 +61,9 @@ export class GuestCommentsController {
     @Param('id', ParseUUIDPipe) contractId: string,
     @CurrentUser() user: any,
   ) {
-    if (user?.account_type !== AccountType.GUEST) {
-      throw new ForbiddenException('Guest comment endpoint requires a guest identity');
-    }
+    // Guest-surface gate (unified membership) — GUEST accounts pass; any
+    // other account needs a binding for THIS contract. Uniform 404, never 403.
+    await this.contractAccess.assertGuestSurfaceCaller(user, contractId);
     return this.invitations.readGuestVisibleComments(contractId, user.id);
   }
 
@@ -72,13 +74,11 @@ export class GuestCommentsController {
     @Body() dto: GuestCommentDraftDto,
     @CurrentUser() user: any,
   ) {
-    // Belt-and-braces — only guest-user identities may post here.
-    // Managing-user JWTs go through the normal /contracts/:id/comments
-    // path; sending one here is a misuse worth a clear 403 instead of
-    // silently writing through the wrong code path.
-    if (user?.account_type !== AccountType.GUEST) {
-      throw new ForbiddenException('Guest comment endpoint requires a guest identity');
-    }
+    // Guest-surface gate (unified membership) — GUEST accounts pass; a real
+    // account (MANAGING/FREE) posts here ONLY with a binding for THIS
+    // contract (a host-org member without a binding still uses the normal
+    // /contracts/:id/comments path). Uniform 404, never 403.
+    await this.contractAccess.assertGuestSurfaceCaller(user, contractId);
     if (!dto?.content || dto.content.trim().length === 0) {
       throw new BadRequestException('Comment content is required');
     }

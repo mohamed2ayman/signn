@@ -8,6 +8,7 @@ import { GuestInvitationService } from '../services/guest-invitation.service';
 import { InvitationTokenService } from '../services/invitation-token.service';
 import { ViewerCredentialService } from '../services/viewer-credential.service';
 import { AuthService } from '../../auth/auth.service';
+import { AccountLockoutService } from '../../auth/services/account-lockout.service';
 import { ContractAccessService } from '../../contracts/services/contract-access.service';
 import { GuestInvitationScopedRepository } from '../../scoped-repository/guest-invitation-scoped.repository';
 
@@ -80,6 +81,14 @@ describe('GuestInvitationService — writeGuestComment parent validation', () =>
         { provide: ContractAccessService, useValue: contractAccess },
         { provide: DataSource, useValue: dataSource },
         { provide: AuthService, useValue: { issueGuestSession: jest.fn() } },
+        {
+          provide: AccountLockoutService,
+          useValue: {
+            assertNotLocked: jest.fn(),
+            recordFailedAttempt: jest.fn().mockResolvedValue(undefined),
+            clearFailedAttempts: jest.fn().mockResolvedValue(undefined),
+          },
+        },
         {
           provide: GuestInvitationScopedRepository,
           useValue: { scopedFindByIdOrThrow: jest.fn() },

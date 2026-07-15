@@ -42,6 +42,7 @@ import { GuestInvitation } from '../../../database/entities/guest-invitation.ent
 import { InvitationTokenService } from '../services/invitation-token.service';
 import { ViewerCredentialService } from '../services/viewer-credential.service';
 import { AuthService } from '../../auth/auth.service';
+import { AccountLockoutService } from '../../auth/services/account-lockout.service';
 import { GuestInvitationScopedRepository } from '../../scoped-repository/guest-invitation-scoped.repository';
 
 /**
@@ -292,6 +293,14 @@ describeReal('GuestChatController / GuestChatService (real Postgres)', () => {
         { provide: InvitationTokenService, useValue: {} },
         { provide: ViewerCredentialService, useValue: {} },
         { provide: AuthService, useValue: {} },
+        {
+          provide: AccountLockoutService,
+          useValue: {
+            assertNotLocked: jest.fn(),
+            recordFailedAttempt: jest.fn().mockResolvedValue(undefined),
+            clearFailedAttempts: jest.fn().mockResolvedValue(undefined),
+          },
+        },
         { provide: GuestInvitationScopedRepository, useValue: {} },
         // No org subscription → the resolver falls through to the
         // meter_definitions.default_limit (1,000,000 placeholder) — the daily
@@ -552,7 +561,10 @@ describeReal('GuestChatController / GuestChatService (real Postgres)', () => {
     expect(await readDailyCount(contractBound2Id)).toBe(0);
   });
 
-  it('GATE — managing principal → 403; viewer-shaped principal → 403; no credential → 401', async () => {
+  // Unified membership: account_type no longer 403s — the guest surface is
+  // binding-only for real accounts, and a binding-less real account (even the
+  // host org's owner) gets the SAME uniform 404 as every other denial.
+  it('GATE — managing principal (no binding) → 404; viewer-shaped principal → 404; no credential → 401', async () => {
     injectedUser = {
       id: ownerUserId,
       email: OWNER_EMAIL,
@@ -560,13 +572,13 @@ describeReal('GuestChatController / GuestChatService (real Postgres)', () => {
       organization_id: orgId,
       account_type: AccountType.MANAGING,
     };
-    await createSessionHttp(contractBoundId).expect(403);
+    await createSessionHttp(contractBoundId).expect(404);
 
     injectedUser = {
       type: 'viewer',
       viewer: { contract_id: contractBoundId, invitation_id: randomUUID() },
     };
-    await createSessionHttp(contractBoundId).expect(403);
+    await createSessionHttp(contractBoundId).expect(404);
 
     await request(app.getHttpServer())
       .post(`/guest/contracts/${contractBoundId}/chat/sessions`)

@@ -78,6 +78,16 @@ describeReal('GuestUploadController / GuestUploadService (real Postgres)', () =>
   const GUEST_EMAIL = `guest-up-${guestUserId.slice(0, 8)}@external.test`;
   const OWNER_EMAIL = `owner-up-${ownerUserId.slice(0, 8)}@managing.test`;
 
+  // ── Pin-interaction fixture: a MANAGING user in a DIFFERENT org, bound to a
+  //    host-org contract that is PINNED (signed-state frozen). Proves the
+  //    unified-membership binding path does NOT route around the pin guard. ──
+  const pinOrgAId = randomUUID(); // the manager's OWN org (cross-org)
+  const pinManagerId = randomUUID(); // MANAGING user in org A — bound to the pinned contract
+  const pinContractId = randomUUID(); // host-org contract, PINNED
+  const pinVersionId = randomUUID(); // the pinned contract_versions row
+  const pinBindingId = randomUUID(); // binding: pinManager → pinContractId
+  const PIN_MANAGER_EMAIL = `pin-mgr-${pinManagerId.slice(0, 8)}@managing.test`;
+
   // The principal the (stubbed) JwtAuthGuard injects. Mutated per-test.
   let injectedUser: any;
 
@@ -265,10 +275,60 @@ describeReal('GuestUploadController / GuestUploadService (real Postgres)', () =>
        VALUES ($1, $2, $3, $4)`,
       [bindingId, guestUserId, contractBoundId, ownerUserId],
     );
+
+    // ── Pin-interaction fixture: MANAGING user in a DIFFERENT org (org A),
+    //    bound to a host-org contract that is PINNED. Exercises the binding-
+    //    FALLBACK branch of findAccessibleContract (org-first misses, binding
+    //    routes it in), then the pin guard at the mutation seam must still win.
+    await dataSource.query(`INSERT INTO organizations (id, name) VALUES ($1, $2)`, [
+      pinOrgAId,
+      `guest-up-orgA-${pinOrgAId.slice(0, 8)}`,
+    ]);
+    await insertUser(pinManagerId, PIN_MANAGER_EMAIL, 'OWNER_ADMIN', 'MANAGING', pinOrgAId);
+    await dataSource.query(
+      `INSERT INTO contracts (id, project_id, name, contract_type, created_by)
+       VALUES ($1, $2, 'Pinned Host Contract', 'FIDIC_RED_BOOK', $3)`,
+      [pinContractId, projectId, ownerUserId],
+    );
+    // Pin it: a real contract_versions row + pinned_version_id set — all the
+    // pin guard reads. FK contracts.pinned_version_id → contract_versions(id)
+    // is ON DELETE RESTRICT, so the version row must exist first.
+    await dataSource.query(
+      `INSERT INTO contract_versions (id, contract_id, version_number, snapshot)
+       VALUES ($1, $2, 1, '{}'::jsonb)`,
+      [pinVersionId, pinContractId],
+    );
+    await dataSource.query(
+      `UPDATE contracts SET pinned_version_id = $2 WHERE id = $1`,
+      [pinContractId, pinVersionId],
+    );
+    await dataSource.query(
+      `INSERT INTO guest_contract_access (id, user_id, contract_id, granted_by)
+       VALUES ($1, $2, $3, $4)`,
+      [pinBindingId, pinManagerId, pinContractId, ownerUserId],
+    );
   });
 
   afterAll(async () => {
     if (dataSource?.isInitialized) {
+      // Pin-interaction fixture teardown (FK order: binding → NULL the pin FK
+      // → version → uploads/counts → contract → user → org). pinned_version_id
+      // → contract_versions is ON DELETE RESTRICT, so NULL it before dropping.
+      await dataSource.query(`DELETE FROM guest_contract_access WHERE id = $1`, [pinBindingId]);
+      await dataSource.query(`UPDATE contracts SET pinned_version_id = NULL WHERE id = $1`, [
+        pinContractId,
+      ]);
+      await dataSource.query(`DELETE FROM contract_versions WHERE id = $1`, [pinVersionId]);
+      await dataSource.query(`DELETE FROM document_uploads WHERE contract_id = $1`, [
+        pinContractId,
+      ]);
+      await dataSource.query(`DELETE FROM guest_upload_daily_counts WHERE contract_id = $1`, [
+        pinContractId,
+      ]);
+      await dataSource.query(`DELETE FROM contracts WHERE id = $1`, [pinContractId]);
+      await dataSource.query(`DELETE FROM users WHERE id = $1`, [pinManagerId]);
+      await dataSource.query(`DELETE FROM organizations WHERE id = $1`, [pinOrgAId]);
+
       await dataSource.query(
         `DELETE FROM document_uploads WHERE contract_id = ANY($1)`,
         [[contractBoundId, contractUnboundId]],
@@ -344,8 +404,12 @@ describeReal('GuestUploadController / GuestUploadService (real Postgres)', () =>
     expect(uploadAndProcessMock).not.toHaveBeenCalled();
   });
 
-  // ─── RED: managing-user principal → 403 (Path B requires account_type=GUEST) ─
-  it('RED — non-guest (MANAGING) principal → 403, no upload', async () => {
+  // ─── RED: real-account principal WITHOUT a binding → uniform 404 ────────
+  // Unified membership: account_type no longer 403s. Even the HOST org's own
+  // OWNER_ADMIN cannot use the guest surface without a guest_contract_access
+  // binding — the guest door stays binding-only for real accounts, and the
+  // denial is the SAME 404 as every other wall (no existence oracle).
+  it('RED — non-guest (MANAGING, host owner, NO binding) → uniform 404, no upload', async () => {
     injectedUser = {
       id: ownerUserId,
       email: OWNER_EMAIL,
@@ -358,12 +422,45 @@ describeReal('GuestUploadController / GuestUploadService (real Postgres)', () =>
       .set('Authorization', 'Bearer valid-token')
       .attach('file', VALID_PDF, { filename: 'revised.pdf', contentType: 'application/pdf' });
 
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(404);
     expect(uploadAndProcessMock).not.toHaveBeenCalled();
   });
 
-  // ─── RED: viewer-shaped principal (Path A) cannot upload → 403 ─────────
-  it('RED — viewer principal (no account_type=GUEST) cannot upload → 403', async () => {
+  // ─── ⭐ PIN INTERACTION: the binding path does NOT bypass the pin guard ──
+  // Unified membership lets a real MANAGING account reach a bound contract via
+  // the guest door (binding-fallback). Signed-state pinning — assertContractMutable,
+  // a SEPARATE guard at the mutation seam, AFTER the binding wall (404-first) but
+  // BEFORE the daily-slot claim and the heavy write — must still win: a bound
+  // managing-as-guest uploading to a PINNED (signed) contract gets 409
+  // CONTRACT_PINNED, never a silent bypass through the binding. Pin wins.
+  it('⭐ PIN INTERACTION — bound MANAGING-as-guest uploading to a PINNED contract → 409 CONTRACT_PINNED (binding does NOT route around the pin)', async () => {
+    injectedUser = {
+      id: pinManagerId,
+      email: PIN_MANAGER_EMAIL,
+      role: UserRole.OWNER_ADMIN,
+      organization_id: pinOrgAId,
+      account_type: AccountType.MANAGING,
+    };
+    const res = await request(app.getHttpServer())
+      .post(`/guest/contracts/${pinContractId}/documents`)
+      .set('Authorization', 'Bearer valid-token')
+      .attach('file', VALID_PDF, { filename: 'revised.pdf', contentType: 'application/pdf' });
+
+    // Pinning wins over the binding: the coded 409 envelope, not a 201.
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe('CONTRACT_PINNED');
+    // The pin fired at the mutation seam BEFORE the heavy write …
+    expect(uploadAndProcessMock).not.toHaveBeenCalled();
+    // … and BEFORE the daily-slot claim — no quota row was created/consumed.
+    const cap = await dataSource.query(
+      `SELECT count FROM guest_upload_daily_counts WHERE contract_id = $1 AND day = $2`,
+      [pinContractId, utcToday()],
+    );
+    expect(cap.length).toBe(0);
+  });
+
+  // ─── RED: viewer-shaped principal (Path A) cannot upload → 404 ─────────
+  it('RED — viewer principal (no account_type=GUEST) cannot upload → 404', async () => {
     injectedUser = {
       type: 'viewer',
       viewer: { contract_id: contractBoundId, invitation_id: randomUUID() },
@@ -373,7 +470,7 @@ describeReal('GuestUploadController / GuestUploadService (real Postgres)', () =>
       .set('Authorization', 'Bearer valid-token')
       .attach('file', VALID_PDF, { filename: 'revised.pdf', contentType: 'application/pdf' });
 
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(404);
     expect(uploadAndProcessMock).not.toHaveBeenCalled();
   });
 

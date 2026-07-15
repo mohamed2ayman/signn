@@ -12,6 +12,7 @@ import {
 } from '../../database/entities';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { AccountLockoutService } from './services/account-lockout.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { UsersModule } from '../users/users.module';
 import { NotificationsModule } from '../notifications/notifications.module';
@@ -45,7 +46,9 @@ import { CryptoModule } from '../../common/crypto/crypto.module';
     CryptoModule, // exports CryptoService (encrypt MFA TOTP secret at rest, Phase 7.35)
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy],
-  exports: [AuthService, JwtModule, PassportModule],
+  providers: [AuthService, AccountLockoutService, JwtStrategy],
+  // AccountLockoutService is exported so the guest establish-identity path
+  // (GuestPortalModule imports AuthModule) locks the SAME way login does.
+  exports: [AuthService, AccountLockoutService, JwtModule, PassportModule],
 })
 export class AuthModule {}

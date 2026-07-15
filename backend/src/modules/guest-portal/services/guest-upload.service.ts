@@ -232,19 +232,23 @@ export class GuestUploadService {
    */
   private async notifyManagingOnUpload(
     contract: Contract,
-    guest: { email?: string | null },
+    guest: { email?: string | null; account_type?: AccountType | null },
     documentId: string,
   ): Promise<void> {
     const creator = contract.creator;
     if (!creator?.id) {
       return;
     }
-    const who = guest.email || 'A guest';
+    // Unified membership — label the actor by what they are: a GUEST account
+    // is "a guest"; a real account acting via a binding is an external
+    // reviewer, not "a guest" (conscious-call #5: no mislabeling).
+    const actorNoun = this.actorNoun(guest);
+    const who = guest.email || `A${actorNoun === 'guest' ? '' : 'n'} ${actorNoun}`;
     const contractName = contract.name || contract.id;
     try {
       await this.dispatch.dispatch({
         userId: creator.id,
-        title: 'New contract version uploaded by guest',
+        title: `New contract version uploaded by ${actorNoun}`,
         message: `${who} uploaded a new version to "${contractName}".`,
         type: NotificationType.BOTH,
         relatedEntityType: 'contract',
@@ -252,7 +256,7 @@ export class GuestUploadService {
         email: creator.email
           ? {
               to: creator.email,
-              subject: `Sign — a guest uploaded a new version of "${contractName}"`,
+              subject: `Sign — ${actorNoun === 'guest' ? 'a guest' : 'an external reviewer'} uploaded a new version of "${contractName}"`,
               html: this.buildEmailHtml(
                 'New contract version uploaded',
                 [
@@ -277,9 +281,20 @@ export class GuestUploadService {
    * At-limit notification — tell the host org's OWNER_ADMINs that a guest hit
    * the daily upload cap. Best-effort, per-recipient try/catch.
    */
+  /**
+   * Unified membership — actor labeling for notification copy. A GUEST
+   * account is "a guest"; a real account (MANAGING/FREE) acting through a
+   * guest binding is an "external reviewer" (conscious-call #5).
+   */
+  private actorNoun(guest: { account_type?: AccountType | null }): string {
+    return guest.account_type === AccountType.GUEST
+      ? 'guest'
+      : 'external reviewer';
+  }
+
   private async notifyHostDailyCapHit(
     contract: Contract,
-    guest: { email?: string | null },
+    guest: { email?: string | null; account_type?: AccountType | null },
   ): Promise<void> {
     const orgId = contract.project?.organization_id;
     if (!orgId) {
@@ -302,7 +317,8 @@ export class GuestUploadService {
       return;
     }
 
-    const who = guest.email || 'A guest';
+    const actorNoun = this.actorNoun(guest);
+    const who = guest.email || `A${actorNoun === 'guest' ? '' : 'n'} ${actorNoun}`;
     const contractName = contract.name || contract.id;
     const cap = GuestUploadService.GUEST_DAILY_UPLOAD_CAP;
 
@@ -310,7 +326,7 @@ export class GuestUploadService {
       try {
         await this.dispatch.dispatch({
           userId: admin.id,
-          title: 'Guest reached daily upload limit',
+          title: `${actorNoun === 'guest' ? 'Guest' : 'External reviewer'} reached daily upload limit`,
           message: `${who} reached the daily upload limit (${cap}/day) on "${contractName}".`,
           type: NotificationType.BOTH,
           relatedEntityType: 'contract',
@@ -318,8 +334,10 @@ export class GuestUploadService {
           email: admin.email
             ? {
                 to: admin.email,
-                subject: `Sign — a guest reached the daily upload limit on "${contractName}"`,
-                html: this.buildEmailHtml('Guest daily upload limit reached', [
+                subject: `Sign — ${actorNoun === 'guest' ? 'a guest' : 'an external reviewer'} reached the daily upload limit on "${contractName}"`,
+                html: this.buildEmailHtml(
+                  `${actorNoun === 'guest' ? 'Guest' : 'External reviewer'} daily upload limit reached`,
+                  [
                   `${who} attempted more than ${cap} uploads in one day on "${contractName}".`,
                   'No further guest uploads will be accepted on this contract until tomorrow (UTC). This is an automated notice.',
                 ]),

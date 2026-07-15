@@ -422,18 +422,29 @@ export class DocumentProcessingService {
   }
 
   /**
-   * Is this document a GUEST upload? Derived from the uploader's account_type,
-   * so the proposed-vs-live decision is intrinsic to the document and identical
-   * no matter which route (managing status poll or guest status poll) drives
-   * the advance. A GUEST account can only ever upload via the guest path to a
-   * bound contract, so account_type=GUEST is the precise discriminator.
+   * Is this document a GUEST-CHANNEL upload? DOC-derived (never
+   * endpoint-derived), so the proposed-vs-live decision is intrinsic to the
+   * document and identical no matter which route (managing status poll,
+   * guest status poll, or the SYSTEM driver) drives the advance:
+   *   - uploader is a GUEST account → guest channel (the pre-unified rule);
+   *   - uploader is a REAL account (MANAGING/FREE) holding a
+   *     guest_contract_access binding for THIS contract → guest channel too
+   *     (unified membership: they act as a guest ON this contract — proposed
+   *     clauses, no party backfill).
+   * Both discriminators are durable row facts (uploader identity + binding).
    */
   private async isGuestUploadedDoc(doc: DocumentUpload): Promise<boolean> {
     const uploader = await this.userRepository.findOne({
       where: { id: doc.uploaded_by },
       select: ['id', 'account_type'],
     });
-    return uploader?.account_type === AccountType.GUEST;
+    if (uploader?.account_type === AccountType.GUEST) {
+      return true;
+    }
+    if (!doc.uploaded_by || !doc.contract_id) {
+      return false;
+    }
+    return this.contractAccess.hasGuestBinding(doc.contract_id, doc.uploaded_by);
   }
 
   /**

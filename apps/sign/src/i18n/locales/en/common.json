@@ -1468,12 +1468,18 @@
         "conflict": "An account already exists for this invitation, and the password did not match. Use the original password, or contact the sender.",
         "existingAccount": "This email is already registered with a SIGN account. Accessing shared contracts with an existing account isn't available yet — please contact whoever shared this contract with you.",
         "throttled": "Too many attempts. Please wait a minute and try again.",
+        "accountLocked": "This account is temporarily locked after too many failed password attempts. Please try again in about 30 minutes.",
         "generic": "Could not set your password just now. Please try again."
       },
       "blocked": {
         "title": "This invitation cannot be used to set up access",
         "body": "It can no longer be used to set up commenting access — it may already have been used, or it may have expired. If you already set up access, reopen your original invitation link; otherwise, contact the person who invited you.",
         "dismiss": "Got it"
+      },
+      "linked": {
+        "title": "Contract linked to your SIGN account",
+        "body": "Your existing SIGN account now has access to this contract. Because your account uses two-factor authentication, please sign in as usual to view it.",
+        "cta": "Go to sign in"
       }
     },
     "comments": {

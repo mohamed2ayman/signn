@@ -7,6 +7,7 @@ import * as bcrypt from 'bcrypt';
 import { randomUUID } from 'crypto';
 
 import { AuthService } from '../auth.service';
+import { AccountLockoutService } from '../services/account-lockout.service';
 import {
   User,
   UserRole,
@@ -226,6 +227,7 @@ describe('AuthService — Phase 4.2 token security', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AuthService,
+        AccountLockoutService,
         { provide: getRepositoryToken(User),                     useValue: mockUserRepository },
         { provide: getRepositoryToken(Organization),             useValue: { create: jest.fn(), save: jest.fn() } },
         { provide: getRepositoryToken(SubscriptionPlan),         useValue: { findOne: jest.fn() } },

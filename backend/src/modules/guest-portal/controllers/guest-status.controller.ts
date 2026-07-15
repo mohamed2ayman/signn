@@ -1,6 +1,5 @@
 import {
   Controller,
-  ForbiddenException,
   Get,
   Param,
   ParseUUIDPipe,
@@ -9,7 +8,7 @@ import {
 
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
-import { AccountType } from '../../../database/entities';
+import { ContractAccessService } from '../../contracts/services/contract-access.service';
 import { DocumentProcessingService } from '../../document-processing/document-processing.service';
 
 /**
@@ -24,16 +23,18 @@ import { DocumentProcessingService } from '../../document-processing/document-pr
  * guest's own upload, instead of `findInOrg`. The managing route is UNTOUCHED.
  *
  * Mirrors the JWT-gated guest controllers (guest-upload / guest-download):
- * class-level `JwtAuthGuard` + an explicit `account_type === GUEST` assertion
- * as the first statement, so a passwordless Viewer credential (Path A — not a
- * JWT) can never reach this route, and a managing-user JWT routed here gets a
- * loud 403 rather than driving a guest pipeline.
+ * class-level `JwtAuthGuard` + the guest-surface gate as the first statement,
+ * so a passwordless Viewer credential (Path A — not a JWT) can never reach
+ * this route, and a real-account JWT is allowed only with a
+ * guest_contract_access binding for the target contract (uniform 404
+ * otherwise — unified membership).
  */
 @Controller('guest/contracts')
 @UseGuards(JwtAuthGuard)
 export class GuestStatusController {
   constructor(
     private readonly documentProcessing: DocumentProcessingService,
+    private readonly contractAccess: ContractAccessService,
   ) {}
 
   @Get(':id/documents/:docId/status')
@@ -42,14 +43,11 @@ export class GuestStatusController {
     @Param('docId', ParseUUIDPipe) docId: string,
     @CurrentUser() user: any,
   ) {
-    // Path-B identity gate — established guest identity only. Identity is taken
-    // ENTIRELY from the server-side principal (JwtStrategy loaded the User row
-    // by token sub), never from client input.
-    if (user?.account_type !== AccountType.GUEST) {
-      throw new ForbiddenException(
-        'Guest status endpoint requires a guest identity',
-      );
-    }
+    // Guest-surface gate (unified membership) — GUEST accounts pass; any
+    // other account needs a binding for THIS contract (uniform 404, never
+    // 403). Identity is taken ENTIRELY from the server-side principal
+    // (JwtStrategy loaded the User row by token sub), never client input.
+    await this.contractAccess.assertGuestSurfaceCaller(user, contractId);
 
     // Binding + ownership wall + drive the guest pipeline one step.
     const doc = await this.documentProcessing.pollAndAdvanceForGuest(

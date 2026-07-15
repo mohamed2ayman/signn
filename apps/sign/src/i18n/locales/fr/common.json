@@ -1477,12 +1477,18 @@
         "conflict": "Un compte existe déjà pour cette invitation, et le mot de passe ne correspond pas. Utilisez le mot de passe initial ou contactez l'expéditeur.",
         "existingAccount": "Cette adresse e-mail est déjà associée à un compte SIGN. L'accès aux contrats partagés avec un compte existant n'est pas encore disponible — veuillez contacter la personne qui a partagé ce contrat avec vous.",
         "throttled": "Trop de tentatives. Veuillez patienter une minute et réessayer.",
+        "accountLocked": "Ce compte est temporairement verrouillé après trop de tentatives de mot de passe échouées. Veuillez réessayer dans environ 30 minutes.",
         "generic": "Impossible de définir votre mot de passe pour le moment. Veuillez réessayer."
       },
       "blocked": {
         "title": "Cette invitation ne peut pas être utilisée pour configurer l'accès",
         "body": "Elle ne peut plus servir à configurer l'accès aux commentaires — elle a peut-être déjà été utilisée ou a expiré. Si vous avez déjà configuré votre accès, rouvrez votre lien d'invitation d'origine ; sinon, contactez la personne qui vous a invité.",
         "dismiss": "Compris"
+      },
+      "linked": {
+        "title": "Contrat lié à votre compte SIGN",
+        "body": "Votre compte SIGN existant a désormais accès à ce contrat. Comme votre compte utilise l'authentification à deux facteurs, veuillez vous connecter comme d'habitude pour le consulter.",
+        "cta": "Aller à la connexion"
       }
     },
     "comments": {

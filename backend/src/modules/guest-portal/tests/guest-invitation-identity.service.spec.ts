@@ -12,6 +12,7 @@ import { GuestInvitationService } from '../services/guest-invitation.service';
 import { InvitationTokenService } from '../services/invitation-token.service';
 import { ViewerCredentialService } from '../services/viewer-credential.service';
 import { AuthService } from '../../auth/auth.service';
+import { AccountLockoutService } from '../../auth/services/account-lockout.service';
 import { ContractAccessService } from '../../contracts/services/contract-access.service';
 import { GuestInvitationScopedRepository } from '../../scoped-repository/guest-invitation-scoped.repository';
 
@@ -182,6 +183,14 @@ describe('GuestInvitationService — 1b-ii identity transition', () => {
         { provide: ContractAccessService, useValue: contractAccess },
         { provide: DataSource, useValue: dataSource },
         { provide: AuthService, useValue: authService },
+        {
+          provide: AccountLockoutService,
+          useValue: {
+            assertNotLocked: jest.fn(),
+            recordFailedAttempt: jest.fn().mockResolvedValue(undefined),
+            clearFailedAttempts: jest.fn().mockResolvedValue(undefined),
+          },
+        },
         // Option B chokepoint 2/4 — establishIdentity never touches the scoped
         // repo (it is a PUBLIC token-gated path), but the service now declares
         // it as a constructor dep, so DI must resolve it.
