@@ -1,5 +1,5 @@
 /**
- * Project Health scoring — 7.20 slice 1.
+ * Project Health scoring — 7.20 slice 1 (risk term reworked — Issue 2, Option A).
  *
  * PURE function: no fetching, no clock injection beyond Date.now(), fully
  * unit-testable. The weights below are a TUNABLE PRODUCT DECISION — a
@@ -12,6 +12,16 @@
  *     absent entirely, so records are zero-filled before any math.
  *  3. (Future slices) by_status keys are the RAW 12 ContractStatus values;
  *     a 12-status → 6-bucket fold is required before feeding StatusPie.
+ *
+ * Risk term — WHY a saturating curve (Issue 2): the previous risk term was a
+ * linear per-contract share hard-capped at 45. A single heavily-analysed
+ * contract routinely carries 40–160 findings, so (findings/contracts)·weight
+ * blew past the cap for EVERY project → the risk deduction pegged at 45 and
+ * the score was stuck (all projects the same). It is now a severity-weighted
+ * load fed through an exponential-saturation curve with smooth diminishing
+ * returns: it approaches — but never reaches — RISK_MAX_DEDUCTION, so the
+ * score regains per-project discrimination. See
+ * docs/project-health-investigation.md.
  */
 import { effectiveStatus } from '@/components/obligations/statusUtils';
 import type { ObligationStatus } from '@/services/api/complianceService';
@@ -19,12 +29,19 @@ import type { ProjectDashboard } from '@/services/api/projectService';
 
 // ─── Tunable weights (product decision — keep named, never inline) ───────
 export const HEALTH_WEIGHTS = {
-  /** Per-contract share of HIGH risk findings. */
-  HIGH_RISK: 45,
-  /** Per-contract share of MEDIUM risk findings. */
-  MEDIUM_RISK: 18,
-  /** Cap on the combined risk-exposure deduction. */
-  RISK_CAP: 45,
+  /** Severity weight per HIGH finding in the risk load. The HIGH:MEDIUM ratio
+   *  (2.5 : 1) preserves the previous 45:18 severity ratio. */
+  RISK_HIGH_WEIGHT: 2.5,
+  /** Severity weight per MEDIUM finding in the risk load. */
+  RISK_MEDIUM_WEIGHT: 1,
+  /** Asymptotic ceiling of the risk-exposure deduction — approached, never
+   *  reached, by the saturating curve. */
+  RISK_MAX_DEDUCTION: 45,
+  /** Saturation constant K for the risk curve RISK_MAX·(1 − e^(−load/K)).
+   *  Sized (K = 50 / ln 2 ≈ 72) so a per-contract weighted load of ≈50 yields
+   *  ≈half the ceiling, giving roughly: load ≈ 5 → ≈3 pts (small),
+   *  load ≈ 50 → ≈22 pts (mid), load ≥ 200 → ≈42 pts (near the ceiling). */
+  RISK_SATURATION_K: 72,
   /** Per-contract share of contracts already past expiry_date. */
   EXPIRED: 25,
   /** Per-contract share of contracts expiring within the next 30 days. */
@@ -53,7 +70,11 @@ export type HealthDriverKey =
 
 export interface HealthDriver {
   key: HealthDriverKey;
-  /** Whole-percent deduction attributed to this driver. */
+  /**
+   * Whole-number contribution this driver makes to the total deduction. Used
+   * ONLY to rank "what hurts most" — the UI shows the plain `count`, never
+   * this value or a percentage.
+   */
   points: number;
   /** Underlying entity count (findings / contracts / obligations). */
   count: number;
@@ -116,10 +137,14 @@ export function computeProjectHealth(input: ProjectHealthInput): ProjectHealthRe
     return { sufficient: false };
   }
 
-  // ── Risk exposure (cap −RISK_CAP) ──────────────────────────────────────
-  const highDeduction = (risk.HIGH / totalContracts) * W.HIGH_RISK;
-  const mediumDeduction = (risk.MEDIUM / totalContracts) * W.MEDIUM_RISK;
-  const riskDeduction = Math.min(highDeduction + mediumDeduction, W.RISK_CAP);
+  // ── Risk exposure — SATURATING curve (cap → RISK_MAX_DEDUCTION) ─────────
+  // Severity-weighted findings load per contract (HIGH weighted above MEDIUM);
+  // fed through RISK_MAX·(1 − e^(−load/K)) for smooth diminishing returns.
+  const highLoad = risk.HIGH * W.RISK_HIGH_WEIGHT;
+  const mediumLoad = risk.MEDIUM * W.RISK_MEDIUM_WEIGHT;
+  const riskLoad = (highLoad + mediumLoad) / totalContracts;
+  const riskDeduction =
+    W.RISK_MAX_DEDUCTION * (1 - Math.exp(-riskLoad / W.RISK_SATURATION_K));
 
   // ── Contract status (cap −STATUS_CAP) ──────────────────────────────────
   const now = Date.now();
@@ -163,16 +188,24 @@ export function computeProjectHealth(input: ProjectHealthInput): ProjectHealthRe
 
   const band: HealthBand = score >= 80 ? 'healthy' : score >= 55 ? 'atRisk' : 'critical';
 
-  // ── Drivers: the largest individual deductions, plain-language keys ────
-  // NOTE: driver points are the UNCAPPED per-component values rounded to
-  // whole percent — they explain "what hurts most", they are not required
-  // to sum to (100 − score) once a bucket cap binds.
+  // ── Drivers: each driver's REAL (bounded) contribution to the deduction,
+  // used ONLY for ranking "what hurts most" — the UI shows the plain count.
+  // The single risk deduction is split between HIGH/MEDIUM by weighted-load
+  // share; the status deduction is split across its components by the same
+  // proportion its cap applied. So driver points sum to (100 − score).
+  const totalLoad = highLoad + mediumLoad;
+  const highContribution = totalLoad > 0 ? riskDeduction * (highLoad / totalLoad) : 0;
+  const mediumContribution = totalLoad > 0 ? riskDeduction * (mediumLoad / totalLoad) : 0;
+
+  const statusRaw = expiredDeduction + expiringDeduction + stalledDeduction;
+  const statusScale = statusRaw > 0 ? statusDeduction / statusRaw : 0;
+
   const components: HealthDriver[] = [
-    { key: 'highRisk', points: Math.round(highDeduction), count: risk.HIGH },
-    { key: 'mediumRisk', points: Math.round(mediumDeduction), count: risk.MEDIUM },
-    { key: 'expired', points: Math.round(expiredDeduction), count: expiredCount },
-    { key: 'expiring', points: Math.round(expiringDeduction), count: expiringCount },
-    { key: 'stalled', points: Math.round(stalledDeduction), count: stalledCount },
+    { key: 'highRisk', points: Math.round(highContribution), count: risk.HIGH },
+    { key: 'mediumRisk', points: Math.round(mediumContribution), count: risk.MEDIUM },
+    { key: 'expired', points: Math.round(expiredDeduction * statusScale), count: expiredCount },
+    { key: 'expiring', points: Math.round(expiringDeduction * statusScale), count: expiringCount },
+    { key: 'stalled', points: Math.round(stalledDeduction * statusScale), count: stalledCount },
     {
       key: 'overdueObligations',
       points: Math.round(overdueDeduction),

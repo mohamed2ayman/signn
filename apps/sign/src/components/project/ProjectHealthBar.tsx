@@ -190,9 +190,8 @@ export default function ProjectHealthBar({
                   onClick={() => onDriverClick(d.key)}
                   className="group inline-flex items-center gap-1.5 text-sm text-gray-600 transition-colors hover:text-primary"
                 >
-                  <span>
+                  <span dir="auto">
                     {t(`projectDashboard.health.driver.${d.key}`, {
-                      points: d.points,
                       count: d.count,
                     })}
                   </span>
