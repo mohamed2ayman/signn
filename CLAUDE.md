@@ -348,6 +348,26 @@ Youssef's legal-terminology review before they are final.** Additive migrations
 existing `risk_analyses` rows + all `contracts` untouched, clauses/clause_types and the PR
 #126 write path untouched. See lesson #201.
 
+**Risk analysis is BATCHED + PARALLEL + REPLACE-on-re-run as of PR #163 (Issues 4 + 5).**
+`RiskAnalyzerAgent.analyze()` no longer makes ONE monolithic call (which self-selected only the
+salient clauses → ~36% coverage per run, previously MASKED by append-stacking). It splits the
+clause list into batches of **`RISK_BATCH_SIZE = 4`** and runs them CONCURRENTLY
+(**`RISK_BATCH_CONCURRENCY = 4`**, `ThreadPoolExecutor` over the SAME `_call_model(scrub=True)`
+chokepoint + rate-limit gate), instructing the model to assess EVERY clause in the batch — so
+coverage is guaranteed (Project9 pilot: 10/28 → **28/28**). A failed batch retries once, then
+logs + skips (partial > total failure); `failed_batches` is surfaced in the job result.
+**Same-language output (Arabic in → Arabic out) is enforced** (Issue 4), matching the
+`ClauseRewriterAgent`. On re-run the writer **REPLACES, not appends**: `pollAndSaveRisks` (in
+`document-processing.service.ts`) DELETEs prior AI rows where
+**`is_edited_by_user = false AND merged_at IS NULL`** before saving — human-edited + merged rows
+are PRESERVED, only non-human AI rows are cleared (no stacking). Category resolution normalizes +
+maps the AI vocabulary onto the 8-row taxonomy via **`RISK_CATEGORY_ALIASES`** (case/space-
+insensitive `ILike`); the risk prompt vocabulary was broadened so the model emits taxonomy-
+mappable categories (Uncategorized 33% → **0%** on the pilot). The risk poller **`MAX_POLLS = 100`**
+(batched jobs run longer than the old 60×3s window). **Never-violate:** a re-run MUST NEVER delete
+a row with `is_edited_by_user = true` OR `merged_at IS NOT NULL`; the reserve/commit metering
+shape is unchanged. See lessons #249–#252.
+
 ---
 
 ## Arabic Document Processing Architecture
@@ -365,6 +385,20 @@ When extracting text from Word files, ALWAYS extract from ALL THREE sources:
 
 Extracting only paragraphs will SILENTLY miss contract terms in table cells.
 File: `ai-backend/app/services/text_extractor.py`
+
+### Word List Numbering & Bullets — Reconstruct from `numPr` (Issue 1, PR #165)
+python-docx's `paragraph.text` returns ONLY run text. A Word list item's auto-number (`1.`,
+`1-1`) and bullet glyph (`•`) live in `numPr` metadata (numbering.xml), NOT the run text — so
+they were SILENTLY dropped, causing empty `section_number` (auto-numbered clauses arrived
+number-less) and flattened lists (bullets vanished). The docx path now RECONSTRUCTS each marker:
+`_DocxListNumbering` + `_paragraph_numpr` (in `tesseract_text_extractor.py`) resolve the
+`<w:num>/<w:abstractNum>/<w:lvl>` definitions + a running per-list counter and prepend the
+rendered marker before the `\n\n` paragraph join (numbered levels honor `numFmt` + `lvlText` →
+`1-`, `1.1`; bullets → `• `). Best-effort — any numbering-XML failure falls back to no label
+(never crashes extraction); guarded against double-prefixing a literally-typed number. Verified
+live: Project9 `section_number` fill **4/28 → 27/28**. **Never-violate:** a reconstructed `N-`
+must NOT be read as a clause boundary (`_ARTICLE_BOUNDARY_RE` matches مادة/البند/Article/Clause
+only) and a nested `N-M` stays INSIDE its parent (sub-article containment). See lesson #253.
 
 ### Cover Page Trimming Rules
 Different document types use different start markers:
@@ -435,7 +469,14 @@ File: `apps/sign/src/components/review/ClauseReviewCard.tsx` (ClauseContentDispl
 
 ### Chunking Method Hierarchy
 When splitting large documents into chunks:
-1. Split at `مادة` article boundaries first (`_split_on_article_boundaries()`)
+1. Split at `مادة` article boundaries first (`_split_on_article_boundaries()`), packing only
+   COMPLETE articles into each ≤ 15,000-char chunk. **An article that would overshoot the limit
+   moves WHOLE into the NEXT chunk — never hard-split at the packing stage** (Issue 1 / PR #165).
+   A boundary article that got hard-split used to lose its tail: the head was extracted, the tail
+   fell into the next chunk where the "skip continuations" instruction dropped it, and the
+   stitcher had no second partial to rejoin (deterministic per template — lesson #239). The ONLY
+   chunk allowed to exceed 15,000 chars is a SINGLE article larger than the limit, which alone
+   reaches step 2.
 2. If any single article > 15,000 chars → break it further (`_break_oversized_chunk()`):
    - Level 1: split at sub-article boundaries (N-M or N/M patterns)
    - Level 2: split at paragraph boundaries (`\n\n`)
@@ -456,6 +497,16 @@ Do NOT extract content that is a continuation of a clause from a previous chunk.
 ALWAYS strip `مادة (N)` / `البند رقم (N)` prefix from clause CONTENT before saving.
 The clause number is stored separately in `clause_number` field — it should NOT repeat in the content.
 Method: `_strip_article_prefix()` called in `_parse_json()` on every clause.
+
+### Layout Preservation Rule (Issue 1, PR #165)
+SYSTEM_PROMPT Guideline 1 requires the model to preserve LAYOUT for EVERY clause — original line
+breaks, bullet markers (•, -), and numbered/lettered sub-clauses each on their own line — not
+only the definitions clause (Guideline 12 is one specific case of this general rule). "Exact
+text" means exact INCLUDING layout: the model must NEVER collapse a multi-line or bulleted list
+into a single flat paragraph. (`_strip_article_prefix` only removes a leading `مادة (N)` heading;
+it does NOT strip a reconstructed `N-` / `N.` list number, so — matching pre-existing literally-
+numbered clauses — the number can appear in both `section_number` and the content start. Stripping
+it once captured is a tracked backlog refinement, not a defect.)
 
 ### TOC Skipping Rule
 Arabic contracts have a Table of Contents (sometimes appended at END of extracted text).
