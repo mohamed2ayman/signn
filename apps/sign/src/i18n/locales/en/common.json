@@ -518,12 +518,12 @@
       "insufficientBody": "The health score appears once this project has contracts with completed risk analysis.",
       "driversTitle": "Top drivers",
       "driver": {
-        "highRisk": "−{{points}}%: {{count}} high-risk finding(s)",
-        "mediumRisk": "−{{points}}%: {{count}} medium-risk finding(s)",
-        "expired": "−{{points}}%: {{count}} expired contract(s)",
-        "expiring": "−{{points}}%: {{count}} contract(s) expiring within 30 days",
-        "stalled": "−{{points}}%: {{count}} stalled draft contract(s)",
-        "overdueObligations": "−{{points}}%: {{count}} overdue obligation(s)"
+        "highRisk": "{{count}} high-risk finding(s)",
+        "mediumRisk": "{{count}} medium-risk finding(s)",
+        "expired": "{{count}} expired contract(s)",
+        "expiring": "{{count}} contract(s) expiring within 30 days",
+        "stalled": "{{count}} stalled draft contract(s)",
+        "overdueObligations": "{{count}} overdue obligation(s)"
       }
     },
     "attention": {

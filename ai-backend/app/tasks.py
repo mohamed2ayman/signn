@@ -40,7 +40,15 @@ def run_risk_analysis(self, request_data: dict[str, Any]) -> dict[str, Any]:
             clauses=request_data["clauses"],
             knowledge_context=request_data.get("knowledge_context"),
         )
-        return {"status": "completed", "result": {"risks": risks}}
+        # Issue 5 — surface any batches that failed after retry (partial-result
+        # semantics: the run still succeeds; the skipped clauses are reported).
+        return {
+            "status": "completed",
+            "result": {
+                "risks": risks,
+                "failed_batches": getattr(agent, "failed_batches", []),
+            },
+        }
     except Exception as e:
         return {"status": "failed", "error": str(e)}
 

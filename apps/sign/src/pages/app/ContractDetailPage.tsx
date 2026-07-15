@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
@@ -15,6 +15,7 @@ import ChatPanel from '@/components/chat/ChatPanel';
 import { useCollaboration } from '@/hooks/useCollaboration';
 import type { Contract, ContractClause, Clause, ContractComment, RiskAnalysis, ContractShare, SignatureSigner, ConflictDetail, ContractVersion, ContractApprover, ProjectMember } from '@/types';
 import RiskAnalysisTab from '@/components/contracts/RiskAnalysisTab';
+import { clauseDisplayNumber, buildClauseNumberMap } from '@/components/contracts/clauseNumber';
 import { ApproverStatus } from '@/types';
 import VersionTimeline from '@/components/versions/VersionTimeline';
 import DiffViewerModal from '@/components/versions/DiffViewerModal';
@@ -412,6 +413,12 @@ export default function ContractDetailPage() {
   const reloadClauses = useCallback(() => {
     if (id) contractService.getClauses(id).then(setClauses).catch(() => {});
   }, [id]);
+
+  // The clause number shown on the Clauses tab (section_number, else position
+  // in the shared ordering), mapped by contract_clause_id so the Risk tab shows
+  // the IDENTICAL number per clause. Built from the full ordered clause list —
+  // see clauseNumber.ts.
+  const clauseNumberById = useMemo(() => buildClauseNumberMap(clauses), [clauses]);
 
   const reloadComments = useCallback(() => {
     if (id) contractService.getComments(id).then(setComments).catch(() => {});
@@ -1515,8 +1522,12 @@ export default function ContractDetailPage() {
                 {/* Clause Header */}
                 <div className="flex items-start justify-between border-b border-gray-100 px-5 py-4">
                   <div className="flex items-center gap-3">
-                    <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/8 text-sm font-bold text-primary">
-                      {cc.section_number || index + 1}
+                    <span
+                      className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/8 text-sm font-bold text-primary"
+                      dir="auto"
+                      style={{ unicodeBidi: 'plaintext' }}
+                    >
+                      {clauseDisplayNumber(cc, index)}
                     </span>
                     <div>
                       <div className="flex items-center gap-2">
@@ -1820,6 +1831,7 @@ export default function ContractDetailPage() {
           <RiskAnalysisTab
             contractId={id!}
             risks={risks.filter((r) => r.risk_category !== 'DOCUMENT_CONFLICT')}
+            clauseNumberById={clauseNumberById}
             onAnnotate={handleAnnotateRisk}
             onRephraseApplied={() => {
               reloadClauses();

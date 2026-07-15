@@ -23,6 +23,14 @@ interface RiskAnalysisTabProps {
   /** The contract id — needed to load/persist per-clause swap overrides. */
   contractId: string;
   risks: RiskAnalysis[];
+  /**
+   * Map `contract_clause_id → display number`, built from the FULL ordered
+   * clause list on the Clauses tab (buildClauseNumberMap). Lets each clause
+   * heading here show the IDENTICAL number the Clauses tab shows — section_number
+   * when present, otherwise its position in the shared ordering. Optional so the
+   * component still renders (falling back to section_number) if it's absent.
+   */
+  clauseNumberById?: Record<string, string>;
   onAnnotate: (
     riskId: string,
     data: { risk_level?: string; risk_category?: string; recommendation?: string },
@@ -48,8 +56,15 @@ interface DocGroup {
 }
 
 /** Group the (already backend-ordered) risks by document → clause, preserving
- *  first-seen order so the sequence matches the Clauses tab exactly. */
-function groupRisks(risks: RiskAnalysis[]): DocGroup[] {
+ *  first-seen order so the sequence matches the Clauses tab exactly. The clause
+ *  number is resolved from `clauseNumberById` (the Clauses-tab derivation over
+ *  the FULL clause list) so the identical clause shows the identical number on
+ *  both tabs; it falls back to the risk's own section_number when the map is
+ *  absent or the clause isn't in it. */
+function groupRisks(
+  risks: RiskAnalysis[],
+  clauseNumberById?: Record<string, string>,
+): DocGroup[] {
   const docs: DocGroup[] = [];
   const docIndex = new Map<string, DocGroup>();
   const clauseIndex = new Map<string, ClauseGroup>();
@@ -74,7 +89,7 @@ function groupRisks(risks: RiskAnalysis[]): DocGroup[] {
     if (!cg) {
       cg = {
         clauseKey,
-        clauseNumber: cc?.section_number ?? null,
+        clauseNumber: clauseNumberById?.[clauseKey] ?? cc?.section_number ?? null,
         clauseTitle: clause?.title ?? '',
         clauseContent: clause?.content ?? '',
         risks: [],
@@ -910,7 +925,11 @@ function DocumentSection({
             <div key={cg.clauseKey} className="rounded-lg border border-gray-100 bg-white">
               <div className="border-b border-gray-100 px-4 py-3">
                 <div className="flex items-center gap-2">
-                  <span className="flex h-6 min-w-6 items-center justify-center rounded bg-primary/8 px-1.5 text-xs font-bold text-primary">
+                  <span
+                    className="flex h-6 min-w-6 items-center justify-center rounded bg-primary/8 px-1.5 text-xs font-bold text-primary"
+                    dir="auto"
+                    style={{ unicodeBidi: 'plaintext' }}
+                  >
                     {cg.clauseNumber || '—'}
                   </span>
                   <h4 className="text-sm font-semibold text-gray-900" dir="auto" style={{ unicodeBidi: 'plaintext' }}>
@@ -940,10 +959,14 @@ function DocumentSection({
 export default function RiskAnalysisTab({
   contractId,
   risks,
+  clauseNumberById,
   onAnnotate,
   onRephraseApplied,
 }: RiskAnalysisTabProps) {
-  const groups = useMemo(() => groupRisks(risks), [risks]);
+  const groups = useMemo(
+    () => groupRisks(risks, clauseNumberById),
+    [risks, clauseNumberById],
+  );
 
   // Per-clause swap overrides (which 2 risks are visible). Loaded once; a swap
   // updates it optimistically and persists via the backend (survives reload).

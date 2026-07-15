@@ -163,7 +163,8 @@ describe('finalize_review metered consumer (wiring)', () => {
     jest.useRealTimers();
   });
 
-  // Drive the private pollAndSaveRisks past its 60×3s loop instantly.
+  // Drive the private pollAndSaveRisks past its 100×3s loop instantly
+  // (Issue 5 raised the risk poller MAX_POLLS to 100).
   async function drivePoll(reservationId?: string | null) {
     const promise = (service as any).pollAndSaveRisks(
       CONTRACT_ID,
@@ -171,7 +172,7 @@ describe('finalize_review metered consumer (wiring)', () => {
       ORG_ID,
       reservationId,
     );
-    for (let i = 0; i < 65; i++) {
+    for (let i = 0; i < 105; i++) {
       await Promise.resolve();
       jest.advanceTimersByTime(3000);
       await Promise.resolve();
@@ -207,7 +208,7 @@ describe('finalize_review metered consumer (wiring)', () => {
 
     await drivePoll(RES_ID);
 
-    expect(mockAiService.getJobStatus.mock.calls.length).toBe(60); // hit MAX_POLLS
+    expect(mockAiService.getJobStatus.mock.calls.length).toBe(100); // hit MAX_POLLS
     expect(mockMetering.release).toHaveBeenCalledTimes(1);
     expect(mockMetering.release).toHaveBeenCalledWith(RES_ID);
     expect(mockMetering.commit).not.toHaveBeenCalled();

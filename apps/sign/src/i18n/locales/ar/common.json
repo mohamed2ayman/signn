@@ -519,12 +519,12 @@
       "insufficientBody": "يظهر مؤشر الصحة عندما يحتوي المشروع على عقود اكتمل تحليل مخاطرها.",
       "driversTitle": "أهم العوامل",
       "driver": {
-        "highRisk": "−{{points}}%: {{count}} من نتائج المخاطر العالية",
-        "mediumRisk": "−{{points}}%: {{count}} من نتائج المخاطر المتوسطة",
-        "expired": "−{{points}}%: {{count}} عقد منتهي الصلاحية",
-        "expiring": "−{{points}}%: {{count}} عقد تنتهي صلاحيته خلال 30 يومًا",
-        "stalled": "−{{points}}%: {{count}} مسودة عقد متوقفة",
-        "overdueObligations": "−{{points}}%: {{count}} التزام متأخر"
+        "highRisk": "{{count}} من نتائج المخاطر العالية",
+        "mediumRisk": "{{count}} من نتائج المخاطر المتوسطة",
+        "expired": "{{count}} عقد منتهي الصلاحية",
+        "expiring": "{{count}} عقد تنتهي صلاحيته خلال 30 يومًا",
+        "stalled": "{{count}} مسودة عقد متوقفة",
+        "overdueObligations": "{{count}} التزام متأخر"
       }
     },
     "attention": {

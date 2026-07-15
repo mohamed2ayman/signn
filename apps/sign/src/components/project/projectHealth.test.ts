@@ -37,6 +37,27 @@ function input(overrides: Partial<ProjectHealthInput> = {}): ProjectHealthInput 
   };
 }
 
+/** A single-contract project (the real data shape) with N HIGH + M MEDIUM
+ *  findings and its one contract DRAFT (stalled). Mirrors the 15 live
+ *  projects that were all stuck at 47%. */
+function singleContract(high: number, medium: number, stalled = true): ProjectHealthInput {
+  return input({
+    dashboard: dashboard({
+      contracts: {
+        total: 1,
+        by_status: stalled ? [{ status: 'DRAFT', count: '1' }] : [],
+      },
+      risk_summary: [
+        { risk_level: 'HIGH', count: String(high) },
+        { risk_level: 'MEDIUM', count: String(medium) },
+      ],
+    }),
+  });
+}
+
+const scoreOf = (r: ReturnType<typeof computeProjectHealth>) =>
+  r.sufficient ? r.score : NaN;
+
 // ─────────────────────────────────────────────────────────────────
 // Insufficient-data guard
 // ─────────────────────────────────────────────────────────────────
@@ -44,9 +65,7 @@ function input(overrides: Partial<ProjectHealthInput> = {}): ProjectHealthInput 
 describe('computeProjectHealth — insufficient data', () => {
   it('returns insufficient when the project has 0 contracts', () => {
     const r = computeProjectHealth(
-      input({
-        dashboard: dashboard({ contracts: { total: 0, by_status: [] } }),
-      }),
+      input({ dashboard: dashboard({ contracts: { total: 0, by_status: [] } }) }),
     );
     expect(r.sufficient).toBe(false);
   });
@@ -65,7 +84,7 @@ describe('computeProjectHealth — insufficient data', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────
-// Bands
+// Bands / real-shaped inputs
 // ─────────────────────────────────────────────────────────────────
 
 describe('computeProjectHealth — bands', () => {
@@ -78,119 +97,86 @@ describe('computeProjectHealth — bands', () => {
     expect(r.drivers).toEqual([]);
   });
 
-  it('a moderate risk mix lands in the atRisk band (55-79)', () => {
-    // 10 contracts, 4 HIGH findings → 4/10×45 = 18; 5 MEDIUM → 5/10×18 = 9;
-    // 2 overdue obligations → 8. Score = 100 − 18 − 9 − 8 = 65.
-    const r = computeProjectHealth(
-      input({
-        dashboard: dashboard({
-          risk_summary: [
-            { risk_level: 'HIGH', count: '4' },
-            { risk_level: 'MEDIUM', count: '5' },
-          ],
-        }),
-        obligations: [
-          { status: 'PENDING', due_date: isoDaysFromNow(-3) },
-          { status: 'IN_PROGRESS', due_date: isoDaysFromNow(-10) },
-        ],
-      }),
-    );
+  it('a heavily-analysed single contract (17 HIGH / 139 MEDIUM, DRAFT) is critical — 51%, not the old stuck 47%', () => {
+    const r = computeProjectHealth(singleContract(17, 139)); // Muhlbauer shape
     expect(r.sufficient).toBe(true);
     if (!r.sufficient) return;
-    expect(r.score).toBe(65);
-    expect(r.band).toBe('atRisk');
-  });
-
-  it('heavy risk + overdue load lands critical (<55) and caps each bucket', () => {
-    // 2 contracts, 20 HIGH findings → uncapped 450, capped at RISK_CAP (45).
-    // 10 overdue obligations → uncapped 40, capped at OVERDUE_CAP (20).
-    // Both contracts expired → 25 (status bucket, under its cap).
-    // Score = 100 − 45 − 25 − 20 = 10.
-    const r = computeProjectHealth(
-      input({
-        dashboard: dashboard({
-          contracts: { total: 2, by_status: [] },
-          risk_summary: [{ risk_level: 'HIGH', count: '20' }],
-        }),
-        contracts: [
-          { status: 'ACTIVE', expiry_date: isoDaysFromNow(-40) },
-          { status: 'ACTIVE', expiry_date: isoDaysFromNow(-5) },
-        ],
-        obligations: Array.from({ length: 10 }, () => ({
-          status: 'PENDING' as const,
-          due_date: isoDaysFromNow(-2),
-        })),
-      }),
-    );
-    expect(r.sufficient).toBe(true);
-    if (!r.sufficient) return;
-    expect(r.score).toBe(10);
+    // riskDeduction ≈ 41.4 (saturating, < 45 cap) + stalled 8 → 100 − 49.4 ≈ 51.
+    expect(r.score).toBe(51);
     expect(r.band).toBe('critical');
   });
 
-  it('score is clamped to [0, 100]', () => {
-    // Max out all three buckets: 45 + 30 + 20 = 95 → still >= 0; verify no
-    // negative leak by pushing every deduction to its cap.
-    const r = computeProjectHealth(
-      input({
-        dashboard: dashboard({
-          contracts: {
-            total: 1,
-            by_status: [
-              { status: 'DRAFT', count: '1' },
-              { status: 'CHANGES_REQUESTED', count: '1' },
-            ],
-          },
-          risk_summary: [{ risk_level: 'HIGH', count: '50' }],
-        }),
-        contracts: [{ status: 'DRAFT', expiry_date: isoDaysFromNow(-1) }],
-        obligations: Array.from({ length: 20 }, () => ({
-          status: 'PENDING' as const,
-          due_date: isoDaysFromNow(-1),
-        })),
-      }),
-    );
+  it('a lighter single contract (5 HIGH / 48 MEDIUM, DRAFT) lands atRisk — 66%', () => {
+    const r = computeProjectHealth(singleContract(5, 48)); // Project14 shape
     expect(r.sufficient).toBe(true);
     if (!r.sufficient) return;
-    expect(r.score).toBeGreaterThanOrEqual(0);
-    expect(r.score).toBeLessThanOrEqual(100);
-    expect(r.score).toBe(100 - HEALTH_WEIGHTS.RISK_CAP - HEALTH_WEIGHTS.STATUS_CAP - HEALTH_WEIGHTS.OVERDUE_CAP);
+    expect(r.score).toBe(66);
+    expect(r.band).toBe('atRisk');
   });
 });
 
 // ─────────────────────────────────────────────────────────────────
-// The three landmines
+// Saturating risk curve (Issue 2, Option A)
+// ─────────────────────────────────────────────────────────────────
+
+describe('computeProjectHealth — saturating risk curve', () => {
+  it('risk deduction is bounded: even 10000 findings on one contract cannot push the risk floor below 55%', () => {
+    // Risk alone: score = 100 − riskDeduction, and riskDeduction < RISK_MAX (45),
+    // so a risk-only project can never score below 100 − 45 = 55.
+    const r = computeProjectHealth(singleContract(10_000, 10_000, false));
+    expect(r.sufficient).toBe(true);
+    if (!r.sufficient) return;
+    expect(r.score).toBeGreaterThanOrEqual(100 - HEALTH_WEIGHTS.RISK_MAX_DEDUCTION);
+  });
+
+  it('is monotonic: more findings → a strictly lower score', () => {
+    const fewer = computeProjectHealth(singleContract(0, 40, false));
+    const more = computeProjectHealth(singleContract(0, 140, false));
+    expect(scoreOf(more)).toBeLessThan(scoreOf(fewer));
+  });
+
+  it('produces a SPREAD across differing inputs (regression: no longer stuck at one value)', () => {
+    const heavy = computeProjectHealth(singleContract(17, 139)); // 51
+    const light = computeProjectHealth(singleContract(3, 42)); // 70
+    expect(scoreOf(heavy)).not.toBe(scoreOf(light));
+    expect(scoreOf(heavy)).toBeLessThan(scoreOf(light));
+  });
+
+  it('diminishing returns: HIGH weighted above MEDIUM (same count of HIGH hurts more)', () => {
+    const highHeavy = computeProjectHealth(singleContract(50, 0, false));
+    const medHeavy = computeProjectHealth(singleContract(0, 50, false));
+    expect(scoreOf(highHeavy)).toBeLessThan(scoreOf(medHeavy));
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────
+// Endpoint shape landmines
 // ─────────────────────────────────────────────────────────────────
 
 describe('computeProjectHealth — endpoint shape landmines', () => {
   it('landmine 1: string counts are converted with Number(), never concatenated/NaN', () => {
     const r = computeProjectHealth(
       input({
-        dashboard: dashboard({
-          risk_summary: [{ risk_level: 'HIGH', count: '2' }], // string on the wire
-        }),
+        dashboard: dashboard({ risk_summary: [{ risk_level: 'HIGH', count: '40' }] }),
       }),
     );
     expect(r.sufficient).toBe(true);
     if (!r.sufficient) return;
-    // 2/10 × 45 = 9 → 100 − 9 = 91. NaN math would make score NaN.
-    expect(r.score).toBe(91);
+    // load = 40·2.5 / 10 = 10 → riskDeduction ≈ 5.84 → 94. NaN math would poison it.
+    expect(r.score).toBe(94);
     expect(Number.isFinite(r.score)).toBe(true);
   });
 
   it('landmine 2: sparse arrays — a missing HIGH row means 0 HIGH, not NaN/undefined', () => {
     const r = computeProjectHealth(
       input({
-        dashboard: dashboard({
-          // Only MEDIUM present; HIGH and LOW rows absent entirely.
-          risk_summary: [{ risk_level: 'MEDIUM', count: '5' }],
-        }),
+        dashboard: dashboard({ risk_summary: [{ risk_level: 'MEDIUM', count: '50' }] }),
       }),
     );
     expect(r.sufficient).toBe(true);
     if (!r.sufficient) return;
-    // 5/10 × 18 = 9 → 91. A NaN HIGH term would poison the whole score.
-    expect(r.score).toBe(91);
+    // load = 50·1 / 10 = 5 → riskDeduction ≈ 3.02 → 97. A NaN HIGH term would poison it.
+    expect(r.score).toBe(97);
   });
 
   it('sparse by_status — missing DRAFT/CHANGES_REQUESTED rows deduct nothing', () => {
@@ -203,18 +189,18 @@ describe('computeProjectHealth — endpoint shape landmines', () => {
     );
     expect(r.sufficient).toBe(true);
     if (!r.sufficient) return;
-    expect(r.score).toBe(100);
+    expect(r.score).toBe(100); // LOW-only risk → riskDeduction 0
   });
 });
 
 // ─────────────────────────────────────────────────────────────────
-// Contract-status deductions
+// Contract-status deductions (unchanged term — LOW-only risk keeps it isolated)
 // ─────────────────────────────────────────────────────────────────
 
 describe('computeProjectHealth — contract status inputs', () => {
   it('counts expired vs expiring-within-30d contracts separately', () => {
     // 10 contracts: 1 expired → 1/10×25 = 2.5; 2 expiring in 30d → 2/10×12 = 2.4.
-    // Score = round(100 − 4.9) = 95.
+    // Score = round(100 − 4.9) = 95 (riskDeduction 0, LOW-only).
     const r = computeProjectHealth(
       input({
         contracts: [
@@ -226,9 +212,7 @@ describe('computeProjectHealth — contract status inputs', () => {
         ],
       }),
     );
-    expect(r.sufficient).toBe(true);
-    if (!r.sufficient) return;
-    expect(r.score).toBe(95);
+    expect(scoreOf(r)).toBe(95);
   });
 
   it('stalled drafts come from by_status DRAFT + CHANGES_REQUESTED', () => {
@@ -247,14 +231,12 @@ describe('computeProjectHealth — contract status inputs', () => {
         }),
       }),
     );
-    expect(r.sufficient).toBe(true);
-    if (!r.sufficient) return;
-    expect(r.score).toBe(98);
+    expect(scoreOf(r)).toBe(98);
   });
 });
 
 // ─────────────────────────────────────────────────────────────────
-// Overdue obligations (effectiveStatus semantics)
+// Overdue obligations (effectiveStatus semantics — unchanged term)
 // ─────────────────────────────────────────────────────────────────
 
 describe('computeProjectHealth — overdue obligations', () => {
@@ -269,53 +251,71 @@ describe('computeProjectHealth — overdue obligations', () => {
         ],
       }),
     );
-    expect(r.sufficient).toBe(true);
-    if (!r.sufficient) return;
-    // 2 overdue × 4 = 8 → 92.
-    expect(r.score).toBe(92);
+    expect(scoreOf(r)).toBe(92); // 2 overdue × 4 = 8 → 92
   });
 });
 
 // ─────────────────────────────────────────────────────────────────
-// Drivers
+// Score bounds
 // ─────────────────────────────────────────────────────────────────
 
-describe('computeProjectHealth — drivers', () => {
-  it('returns the largest deductions first, at most 3, whole-percent points', () => {
+describe('computeProjectHealth — bounds', () => {
+  it('score stays within [0, 100] under maximum load and lands near the floor', () => {
     const r = computeProjectHealth(
       input({
         dashboard: dashboard({
           contracts: {
-            total: 10,
-            by_status: [{ status: 'DRAFT', count: '1' }], // 0.8 → rounds to 1
+            total: 1,
+            by_status: [
+              { status: 'DRAFT', count: '1' },
+              { status: 'CHANGES_REQUESTED', count: '1' },
+            ],
           },
-          risk_summary: [
-            { risk_level: 'HIGH', count: '2' }, // 9
-            { risk_level: 'MEDIUM', count: '2' }, // 3.6 → 4
-          ],
+          risk_summary: [{ risk_level: 'HIGH', count: '10000' }],
         }),
-        contracts: [{ status: 'ACTIVE', expiry_date: isoDaysFromNow(15) }], // expiring: 1.2 → 1
-        obligations: [{ status: 'PENDING', due_date: isoDaysFromNow(-1) }], // 4
+        contracts: [{ status: 'DRAFT', expiry_date: isoDaysFromNow(-1) }],
+        obligations: Array.from({ length: 20 }, () => ({
+          status: 'PENDING' as const,
+          due_date: isoDaysFromNow(-1),
+        })),
       }),
     );
     expect(r.sufficient).toBe(true);
     if (!r.sufficient) return;
+    // ≈ 100 − 45 (risk) − 30 (status cap) − 20 (overdue cap) = 5.
+    expect(r.score).toBeGreaterThanOrEqual(0);
+    expect(r.score).toBeLessThanOrEqual(100);
+    expect(r.score).toBeLessThanOrEqual(10);
+    expect(r.band).toBe('critical');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────
+// Drivers — real contributions, ranked, plain counts (no %)
+// ─────────────────────────────────────────────────────────────────
+
+describe('computeProjectHealth — drivers', () => {
+  it('ranks the biggest contributors first (≤3), carrying the raw entity counts', () => {
+    const r = computeProjectHealth(singleContract(17, 139)); // Muhlbauer shape
+    expect(r.sufficient).toBe(true);
+    if (!r.sufficient) return;
+
     expect(r.drivers.length).toBe(3);
-    expect(r.drivers[0].key).toBe('highRisk');
-    expect(r.drivers[0].points).toBe(9);
-    expect(r.drivers[0].count).toBe(2);
-    // All points are whole numbers.
+    // MEDIUM load (139) dominates HIGH (17·2.5 = 42.5); stalled contributes 8.
+    expect(r.drivers.map((d) => d.key)).toEqual(['mediumRisk', 'highRisk', 'stalled']);
+    // Counts are the raw entity counts — NOT a deduction/percentage.
+    expect(r.drivers.map((d) => d.count)).toEqual([139, 17, 1]);
+    // points are whole numbers ≥ 1, sorted descending (ranking only).
     for (const d of r.drivers) {
       expect(Number.isInteger(d.points)).toBe(true);
       expect(d.points).toBeGreaterThanOrEqual(1);
     }
-    // Sorted descending.
     const pts = r.drivers.map((d) => d.points);
     expect([...pts].sort((a, b) => b - a)).toEqual(pts);
   });
 
-  it('omits drivers whose deduction rounds below 1 point', () => {
-    const r = computeProjectHealth(input()); // all-clear
+  it('omits drivers with a zero count (all-clear → no drivers)', () => {
+    const r = computeProjectHealth(input());
     expect(r.sufficient).toBe(true);
     if (!r.sufficient) return;
     expect(r.drivers).toEqual([]);

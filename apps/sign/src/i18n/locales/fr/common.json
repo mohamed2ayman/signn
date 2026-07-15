@@ -520,12 +520,12 @@
       "insufficientBody": "Le score de santé apparaît lorsque le projet contient des contrats dont l'analyse des risques est terminée.",
       "driversTitle": "Principaux facteurs",
       "driver": {
-        "highRisk": "−{{points}}% : {{count}} constat(s) à risque élevé",
-        "mediumRisk": "−{{points}}% : {{count}} constat(s) à risque moyen",
-        "expired": "−{{points}}% : {{count}} contrat(s) expiré(s)",
-        "expiring": "−{{points}}% : {{count}} contrat(s) expirant sous 30 jours",
-        "stalled": "−{{points}}% : {{count}} brouillon(s) de contrat à l'arrêt",
-        "overdueObligations": "−{{points}}% : {{count}} obligation(s) en retard"
+        "highRisk": "{{count}} constat(s) à risque élevé",
+        "mediumRisk": "{{count}} constat(s) à risque moyen",
+        "expired": "{{count}} contrat(s) expiré(s)",
+        "expiring": "{{count}} contrat(s) expirant sous 30 jours",
+        "stalled": "{{count}} brouillon(s) de contrat à l'arrêt",
+        "overdueObligations": "{{count}} obligation(s) en retard"
       }
     },
     "attention": {
