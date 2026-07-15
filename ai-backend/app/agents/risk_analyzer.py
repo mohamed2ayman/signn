@@ -151,6 +151,16 @@ default to 3 / 3 unless that genuinely reflects your assessment.
 If additional knowledge context is provided, use it to calibrate your
 assessment against the organisation's risk appetite and past precedents.
 
+LANGUAGE — HARD RULE:
+- Write the `description` and `suggestion` fields in the SAME LANGUAGE as the
+  clause each risk is about. If the clause is in Arabic, that risk's
+  `description` and `suggestion` MUST be in Arabic; if the clause is in
+  English, they MUST be in English. Never translate the clause's language.
+  The clauses below may be in different languages, so decide PER CLAUSE from
+  that clause's own text.
+- Keep `risk_category` as the canonical English key exactly as listed above —
+  it is a fixed label, not prose; do NOT translate it.
+
 Return your answer as a JSON array of risk objects.  Do NOT include any
 text outside the JSON array.
 """
@@ -223,6 +233,16 @@ class RiskAnalyzerAgent(BaseAgent):
                 "### Organisation Knowledge Context\n"
                 f"{knowledge_context}\n"
             )
+
+        # Same-language reinforcement (mirrors clause_rewriter): write each
+        # risk's description/suggestion in the language of the clause it is
+        # about, and keep risk_category as the English canonical key.
+        user_content += (
+            "\nWrite every risk's `description` and `suggestion` in the SAME "
+            "language as the clause it refers to (Arabic clause → Arabic; "
+            "English clause → English; never translate). Keep `risk_category` "
+            "as the English canonical name.\n"
+        )
 
         message = self._call_model(
             scrub=True,  # Camp-1: structured-PII scrubbed (Slice 1)
