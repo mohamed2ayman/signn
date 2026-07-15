@@ -5540,7 +5540,7 @@ are a **snapshot** (the corpus was annotated live during the export session):
 2. **`is_deleted` is soft-delete-only and shipped at 0 rows** — do NOT bulk-flag
    "duplicate" risks on semantic similarity; hide clutter via the top-2/Show-more UI
    (lesson #243). Any future soft-delete needs per-row human judgement.
-3. **The gold export tags verified vs unverified EXPLICITLY** — downstream (8.4/8.5) MUST
+3. **The gold export tags verified vs unverified EXPLICITLY** — downstream (8.4/8.5/8.6) MUST
    filter `verified=true` for clean signal; AI-labeled rows are NEVER silently counted as
    human-verified (lesson #244).
 4. **Do NOT regenerate risks before the gold export is safely captured** — regenerating

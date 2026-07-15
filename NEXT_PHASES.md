@@ -1111,7 +1111,7 @@ No ContractClauseScopedRepository exists yet — that subclass is the unit that 
 - **Model-id centralization** — `ANTHROPIC_MODEL` in `ai-backend/app/config/settings.py`
   (default `claude-sonnet-4-6`, env-overridable); all 9 agents read `settings.ANTHROPIC_MODEL`
   via `self._model` — same model, single source of truth. A guard test fails if any agent
-  reintroduces a hardcoded literal. (No model swap — that is 8.4/8.5.)
+  reintroduces a hardcoded literal. (No model swap — that is 8.4–8.6.)
 - **Arabic clause-extraction accuracy harness** (`ai-backend/tests/accuracy/`) — anonymized
   General Conditions baseline fixture (81k chars / 9 chunks; raw doc never committed), a
   38-clause structural golden set, a pure model-agnostic scorer (count, boundary P/R/F1,
@@ -1125,9 +1125,10 @@ No ContractClauseScopedRepository exists yet — that subclass is the unit that 
 - **Prompt inventory** — `docs/ai-prompt-inventory.md` (living inventory of all 9 Claude prompts
   tagged with intended OSS replacements) + `docs/phase-8.1-investigation.md` (findings + rule).
 
-**Preferred OSS replacement candidates** (to be tested in 8.4/8.5 — NOT selected yet; all
+**Preferred OSS replacement candidates** (to be tested in 8.4–8.6 — NOT selected yet; all
 self-hosted on SageMaker so data stays inside our AWS):
-- Clause classification → **ContractBERT**
+- Clause classification → **ContractBERT** (Phase 8.4)
+- Clause classification (Arabic/bilingual) → **LEGAL-XLM-RoBERTa** (Phase 8.5)
 - Risk classification → **ContractBERT (fine-tuned)**
 - Risk explanation generation → **Mistral 7B** OR **DeepSeek-R1-Distill-Qwen-32B**
 - Arabic / bilingual contracts → **LEGAL-XLM-RoBERTa**
@@ -1154,7 +1155,7 @@ hard gate — quality decides.** Migrate one prompt at a time; the embeddings mo
 - **BUILT (PR #130):** risk LEVEL + CATEGORY (the 17 clause-type labels, not the 8 broad buckets) human-correctable with original-vs-corrected tracking (`is_edited_by_user` + `original_risk_level`/`original_risk_category`); contract parties correctable (Swap First⇄Second + `is_parties_edited_by_user` + `original_party_first_name`/`original_party_second_name`). Additive migrations `1764000000001` / `1765000000001`.
 - **Prior:** the one-off risk pre-labeling batch (PR #125) populated `risk_analyses` (1,061 rows); the new tracking columns capture human corrections on top = the was_corrected signal.
 - **Risk-tab rework — ✅ COMPLETE (PR #137, merged `8a21274`, 2026-07-07):** the annotation surface is upgraded — Risk tab now lists risks clause-by-clause grouped per source document (shared server-side ordering with the Clauses tab); Clauses tab is clauses-only; **recommendation is now human-editable** via `PATCH /risk-analysis/:id` with `original_recommendation` snapshot-once tracking (a THIRD was_corrected field alongside level/category); plus an AI re-phrase → review → merge flow (ClauseRewriterAgent) that proposes a rewritten clause. Migrations `1766000000001/2/3`. This makes the recommendation column part of the correctable ground-truth. **Phase 8.3 annotation is now UNBLOCKED / ready** — Ayman can correct level, category, AND recommendation in place; the gold export just needs to include the three was_corrected fields.
-- **✅ Gold set EXPORTED — 2026-07-14 (`docs/phase-8.3-gold/`, read-only, untracked working files).** PR #156 (`6388e57`) shipped the risk-tab **top-2 visible per clause + "Show more" + persisted swap** (`risk_clause_visibility`, migration `1770000000004`) + **soft-delete infra** (`is_deleted`, migration `1770000000003`, **0 rows deleted**) + completeness/export redefined to the visible top-2. Export snapshot: **468 clauses included** (461 APPROVED + 7 EDITED) / 40 REJECTED excluded / 508 total; **1,246 risks** — 236 verified, **all 166 visible-High human-verified**, rest tagged unverified; every risk tagged `verified`/`unverified`/`visible`/`clause_rejected` (`clean_training_signal` = 212). `_build.js` + `_raw_*.jsonl` allow deterministic re-export. **8.4/8.5 are UNBLOCKED — downstream MUST filter `verified=true` for clean training signal (lesson #244).**
+- **✅ Gold set EXPORTED — 2026-07-14 (`docs/phase-8.3-gold/`, read-only, untracked working files).** PR #156 (`6388e57`) shipped the risk-tab **top-2 visible per clause + "Show more" + persisted swap** (`risk_clause_visibility`, migration `1770000000004`) + **soft-delete infra** (`is_deleted`, migration `1770000000003`, **0 rows deleted**) + completeness/export redefined to the visible top-2. Export snapshot: **468 clauses included** (461 APPROVED + 7 EDITED) / 40 REJECTED excluded / 508 total; **1,246 risks** — 236 verified, **all 166 visible-High human-verified**, rest tagged unverified; every risk tagged `verified`/`unverified`/`visible`/`clause_rejected` (`clean_training_signal` = 212). `_build.js` + `_raw_*.jsonl` allow deterministic re-export. **8.4/8.5/8.6 are UNBLOCKED — downstream MUST filter `verified=true` for clean training signal (lesson #244).**
 - **Still DRAFT (`_TODO`):** Arabic/French `riskTab.*` + category + swap labels pending Youssef's legal review (does NOT block the gold set).
 - **✅ DONE — risk-analyzer same-language output (Arabic in → Arabic out) — PR #163 (Issue 4):** `RiskAnalyzerAgent` now emits `description`/`suggestion` in the clause's language (Arabic in → Arabic out), matching `ClauseRewriterAgent`. Shipped as part of the batched/parallel/replace risk-analysis rework (PR #163, Issues 4 + 5 — see CLAUDE.md "AI Pipeline Architecture").
 - **BACKLOG (post-annotation — surfaced during the gold-set build):**
@@ -1176,10 +1177,19 @@ hard gate — quality decides.** Migrate one prompt at a time; the embeddings mo
 - Fine-tune ContractBERT (or legal-BERT) on annotated clause data from 8.3
 - Compare accuracy vs Claude API for clause type classification
 - Only proceed when 500+ annotated examples available
+- **SCOPE:** 8.4 tests ContractBERT ONLY (English-trained — Arabic-slice results expected weak; the phase deliverable is the honest benchmark, not a forced migration). The eval harness must be reusable for 8.5.
 
 ---
 
-### 8.5 — Risk Classification & Confidence Threshold
+### 8.5 — Clause Classification: LEGAL-XLM-RoBERTa (Arabic/bilingual)
+**Owner:** Ayman | **Status:** ❌ Not started
+- Same task, data (8.3 gold set, filtered to `verified=true` per lesson #244), and eval protocol as 8.4 — swap the model to LEGAL-XLM-RoBERTa (an Arabic/bilingual legal transformer).
+- Reuses the 8.4 eval harness AS-IS.
+- Migration decision follows the 8.1 rule: adopt only if Arabic accuracy HOLDS-OR-IMPROVES vs the Claude baseline.
+
+---
+
+### 8.6 — Risk Classification & Confidence Threshold
 **Owner:** Ayman | **Status:** ❌ Not started
 - Train risk classifier on annotated data
 - Set confidence threshold: below threshold → flag for human review
@@ -1187,7 +1197,7 @@ hard gate — quality decides.** Migrate one prompt at a time; the embeddings mo
 
 ---
 
-### 8.6 — Model Training Infrastructure (AWS SageMaker)
+### 8.7 — Model Training Infrastructure (AWS SageMaker)
 **Owner:** Ayman + Youssef | **Status:** ❌ Not started
 - Set up SageMaker training jobs configuration
 - Define training pipeline: data prep → train → evaluate → deploy
@@ -1446,7 +1456,7 @@ No new env vars required for existing local dev deployments.
 | 6B.1 | Visual Confidentiality | ❌ After Phase 7 | Y | |
 | 6B.2 | Invisible Watermarks | ❌ After Phase 7 | Y | |
 | 8.1 | AI Model Eval + Arabic accuracy harness + model centralization | ✅ Complete (PR #103) | A+Y | 2026-06-27 |
-| 8.2-8.6 | AI Migration (OCR, annotation, training) | 🟡 8.3 annotation ✅ (gold set 2026-07-14); 8.2/8.4/8.5/8.6 ❌ | A+Y | |
+| 8.2-8.7 | AI Migration (OCR, annotation, training) | 🟡 8.3 annotation ✅ (gold set 2026-07-14); 8.2/8.4/8.5/8.6/8.7 ❌ | A+Y | |
 | 9.1 | Abstract Infrastructure Layers | ✅ Complete (PR #35) | A | 2026-05-28 |
 | 9.2+ | AWS, CI/CD, monitoring, cookies | ❌ Not started | A+Y | |
 | 10 | SOC 2 | ❌ Not started | A+Y | |
