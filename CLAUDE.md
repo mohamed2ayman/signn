@@ -4941,12 +4941,61 @@ buttons); the dev mailer is dead (`localhost:1025` ECONNREFUSED) and
 this environment — the enabled-path send is proven by tests only and the
 controlled live send is left for the CEO.
 
+### Slice 5 — Dashboard analytics CUSTOMIZE MODE (gated PR, awaiting CEO visual merge)
+
+The FINAL 7.20 slice. Makes the **four SUPPORTING ANALYTICS widgets** on the
+Dashboard tab (`riskMix` / `obligations` / `contractsByStatus` / `directory`)
+reorderable, hideable, restorable, and reset-to-default. Frontend-only
+(`apps/sign`); ZERO backend / ai-backend. Branch off `f719356`.
+
+- **The fixed spine is non-customizable BY EXCLUSION, not by a guard.** The
+  ProjectHealthBar and ProjectAttentionZone (the "30-second test" — health +
+  what-needs-you-today, always lead) are a deliberate product decision to keep
+  FIXED. They are NOT in the customizable widget registry and live ABOVE
+  `ProjectAnalyticsRow` in ProjectDetailPage with no manage controls — so no
+  reorder/hide code path can reach them (lesson #245). Do NOT make them
+  customizable.
+- **No widget catalogue.** There are exactly 4 widgets, all visible by default.
+  "Add/restore" means bringing back a HIDDEN widget — not a library of new
+  widgets. Never invent widgets that don't exist.
+- **Pure model:** `apps/sign/src/components/project/dashboardLayout.ts` —
+  `WidgetId` union, `DEFAULT_WIDGET_ORDER`, `KNOWN_WIDGET_IDS`, and
+  `normalizeLayout` (the resilience chokepoint: corrupt→default, unknown-id→
+  dropped, missing-id→appended-VISIBLE — lesson #246) + pure transforms
+  (`moveWidget`/`reorderTo`/`hideWidget`/`showWidget`/`resetLayout`) + never-throw
+  localStorage wrappers.
+- **Persistence is localStorage ONLY, per-user-and-project.** Key
+  `sign_project_dashboard_layout:v1:<userId>:<projectId>` (userId from redux;
+  the `sign_portfolio_view` precedent is not user-scoped — this is the more
+  correct default). Stored shape `{v:1, order:WidgetId[], hidden:WidgetId[]}`.
+  **There is NO backend preferences store — server-side layout sync is DEFERRED
+  to Ayman.** UI copy ("Saved to this browser only.") never implies cross-device
+  sync. `ProjectAnalyticsRow` carries `key={projectId}` in ProjectDetailPage so a
+  project switch remounts and loads the new project's layout cleanly — do NOT
+  replace that with a reload-on-prop-change effect (it races the save effect —
+  lesson #247).
+- **UI:** `ProjectAnalyticsRow.tsx` gained a "Customize" entry point + an edit
+  panel (single reorderable list of all 4 in `order`; move up/down buttons are
+  the keyboard-accessible + RTL-safe reorder mechanism — native HTML5 drag is a
+  progressive enhancement calling the same `reorderTo`; eye toggle = hide/show;
+  Reset-to-default disabled when already default). VIEW mode renders visible
+  widgets in order; **all-four-hidden → an empty state with a restore
+  affordance**, never a blank void (the spine still renders — the dashboard is
+  never empty). i18n `projectDashboard.customize.*` (en/ar/fr, exact parity).
+- **Tests:** `dashboardLayout.test.ts` (24, strict RED→GREEN) +
+  `ProjectAnalyticsRow.customize.test.tsx` (13) — reorder/hide/restore/
+  persistence-roundtrip/**corrupt-value→default resilience**/all-hidden-empty/
+  reset/spine-not-customizable. Full FE suite 39/39 (358); tsc zero new source
+  errors vs origin/main baseline. Live QA-seed pass ("QA — Healthy Project")
+  confirmed toggle/reorder/hide/persist-across-reload/reset + spine has no
+  controls; the localStorage key + shape were byte-verified live.
+
 ### Deferred (later 7.20 slices — do NOT assume built)
 Add-party inline create (still backend-gated — no project-scoped create
 endpoint; `CreatePartyDto` requires `project_id` + would need a create
-UI flow), customize mode (v1 layout persistence will follow the
-`sign_portfolio_view` localStorage pattern — there is NO backend layout
-store).
+UI flow). **Server-side layout persistence for the Slice 5 customize mode is
+deferred to Ayman** — v1 is localStorage per-browser only; there is NO backend
+layout store.
 
 ---
 
@@ -5379,3 +5428,70 @@ and the service does not check non-empty); only role / contact-email / one-desig
 are real 400s. The Parties Editor enforces `org_name`-required CLIENT-side per the
 mock; a 1-line `@IsNotEmpty()` on the DTO (+ a service non-empty check) would align
 client↔server. Left as a follow-up (T0c-2 was frontend-only).
+
+---
+
+## Risk Tab — Top-2 Visible + Show-more + Swap + Soft-delete (PR #156, merged `6388e57`) + Phase 8.3 Gold Set (built 2026-07-14)
+
+Follow-on to the PR #137 Risk-tab rework. The Risk Analysis tab now shows only the
+**top-2 risks per clause by severity** by default, collapsing the rest behind
+**"Show more (N)"**; a human can **swap** a hidden risk into the visible pair and the
+choice is **persisted**. Soft-delete plumbing shipped alongside — **with ZERO rows
+deleted** (infra only). The Phase 8.3 gold set was then exported from the annotated
+corpus (read-only), completing the Option-2 annotation scope.
+
+### What shipped (PR #156)
+- **Top-2 visible per clause — ONE rule, client + server.** Severity HIGH>MEDIUM>LOW
+  (null last), then a **distinct 40-char-description-prefix tiebreaker** (skip
+  near-duplicate wording), then **backfill** so a clause with ≥2 risks always shows 2.
+  Authority: `backend/src/modules/risk-analysis/utils/risk-visibility.util.ts`,
+  **mirrored** in `apps/sign/src/components/contracts/riskVisibility.ts` (a drift test
+  guards the pair). Client-side top-2 preserves the PR #137 shared clause ordering;
+  server-side persistence lets completeness/export resolve the SAME visible set.
+- **Manual swap, persisted globally.** New `risk_clause_visibility` table (migration
+  `1770000000004`; PK `contract_clause_id`, `visible_risk_ids uuid[2]`, `updated_by`)
+  via `RiskVisibilityService` + `PUT /risk-analysis/clause/:contractClauseId/visibility`
+  (`SetClauseVisibilityDto`, exactly-2-distinct-live-ids, `findInOrg`-walled).
+  `resolveVisibleIds(risks, override)` — a valid 2-id override wins; a stale id is
+  dropped and the default backfills.
+- **Soft-delete infra — 0 rows deleted.** `risk_analyses.is_deleted BOOLEAN NOT NULL
+  DEFAULT false` + partial index (migration `1770000000003`), additive, no backfill.
+  **The "~34 duplicates" were NOT deleted** — investigation found 0 exact/near-identical
+  TEXTUAL duplicates and only ~160 LLM-*semantic* "same-issue-different-words" (many
+  genuinely distinct); decision: ship the plumbing but **flag ZERO rows** and hide
+  clutter via the top-2/Show-more UI instead of destroying data. Every risk read filters
+  `is_deleted = false` (`getByContract`, `getByClause`, `getRiskSummary`, both export
+  reads).
+- **Completeness + export redefined to count ONLY the visible top-2.**
+  `GET /risk-analysis/contract/:id/completeness` (+ `/visibility`) count/verify only the
+  resolved visible set; hidden risks are never required. Exports tag each risk
+  `verified` vs `unverified`.
+
+### Phase 8.3 Gold Set (built 2026-07-14 — `docs/phase-8.3-gold/`, UNTRACKED working files)
+Read-only export of the annotated corpus, 15 contracts (excl. "Leak Contract"). Counts
+are a **snapshot** (the corpus was annotated live during the export session):
+- **Clauses:** 468 included (461 APPROVED + 7 EDITED) / 40 excluded (REJECTED) / 508 total.
+- **Risks:** 1,246 non-deleted — **236 verified** (`is_edited_by_user`) / 1,010 unverified ·
+  835 visible / 411 hidden · **all 166 visible-High human-verified** (the Option-2
+  milestone) · 97 tagged `clause_rejected` · **212 `clean_training_signal`**
+  (verified ∧ ¬clause_rejected).
+- **Files:** `gold_clauses.jsonl`, `gold_risks.jsonl`, `excluded_clauses.jsonl`,
+  `gold_manifest.json`, `README.md`, plus `_build.js` + `_raw_*.jsonl` for
+  **deterministic re-export** from the same feeds.
+- **Provenance in the manifest:** parties source (extracted / manually-entered / swapped),
+  extraction gaps, the (reconstructed) annotation ruleset, and honest caveats (clause_type
+  has NO original-AI snapshot for EDITED rows; REJECTED per-clause reasons aren't stored).
+
+### Hard rules — never violate
+1. **The client top-2 rule and `risk-visibility.util.ts` are ONE rule** — never let them
+   drift; the mirror test is the guard. Completeness/export must resolve visibility through
+   the SAME server util the UI mirrors.
+2. **`is_deleted` is soft-delete-only and shipped at 0 rows** — do NOT bulk-flag
+   "duplicate" risks on semantic similarity; hide clutter via the top-2/Show-more UI
+   (lesson #243). Any future soft-delete needs per-row human judgement.
+3. **The gold export tags verified vs unverified EXPLICITLY** — downstream (8.4/8.5) MUST
+   filter `verified=true` for clean signal; AI-labeled rows are NEVER silently counted as
+   human-verified (lesson #244).
+4. **Do NOT regenerate risks before the gold export is safely captured** — regenerating
+   wipes the human corrections. (Captured 2026-07-14, so the risk-analyzer same-language
+   backlog item is now UNGATED.)
