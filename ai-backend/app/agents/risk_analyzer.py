@@ -3,10 +3,28 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from app.agents.base_agent import BaseAgent
+
+logger = logging.getLogger(__name__)
+
+# Issue 5 — small-batch coverage. The analyzer used to send ALL clauses in ONE
+# call; the model then surfaced only the ~10-14 most salient risks (~36% clause
+# coverage on Project9's 28). Splitting the clause list into small batches makes
+# the model assess every clause in each batch (full coverage) at the cost of
+# more calls. The batches run CONCURRENTLY (bounded) so total wall-clock stays
+# close to the old single call — sequential batches took ~9-12 min for 28
+# clauses (each Arabic risk call is ~60-90s) and blew past the backend poll
+# window. Both constants are TUNABLE.
+RISK_BATCH_SIZE = 4  # clauses per model call
+# Concurrent batch calls per contract. The shared, thread-safe Anthropic
+# rate-limit gate in BaseAgent._call_model (lesson #193) bounds real load, so
+# the platform worst case is (Celery worker concurrency) × this.
+RISK_BATCH_CONCURRENCY = 4
 
 
 def _parse_risk_array(raw: str) -> list[dict[str, Any]]:
@@ -94,13 +112,19 @@ catch it.
 For every risk you find, return a JSON object with the following fields:
 
 - clause_id      : the identifier of the clause where the risk was found
-- risk_category  : a canonical risk-category name describing the nature of
-                   the risk (e.g. "Performance Bond", "Liability Cap",
-                   "Payment Terms", "Indemnification", "Termination",
-                   "Notice Period", "Force Majeure", "Dispute Resolution",
-                   "Confidentiality", "Intellectual Property"). If the
-                   risk does not fit any standard category, return
-                   "Uncategorized" and explain in the description.
+- risk_category  : the CLOSEST matching canonical category for the risk.
+                   Choose ONE from this list (pick the nearest fit — do NOT
+                   invent new names):
+                   "Payment Terms", "Liability Cap", "Indemnification",
+                   "Termination", "Confidentiality", "Intellectual Property",
+                   "Compliance", "Contractual" (general contractual / legal
+                   risks that fit no more specific label), "Notice Period",
+                   "Delay", "Time", "Force Majeure", "Dispute Resolution",
+                   "Performance Bond", "Quality", "Warranty", "Defects",
+                   "Insurance", "Scope of Work", "Design", "Variations",
+                   "Subcontracting". Only return "Uncategorized" if the risk
+                   GENUINELY fits none of the above — most risks fit one of
+                   these; explain in the description when you use it.
 - likelihood     : integer 1-5 with these anchors:
                      1 = Rare           — would require an extraordinary
                                           chain of events
@@ -174,7 +198,16 @@ class RiskAnalyzerAgent(BaseAgent):
         clauses: list[dict[str, Any]],
         knowledge_context: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Analyse *clauses* and return a list of identified risks.
+        """Analyse *clauses* in small batches and return the aggregated risks.
+
+        Issue 5 — the clause list is split into batches of ``RISK_BATCH_SIZE``,
+        with ONE model call per batch, so the model assesses EVERY clause in the
+        batch (full coverage) instead of self-selecting the most salient few
+        from a single big call. Results are aggregated in batch order, so each
+        risk's ``clause_id`` mapping stays correct. A batch that raises is retried
+        once, then logged and skipped (a partial result beats a total failure);
+        the skipped batches are surfaced on ``self.failed_batches`` and reported
+        in the Celery job result.
 
         Parameters
         ----------
@@ -183,50 +216,122 @@ class RiskAnalyzerAgent(BaseAgent):
         knowledge_context:
             Optional context from the organisation's knowledge base to help
             calibrate risk assessment.
-
-        Returns
-        -------
-        list[dict[str, Any]]
-            A list of risk dicts matching the ``RiskItem`` schema.
         """
-        # Check if clauses carry document metadata
-        has_doc_metadata = any(
-            clause.get("document_id") for clause in clauses
+        self.failed_batches: list[dict[str, Any]] = []
+        batches = [
+            clauses[i : i + RISK_BATCH_SIZE]
+            for i in range(0, len(clauses), RISK_BATCH_SIZE)
+        ]
+        if not batches:
+            return []
+
+        # Run batches CONCURRENTLY (bounded), collecting each into its own slot
+        # so aggregation preserves batch order regardless of completion order.
+        # _analyze_batch_with_retry never raises (it returns [] on failure), so
+        # a single bad batch never sinks the run.
+        results: list[list[dict[str, Any]]] = [[] for _ in batches]
+        with ThreadPoolExecutor(max_workers=RISK_BATCH_CONCURRENCY) as executor:
+            future_to_index = {
+                executor.submit(
+                    self._analyze_batch_with_retry,
+                    batch,
+                    batch_index,
+                    len(batches),
+                    knowledge_context,
+                ): batch_index
+                for batch_index, batch in enumerate(batches)
+            }
+            for future in future_to_index:
+                results[future_to_index[future]] = future.result()
+
+        aggregated: list[dict[str, Any]] = []
+        for batch_risks in results:
+            aggregated.extend(batch_risks)
+        return aggregated
+
+    def _analyze_batch_with_retry(
+        self,
+        batch: list[dict[str, Any]],
+        batch_index: int,
+        total_batches: int,
+        knowledge_context: str | None,
+    ) -> list[dict[str, Any]]:
+        """Analyse ONE batch; retry once on any failure, then log + skip it."""
+        last_err: Exception | None = None
+        for _attempt in (1, 2):  # original try + one retry
+            try:
+                return self._analyze_batch(
+                    batch, batch_index, total_batches, knowledge_context
+                )
+            except Exception as err:  # noqa: BLE001 — one bad batch must not sink the run
+                last_err = err
+        clause_ids = [c.get("id") for c in batch]
+        logger.warning(
+            "Risk batch %d/%d failed after retry (%s) — clauses %s skipped",
+            batch_index + 1,
+            total_batches,
+            last_err,
+            clause_ids,
         )
+        self.failed_batches.append(
+            {
+                "batch_index": batch_index,
+                "clause_ids": clause_ids,
+                "error": str(last_err),
+            }
+        )
+        return []
 
-        user_content = "Analyse the following contract clauses for risks:\n\n"
+    def _analyze_batch(
+        self,
+        batch: list[dict[str, Any]],
+        batch_index: int,
+        total_batches: int,
+        knowledge_context: str | None,
+    ) -> list[dict[str, Any]]:
+        """One model call for one batch of clauses; parse + return its risks."""
+        user_content = self._build_batch_prompt(
+            batch, batch_index, total_batches, knowledge_context
+        )
+        message = self._call_model(
+            scrub=True,  # Camp-1: structured-PII scrubbed (Slice 1)
+            max_tokens=4096,
+            system=SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": user_content}],
+        )
+        # Robust, fence-/truncation-tolerant parse; the _call_model chokepoint
+        # is UNCHANGED — only the parsing of its response text.
+        return _parse_risk_array(message.content[0].text)
 
-        if has_doc_metadata:
-            # Group clauses by document for clarity
-            docs: dict[str, list[dict[str, Any]]] = {}
-            for clause in clauses:
-                doc_key = clause.get("document_id", "unknown")
-                docs.setdefault(doc_key, []).append(clause)
-
-            for doc_id, doc_clauses in docs.items():
-                label = doc_clauses[0].get("document_label", "Unknown Document")
-                priority = doc_clauses[0].get("document_priority", 0)
-                user_content += (
-                    f"## Document: {label} "
-                    f"(ID: {doc_id}, Priority: {priority})\n\n"
+    @staticmethod
+    def _build_batch_prompt(
+        batch: list[dict[str, Any]],
+        batch_index: int,
+        total_batches: int,
+        knowledge_context: str | None,
+    ) -> str:
+        """Build one batch's user prompt — same spirit as the original single
+        call, plus an explicit "assess EVERY clause" instruction. The old
+        cross-document "compare all documents / detect conflicts" line is
+        dropped on purpose: it contradicted the SYSTEM_PROMPT SCOPE EXCLUSION and
+        cannot apply within a small batch (cross-document conflicts are a
+        separate pipeline)."""
+        user_content = (
+            f"Analyse the following contract clauses for risks "
+            f"(batch {batch_index + 1} of {total_batches}). Assess EVERY clause "
+            f"below on its own merits — do not skip any. A clause may yield zero "
+            f"risks ONLY if it is genuinely low-risk; do not force a finding, but "
+            f"do not omit a clause that carries real risk.\n\n"
+        )
+        for clause in batch:
+            header = f"### Clause {clause.get('id', 'unknown')}"
+            doc_label = clause.get("document_label")
+            if doc_label:
+                header += (
+                    f"  (document: {doc_label}, "
+                    f"priority: {clause.get('document_priority', 0)})"
                 )
-                for clause in doc_clauses:
-                    user_content += (
-                        f"### Clause {clause.get('id', 'unknown')}\n"
-                        f"{clause.get('text', '')}\n\n"
-                    )
-
-            user_content += (
-                "IMPORTANT: Compare clauses across ALL documents above and "
-                "detect any conflicts or ambiguities. LOWER priority number "
-                "means the document is MORE important (priority 1 always wins).\n\n"
-            )
-        else:
-            for clause in clauses:
-                user_content += (
-                    f"### Clause {clause.get('id', 'unknown')}\n"
-                    f"{clause.get('text', '')}\n\n"
-                )
+            user_content += f"{header}\n{clause.get('text', '')}\n\n"
 
         if knowledge_context:
             user_content += (
@@ -234,26 +339,13 @@ class RiskAnalyzerAgent(BaseAgent):
                 f"{knowledge_context}\n"
             )
 
-        # Same-language reinforcement (mirrors clause_rewriter): write each
-        # risk's description/suggestion in the language of the clause it is
-        # about, and keep risk_category as the English canonical key.
+        # Same-language reinforcement (Issue 4): write each risk's
+        # description/suggestion in the language of the clause it is about;
+        # keep risk_category as the English canonical key.
         user_content += (
             "\nWrite every risk's `description` and `suggestion` in the SAME "
             "language as the clause it refers to (Arabic clause → Arabic; "
             "English clause → English; never translate). Keep `risk_category` "
             "as the English canonical name.\n"
         )
-
-        message = self._call_model(
-            scrub=True,  # Camp-1: structured-PII scrubbed (Slice 1)
-            max_tokens=4096,
-            system=SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": user_content}],
-        )
-
-        raw_text = message.content[0].text
-        # Robust, fence-/truncation-tolerant parse (was a bare json.loads that
-        # returned 0 risks on the model's ```json-fenced output). The _call_model
-        # chokepoint above is UNCHANGED — only the parsing of its response text.
-        risks: list[dict[str, Any]] = _parse_risk_array(raw_text)
-        return risks
+        return user_content

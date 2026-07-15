@@ -17,6 +17,7 @@
 
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
+import { IsNull } from 'typeorm';
 
 import {
   AuditLog,
@@ -70,6 +71,9 @@ const JOB_ID = 'job-uuid-001';
 const mockRiskAnalysisRepo = {
   create: jest.fn((row: any) => row),
   save: jest.fn(async (row: any) => ({ ...row, id: 'risk-row-uuid' })),
+  // Issue 5 — replace-not-append: pollAndSaveRisks clears prior non-human AI
+  // rows before saving a new run.
+  delete: jest.fn(async () => ({ affected: 3 })),
 };
 
 const mockAuditLogRepo = {
@@ -79,7 +83,7 @@ const mockAuditLogRepo = {
 // Default: every category lookup returns a match (recognized category).
 // Per-test overrides simulate "category not in taxonomy" by returning null.
 const mockRiskCategoryRepo = {
-  findOne: jest.fn(async () => ({
+  findOne: jest.fn(async (): Promise<any> => ({
     id: 'cat-uuid',
     name: 'Performance Bond',
     is_active: true,
@@ -238,9 +242,9 @@ describe('AI risk writer — pollAndSaveRisks / saveAiRiskAsRow', () => {
     const promise = (service as any).pollAndSaveRisks(CONTRACT_ID, JOB_ID, ORG_ID);
     // Advance enough timer cycles to let the loop see the mocked status.
     // Each iteration: setTimeout(3000) → await getJobStatus → check status.
-    // Run 65 cycles to safely cover both success-on-first-poll and the
-    // 60-poll timeout case.
-    for (let i = 0; i < 65; i++) {
+    // Run 105 cycles to safely cover both success-on-first-poll and the
+    // 100-poll timeout case (Issue 5 raised the risk poller MAX_POLLS to 100).
+    for (let i = 0; i < 105; i++) {
       await Promise.resolve();
       jest.advanceTimersByTime(3000);
       await Promise.resolve();
@@ -524,8 +528,8 @@ describe('AI risk writer — pollAndSaveRisks / saveAiRiskAsRow', () => {
     await runPollAndSaveRisks();
 
     expect(mockRiskAnalysisRepo.save).not.toHaveBeenCalled();
-    // Confirm we actually polled the configured 60 times.
-    expect((mockAiService.getJobStatus as jest.Mock).mock.calls.length).toBe(60);
+    // Confirm we actually polled the configured 100 times (Issue 5 raised MAX_POLLS).
+    expect((mockAiService.getJobStatus as jest.Mock).mock.calls.length).toBe(100);
   });
 
   // ──────────────────────────────────────────────────────────────────────
@@ -588,5 +592,180 @@ describe('AI risk writer — pollAndSaveRisks / saveAiRiskAsRow', () => {
     // The row was still saved despite the audit failure.
     expect(mockRiskAnalysisRepo.save).toHaveBeenCalledTimes(1);
     expect(mockAuditLogRepo.insert).toHaveBeenCalledTimes(1);
+  });
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Issue 5 — REPLACE, not append
+  // ──────────────────────────────────────────────────────────────────────
+
+  it('clears previous NON-human AI risks before saving a new run (replace, not append)', async () => {
+    (mockAiService.getJobStatus as jest.Mock).mockResolvedValue(
+      completedJob([
+        { clause_id: CLAUSE_ID_1, risk_category: 'Performance Bond', likelihood: 3, impact: 3, description: 'x' },
+      ]),
+    );
+
+    await runPollAndSaveRisks();
+
+    expect(mockRiskAnalysisRepo.delete).toHaveBeenCalledTimes(1);
+    expect(mockRiskAnalysisRepo.delete).toHaveBeenCalledWith(
+      expect.objectContaining({
+        contract_id: CONTRACT_ID,
+        is_edited_by_user: false,
+        merged_at: IsNull(),
+      }),
+    );
+    expect(mockRiskAnalysisRepo.save).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves human-edited + merged rows — the clear filter excludes them', async () => {
+    (mockAiService.getJobStatus as jest.Mock).mockResolvedValue(
+      completedJob([
+        { clause_id: CLAUSE_ID_1, risk_category: 'Performance Bond', likelihood: 3, impact: 3, description: 'x' },
+      ]),
+    );
+
+    await runPollAndSaveRisks();
+
+    // Human corrections (is_edited_by_user=true) and merges (merged_at set) are
+    // OUT of the delete scope, so they survive the re-run.
+    const where = (mockRiskAnalysisRepo.delete as jest.Mock).mock.calls[0][0];
+    expect(where.is_edited_by_user).toBe(false);
+    expect(where.merged_at).toEqual(IsNull());
+  });
+
+  it('does NOT clear when the run produced zero risks (degenerate run must not wipe coverage)', async () => {
+    (mockAiService.getJobStatus as jest.Mock).mockResolvedValue(completedJob([]));
+
+    await runPollAndSaveRisks();
+
+    expect(mockRiskAnalysisRepo.delete).not.toHaveBeenCalled();
+    expect(mockRiskAnalysisRepo.save).not.toHaveBeenCalled();
+  });
+
+  it('clears exactly once per run (no more append-stacking) and saves all new rows', async () => {
+    (mockAiService.getJobStatus as jest.Mock).mockResolvedValue(
+      completedJob([
+        { clause_id: CLAUSE_ID_1, risk_category: 'Performance Bond', likelihood: 3, impact: 3, description: 'a' },
+        { clause_id: CLAUSE_ID_2, risk_category: 'Termination', likelihood: 2, impact: 2, description: 'b' },
+      ]),
+    );
+
+    await runPollAndSaveRisks();
+
+    expect(mockRiskAnalysisRepo.delete).toHaveBeenCalledTimes(1); // one clear
+    expect(mockRiskAnalysisRepo.save).toHaveBeenCalledTimes(2); // two fresh rows
+  });
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Issue 5 — category alias resolver (AI vocab → the 8-row taxonomy)
+  // ──────────────────────────────────────────────────────────────────────
+
+  // Simulate the real taxonomy: findOne matches ONLY the 8 canonical rows
+  // (case-insensitively), reading the ILike operator's value.
+  function useTaxonomyMock() {
+    const TAX = [
+      'Contractual and Legal Risks',
+      'Cost and Payment Risks',
+      'Design and Scope Risks',
+      'Dispute Resolution Risks',
+      'Force Majeure Risks',
+      'Performance and Quality Risks',
+      'Subcontracting Risks',
+      'Time and Delay Risks',
+    ];
+    mockRiskCategoryRepo.findOne.mockImplementation(async (opts?: any) => {
+      const where = opts?.where;
+      const name = String(where?.name?.value ?? where?.name ?? '');
+      const hit = TAX.find((t) => t.toLowerCase() === name.toLowerCase());
+      return hit ? { id: 'cat', name: hit, is_active: true } : null;
+    });
+  }
+
+  it("aliases the AI's category onto the taxonomy (Payment Terms → Cost and Payment Risks)", async () => {
+    useTaxonomyMock();
+    (mockAiService.getJobStatus as jest.Mock).mockResolvedValue(
+      completedJob([
+        { clause_id: CLAUSE_ID_1, risk_category: 'Payment Terms', likelihood: 3, impact: 3, description: 'x' },
+      ]),
+    );
+
+    await runPollAndSaveRisks();
+
+    expect(mockRiskAnalysisRepo.save.mock.calls[0][0].risk_category).toBe('Cost and Payment Risks');
+    expect(mockAuditLogRepo.insert).not.toHaveBeenCalled(); // recognized → not audited
+  });
+
+  it('is case/space tolerant when aliasing ("  force   MAJEURE " → Force Majeure Risks)', async () => {
+    useTaxonomyMock();
+    (mockAiService.getJobStatus as jest.Mock).mockResolvedValue(
+      completedJob([
+        { clause_id: CLAUSE_ID_1, risk_category: '  force   MAJEURE ', likelihood: 3, impact: 3, description: 'x' },
+      ]),
+    );
+
+    await runPollAndSaveRisks();
+
+    expect(mockRiskAnalysisRepo.save.mock.calls[0][0].risk_category).toBe('Force Majeure Risks');
+  });
+
+  it('matches an already-canonical taxonomy name directly (case-insensitive)', async () => {
+    useTaxonomyMock();
+    (mockAiService.getJobStatus as jest.Mock).mockResolvedValue(
+      completedJob([
+        { clause_id: CLAUSE_ID_1, risk_category: 'dispute resolution risks', likelihood: 3, impact: 3, description: 'x' },
+      ]),
+    );
+
+    await runPollAndSaveRisks();
+
+    expect(mockRiskAnalysisRepo.save.mock.calls[0][0].risk_category).toBe('Dispute Resolution Risks');
+  });
+
+  // Issue 5 refinement — the broadened prompt vocabulary (Quality, Scope of
+  // Work, Design, Compliance, Defects, Insurance, Subcontracting, Delay,
+  // "Contractual") must each alias cleanly onto a taxonomy row so the AI stops
+  // returning "Uncategorized" for these common risk kinds.
+  it.each([
+    ['Quality', 'Performance and Quality Risks'],
+    ['Scope of Work', 'Design and Scope Risks'],
+    ['Design', 'Design and Scope Risks'],
+    ['Compliance', 'Contractual and Legal Risks'],
+    ['Contractual', 'Contractual and Legal Risks'],
+    ['Defects', 'Performance and Quality Risks'],
+    ['Insurance', 'Performance and Quality Risks'],
+    ['Subcontracting', 'Subcontracting Risks'],
+    ['Delay', 'Time and Delay Risks'],
+  ])('aliases broadened-prompt category "%s" → %s', async (aiCategory, expected) => {
+    useTaxonomyMock();
+    (mockAiService.getJobStatus as jest.Mock).mockResolvedValue(
+      completedJob([
+        { clause_id: CLAUSE_ID_1, risk_category: aiCategory, likelihood: 3, impact: 3, description: 'x' },
+      ]),
+    );
+
+    await runPollAndSaveRisks();
+
+    expect(mockRiskAnalysisRepo.save.mock.calls[0][0].risk_category).toBe(expected);
+    expect(mockAuditLogRepo.insert).not.toHaveBeenCalled(); // recognized → not audited
+  });
+
+  it('an unknown category still falls to Uncategorized + audit (safety net kept)', async () => {
+    useTaxonomyMock();
+    (mockAiService.getJobStatus as jest.Mock).mockResolvedValue(
+      completedJob([
+        { clause_id: CLAUSE_ID_1, risk_category: 'Totally Made Up', likelihood: 3, impact: 3, description: 'x' },
+      ]),
+    );
+
+    await runPollAndSaveRisks();
+
+    expect(mockRiskAnalysisRepo.save.mock.calls[0][0].risk_category).toBe('Uncategorized');
+    expect(mockAuditLogRepo.insert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'AI_RETURNED_UNKNOWN_RISK_CATEGORY',
+        new_values: expect.objectContaining({ attempted_category: 'Totally Made Up' }),
+      }),
+    );
   });
 });

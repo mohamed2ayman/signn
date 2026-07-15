@@ -4,7 +4,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { EntityManager, In, Repository } from 'typeorm';
+import { EntityManager, ILike, In, IsNull, Repository } from 'typeorm';
 import { randomUUID } from 'crypto';
 import {
   AccountType,
@@ -54,6 +54,53 @@ import { MeteringCaller } from '../metering/services/metering-resolver.service';
 // (two checks, two layers). Required constructor dependency — same house style
 // as every other scoped repo (S2c-2/S2d/S2e). Provided via ScopedRepositoryModule.
 import { DocumentUploadScopedRepository } from '../scoped-repository/document-upload-scoped.repository';
+
+/**
+ * Issue 5 — minimal category alias bridge. The risk_analyzer prompt tells the
+ * AI to use names like "Payment Terms" / "Force Majeure", but the
+ * `risk_categories` taxonomy rows are worded differently and suffixed
+ * "... Risks" ("Cost and Payment Risks", "Force Majeure Risks", …). An exact
+ * name match therefore NEVER succeeded and downgraded every category to
+ * "Uncategorized". This map bridges the AI's category vocabulary onto the 8
+ * taxonomy rows; unmapped values still fall through to "Uncategorized" (audited).
+ * Keys are normalized (lower-cased, whitespace-collapsed). A full vocabulary
+ * redesign (align the prompt, taxonomy, and the frontend's 17 clause-type
+ * labels to ONE set) is a tracked backlog decision.
+ */
+const RISK_CATEGORY_ALIASES: Readonly<Record<string, string>> = {
+  'payment terms': 'Cost and Payment Risks',
+  payment: 'Cost and Payment Risks',
+  'cost overrun': 'Cost and Payment Risks',
+  'force majeure': 'Force Majeure Risks',
+  'dispute resolution': 'Dispute Resolution Risks',
+  arbitration: 'Dispute Resolution Risks',
+  termination: 'Contractual and Legal Risks',
+  'liability cap': 'Contractual and Legal Risks',
+  liability: 'Contractual and Legal Risks',
+  indemnification: 'Contractual and Legal Risks',
+  indemnity: 'Contractual and Legal Risks',
+  confidentiality: 'Contractual and Legal Risks',
+  'intellectual property': 'Contractual and Legal Risks',
+  compliance: 'Contractual and Legal Risks',
+  contractual: 'Contractual and Legal Risks',
+  legal: 'Contractual and Legal Risks',
+  'contractual/legal': 'Contractual and Legal Risks',
+  'notice period': 'Time and Delay Risks',
+  delay: 'Time and Delay Risks',
+  time: 'Time and Delay Risks',
+  'liquidated damages': 'Time and Delay Risks',
+  'performance bond': 'Performance and Quality Risks',
+  warranty: 'Performance and Quality Risks',
+  quality: 'Performance and Quality Risks',
+  defects: 'Performance and Quality Risks',
+  insurance: 'Performance and Quality Risks',
+  'scope of work': 'Design and Scope Risks',
+  scope: 'Design and Scope Risks',
+  design: 'Design and Scope Risks',
+  variations: 'Design and Scope Risks',
+  subcontracting: 'Subcontracting Risks',
+  subcontract: 'Subcontracting Risks',
+};
 
 @Injectable()
 export class DocumentProcessingService {
@@ -1635,7 +1682,11 @@ export class DocumentProcessingService {
     // commit/release helpers no-op on a missing id.
     reservationId?: string | null,
   ): Promise<void> {
-    const MAX_POLLS = 60;
+    // Issue 5 — the risk job now runs clauses in concurrent batches; a large
+    // contract takes ~2-3 min end-to-end, so the poll window is 100×3s = 5 min
+    // (was 60×3s = 3 min, which timed out on the batched run). Well under the
+    // metering reservation TTL (1h) — the poller still owns the reservation.
+    const MAX_POLLS = 100;
     const POLL_INTERVAL_MS = 3000;
 
     for (let i = 0; i < MAX_POLLS; i++) {
@@ -1669,6 +1720,24 @@ export class DocumentProcessingService {
           this.logger.log(`No per-clause risks found for contract ${contractId}`);
           return;
         }
+
+        // Issue 5 — REPLACE, don't append. Before writing this run's rows, clear
+        // the PREVIOUS run's non-human AI risks for the contract so counts stop
+        // stacking. Human-edited (is_edited_by_user=true) and merged (merged_at
+        // set) rows are PRESERVED and coexist with the new rows. Only runs that
+        // actually produced risks reach here (the length===0 early-return above
+        // guards a degenerate/empty run from wiping existing coverage). The clear
+        // is wall-protected: finalizeReview already ran findInOrg + the pin
+        // guard on this contractId.
+        // lint-exempt: wall-protected (finalizeReview findInOrg + pin guard); replace-not-append clear
+        const cleared = await this.riskAnalysisRepository.delete({
+          contract_id: contractId,
+          is_edited_by_user: false,
+          merged_at: IsNull(),
+        });
+        this.logger.log(
+          `Replace: cleared ${cleared.affected ?? 0} previous non-human AI risks for contract ${contractId}`,
+        );
 
         let saved = 0;
         let skipped = 0;
@@ -1755,13 +1824,19 @@ export class DocumentProcessingService {
     if (!rawCategory || rawCategory.length === 0) {
       aiCategory = 'Uncategorized';
     } else {
-      // Validate against the active taxonomy. Single SELECT per finding;
+      // Issue 5 — alias-bridge the AI's category vocabulary onto the taxonomy,
+      // then validate case-insensitively. A normalized alias hit maps to the
+      // canonical taxonomy name; otherwise the raw value is tried as-is (so an
+      // AI value that already IS a taxonomy name still matches). Unmatched →
+      // 'Uncategorized' + audit (safety net kept). Single SELECT per finding;
       // typical contract has 1-10 findings so the cost is bounded.
+      const normalized = rawCategory.toLowerCase().replace(/\s+/g, ' ').trim();
+      const candidate = RISK_CATEGORY_ALIASES[normalized] ?? rawCategory;
       const match = await this.riskCategoryRepository.findOne({
-        where: { name: rawCategory, is_active: true },
+        where: { name: ILike(candidate), is_active: true },
       });
       if (match) {
-        aiCategory = rawCategory;
+        aiCategory = match.name; // store the canonical taxonomy name
       } else {
         aiCategory = 'Uncategorized';
         categoryWasUnrecognized = true;

@@ -11,7 +11,13 @@ network access.
 
 from __future__ import annotations
 
-from app.agents.risk_analyzer import RiskAnalyzerAgent, _parse_risk_array
+import math
+
+from app.agents.risk_analyzer import (
+    RISK_BATCH_SIZE,
+    RiskAnalyzerAgent,
+    _parse_risk_array,
+)
 
 
 def _msg(text: str):
@@ -101,3 +107,64 @@ def test_analyze_keeps_call_model_chokepoint_unchanged(mocker):
     assert kwargs["scrub"] is True
     assert kwargs["max_tokens"] == 4096
     assert "system" in kwargs and "messages" in kwargs
+
+
+# ── Issue 5 — small-batch coverage ───────────────────────────────────────────
+
+def test_analyze_splits_clauses_into_batches(mocker):
+    """One model call per batch of RISK_BATCH_SIZE clauses; results aggregate."""
+    mocker.patch("app.agents.base_agent.Anthropic")
+    agent = RiskAnalyzerAgent()
+    spy = mocker.patch.object(agent, "_call_model", return_value=_msg(CLEAN))
+    n = RISK_BATCH_SIZE * 2 + 1  # e.g. 9 → batches of 4,4,1
+    clauses = [{"id": f"c{i}", "text": "x"} for i in range(n)]
+    risks = agent.analyze(clauses)
+    expected_batches = math.ceil(n / RISK_BATCH_SIZE)
+    assert spy.call_count == expected_batches  # one call per batch, not one giant call
+    assert len(risks) == expected_batches  # CLEAN → 1 risk per batch, aggregated
+    assert agent.failed_batches == []
+
+
+def test_analyze_aggregates_batches_in_order(mocker):
+    """Risks from every batch are aggregated, preserving batch order even though
+    the batches run concurrently."""
+    mocker.patch("app.agents.base_agent.Anthropic")
+    agent = RiskAnalyzerAgent()
+    b1 = '[{"clause_id":"A","risk_category":"Termination","likelihood":2,"impact":2,"description":"b1"}]'
+    b2 = '[{"clause_id":"E","risk_category":"Termination","likelihood":2,"impact":2,"description":"b2"}]'
+
+    # Batches run concurrently → route by CONTENT, not call order: the first
+    # batch holds clause c0, the second holds c4.
+    def route(*_a, **kw):
+        content = kw["messages"][0]["content"]
+        return _msg(b1) if "Clause c0" in content else _msg(b2)
+
+    spy = mocker.patch.object(agent, "_call_model", side_effect=route)
+    clauses = [{"id": f"c{i}", "text": "x"} for i in range(RISK_BATCH_SIZE + 1)]  # 2 batches
+    risks = agent.analyze(clauses)
+    assert [r["clause_id"] for r in risks] == ["A", "E"]  # aggregation preserves batch order
+    assert spy.call_count == 2
+
+
+def test_analyze_failed_batch_retries_once_then_skips(mocker):
+    """A batch that raises is retried once, then logged + skipped; the rest of the
+    run still returns, and the skipped batch is recorded on failed_batches."""
+    mocker.patch("app.agents.base_agent.Anthropic")
+    agent = RiskAnalyzerAgent()
+
+    # Batches run concurrently → route by CONTENT: batch 0 (holds clause c0)
+    # always raises; batch 1 (clause c4) succeeds.
+    def route(*_a, **kw):
+        content = kw["messages"][0]["content"]
+        if "Clause c0" in content:
+            raise RuntimeError("boom")
+        return _msg(CLEAN)
+
+    spy = mocker.patch.object(agent, "_call_model", side_effect=route)
+    clauses = [{"id": f"c{i}", "text": "x"} for i in range(RISK_BATCH_SIZE + 1)]  # 2 batches
+    risks = agent.analyze(clauses)
+    assert len(risks) == 1  # only the surviving batch's risk
+    assert spy.call_count == 3  # batch 0: original + 1 retry; batch 1: 1 call
+    assert len(agent.failed_batches) == 1
+    assert agent.failed_batches[0]["batch_index"] == 0
+    assert "boom" in agent.failed_batches[0]["error"]
