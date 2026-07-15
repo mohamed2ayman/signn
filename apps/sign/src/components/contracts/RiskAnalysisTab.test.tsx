@@ -1,6 +1,7 @@
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 
 import RiskAnalysisTab from '@/components/contracts/RiskAnalysisTab';
+import { clauseDisplayNumber, buildClauseNumberMap } from '@/components/contracts/clauseNumber';
 import { riskAnalysisService } from '@/services/api/riskAnalysisService';
 import type { RiskAnalysis } from '@/types';
 
@@ -130,6 +131,57 @@ describe('RiskAnalysisTab — grouping + order', () => {
     // Expanding the second reveals its clause.
     fireEvent.click(screen.getByText('Conditions'));
     expect(screen.getByText('Clause B1')).toBeInTheDocument();
+  });
+});
+
+describe('RiskAnalysisTab — clause numbering parity with the Clauses tab', () => {
+  it('a clause with empty section_number shows the SAME positional number the Clauses tab shows (from the map), not "—"', () => {
+    // The Clauses tab numbers every clause via clauseDisplayNumber over the FULL
+    // ordered clause list. Model that list: our risk-bearing clause "cc-a" sits
+    // at index 4 with an EMPTY section_number → the Clauses tab shows "5".
+    const fullOrderedClauses = [
+      { id: 'cc-0', section_number: '1' },
+      { id: 'cc-1', section_number: '2' },
+      { id: 'cc-2', section_number: '' },
+      { id: 'cc-3', section_number: '' },
+      { id: 'cc-a', section_number: '' }, // ← index 4 → positional "5"
+    ];
+    const map = buildClauseNumberMap(fullOrderedClauses as never);
+    // Both tabs share this derivation: the Clauses-tab number == the map value.
+    expect(clauseDisplayNumber({ section_number: '' } as never, 4)).toBe('5');
+    expect(map['cc-a']).toBe('5');
+
+    // A single risk on cc-a, whose stored section_number is empty.
+    const risk = withClause(
+      mkRisk({ id: 'a' }), // contract_clause_id defaults to 'cc-a'
+      'docA',
+      'Agreement',
+      'Payment terms clause',
+    );
+    (risk.contract_clause as { section_number: string }).section_number = '';
+
+    render(
+      <RiskAnalysisTab
+        contractId="c1"
+        risks={[risk]}
+        clauseNumberById={map}
+        onAnnotate={vi.fn()}
+        onRephraseApplied={vi.fn()}
+      />,
+    );
+
+    // The Risk tab shows the identical "5" — NOT the em-dash fallback.
+    expect(screen.getByText('5')).toBeInTheDocument();
+    expect(screen.queryByText('—')).not.toBeInTheDocument();
+  });
+
+  it('without a number map, an empty section_number falls back to "—" (backward-compatible)', () => {
+    const risk = withClause(mkRisk({ id: 'a' }), 'docA', 'Agreement', 'Payment terms clause');
+    (risk.contract_clause as { section_number: string }).section_number = '';
+    render(
+      <RiskAnalysisTab contractId="c1" risks={[risk]} onAnnotate={vi.fn()} onRephraseApplied={vi.fn()} />,
+    );
+    expect(screen.getByText('—')).toBeInTheDocument();
   });
 });
 
