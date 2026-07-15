@@ -168,3 +168,76 @@ def test_extract_invalid_json_returns_empty_list(mocker):
 
     assert result == []          # _parse_json() gracefully returns []
     assert isinstance(result, list)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Issue 1 — FIX 2 (Defect A2): the prompt generalises structure preservation
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_prompt_generalizes_layout_preservation_to_all_clauses():
+    """The SYSTEM_PROMPT must instruct layout preservation for EVERY clause
+    (line breaks + bullets + sub-clauses), not only for the definitions clause,
+    while keeping guideline 12 (definitions formatting) intact."""
+    from app.agents.clause_extractor import SYSTEM_PROMPT
+
+    low = SYSTEM_PROMPT.lower()
+    assert "line break" in low                                      # keep line breaks
+    assert "bulleted list into a single flat paragraph" in low      # don't flatten
+    assert "applies to every clause" in low                         # not just definitions
+    # Guideline 12 (definitions) is unchanged.
+    assert "DEFINITIONS FORMATTING" in SYSTEM_PROMPT
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Issue 1 — FIX 3 (Defect B): chunk-boundary tail loss
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_split_keeps_boundary_article_whole_no_midclause_cut(mocker):
+    """An article that would push a chunk over _CHUNK_SIZE must move WHOLE into
+    the next chunk — never hard-split mid-body (which the 'skip continuations'
+    note would then drop). Each article's full text lands intact in exactly ONE
+    chunk (no split, no duplication)."""
+    from app.agents.clause_extractor import _CHUNK_SIZE
+
+    _make_mock_client(mocker, "[]")
+    agent = ClauseExtractorAgent()
+
+    def article(n: int, size: int) -> str:
+        head = f"مادة ({n}) : العنوان\n"
+        filler = "محتوى " * max(1, (size - len(head) - 24) // len("محتوى "))
+        return f"{head}{filler} <<<END{n}>>>\n\n"
+
+    # 5000 + 5000 = 10000 fits one chunk; adding the 7000-char art 3 would
+    # overshoot 15000 → OLD packing put art 3 in that chunk and hard-cut it;
+    # NEW packing moves art 3 whole into chunk 2.
+    a1, a2, a3, a4 = article(1, 5000), article(2, 5000), article(3, 7000), article(4, 3000)
+    text = a1 + a2 + a3 + a4
+
+    chunks = agent._split_on_article_boundaries(text)
+
+    for n, art in [(1, a1), (2, a2), (3, a3), (4, a4)]:
+        core = art.strip()
+        containing = [c for c in chunks if core in c]
+        assert len(containing) == 1, f"article {n} was split or duplicated across chunks"
+        sentinels = sum(c.count(f"<<<END{n}>>>") for c in chunks)
+        assert sentinels == 1, f"article {n} tail appears {sentinels}× (expected exactly 1)"
+
+    # Multi-article packing never overshoots the limit.
+    assert all(len(c) <= _CHUNK_SIZE for c in chunks)
+
+
+def test_split_oversized_single_article_still_broken(mocker):
+    """A SINGLE article larger than _CHUNK_SIZE is the ONLY case allowed to
+    exceed the limit at packing time — it is still handed to Phase 2 and broken
+    into pieces (so the >30k chunking guarantee holds)."""
+    from app.agents.clause_extractor import _CHUNK_SIZE
+
+    _make_mock_client(mocker, "[]")
+    agent = ClauseExtractorAgent()
+
+    # One article ~2× the chunk size, with no sub-article/paragraph boundaries →
+    # forces the hard-split branch of _break_oversized_chunk.
+    huge = "مادة (1) : بند ضخم\n" + ("حرف" * (_CHUNK_SIZE))  # ~3×_CHUNK_SIZE chars
+    chunks = agent._split_on_article_boundaries(huge)
+
+    assert len(chunks) >= 2, "an oversized single article must be split into pieces"
