@@ -129,6 +129,33 @@ export default function ClauseReviewPage() {
   const getDocClauseCount = (docId: string) =>
     allClauses.filter((c) => c.source_document_id === docId).length;
 
+  // Issue 3 — labels that are shared by 2+ documents of this contract can't
+  // identify a tab (e.g. two documents both labelled "Other"). For those tabs
+  // fall back to the filename so every document is distinguishable. Display
+  // only — never reorders the tabs (they stay in document_priority order).
+  const duplicateDocLabels = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const d of documents) {
+      const lbl = d.document_label?.trim();
+      if (lbl) counts.set(lbl, (counts.get(lbl) ?? 0) + 1);
+    }
+    return new Set(
+      [...counts.entries()].filter(([, n]) => n > 1).map(([lbl]) => lbl),
+    );
+  }, [documents]);
+
+  const docTabLabel = (doc: DocumentUpload): string => {
+    const lbl = doc.document_label?.trim();
+    if (lbl && duplicateDocLabels.has(lbl)) {
+      return doc.original_name || doc.file_name || lbl;
+    }
+    return lbl || doc.original_name || doc.file_name || '';
+  };
+
+  // Full filename tooltip on every tab.
+  const docTabTitle = (doc: DocumentUpload): string =>
+    doc.original_name || doc.file_name || doc.document_label || '';
+
   // Active document text
   const activeDocument = useMemo(
     () => documents.find((d) => d.id === activeDocTab),
@@ -313,18 +340,21 @@ export default function ClauseReviewPage() {
         {/* Left Panel — Document Viewer */}
         <div className="w-[55%] flex-shrink-0 border-r border-gray-200 bg-gray-50">
           {/* Document Tabs */}
-          <div className="flex border-b border-gray-200 bg-white px-4">
+          <div className="flex overflow-x-auto border-b border-gray-200 bg-white px-4">
             {documents.map((doc) => (
               <button
                 key={doc.id}
+                data-testid="doc-tab"
                 onClick={() => setActiveDocTab(doc.id)}
-                className={`px-4 py-3 text-sm font-medium transition-colors ${
+                title={docTabTitle(doc)}
+                dir="auto"
+                className={`flex-shrink-0 whitespace-nowrap px-4 py-3 text-sm font-medium transition-colors ${
                   activeDocTab === doc.id
                     ? 'border-b-2 border-primary text-primary'
                     : 'text-gray-500 hover:text-gray-700'
                 }`}
               >
-                {doc.document_label || doc.original_name || doc.file_name} ({getDocClauseCount(doc.id)})
+                {docTabLabel(doc)} ({getDocClauseCount(doc.id)})
               </button>
             ))}
           </div>
@@ -502,9 +532,11 @@ export default function ClauseReviewPage() {
               ))}
               {filteredClauses.length === 0 && (
                 <div className="py-8 text-center text-sm text-gray-400">
-                  {filter === 'all'
-                    ? 'No clauses extracted yet.'
-                    : `No ${filter} clauses.`}
+                  {filter !== 'all'
+                    ? `No ${filter} clauses.`
+                    : activeDocTab && getDocClauseCount(activeDocTab) === 0
+                      ? 'No clauses in this document'
+                      : 'No clauses extracted yet.'}
                 </div>
               )}
             </div>
