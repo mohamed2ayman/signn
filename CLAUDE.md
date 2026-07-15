@@ -5546,3 +5546,89 @@ are a **snapshot** (the corpus was annotated live during the export session):
 4. **Do NOT regenerate risks before the gold export is safely captured** — regenerating
    wipes the human corrections. (Captured 2026-07-14, so the risk-analyzer same-language
    backlog item is now UNGATED.)
+
+---
+
+## Unified Membership Slice 1 — a real account can hold guest bindings (shipped 2026-07-15, PR #164, merged `6dda600`)
+
+Slice 1 of the unified-membership arc, following Slice 0's graceful-collision fix
+(PR #139, `d4ead7b`). It makes a real (MANAGING/FREE) SIGN account able to be
+invited to another org's contract and use the guest surface via its NORMAL JWT —
+**the `guest_contract_access` binding is the SOLE cross-org grant**. Ayman-approved;
+his two hold-conditions (login-parity account lockout + real-HTTP anti-impersonation)
+are closed. This is the direct prerequisite for Feature #8 (guest dashboard).
+
+### The model — identity vs membership (industry-validated)
+SIGN had conflated identity-TYPE (`account_type=GUEST`) with membership-PERMISSION,
+so a real customer invited to another org's contract was permanently locked out. The
+unanimous industry model (Microsoft Entra B2B / Auth0 / WorkOS / Clerk) is **one
+global identity + a per-resource membership carrying the role per tenant** —
+"guest-ness" is a property of the BINDING, not the account. `guest_contract_access`
+was already that membership table; the fix routes authorization on the binding.
+Dual user rows per email (email uniqueness scoped by `account_type`) is the
+anti-pattern (it ripples into login/password-reset/MFA, which key on bare email).
+See lesson #254.
+
+### What shipped
+- **Dispatch — ORG-FIRST, BINDING-FALLBACK** (`contract-access.service.ts`
+  `findAccessibleContract`): own-org access runs the identical `findInOrg` query
+  FIRST (byte-identical, zero extra reads in the common case); the binding fallback
+  fires ONLY where the old path already 404'd — so it can never downgrade anyone,
+  and "the common case is unchanged" is a control-flow property, not a hope (lesson
+  #255).
+- **Model A (Ayman-ratified):** the guest HTTP surface accepts the manager's NORMAL
+  JWT principal when a binding exists (NO guest JWT minted) and 404s the same
+  principal on a non-bound contract. Proven over real HTTP (reads guest-visible
+  comments — internal notes absent; POSTs a comment labelled GUEST/external, never
+  TEAM — the TEAM/GUEST label keys on HOST-org membership, not `account_type`).
+- **Uniform-404 guards:** all six `account_type === GUEST` asserts (upload /
+  download / status / comments ×2 / chat) replaced by ONE shared
+  `assertGuestSurfaceCaller`; every denial is a uniform **404** (the old loud 403
+  for a managing JWT was an existence oracle). Relaxed atomically in one PR — a
+  half-migrated gate is the leak surface (lesson #256).
+- **Establish-identity matrix:** an existing account (GUEST or MANAGING) + a valid
+  invite → password verified against the EXISTING hash (never set/overwritten;
+  org/sessions/role untouched) → binding attaches to the EXISTING row → invite
+  ACCEPTED. Replaces Slice-0's `EXISTING_ACCOUNT_EMAIL` 409 dead-end. **MFA
+  accounts:** binding attaches, NO tokens minted (`requires_login: true` — no MFA
+  bypass; their normal JWT works on the guest surface).
+- **⭐ Shared `AccountLockoutService` (5 attempts / 30-min lock)** used by BOTH
+  `login()` AND `establishIdentity()` — EXTRACTED from login's inline lockout, not
+  reimplemented, so a locked account is locked on both paths and `login()` stays
+  byte-equivalent. On establish-identity: `assertNotLocked` before `bcrypt.compare`
+  (403 when locked); a wrong password records the failed attempt DURABLY after the
+  txn rolls the 401 back; a correct password resets post-commit (lesson #257). This
+  closed Ayman's condition 1; condition 2 is the real-HTTP anti-impersonation test
+  (401×5 → LOCKED → 6th with the CORRECT password still 403, no binding, identity
+  byte-untouched).
+- **Metering subject from the CONTRACT's org** (`contract → project →
+  organization_id`), NEVER `user.organization_id` (which for a MANAGING-as-guest is
+  the guest's OWN org); the MANAGING-shape cross-tenant tripwire remains intact.
+- **Pin wins over the binding (proven):** signed-state pinning landed on main after
+  this branch was cut; a rebase-integration real-PG test proves a bound
+  managing-as-guest uploading to a PINNED contract gets **409 CONTRACT_PINNED** —
+  the pin sits downstream (`assertGuestSurfaceCaller` → binding wall 404 →
+  `assertContractMutable` 409 → mutation), so the binding path cannot route around
+  it, and a no-binding caller still gets 404 not 409 (lesson #258).
+- Frontend counterpart: `EstablishIdentityModal.tsx` (the "linked — sign in" MFA
+  state + the 403 `accountLocked` mapping, keyed on the error CODE), `guestService.ts`
+  (`GuestIdentity` nullable tokens + `requires_login`), and `guest.identity.*`
+  i18n (en/ar/fr parity).
+
+### ⭐ STANDING INVARIANTS — never violate
+1. **The binding is the SOLE cross-org grant** — persona/`account_type` alone grants
+   nothing; a real account reaches another org's contract ONLY via a
+   `guest_contract_access` binding.
+2. **Every denial on the guest surface is a uniform 404** — never a 403/409 that
+   reveals a resource exists (no existence oracle).
+3. **Never read `user.organization_id` in a binding path** — the metering subject
+   and audit org derive from the CONTRACT's org (`contract → project → org`).
+4. **Any new guest-surface guard authorizes on the BINDING, not `account_type`** —
+   route it through `assertGuestSurfaceCaller` / `findAccessibleContract`.
+5. **Relax authz gates ATOMICALLY, never piecemeal** — every surface a gate guards
+   moves in the same change through one shared assertion.
+
+### UNBLOCKS
+**Feature #8 (guest dashboard)** — a multi-contract binding for one real identity now
+exists, which was the prerequisite. Slices 2+ (the accessing-as-real-account UX beyond
+this authz spine) build on this.
