@@ -5632,3 +5632,54 @@ See lesson #254.
 **Feature #8 (guest dashboard)** — a multi-contract binding for one real identity now
 exists, which was the prerequisite. Slices 2+ (the accessing-as-real-account UX beyond
 this authz spine) build on this.
+
+---
+
+## Guest Portal #8a — the bindings list endpoint (shipped 2026-07-16, PR #169, merged `3ed9e63`)
+
+**`GET /guest/my-contracts`** — the FIRST endpoint that enumerates a caller's
+`guest_contract_access` bindings, closing the discovery gap unified-membership
+Slice 1 left: bound contracts previously appeared in NO list anywhere. Backend
+only; #8a of the staged Feature #8.
+
+- **Lives on `ContractAccessService.listGuestBindings(userId)`** — the
+  lint-allowlisted wall service (it owns the binding authority; no
+  `lint-exempt` needed). Explicit raw `.select([...])`, never the entity;
+  ordered `granted_at DESC`. Controller: `GuestMyContractsController`
+  (`guest-portal/controllers/`), `JwtAuthGuard` + `@CurrentUser()`, mirroring
+  guest-status's explicit-projection posture.
+- **The caller key is `user.id` ONLY — no `account_type` gate.** Works for
+  GUEST and MANAGING JWTs alike (Model A); a managing user's own-org contracts
+  have no binding rows, so the list is naturally EXTERNAL-ONLY. The caller's
+  `organization_id` is never read (standing invariant 3) — org data in the
+  response derives from the contract's chain (`contract → project → organization`).
+- **Self-scoping list → empty is `[]` with 200; NO 404 semantics needed.** The
+  only filter is `WHERE gca.user_id = :callerId`, so there is no denied
+  resource to hide. The uniform-404 invariant still governs the
+  single-contract routes each row links into — untouched.
+- **11-field explicit projection, deliberately TIGHTER than the detail read:**
+  `contract_id`, `contract_name`, `contract_type`, `status`,
+  `signature_status`, party names, `project_name`, `granted_at`, plus the two
+  shared-by fields. It DROPS the org/project/granted_by/binding UUIDs the
+  detail read leaks, and carries no clauses / risk / compliance / comments /
+  reservation ids. No last-activity (no such column; v1 omits it).
+- **Two UN-COMPOSED nullable shared-by fields** — `shared_by_org` (trimmed
+  `organization.name`, empty/whitespace → null) + `shared_by_user` (the
+  granter's "First Last", null when `granted_by` is NULL / granter deleted).
+  The server never pre-composes a label — the frontend composes (#8b); both
+  nullable, and the consumer must render fine when either or both are null.
+  Never a UUID, never a blank label (lesson #260).
+- **⭐ RECORDED LIMITATION:** the data cannot distinguish a company from an
+  individual — `organizations.name` is always user-typed at registration, no
+  placeholder is ever system-generated, and Portal Rule 8's `workspace_mode`
+  is unbuilt. NO heuristic is attempted (lesson #259). If `workspace_mode`
+  ever lands, `shared_by_org` can get smarter.
+- Proven by `guest-my-contracts.real-pg.spec.ts` (10 tests): cross-user
+  isolation (exact sets, `[]` for no-bindings), tight projection
+  (risk / internal-note / proposed+live-clause sentinels + all raw UUIDs
+  absent), both JWT types + managing external-only, the 4 shared-by cases
+  (incl. a UUID-regex sweep), 401 unauthenticated.
+
+**NEXT:** #8b — "Shared with me" in `/app` (zero auth work; purely consumes
+this endpoint). #8c — guest sign-in + guest dashboard (DEFERRED; carries a
+guest-session posture decision needing Ayman).
