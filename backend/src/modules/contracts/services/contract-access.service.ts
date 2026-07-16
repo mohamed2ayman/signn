@@ -64,6 +64,33 @@ export interface ViewerCaller {
 
 export type ContractAccessCaller = ManagingOrGuestCaller | ViewerCaller;
 
+/**
+ * Feature #8a — one row of the caller's own guest-binding list
+ * (GET /guest/my-contracts). A MINIMAL SAFE PROJECTION, deliberately tighter
+ * than the single-contract detail read: no org/project/granted_by/binding
+ * UUIDs, no clauses, no risk/compliance, no comments, no reservation ids.
+ *
+ * shared_by_org / shared_by_user are NOT pre-composed server-side — the
+ * presentation decision belongs to the consumer (#8b). Both nullable; an
+ * empty/whitespace label is normalized to null, and a UUID is never emitted.
+ * NOTE: the data cannot distinguish a real company org from an individual's
+ * placeholder-looking org name (Portal Rule 8's workspace_mode is unbuilt) —
+ * we surface what exists and let the UI compose.
+ */
+export interface GuestBindingListRow {
+  contract_id: string;
+  contract_name: string;
+  contract_type: string;
+  status: string;
+  signature_status: string | null;
+  party_first_name: string | null;
+  party_second_name: string | null;
+  project_name: string | null;
+  shared_by_org: string | null;
+  shared_by_user: string | null;
+  granted_at: Date;
+}
+
 @Injectable()
 export class ContractAccessService {
   constructor(
@@ -212,6 +239,74 @@ export class ContractAccessService {
       where: { user_id: userId, contract_id: contractId },
     });
     return !!binding;
+  }
+
+  /**
+   * Feature #8a — list the caller's OWN guest bindings (discovery for
+   * "Shared with me"). SELF-SCOPING: the only filter is
+   * `gca.user_id = :userId` (the JWT principal's id), so there is no
+   * requested resource to deny — no bindings is simply `[]`, never a 404.
+   * The uniform-404 invariant continues to govern the single-contract
+   * routes each row links into.
+   *
+   * The caller key is user.id and NOTHING else: no account_type gate (the
+   * binding is the sole grant — a MANAGING JWT lists its bindings exactly
+   * like a GUEST JWT, and a managing user's own-org contracts have no
+   * binding rows, so the list is naturally external-only), and the
+   * caller's organization_id is never read (standing invariant 3).
+   *
+   * EXPLICIT raw SELECT — never the entity. See GuestBindingListRow for
+   * what is (and is deliberately NOT) exposed.
+   */
+  async listGuestBindings(userId: string): Promise<GuestBindingListRow[]> {
+    const rows = await this.guestAccessRepository
+      .createQueryBuilder('gca')
+      .innerJoin('gca.contract', 'contract')
+      .leftJoin('contract.project', 'project')
+      .leftJoin('project.organization', 'organization')
+      .leftJoin('gca.granter', 'granter')
+      .where('gca.user_id = :userId', { userId })
+      .select([
+        'contract.id AS contract_id',
+        'contract.name AS contract_name',
+        'contract.contract_type AS contract_type',
+        'contract.status AS status',
+        'contract.signature_status AS signature_status',
+        'contract.party_first_name AS party_first_name',
+        'contract.party_second_name AS party_second_name',
+        'project.name AS project_name',
+        'organization.name AS shared_by_org_raw',
+        'granter.first_name AS granter_first_name',
+        'granter.last_name AS granter_last_name',
+        'gca.granted_at AS granted_at',
+      ])
+      .orderBy('gca.granted_at', 'DESC')
+      .getRawMany();
+
+    return rows.map((r): GuestBindingListRow => {
+      const granterName = [r.granter_first_name, r.granter_last_name]
+        .filter(Boolean)
+        .join(' ');
+      return {
+        contract_id: r.contract_id,
+        contract_name: r.contract_name,
+        contract_type: r.contract_type,
+        status: r.status,
+        signature_status: r.signature_status ?? null,
+        party_first_name: r.party_first_name ?? null,
+        party_second_name: r.party_second_name ?? null,
+        project_name: r.project_name ?? null,
+        shared_by_org: this.labelOrNull(r.shared_by_org_raw),
+        shared_by_user: this.labelOrNull(granterName),
+        granted_at: r.granted_at,
+      };
+    });
+  }
+
+  /** Empty/whitespace labels become null — never emit a blank-looking label. */
+  private labelOrNull(value: string | null | undefined): string | null {
+    const trimmed = (value ?? '').trim();
+    return trimmed.length > 0 ? trimmed : null;
   }
 
   /**
