@@ -44,6 +44,7 @@ import { GuestDownloadController } from './controllers/guest-download.controller
 import { GuestUploadController } from './controllers/guest-upload.controller';
 import { GuestStatusController } from './controllers/guest-status.controller';
 import { GuestChatController } from './controllers/guest-chat.controller';
+import { GuestMyContractsController } from './controllers/guest-my-contracts.controller';
 
 /**
  * Phase 7.18 — Guest Portal module.
@@ -98,6 +99,7 @@ import { GuestChatController } from './controllers/guest-chat.controller';
     GuestUploadController,
     GuestStatusController,
     GuestChatController,
+    GuestMyContractsController,
   ],
   providers: [
     InvitationTokenService,
