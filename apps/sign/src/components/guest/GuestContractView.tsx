@@ -61,12 +61,22 @@ export default function GuestContractView({
   contract,
   guestJwt,
   onAskAi,
+  onImport,
 }: {
   contract: Contract;
   guestJwt?: string | null;
   /** Opens the Guest AI Assistant drawer (Feature #6). Path-B gated like
    *  Upload/Download — rendered only inside the `{guestJwt && …}` row. */
   onAskAi?: () => void;
+  /** Opens the "Import to my workspace" modal (#8d). SHARED-VIEWER-ONLY:
+   *  supplied exclusively by SharedContractViewerPage (a bound MANAGING
+   *  arrival with a workspace to import into). Deliberately NOT gated on
+   *  `guestJwt` — an established token-guest also has one, but has no org
+   *  to import to; the token-entered GuestViewerPage never passes this prop,
+   *  so pure guests never see the button. When present, Import takes the
+   *  filled-primary lead slot and Ask AI demotes to the outline style
+   *  (one filled button per row — the design rule). */
+  onImport?: () => void;
 }) {
   const { t } = useTranslation();
   const [downloading, setDownloading] = useState(false);
@@ -234,14 +244,48 @@ export default function GuestContractView({
             {guestJwt && (
               <div className="flex flex-col items-end gap-1.5">
                 <div className="flex flex-wrap items-center justify-end gap-2">
+                  {/* Import to my workspace (#8d) — shared-viewer-only (see
+                      the onImport prop note). First in the row: for a managing
+                      reviewer, taking the contract home is the marquee action. */}
+                  {onImport && (
+                    <button
+                      type="button"
+                      onClick={onImport}
+                      data-testid="guest-import"
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-primary-600"
+                    >
+                      <svg
+                        aria-hidden="true"
+                        className="h-3.5 w-3.5"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                        strokeWidth={2}
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M12 3v10m0 0l-3.5-3.5M12 13l3.5-3.5M5 17h14a1 1 0 001-1v0M4 21h16"
+                        />
+                      </svg>
+                      {t('sharedWithMe.import.button')}
+                    </button>
+                  )}
                   {/* Ask AI — the assistant trigger (Feature #6). Filled
-                      primary = the lead affordance of the row per the design. */}
+                      primary = the lead affordance of the row per the design —
+                      EXCEPT when Import is present (managing viewers), where
+                      Ask AI demotes to the outline style so the row keeps one
+                      filled button. */}
                   {onAskAi && (
                     <button
                       type="button"
                       onClick={onAskAi}
                       data-testid="guest-ask-ai"
-                      className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-primary-600"
+                      className={
+                        onImport
+                          ? 'inline-flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/[0.04] px-3 py-1.5 text-xs font-medium text-primary transition-colors hover:bg-primary/[0.1]'
+                          : 'inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-primary-600'
+                      }
                     >
                       <svg
                         aria-hidden="true"

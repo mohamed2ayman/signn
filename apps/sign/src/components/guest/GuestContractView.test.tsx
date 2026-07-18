@@ -222,3 +222,61 @@ describe('GuestContractView — Ask AI trigger (Feature #6)', () => {
     expect(onAskAi).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('GuestContractView — Import to my workspace affordance (#8d, shared-viewer-only)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.clear();
+  });
+
+  it('⭐ does NOT render the Import button on guestJwt alone — an established token-guest never sees it', () => {
+    // guestJwt present (an established Path-B guest has one too) but NO
+    // onImport prop — the token-entered GuestViewerPage never supplies it,
+    // so the button must not exist. This is the load-bearing gating fact:
+    // the prop, not the token, is the gate.
+    render(
+      <GuestContractView
+        contract={CONTRACT}
+        guestJwt="guest-jwt"
+        onAskAi={vi.fn()}
+      />,
+    );
+    expect(screen.queryByTestId('guest-import')).not.toBeInTheDocument();
+    // And Ask AI keeps the shipped filled-primary lead style.
+    expect(screen.getByTestId('guest-ask-ai').className).toContain('bg-primary ');
+  });
+
+  it('renders the Import button FIRST (before Ask AI) when onImport is supplied, and fires it', () => {
+    const onImport = vi.fn();
+    render(
+      <GuestContractView
+        contract={CONTRACT}
+        guestJwt="managing-token"
+        onAskAi={vi.fn()}
+        onImport={onImport}
+      />,
+    );
+    const importBtn = screen.getByTestId('guest-import');
+    expect(importBtn).toHaveTextContent('sharedWithMe.import.button');
+    const row = importBtn.parentElement as HTMLElement;
+    expect(row.firstElementChild).toBe(importBtn); // marquee slot
+    fireEvent.click(importBtn);
+    expect(onImport).toHaveBeenCalledTimes(1);
+  });
+
+  it('demotes Ask AI to the outline style when Import is present (one filled button per row)', () => {
+    render(
+      <GuestContractView
+        contract={CONTRACT}
+        guestJwt="managing-token"
+        onAskAi={vi.fn()}
+        onImport={vi.fn()}
+      />,
+    );
+    const askAi = screen.getByTestId('guest-ask-ai');
+    expect(askAi.className).toContain('border-primary/30');
+    expect(askAi.className).not.toContain('bg-primary ');
+    // Import owns the filled-primary slot.
+    expect(screen.getByTestId('guest-import').className).toContain('bg-primary ');
+  });
+});
