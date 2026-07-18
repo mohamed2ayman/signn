@@ -70,6 +70,54 @@ export interface CoverTrimResult {
   warning: string | null;
 }
 
+/**
+ * Preamble openers used to NARROW the party-extraction window. Superset of
+ * AGREEMENT_OPENINGS (which drives trimming) — it additionally recognises the
+ * ENGLISH openers, because party extraction runs on the RAW (un-trimmed) text
+ * where an English `BETWEEN … and …` block precedes clause 1 (computeCoverTrim
+ * itself does NOT keep English preambles, so party extraction must not depend on
+ * the trimmed output). Used only by computePreambleWindow — trimming is unchanged.
+ */
+const PREAMBLE_OPENINGS: RegExp[] = [
+  /إنه في يوم/,
+  /تم الاتفاق بين كل من/,
+  /بين\s*كل\s*من/,
+  /\bby\s+and\s+between\b/i,
+  /\bbetween\b/i,
+];
+
+/** Upper bound on the preamble window when a document has no numbered clause. */
+const PREAMBLE_MAX_CHARS = 6000;
+
+/**
+ * Return the PREAMBLE window of a contract document — the party/recitals block
+ * that precedes the first numbered clause. Party extraction runs on THIS, never
+ * the whole document, so body cross-references (e.g. "between the Attachments"
+ * inside clause 1) can never be scraped into a party slot.
+ *
+ * Call with the RAW (un-trimmed) extracted text: for English agreements the
+ * `BETWEEN … parties …` block sits before "Clause 1" and is removed by
+ * computeCoverTrim, so it survives only in the raw text.
+ *
+ * Behaviour:
+ *  - text starts AT clause 1 (a Conditions/TOC document) → empty window (nothing
+ *    to extract; correctly scopes such documents out);
+ *  - a preamble precedes clause 1 → the window is [opener .. clause 1);
+ *  - no numbered clause at all → the window is [opener .. PREAMBLE_MAX_CHARS).
+ * When a recognised opener is present it narrows the window's START to the opener
+ * (dropping cover-page noise before the party block).
+ */
+export function computePreambleWindow(text: string): string {
+  if (!text) return '';
+  const clauseIdx = firstMatchIndex(text, CLAUSE_MARKERS);
+  const end = clauseIdx >= 0 ? clauseIdx : Math.min(text.length, PREAMBLE_MAX_CHARS);
+  if (end <= 0) return ''; // document opens at clause 1 — no preamble
+  const region = text.substring(0, end);
+  const openerIdx = firstMatchIndex(region, PREAMBLE_OPENINGS);
+  const start = openerIdx > 0 ? openerIdx : 0;
+  return text.substring(start, end);
+}
+
 export function computeCoverTrim(
   text: string,
   documentLabel?: string | null,

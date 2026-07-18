@@ -33,6 +33,8 @@ from app.models.schemas import (
     IngestLegalDocumentRequest,
     ObligationsRequest,
     ObligationsResponse,
+    PartyExtractionRequest,
+    PartyExtractionResponse,
     ResearchRequest,
     ResearchResponse,
     RiskAnalysisRequest,
@@ -373,3 +375,35 @@ async def embed_query(request: EmbedQueryRequest) -> EmbedQueryResponse:
         input=request.text,
     )
     return EmbedQueryResponse(embedding=response.data[0].embedding)
+
+
+@router.post(
+    "/extract-parties",
+    response_model=PartyExtractionResponse,
+    summary="Extract contract parties from a preamble window (synchronous fallback)",
+)
+async def extract_parties(request: PartyExtractionRequest) -> PartyExtractionResponse:
+    """Synchronous Haiku fallback for contract-party extraction.
+
+    Called by NestJS document-processing ONLY when its deterministic regex yields
+    fewer than two parties from a contract's preamble window. Synchronous (like
+    /embed-query) because the caller awaits the result inline before deciding
+    whether to backfill the contract's party fields. Returns nulls when no party
+    is named — never invents one.
+    """
+    _settings = get_settings()
+    if not _settings.ANTHROPIC_API_KEY:
+        from fastapi import HTTPException
+
+        raise HTTPException(
+            status_code=503,
+            detail="ANTHROPIC_API_KEY is not configured on the AI backend.",
+        )
+
+    from app.agents.party_extractor import PartyExtractorAgent
+
+    result = PartyExtractorAgent().extract(request.preamble_text)
+    return PartyExtractionResponse(
+        first_party=result.get("first_party"),
+        second_party=result.get("second_party"),
+    )

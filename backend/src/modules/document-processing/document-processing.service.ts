@@ -29,7 +29,8 @@ import {
   mapScoreToRiskLevel,
   mapSeverityToLikelihoodImpact,
 } from '../risk-analysis/utils/severity-mapping';
-import { computeCoverTrim } from './utils/cover-trim.util';
+import { computeCoverTrim, computePreambleWindow } from './utils/cover-trim.util';
+import { resolveParties, type ExtractedParties } from './utils/parties-extract.util';
 // Tenant-isolation Tier 1 — service-level wall on uploadAndProcess +
 // reprocess + finalizeReview. Same `findInOrg` shape as PR #45.
 import { ContractAccessService } from '../contracts/services/contract-access.service';
@@ -606,34 +607,17 @@ export class DocumentProcessingService {
       doc.processing_job_id = null;
       await this.documentUploadRepository.save(doc); // lint-exempt: S2f-deferred (metering-entangled, walled)
 
-      // Extract party names if the text contains contract party markers.
-      // SUPPRESSED for guest uploads: a guest must NEVER mutate the parent
-      // contract's fields — even when both party fields happen to be empty.
-      const partyMarker = /(?:بين\s*كل\s*من|تم\s*الاتفاق\s*بين\s*كل\s*من|كل\s*من\s*:)/;
-      if (!isGuestUpload && partyMarker.test(trimmedText)) {
-        // Only extract if the contract doesn't already have parties
-        const currentContract = await this.contractRepository.findOne({ // lint-exempt: S2f-deferred (metering-entangled, walled)
-          where: { id: doc.contract_id },
-        });
-        if (!currentContract?.party_first_name && !currentContract?.party_second_name) {
-          try {
-            const parties = this.extractParties(trimmedText);
-            if (parties.firstParty || parties.secondParty) {
-              await this.contractRepository.update( // lint-exempt: S2f-deferred (metering-entangled, walled)
-                { id: doc.contract_id },
-                {
-                  party_first_name: parties.firstParty,
-                  party_second_name: parties.secondParty,
-                },
-              );
-              this.logger.log(
-                `Extracted parties for contract ${doc.contract_id}: "${parties.firstParty}" / "${parties.secondParty}"`,
-              );
-            }
-          } catch (err) {
-            this.logger.warn(`Party extraction failed for contract ${doc.contract_id}: ${err?.message}`);
-          }
-        }
+      // ── Contract-party extraction (regex-first + Haiku fallback) ──────────
+      // Runs on the RAW text's PREAMBLE window (before clause 1), NOT the trimmed
+      // text: computeCoverTrim removes English preambles, and scoping to the
+      // preamble stops body cross-references (e.g. "between the Attachments")
+      // from being scraped into a party slot. Regex-first, Haiku fallback only on
+      // a partial result, best-result-wins across the contract's documents, never
+      // over a human edit. SUPPRESSED for guest uploads — a guest must NEVER
+      // mutate the parent contract's fields. See
+      // docs/parties-extraction-bug-investigation.md.
+      if (!isGuestUpload) {
+        await this.backfillPartiesFromPreamble(doc.contract_id, rawText);
       }
 
       // Immediately trigger clause extraction
@@ -853,69 +837,75 @@ export class DocumentProcessingService {
   // mislabeled "Contract Agreement" and a body phrase matched bare "تم الاتفاق".
 
   /**
-   * Extract party names from Arabic contract agreement text using regex.
-   * Looks for the pattern after "كل من:" to find First Party and Second Party.
+   * Extract contract parties from a document's preamble window and backfill the
+   * contract's party_first_name / party_second_name. Regex-first (Arabic +
+   * English), Haiku fallback only on a partial result, best-result-wins across
+   * the contract's documents, and NEVER over a human edit (guarded in
+   * resolveParties AND in the UPDATE's WHERE clause). Best-effort: any failure is
+   * logged, never thrown — party backfill is a non-critical side effect of
+   * extraction. See docs/parties-extraction-bug-investigation.md.
    */
-  /** Shared stop-word pattern for party name extraction. */
-  private static readonly PARTY_STOP_WORDS =
-    /(?:ويمثلها|ومقرها|ومقره|مقرها|ويشار|طرف أول|الطرف الأول|طرف ثان|الطرف الثاني|–\s*طرف|هاتف|تليفون|ص\.?\s*ب|والكائن|الكائن|يقع مقرها|الواقع|بالعنوان|سرايات|ميدان|في\s+\d)/;
+  private async backfillPartiesFromPreamble(
+    contractId: string,
+    rawText: string,
+  ): Promise<void> {
+    const preamble = computePreambleWindow(rawText);
+    // No preamble (Conditions / TOC / annex document opens at clause 1) — nothing
+    // to extract; scoping to the preamble is what prevents body-name scraping.
+    if (!preamble.trim()) return;
 
-  /** Trim a party name that is too long — cut at the first address-like word after "في". */
-  private trimPartyName(name: string): string {
-    const words = name.split(/\s+/);
-    if (words.length <= 15) return name;
+    try {
+      const contract = await this.contractRepository.findOne({ // lint-exempt: S2f-deferred (metering-entangled, walled)
+        where: { id: contractId },
+      });
+      if (!contract) return;
 
-    // Look for "في" followed by a number or location word
-    const addressCut = name.match(/\s+في\s+(?:\d|ميدان|شارع|منطقة|مدينة|حي|سرايات|طريق)/);
-    if (addressCut?.index !== undefined) {
-      return name.substring(0, addressCut.index).trim();
+      const decision = await resolveParties(
+        preamble,
+        {
+          firstParty: contract.party_first_name ?? null,
+          secondParty: contract.party_second_name ?? null,
+          edited: !!contract.is_parties_edited_by_user,
+        },
+        (p) => this.aiExtractParties(p),
+      );
+      if (!decision.write) return;
+
+      await this.contractRepository.update( // lint-exempt: S2f-deferred (metering-entangled, walled)
+        // Human-edit guard repeated in the WHERE clause — defense in depth
+        // against a human edit landing concurrently with this backfill.
+        { id: contractId, is_parties_edited_by_user: false },
+        {
+          party_first_name: decision.parties.firstParty,
+          party_second_name: decision.parties.secondParty,
+        },
+      );
+      this.logger.log(
+        `Extracted parties for contract ${contractId} ` +
+          `(regex${decision.usedAi ? '+haiku' : ''}): ` +
+          `"${decision.parties.firstParty}" / "${decision.parties.secondParty}"`,
+      );
+    } catch (err) {
+      this.logger.warn(
+        `Party extraction failed for contract ${contractId}: ${err?.message}`,
+      );
     }
-
-    // Fallback: keep first 15 words
-    return words.slice(0, 15).join(' ');
   }
 
-  private extractParties(
-    text: string,
-  ): { firstParty: string | null; secondParty: string | null } {
-    const result = { firstParty: null as string | null, secondParty: null as string | null };
-    if (!text) return result;
-
-    // Look for contract party context: "بين كل من" or "كل من:"
-    const kolMinMatch = text.match(/(?:بين\s*كل\s*من|تم\s*الاتفاق\s*بين\s*كل\s*من|كل\s*من\s*:)/);
-    if (!kolMinMatch || kolMinMatch.index === undefined) return result;
-
-    const afterKolMin = text.substring(kolMinMatch.index + kolMinMatch[0].length);
-
-    // First Party: text until stop words
-    const firstMatch = afterKolMin.match(DocumentProcessingService.PARTY_STOP_WORDS);
-    if (firstMatch?.index !== undefined) {
-      const raw = afterKolMin.substring(0, firstMatch.index).trim();
-      const cleaned = raw.replace(/^[\s\-–:]+|[\s\-–:]+$/g, '').trim();
-      if (cleaned.length > 2 && cleaned.length < 400) {
-        result.firstParty = this.trimPartyName(cleaned);
-      }
-    }
-
-    // Second Party: after "(طرف أول)" or "الطرف الأول" find next party name
-    const afterFirstParty = text.match(
-      /(?:طرف أول\s*\)?|الطرف الأول\s*\)?)\s*(?:و\s*(?:بين\s*)?|[\s\-–:]*\d*[\s\-–:]*)/,
-    );
-    if (afterFirstParty?.index !== undefined) {
-      const secondStart = afterFirstParty.index + afterFirstParty[0].length;
-      const remaining = text.substring(secondStart);
-
-      const secondMatch = remaining.match(DocumentProcessingService.PARTY_STOP_WORDS);
-      if (secondMatch?.index !== undefined) {
-        const raw = remaining.substring(0, secondMatch.index).trim();
-        const cleaned = raw.replace(/^[\s\-–:]+|[\s\-–:]+$/g, '').trim();
-        if (cleaned.length > 2 && cleaned.length < 400) {
-          result.secondParty = this.trimPartyName(cleaned);
-        }
-      }
-    }
-
-    return result;
+  /**
+   * Haiku fallback for party extraction — calls the synchronous ai-backend
+   * endpoint and maps the response to ExtractedParties. Caps the preamble sent to
+   * bound cost/latency. Throws on failure (resolveParties catches it and keeps
+   * the regex result).
+   */
+  private async aiExtractParties(preamble: string): Promise<ExtractedParties> {
+    const res = await this.aiService.triggerExtractParties({
+      preamble_text: preamble.slice(0, 4000),
+    });
+    return {
+      firstParty: res?.first_party?.trim() || null,
+      secondParty: res?.second_party?.trim() || null,
+    };
   }
 
   /**

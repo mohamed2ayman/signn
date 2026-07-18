@@ -567,3 +567,23 @@ class EmbedQueryResponse(BaseModel):
         ...,
         description="1536-dimensional OpenAI embedding vector.",
     )
+
+
+class PartyExtractionRequest(BaseModel):
+    """Request body for the synchronous party-extraction fallback endpoint.
+
+    Called by NestJS document-processing ONLY when its regex yields < 2 parties
+    from a contract's preamble window.
+    """
+
+    preamble_text: str = Field(
+        ...,
+        description="The contract PREAMBLE window (recitals / party block).",
+    )
+
+
+class PartyExtractionResponse(BaseModel):
+    """The two contracting parties, either of which may be null when not named."""
+
+    first_party: str | None = Field(None, description="First party legal name, or null.")
+    second_party: str | None = Field(None, description="Second party legal name, or null.")

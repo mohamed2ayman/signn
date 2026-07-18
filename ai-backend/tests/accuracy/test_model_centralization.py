@@ -38,6 +38,9 @@ EXPECTED_AGENTS = {
     "conflict_detector.py", "obligations_extractor.py", "summarizer.py",
     "diff_analyzer.py", "conversational_agent.py", "research_agent.py",
     "clause_rewriter.py",
+    # party_extractor.py (parties-extraction fix) — inherits BaseAgent + routes
+    # through the chokepoint, but uses the cheaper PARTY_EXTRACT_MODEL (Haiku).
+    "party_extractor.py",
 }
 
 
