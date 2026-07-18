@@ -5,6 +5,7 @@ import {
   ContractComment,
   GuestContractAccess,
   GuestInvitation,
+  Project,
   User,
 } from '../../database/entities';
 import { ContractsModule } from '../contracts/contracts.module';
@@ -34,6 +35,11 @@ import { ViewerCredentialService } from './services/viewer-credential.service';
 import { GuestInvitationService } from './services/guest-invitation.service';
 import { GuestUploadService } from './services/guest-upload.service';
 import { GuestChatService } from './services/guest-chat.service';
+// Feature #8d — "Import to my workspace": binding-walled transactional copy
+// of a shared contract into the importer's own org (ContractsService's
+// createVersionSnapshot rides the same transaction; Project registered for
+// the destination-ownership check).
+import { GuestImportService } from './services/guest-import.service';
 import { ViewerCredentialGuard } from './guards/viewer-credential.guard';
 
 import { GuestInvitationsController } from './controllers/guest-invitations.controller';
@@ -45,6 +51,7 @@ import { GuestUploadController } from './controllers/guest-upload.controller';
 import { GuestStatusController } from './controllers/guest-status.controller';
 import { GuestChatController } from './controllers/guest-chat.controller';
 import { GuestMyContractsController } from './controllers/guest-my-contracts.controller';
+import { GuestImportController } from './controllers/guest-import.controller';
 
 /**
  * Phase 7.18 — Guest Portal module.
@@ -77,6 +84,9 @@ import { GuestMyContractsController } from './controllers/guest-my-contracts.con
       ContractComment,
       ChatSession,
       ChatMessage,
+      // #8d — destination-project ownership check (Project is org-scoped
+      // reference data here, not a contract-scoped entity).
+      Project,
     ]),
     ContractsModule,
     AuthModule,
@@ -100,6 +110,7 @@ import { GuestMyContractsController } from './controllers/guest-my-contracts.con
     GuestStatusController,
     GuestChatController,
     GuestMyContractsController,
+    GuestImportController,
   ],
   providers: [
     InvitationTokenService,
@@ -107,6 +118,7 @@ import { GuestMyContractsController } from './controllers/guest-my-contracts.con
     GuestInvitationService,
     GuestUploadService,
     GuestChatService,
+    GuestImportService,
     ViewerCredentialGuard,
   ],
 })
