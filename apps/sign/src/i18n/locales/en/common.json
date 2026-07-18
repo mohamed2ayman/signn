@@ -322,6 +322,7 @@
     "dashboard": "Dashboard",
     "portfolio": "Portfolio",
     "projects": "Projects",
+    "sharedWithMe": "Shared with me",
     "contracts": "Contracts",
     "clauses": "Clause Library",
     "knowledge": "Knowledge Base",
@@ -1558,6 +1559,38 @@
       "rateResets": "Resets tomorrow at {{time}}.",
       "throttleNotice": "You're sending messages too quickly. Please wait a moment.",
       "sessionExpired": "Your secure session expired. Reload the page to keep chatting."
+    }
+  },
+  "sharedWithMe": {
+    "title": "Shared with me",
+    "subtitle": "Contracts other organizations have shared with you for review.",
+    "cardTitle": "Shared contracts",
+    "sharedBy": "shared by",
+    "sharedByPerson": "Shared by",
+    "sharedWithYou": "Shared with you",
+    "signature": {
+      "fullyExecuted": "Fully Executed",
+      "awaitingCounterparty": "Awaiting Counterparty",
+      "pendingSignature": "Pending Signature"
+    },
+    "empty": {
+      "title": "Nothing shared with you yet",
+      "subtitle": "When another organization invites you to review a contract, it will appear here."
+    },
+    "error": {
+      "title": "Couldn’t load shared contracts",
+      "subtitle": "Something went wrong while fetching your shares.",
+      "retry": "Retry"
+    },
+    "banner": {
+      "title": "You’re viewing this contract as a guest.",
+      "body": "{{org}} shared it with you — your access here is limited to this contract.",
+      "orgFallback": "Another organization",
+      "back": "Back to Shared with me"
+    },
+    "revoked": {
+      "title": "This contract is no longer shared with you.",
+      "body": "The other organization revoked your access while this page was open."
     }
   }
 }

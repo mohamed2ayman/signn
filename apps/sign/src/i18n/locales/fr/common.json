@@ -324,6 +324,7 @@
     "dashboard": "Tableau de bord",
     "portfolio": "Portefeuille",
     "projects": "Projets",
+    "sharedWithMe": "Partagés avec moi",
     "contracts": "Contrats",
     "clauses": "Bibliothèque de clauses",
     "knowledge": "Base de connaissances",
@@ -1567,6 +1568,38 @@
       "rateResets": "Réinitialisation demain à {{time}}.",
       "throttleNotice": "Vous envoyez des messages trop rapidement. Veuillez patienter un instant.",
       "sessionExpired": "Votre session sécurisée a expiré. Rechargez la page pour continuer la discussion."
+    }
+  },
+  "sharedWithMe": {
+    "title": "Partagés avec moi",
+    "subtitle": "Contrats que d’autres organisations ont partagés avec vous pour révision.",
+    "cardTitle": "Contrats partagés",
+    "sharedBy": "partagé par",
+    "sharedByPerson": "Partagé par",
+    "sharedWithYou": "Partagé avec vous",
+    "signature": {
+      "fullyExecuted": "Entièrement signé",
+      "awaitingCounterparty": "En attente de la contrepartie",
+      "pendingSignature": "En attente de signature"
+    },
+    "empty": {
+      "title": "Rien n’a encore été partagé avec vous",
+      "subtitle": "Lorsqu’une autre organisation vous invite à examiner un contrat, il apparaîtra ici."
+    },
+    "error": {
+      "title": "Impossible de charger les contrats partagés",
+      "subtitle": "Une erreur s’est produite lors du chargement de vos partages.",
+      "retry": "Réessayer"
+    },
+    "banner": {
+      "title": "Vous consultez ce contrat en tant qu’invité.",
+      "body": "{{org}} l’a partagé avec vous — votre accès ici est limité à ce contrat.",
+      "orgFallback": "Une autre organisation",
+      "back": "Retour à Partagés avec moi"
+    },
+    "revoked": {
+      "title": "Ce contrat n’est plus partagé avec vous.",
+      "body": "L’autre organisation a révoqué votre accès pendant que cette page était ouverte."
     }
   }
 }
