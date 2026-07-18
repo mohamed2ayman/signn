@@ -5683,3 +5683,91 @@ only; #8a of the staged Feature #8.
 **NEXT:** #8b — "Shared with me" in `/app` (zero auth work; purely consumes
 this endpoint). #8c — guest sign-in + guest dashboard (DEFERRED; carries a
 guest-session posture decision needing Ayman).
+
+---
+
+## Guest Portal #8b — Shared with me (shipped 2026-07-18, PR #171, merged `8677a03`)
+
+The consumer of #8a: a real (MANAGING) SIGN customer can now DISCOVER and OPEN
+the contracts other orgs shared with them (their `guest_contract_access`
+bindings). Frontend only (`apps/sign`) — ZERO backend / ai-backend change (the
+read is served by the already-shipped org-first/binding-fallback dispatch,
+PR #164). Built to the approved Claude Design export; grounded spec
+`docs/shared-with-me-and-import-UI-SPEC.md`. Human visual gate PASSED (EN +
+Arabic RTL — populated row, nav pill, viewer + banner, revoked block, empty
+state).
+
+### What shipped — three parts
+- **The `/app/shared-with-me` page** (`SharedWithMePage`) — lists the caller's
+  bindings from `GET /guest/my-contracts` (#8a). Nav entry **after Projects**
+  (always visible; a count pill + dot render ONLY when count > 0 — the query is
+  `enabled`-gated on the item's presence so non-client rails never fetch, and
+  it SHARES the `['guest-my-contracts']` React Query cache with the page, one
+  fetch for both). Rows reuse the project contract-row vocabulary; the
+  signature pill renders all three states (Fully Executed / Awaiting
+  Counterparty / Pending Signature) per the DESIGN (which supersedes the spec's
+  FULLY_EXECUTED-only pill). Empty / loading / error+Retry states.
+- **⭐ The four shared-by cases — composed FRONTEND-side** from #8a's two
+  un-composed nullable atoms (`shared_by_org` + `shared_by_user`, lesson #260):
+  both → `{org} · shared by {person}` · org-only → `{org}` · person-only →
+  `Shared by {person}` · **neither → the static "Shared with you" fallback**
+  (the line never collapses to blank, and never renders `null`/`undefined`/a
+  UUID — `SharedByLine` re-applies the trim-to-null guard as defense).
+- **The managing-JWT viewer entry + guest-context banner** — a NEW thin sibling
+  `SharedContractViewerPage` at route **`/guest/shared/:contractId`**
+  (`ProtectedRoute`, any authenticated role — bindings are role-agnostic),
+  reusing the shipped `GuestLayout` / `GuestContractView` / `GuestComments` /
+  `GuestChatPanel`. The blue-tinted context banner ("You're viewing this
+  contract as a guest. {org} shared it with you — your access here is limited to
+  this contract." + "Back to Shared with me") renders **only for a managing
+  arrival**, never for a token-invited guest. A managing user never sees the
+  progressive-identity ("set a password") CTA.
+
+### The entry-mode decision (locked — the load-bearing #8b engineering)
+- **READ** rides the normal authed `api` client → `GET /contracts/:id`. That
+  route's `findAccessibleContract` is ORG-FIRST → BINDING-FALLBACK (PR #164), so
+  a bound managing user reads the cross-org contract with the SAME shape as the
+  viewer read and **ZERO backend change**; a revoked binding is the uniform
+  **404** → the in-page **revoked block** (dedicated, design copy — the shared
+  `GuestErrorScreen` belongs to the token path and stays untouched).
+- **ACTIONS** (comments / chat / upload / download) ride the **UNCHANGED** guest
+  components, with the managing access token passed through the existing
+  explicit-token prop onto the **interceptor-free `guestHttp`** — per-request
+  `Authorization: Bearer` only, so no credential leaks onto either stack.
+- **`GuestViewerPage` is at a literal ZERO diff** — the token/invitation flow is
+  provably untouched (lesson #261: sibling-not-mode-switch).
+- **The prop name lies** — a managing token flows through a prop named
+  `guestJwt`; renaming would churn shipped components, so the CALL SITE carries a
+  comment explaining why (Model A — the backend accepts both on
+  `/guest/contracts/:id/*`; the component uses it only as an explicit Bearer on
+  the interceptor-free client). See lesson #263.
+
+### Also
+- **`ContractStatusDot` promoted to shared** (`components/contracts/ContractStatusDot.tsx`)
+  from ProjectDetailPage's private in-file helper (its second consumer);
+  ProjectDetailPage's change is **import-only** (delete the duplicate + import),
+  behavior identical.
+- i18n en/ar/fr exact key parity (20 `sharedWithMe.*` keys + `nav.sharedWithMe`),
+  Arabic copy from the design (an i18n-insert mojibake was caught mid-build and
+  redone as direct UTF-8 — lesson #262).
+
+### Deliberately OMITTED
+- **The "Import to my workspace" button + confirm/progress/success/failure modal
+  is NOT built** — designed only, deferred to **#8d** (a disabled button in the
+  marquee position is dead UI). Do NOT wire any import behavior without #8d.
+
+### Verified
+- Frontend vitest **44 files / 396 tests** (baseline 40/368 + 4 files/28 new: the
+  four shared-by cases incl. the null fallback + never-blank/null/UUID sweeps,
+  list states, banner org + fallback, managing token through the guest
+  components' token prop, revoked-404 block, no-identity-CTA, real-SignLogo /
+  no-placeholder per lesson #222, Sidebar badge count/zero/no-fetch-on-other-rails).
+  `vite build` clean; tsc 0-new in touched source; CI 3/3 green.
+- Zero-diffs: `GuestViewerPage` · guest components + `guestHttp`/`guestService`/
+  `viewerService` · host & guest chat · backend + ai-backend.
+
+### NEXT (Guest Portal remaining)
+- **#8d** — "Import to my workspace" (copies a shared contract into the
+  importer's org; designed, NOT built).
+- **#8c** — guest sign-in + guest dashboard (DEFERRED; a guest-session posture
+  decision needs Ayman).
