@@ -183,6 +183,29 @@ export class AiService {
     return response.data;
   }
 
+  // ─── Party Extraction (regex-fallback, synchronous) ───────
+
+  /**
+   * SYNCHRONOUS Haiku fallback for contract-party extraction — mirrors the
+   * embed-query pattern (awaited inline, not a Celery job). Called ONLY when the
+   * backend regex yields fewer than two parties from a preamble window. Returns
+   * `{ first_party, second_party }` (either may be null). A short timeout keeps a
+   * slow/absent AI backend from stalling the document pipeline; the caller
+   * treats any failure as "no fallback" and keeps the regex result.
+   */
+  async triggerExtractParties(data: {
+    preamble_text: string;
+  }): Promise<{ first_party: string | null; second_party: string | null }> {
+    const response = await firstValueFrom(
+      this.httpService.post(
+        `${this.aiBackendUrl}/agents/extract-parties`,
+        data,
+        { timeout: 20000 },
+      ),
+    );
+    return response.data;
+  }
+
   // ─── Compliance Check (Phase 3.4) ──────────────────────────
 
   async triggerComplianceCheck(data: {

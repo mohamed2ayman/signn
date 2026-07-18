@@ -19,6 +19,13 @@ class Settings(BaseSettings):
     # NOTE: changing this model requires running the Arabic accuracy suite
     # first (ai-backend/tests/accuracy/) — never swap the model blind.
     ANTHROPIC_MODEL: str = "claude-sonnet-4-6"
+    # Cheaper model for the bounded party-extraction fallback (regex-first; this
+    # fires only when the backend regex yields < 2 parties from a preamble
+    # window). A short single-preamble classification does not need Sonnet.
+    # Override via the PARTY_EXTRACT_MODEL env var. This is a separate, small,
+    # non-Arabic-critical path — NOT gated by the Arabic clause-extraction
+    # accuracy suite (that gate protects ANTHROPIC_MODEL / clause extraction).
+    PARTY_EXTRACT_MODEL: str = "claude-haiku-4-5-20251001"
     OPENAI_API_KEY: str = ""
 
     # Max number of chunk-extraction Anthropic calls issued CONCURRENTLY for a
