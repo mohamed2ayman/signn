@@ -1,8 +1,10 @@
 import { Link, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
+import { useQuery } from '@tanstack/react-query';
 import type { RootState } from '@/store';
 import SignLogo from '@/components/common/SignLogo';
+import { getMyShares } from '@/services/api/sharedContractsService';
 
 interface NavItem {
   label: string;
@@ -144,6 +146,7 @@ function getIconKey(label: string): string {
     'nav.dashboard': 'dashboard',
     'nav.portfolio': 'analytics',
     'nav.projects': 'projects',
+    'nav.sharedWithMe': 'contracts',
     'nav.clauses': 'clauses',
     'nav.knowledge': 'knowledge',
     'nav.knowledgeAssets': 'knowledge',
@@ -180,6 +183,21 @@ export default function Sidebar({
   const location = useLocation();
   const { t } = useTranslation();
   const user = useSelector((s: RootState) => s.auth.user);
+
+  // "Shared with me" nav count (#8b). The item itself is ALWAYS visible —
+  // only the count pill + dot appear, and only when count > 0. The query is
+  // gated on the item being in this rail's items (the guest/contractor rail
+  // has no such item, and the admin portal doesn't use this component at
+  // all), and shares the ['guest-my-contracts'] cache with the page — one
+  // fetch serves both.
+  const hasSharedNavItem = items.some((i) => i.label === 'nav.sharedWithMe');
+  const { data: sharedRows } = useQuery({
+    queryKey: ['guest-my-contracts'],
+    queryFn: getMyShares,
+    enabled: hasSharedNavItem,
+    staleTime: 60_000,
+  });
+  const sharedCount = sharedRows?.length ?? 0;
 
   // Per-item role gating: items without `roles` are shown to everyone; items
   // with `roles` only when the current user's role is included (e.g. the
@@ -270,9 +288,19 @@ export default function Sidebar({
                   New
                 </span>
               )}
-              {isActive && item.label !== 'nav.store' && (
-                <span className="ltr:ml-auto rtl:mr-auto h-1.5 w-1.5 rounded-full bg-primary-400 flex-shrink-0" />
+              {!collapsed && item.label === 'nav.sharedWithMe' && sharedCount > 0 && (
+                <span className="ltr:ml-auto rtl:mr-auto flex flex-shrink-0 items-center gap-1.5">
+                  <span className="rounded-full bg-white/[0.12] px-1.5 py-0.5 text-[11px] font-bold leading-none text-navy-200">
+                    {sharedCount}
+                  </span>
+                  <span className="h-1.5 w-1.5 rounded-full bg-primary-400" />
+                </span>
               )}
+              {isActive &&
+                item.label !== 'nav.store' &&
+                !(item.label === 'nav.sharedWithMe' && sharedCount > 0 && !collapsed) && (
+                  <span className="ltr:ml-auto rtl:mr-auto h-1.5 w-1.5 rounded-full bg-primary-400 flex-shrink-0" />
+                )}
             </Link>
           );
         })}

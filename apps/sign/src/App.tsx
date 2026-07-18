@@ -19,6 +19,7 @@ import PortalSelectPage from '@/pages/auth/PortalSelectPage';
 import DashboardPage from '@/pages/app/DashboardPage';
 import PortfolioPage from '@/pages/app/PortfolioPage';
 import ProjectsPage from '@/pages/app/ProjectsPage';
+import SharedWithMePage from '@/pages/app/SharedWithMePage';
 import ProjectCreationPage from '@/pages/app/ProjectCreationPage';
 import ProjectDetailPage from '@/pages/app/ProjectDetailPage';
 import ContractDetailPage from '@/pages/app/ContractDetailPage';
@@ -74,6 +75,7 @@ import AcceptPartyInvitationPage from '@/pages/contractor/AcceptInvitationPage';
 
 // Guest Portal — external invited-party viewer (public, token-gated)
 import GuestViewerPage from '@/pages/guest/GuestViewerPage';
+import SharedContractViewerPage from '@/pages/guest/SharedContractViewerPage';
 
 // Legal pages (public)
 import LegalHubPage from '@/pages/legal/LegalHubPage';
@@ -130,6 +132,7 @@ const clientNavItems = [
   // OWNER_ADMIN-only — Sidebar filters by role (others never see the link).
   { label: 'nav.portfolio', path: '/app/portfolio', icon: '📈', roles: [UserRole.OWNER_ADMIN] },
   { label: 'nav.projects', path: '/app/projects', icon: '📁' },
+  { label: 'nav.sharedWithMe', path: '/app/shared-with-me', icon: '🤝' },
   { label: 'nav.clauses', path: '/app/clauses', icon: '📝' },
   { label: 'nav.knowledge', path: '/app/knowledge-assets', icon: '📚' },
   { label: 'nav.obligations', path: '/app/obligations', icon: '📋' },
@@ -224,6 +227,20 @@ function App() {
       <Route path="/guest/invitation/:token" element={<GuestViewerPage />} />
       <Route path="/guest/view" element={<GuestViewerPage />} />
 
+      {/* ─── "Shared with me" viewer entry (#8b) — AUTHED, session-gated ─── */}
+      {/* A managing user opening a contract another org shared with them
+          (guest_contract_access binding). Same standalone GuestLayout shell —
+          honest about the guest-scoped access — but requires a real session
+          (any authenticated role can hold bindings; no role gate). */}
+      <Route
+        path="/guest/shared/:contractId"
+        element={
+          <ProtectedRoute>
+            <SharedContractViewerPage />
+          </ProtectedRoute>
+        }
+      />
+
       {/* ─── Client Portal (/app/*) ─── */}
       <Route
         path="/app"
@@ -245,6 +262,7 @@ function App() {
           }
         />
         <Route path="projects" element={<ProjectsPage />} />
+        <Route path="shared-with-me" element={<SharedWithMePage />} />
         <Route path="projects/new" element={<ProjectCreationPage />} />
         <Route path="projects/:id" element={<ProjectDetailPage />} />
         <Route path="projects/:id/permissions" element={<ProjectPermissionsPage />} />
