@@ -298,6 +298,10 @@ class RiskAnalyzerAgent(BaseAgent):
             max_tokens=4096,
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_content}],
+            # Prompt caching: the ~1.5k-tok SYSTEM_PROMPT is identical across
+            # every batch of a run (batched + concurrent) — cache it so later
+            # batches read at 0.1x. Wrap happens AFTER scrub (system has no PII).
+            cache_system=True,
         )
         # Robust, fence-/truncation-tolerant parse; the _call_model chokepoint
         # is UNCHANGED — only the parsing of its response text.
