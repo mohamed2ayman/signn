@@ -20,6 +20,7 @@ import re
 
 from app.agents.clause_extractor import (
     ClauseExtractorAgent,
+    _ApiResult,
     _SPLIT_CLAUSE_FLAG_PREFIX,
 )
 
@@ -143,7 +144,7 @@ def test_extract_sets_split_clause_flag(mocker):
 
     def fake_call(user_content, gate=None):
         idx = int(re.search(r"ZMARK(\d+)Z", user_content).group(1))
-        return json.dumps(canned[idx])
+        return _ApiResult(text=json.dumps(canned[idx]), truncated=False)
 
     agent._call_api_with_retry = fake_call
     clauses = agent.extract("x" * 30_001)  # >30k → chunked path

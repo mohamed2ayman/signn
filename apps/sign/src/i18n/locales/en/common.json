@@ -1212,10 +1212,13 @@
       "humanReviewRecommended": "Review Recommended — Poor Scan Quality",
       "reuploadTip": "Remove this document and upload a higher-quality scan for best results.",
       "continueAnyway": "Continue anyway with partial extraction",
+      "incompleteExtractionTitle": "Extraction may be incomplete — please review",
+      "rerunExtraction": "Re-run extraction",
       "qualityWarning": {
         "blur": "Blurry scan detected (sharpness score: {{score}}). Text may be misread.",
         "contrast": "Low contrast detected (contrast score: {{score}}). Text may be faint or washed out.",
-        "rotation": "Page skew detected ({{degrees}}°). Clauses may be extracted in the wrong order."
+        "rotation": "Page skew detected ({{degrees}}°). Clauses may be extracted in the wrong order.",
+        "incompleteExtraction": "{{count}} section(s) were too large to fully process and some clauses may be missing. Please review the extracted clauses and re-run extraction if needed."
       }
     }
   },
