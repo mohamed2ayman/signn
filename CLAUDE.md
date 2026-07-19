@@ -301,6 +301,21 @@ model string** (Phase 8.1). A guard test (`ai-backend/tests/accuracy/test_model_
 fails if a literal is reintroduced. **Hard rule: never change the model without first running the
 Arabic accuracy suite** (`ai-backend/tests/accuracy/`) — see NEXT_PHASES 8.1.
 
+**Prompt caching is OPT-IN** (Anthropic ephemeral cache; PR #175). The single `_call_model`
+chokepoint in `ai-backend/app/agents/base_agent.py` takes a `cache_system` flag; when set it wraps
+the (POST-scrub) system prompt in a `cache_control` block so repeated calls with the same large
+system read the cached prefix at **0.1×** instead of 1× (write once at 1.25×). It is ENABLED on
+exactly TWO agents — `clause_extractor` + `risk_analyzer` (the biggest, most-repeated, bursty system
+prompts) — and OFF (byte-identical passthrough, same `system` object) everywhere else. Caching is
+**billing-only and proven output-neutral**: a cache-OFF control measured `cache_write/read = 0/0`
+while cache-ON was nonzero, so the ONLY difference between runs is the billing fields — Anthropic
+strips `cache_control` before generation, so it cannot change output (don't fear output change —
+lesson #268). **Before caching a NEW agent** know two gotchas so you don't cache blindly: the
+ephemeral cache has a **5-minute TTL** (refreshed on each read — only *bursty* callers hit it) and a
+**minimum cacheable size** (~1024 tokens Sonnet / ~2048 Haiku — a smaller system is silently NOT
+cached); caching a LOW-volume agent is net-NEGATIVE (pays the 1.25× write with no reads). Gate on
+big-prompt + bursty + high-volume paths only.
+
 Large-document clause extraction (the chunked path, documents **> 30,000 chars**) runs its
 per-chunk Anthropic calls **in parallel**, capped by `CLAUSE_EXTRACT_CONCURRENCY` in
 `ai-backend/app/config/settings.py` (default **3**, overridable via the `CLAUSE_EXTRACT_CONCURRENCY`
@@ -338,7 +353,8 @@ editing:* a **Swap First⇄Second** button + correction tracking on `contracts` 
 **`is_parties_edited_by_user` + `original_party_first_name` + `original_party_second_name`**
 snapshotted once by `updateParties` (party-NAME editing via `PUT /contracts/:id/parties`
 pre-existed; only the swap + the tracking are new; the root reversed-party EXTRACTION regex
-bug in `document-processing.service.ts` is a SEPARATE backlog item). Category dropdown
+bug in `document-processing.service.ts` was a SEPARATE item — now FIXED in PR #173, see
+"Contract Parties Extraction" below). Category dropdown
 labels are i18n'd via a shared `clauseTypeLabel` helper + a `clauseType.*` block (en/ar/fr),
 which ALSO fixed the pre-existing clause-type dropdown's Arabic + RTL positioning app-wide
 (level labels reuse the existing `portfolio.riskLevel.*` keys). **The Arabic/French
@@ -410,6 +426,33 @@ Different document types use different start markers:
 ✅ **Now CODE-ENFORCED (PR #113, merged `5c42041`).** Cover-page/TOC trimming lives in a pure, **label-INDEPENDENT** `computeCoverTrim` at `backend/src/modules/document-processing/utils/cover-trim.util.ts` — the old label-driven `trimCoverPages` in `document-processing.service.ts` is **removed**. The trimmer NEVER trims past the first numbered clause-1 marker; honors a genuine opener (`إنه في يوم` / `تم الاتفاق بين كل من`) only when it PRECEDES clause 1; **drops the bare `تم الاتفاق`** from the marker set (it is a substring of body phrases like `ما لم يتم الاتفاق على غير ذلك`); and when an opener is found AT/AFTER clause 1 it trims at the clause (preserving it) while surfacing **loudly** — a `warning` log + the `cover_trim_clause_guard` quality flag (observability only, never parks the doc). A Conditions doc mislabeled "Contract Agreement" no longer silently loses clauses 1 & 2 (verified live: Project4 reprocess 33→35 clauses, `التعريفات` + `قواعد العمل بالموقع` restored). See lesson #192.
 
 ✅ **Extended (PR #120, merged `7e58afd`).** The `CLAUSE_MARKERS` now also recognize the `البند رقم (N)` / `مادة رقم (N)` heading format (extra `رقم` word) and tolerate a space inside the parentheses (`( 1 )`), and the three Arabic markers are **line-anchored** (`^\s*` + `/m`) so a mid-body cross-reference (e.g. `…البند (2) من هذا العقد…` inside clause 1's definitions) is **NEVER** treated as the trim point — mirroring the clause-extractor's `_ARTICLE_BOUNDARY_RE` (the two regexes had drifted apart). A doc whose clause 1 uses `البند رقم ( 1 )` no longer loses clause 1 to the trimmer matching a cross-reference instead of the real heading (verified live: Project8 reprocess 14→15 clauses, `التمهيد والمرفقات والتعريفات` restored). Same silent-clause-loss family as lesson #192, new trigger. See lesson #194.
+
+### Contract Parties Extraction (rewritten — PR #173)
+Auto-extraction of the two contracting parties runs in `document-processing.service.ts` during
+text extraction (managing uploads only — SUPPRESSED for guests) and writes the **legacy**
+`contracts.party_first_name` / `party_second_name` fields. The old Arabic-only, whole-document
+regex fixed only **3/15** gold contracts (first/second missing or swapped — lesson #242). Rewritten:
+
+- **Preamble-window search, not the whole document** — extraction runs on the PREAMBLE window (the
+  recitals/party block BEFORE clause 1) via `computePreambleWindow` (in `cover-trim.util.ts`), so a
+  body cross-reference (`…between the Attachments…`, `…المبرم بين الطرفين…`) can never be scraped
+  into a party slot. It runs on the RAW text (English preambles are trimmed out of the stored text).
+- **Arabic + English patterns** — Arabic `تم الاتفاق بين كل من: <A> (طرف أول) و <B>` + `الفريق`
+  variants, and English `between <A> and <B>` / `First Party` / `Second Party`. The old Arabic-only
+  gate is gone.
+- **Haiku fallback** — when the regex yields **< 2** parties, one synchronous
+  `POST /agents/extract-parties` (Haiku via `PARTY_EXTRACT_MODEL`, through the `_call_model`
+  chokepoint, `scrub=False` — parties ARE the target) recovers English/bilingual cases. Failure →
+  keep the regex result.
+- **Best-result-wins across a contract's documents** — a later Agreement doc UPGRADES an earlier
+  partial; a later partial never DOWNGRADES a stored full result.
+- **Never overwrites a human edit** — the UPDATE is guarded on `is_parties_edited_by_user = false`
+  (both in the decision helper and the SQL WHERE).
+
+**Deferred:** the extractor writes only the legacy `contracts` fields — wiring it to the T0c
+`contract_parties` spine is a backlog item (NEXT_PHASES 8.3). **Out of scope:** contracts whose
+Agreement document was never uploaded (no preamble exists in any file) — the extractor cannot invent
+parties absent from every document. See `docs/parties-extraction-bug-investigation.md`.
 
 ### Arabic Clause Markers — Per Document Type
 Construction contracts use different clause markers depending on document type.
@@ -520,15 +563,36 @@ See Guideline 7 in SYSTEM_PROMPT.
 - Cross-reference: `مادة (N)` mid-sentence after من / طبقا للمادة / بموجب مادة
 Cross-references are NEVER clause boundaries. See Guideline 11 in SYSTEM_PROMPT.
 
-### max_tokens Tiers — Use These Values
-| Chunk Size | max_tokens | Savings vs 64k |
-|-----------|-----------|----------------|
-| < 10,000 chars | 16,000 | 75% |
-| < 20,000 chars | 24,000 | 62% |
-| ≥ 20,000 chars | 32,000 | 50% |
+### max_tokens Tiers — Use These Values (raised in PR #177)
+| Chunk Size (input chars) | max_tokens |
+|-----------|-----------|
+| < 6,000 chars | 24,000 |
+| < 12,000 chars | 40,000 |
+| ≥ 12,000 chars | 56,000 |
 
-⚠️ Do NOT use dynamic formula (chars/4 * 1.5) — underestimates Arabic output density and causes truncation.
-⚠️ Do NOT hardcode 64,000 — 6x more expensive than needed.
+`max_tokens` is a CEILING billed per ACTUAL output token — a generous ceiling costs nothing when the
+response is short; it only stops dense-Arabic verbatim output being cut off. The OLD tiers
+(16k/24k/32k) were too tight: a ~15k-char Arabic chunk's verbatim JSON overran the 24k ceiling and
+truncated. A truncation-aware retry can bump further, up to **64,000**.
+
+⚠️ Do NOT use a dynamic formula (chars/4 * 1.5) — it underestimates Arabic output density.
+⚠️ Do NOT treat these as a cost lever — max_tokens does not bill unless the model actually emits the
+tokens; raise it freely to prevent truncation.
+
+**Truncation safety net (PR #177) — NEVER silently drop clauses.** A `max_tokens` cut-off is an HTTP
+**200** with `stop_reason == 'max_tokens'`, NOT an exception — the old code returned the truncated
+text as "success", `_parse_json` failed a full `json.loads` and returned `[]`, and the chunk's
+clauses were SILENTLY lost (nondeterministic ~50% loss on dense 81k Arabic even at `temperature=0`
+— lesson #271). Now: `_call_api_with_retry` inspects `stop_reason` and on `max_tokens` **retries
+with doubled max_tokens (up to 64k)**; `_parse_json` has a `raw_decode` **salvage** path (keeps the
+objects that DID parse instead of returning `[]`); and an **effect-based**
+`clause_extraction_incomplete:<n>` quality flag fires whenever a chunk's array can't be fully parsed
+→ persisted to `document.quality_flags` (terminal status UNCHANGED — no park) → frontend surfaces an
+amber "extraction may be incomplete — please review" banner. **Hard rule: always inspect
+`stop_reason`; never treat an empty/unparseable JSON parse as "complete"** (lesson #269). Live-proven
+on the 81k GC fixture: **38/38, no truncation** (every chunk `stop_reason=end_turn`, largest chunk
+used the 56k ceiling). Note: FIX A (sentence/sub-split PREVENTION) was reverted — its pieces are
+un-stitchable by PR #117 (lesson #270); see NEXT_PHASES 8.3 backlog.
 
 ---
 
