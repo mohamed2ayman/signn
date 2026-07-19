@@ -254,19 +254,20 @@ export default function GuestContractView({
                       data-testid="guest-import"
                       className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-primary-600"
                     >
+                      {/* The design's arrow-into-tray glyph (verbatim paths). */}
                       <svg
                         aria-hidden="true"
-                        className="h-3.5 w-3.5"
+                        className="h-4 w-4"
                         fill="none"
                         viewBox="0 0 24 24"
                         stroke="currentColor"
-                        strokeWidth={2}
+                        strokeWidth={1.85}
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
                       >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          d="M12 3v10m0 0l-3.5-3.5M12 13l3.5-3.5M5 17h14a1 1 0 001-1v0M4 21h16"
-                        />
+                        <path d="M12 3v10" />
+                        <path d="m8 9 4 4 4-4" />
+                        <path d="M4 14v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" />
                       </svg>
                       {t('sharedWithMe.import.button')}
                     </button>

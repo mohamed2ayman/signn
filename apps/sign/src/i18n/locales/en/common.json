@@ -1595,7 +1595,7 @@
     "import": {
       "button": "Import to my workspace",
       "title": "Import to my workspace?",
-      "from": "{{name}} — from {{org}}",
+      "from": "from {{org}}",
       "point1": {
         "title": "A copy is created in your organization.",
         "body": "The original stays with {{org}} and is not modified or notified."
@@ -1606,7 +1606,7 @@
       },
       "point3": {
         "title": "The copy does not stay in sync.",
-        "body": "If {{org}} later amends the original, your copy is unaffected."
+        "body": "If they later amend the original, your copy is unaffected."
       },
       "project": "Import into project",
       "loadingProjects": "Loading your projects…",
@@ -1616,14 +1616,14 @@
       "importing": "Importing contract…",
       "importingBody": "Copying the contract and its clauses into {{project}}.",
       "successTitle": "Imported to your workspace",
-      "successBody": "\"{{name}}\" is now in {{project}}. It's yours — run your own analysis anytime.",
+      "successBody": "{{name}} is now in {{project}}. It's yours — run your own analysis anytime.",
       "open": "Open my copy",
       "stay": "Stay here",
       "failTitle": "Import failed",
       "failBody": "Something went wrong while importing. No copy was created.",
       "retry": "Try again",
-      "planLimitTitle": "Your plan's contract limit has been reached",
-      "planLimitBody": "Upgrade your plan to import more contracts."
+      "viewPlans": "View plans",
+      "planLimitBody": "You've reached your plan's contract limit. Upgrade your plan or free up space to import this contract."
     }
   }
 }

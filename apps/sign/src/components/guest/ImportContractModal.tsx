@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import ModalShell from '@/components/obligations/ModalShell';
@@ -14,21 +14,21 @@ type ErrorKind = 'revoked' | 'planLimit' | 'generic';
 
 /**
  * "Import to my workspace" (#8d) — the confirm → importing → success/failure
- * modal, on the app's shared ModalShell (the guest identity-modal precedent).
+ * modal, built to the approved design export (SIGN_Shared_Contracts.html):
  *
- * Semantics the confirm state must make unmistakable (the design's three
- * points): (1) a COPY is created in the importer's org — the original stays
- * with the sharing org, unmodified and un-notified; (2) the importer runs
- * their OWN analysis on the copy; (3) the copy does NOT stay in sync.
- *
- * Failure branches:
- *   - revoked (404): the binding disappeared between page-open and click —
- *     the design's "no longer shared with you" state, exit back to the list.
- *   - planLimit: keyed on a `PLAN_LIMIT_CONTRACTS` error code. DORMANT in v1 —
- *     no per-org contract-count limit exists in the backend (only the dead
- *     org-blind SubscriptionGuard), so this branch is currently UNREACHABLE;
- *     it exists so the UI is ready the day a real quota model ships.
- *   - generic: stays open for a deliberate retry.
+ *   CONFIRM — identity-echo card (contract name + "from {org}"), the three
+ *   semantics as icon-disc rows (copy/primary · shield-check/green ·
+ *   link/amber), then the destination-project picker. Footer: Cancel +
+ *   Import contract.
+ *   IMPORTING — 44px primary spinner + "Importing contract…" + the
+ *   copying-into-{project} subline. Close inert.
+ *   SUCCESS — 58px emerald check disc + "Imported to your workspace" +
+ *   subline; Stay here (outline) + Open my copy (filled) → the new
+ *   contract's managing detail page.
+ *   FAILURE — one unified layout (58px danger alert disc + "Import failed" +
+ *   a cause-specific body): revoked (404 — the binding disappeared) exits
+ *   back to Shared with me; plan-limit (`PLAN_LIMIT_CONTRACTS` — DORMANT in
+ *   v1, no backend quota emits it) offers View plans; generic retries.
  *
  * Re-entry safety (lesson #238): a synchronous in-flight ref guards the
  * confirm action — acquired BEFORE the request (two same-tick clicks produce
@@ -148,24 +148,6 @@ export default function ImportContractModal({
           {t('sharedWithMe.import.confirm')}
         </button>
       </>
-    ) : phase === 'error' && errorKind === 'generic' ? (
-      <>
-        <button
-          type="button"
-          onClick={handleClose}
-          className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 transition hover:border-gray-300 hover:bg-gray-50"
-        >
-          {t('sharedWithMe.import.cancel')}
-        </button>
-        <button
-          type="button"
-          onClick={() => setPhase('confirm')}
-          data-testid="import-retry"
-          className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-primary-600"
-        >
-          {t('sharedWithMe.import.retry')}
-        </button>
-      </>
     ) : undefined;
 
   return (
@@ -173,50 +155,112 @@ export default function ImportContractModal({
       isOpen={isOpen}
       onClose={handleClose}
       title={t('sharedWithMe.import.title')}
-      subtitle={t('sharedWithMe.import.from', { name: contractName, org })}
       size="md"
       footer={footer}
     >
       {phase === 'confirm' && (
         <div className="space-y-4">
-          {/* The three semantics — the heart of the modal (design §8.2). */}
-          <ul className="space-y-3">
-            <li className="flex gap-3">
-              <span aria-hidden="true" className="mt-0.5 text-base">
-                📄
+          {/* Identity echo — the contract being imported + who shared it
+              (the design's gray card, NOT a shell subtitle). */}
+          <div className="rounded-xl border border-gray-200 bg-gray-50/60 px-3.5 py-3">
+            <p
+              className="text-sm font-bold text-gray-900"
+              dir="auto"
+              style={{ unicodeBidi: 'plaintext' }}
+            >
+              {contractName}
+            </p>
+            <p className="mt-0.5 text-[12.5px] text-gray-500" dir="auto">
+              {t('sharedWithMe.import.from', { org })}
+            </p>
+          </div>
+
+          {/* The three semantics — icon-disc rows (the heart of the modal). */}
+          <ul className="space-y-3.5">
+            <li className="flex items-start gap-3">
+              {/* Copy icon — primary tint */}
+              <span
+                aria-hidden="true"
+                className="inline-flex h-[34px] w-[34px] flex-shrink-0 items-center justify-center rounded-[10px] bg-primary/10 text-primary"
+              >
+                <svg
+                  width="17"
+                  height="17"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={1.7}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <rect x="9" y="9" width="11" height="11" rx="2" />
+                  <path d="M6.5 15H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v.5" />
+                </svg>
               </span>
-              <div>
-                <p className="text-sm font-semibold text-gray-900">
+              <div className="min-w-0">
+                <p className="text-[13.5px] font-bold text-gray-900">
                   {t('sharedWithMe.import.point1.title')}
                 </p>
-                <p className="text-sm text-gray-600" dir="auto">
+                <p className="mt-0.5 text-[12.5px] leading-relaxed text-gray-500" dir="auto">
                   {t('sharedWithMe.import.point1.body', { org })}
                 </p>
               </div>
             </li>
-            <li className="flex gap-3">
-              <span aria-hidden="true" className="mt-0.5 text-base">
-                🛡️
+            <li className="flex items-start gap-3">
+              {/* Shield-check icon — green tint */}
+              <span
+                aria-hidden="true"
+                className="inline-flex h-[34px] w-[34px] flex-shrink-0 items-center justify-center rounded-[10px] bg-emerald-50 text-emerald-600"
+              >
+                <svg
+                  width="17"
+                  height="17"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={1.7}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M12 3l7 2.5v5.5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V5.5z" />
+                  <path d="m9.5 12 1.8 1.8L15 10" />
+                </svg>
               </span>
-              <div>
-                <p className="text-sm font-semibold text-gray-900">
+              <div className="min-w-0">
+                <p className="text-[13.5px] font-bold text-gray-900">
                   {t('sharedWithMe.import.point2.title')}
                 </p>
-                <p className="text-sm text-gray-600">
+                <p className="mt-0.5 text-[12.5px] leading-relaxed text-gray-500">
                   {t('sharedWithMe.import.point2.body')}
                 </p>
               </div>
             </li>
-            <li className="flex gap-3">
-              <span aria-hidden="true" className="mt-0.5 text-base">
-                🔗
+            <li className="flex items-start gap-3">
+              {/* Link icon — amber tint */}
+              <span
+                aria-hidden="true"
+                className="inline-flex h-[34px] w-[34px] flex-shrink-0 items-center justify-center rounded-[10px] bg-amber-50 text-amber-600"
+              >
+                <svg
+                  width="17"
+                  height="17"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={1.7}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M10 14a4 4 0 0 0 5.7.3l2-2A4 4 0 0 0 12 6.6l-1 1" />
+                  <path d="M14 10a4 4 0 0 0-5.7-.3l-2 2A4 4 0 0 0 12 17.4l1-1" />
+                </svg>
               </span>
-              <div>
-                <p className="text-sm font-semibold text-gray-900">
+              <div className="min-w-0">
+                <p className="text-[13.5px] font-bold text-gray-900">
                   {t('sharedWithMe.import.point3.title')}
                 </p>
-                <p className="text-sm text-gray-600" dir="auto">
-                  {t('sharedWithMe.import.point3.body', { org })}
+                <p className="mt-0.5 text-[12.5px] leading-relaxed text-gray-500">
+                  {t('sharedWithMe.import.point3.body')}
                 </p>
               </div>
             </li>
@@ -226,7 +270,7 @@ export default function ImportContractModal({
           <div>
             <label
               htmlFor="import-destination-project"
-              className="mb-1 block text-sm font-medium text-gray-700"
+              className="mb-1.5 block text-xs font-bold text-gray-500"
             >
               {t('sharedWithMe.import.project')}
             </label>
@@ -247,7 +291,7 @@ export default function ImportContractModal({
                 value={selectedProjectId}
                 onChange={(e) => setSelectedProjectId(e.target.value)}
                 data-testid="import-project-select"
-                className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                className="h-[42px] w-full rounded-[10px] border border-gray-200 bg-gray-50/60 px-3.5 text-sm font-semibold text-gray-900 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
               >
                 {projects.map((p) => (
                   <option key={p.id} value={p.id}>
@@ -262,14 +306,14 @@ export default function ImportContractModal({
 
       {phase === 'importing' && (
         <div
-          className="flex flex-col items-center gap-3 py-8 text-center"
+          className="flex flex-col items-center gap-4 py-8 text-center"
           data-testid="import-importing"
         >
-          <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-          <p className="text-sm font-medium text-gray-900">
+          <div className="h-11 w-11 animate-spin rounded-full border-2 border-gray-200 border-t-primary" />
+          <p className="text-base font-bold text-gray-900">
             {t('sharedWithMe.import.importing')}
           </p>
-          <p className="text-sm text-gray-500" dir="auto">
+          <p className="max-w-[340px] text-[13px] leading-relaxed text-gray-500" dir="auto">
             {t('sharedWithMe.import.importingBody', {
               project: selectedProject?.name ?? '',
             })}
@@ -282,23 +326,26 @@ export default function ImportContractModal({
           className="flex flex-col items-center gap-3 py-6 text-center"
           data-testid="import-success"
         >
-          {/* Emerald check disc — the GuestUploadStatus success vocabulary. */}
-          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100">
+          {/* 58px emerald check disc — the design's success vocabulary. */}
+          <div className="flex h-[58px] w-[58px] items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
             <svg
-              className="h-6 w-6 text-emerald-600"
+              width="30"
+              height="30"
+              viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
-              strokeWidth={2.5}
-              viewBox="0 0 24 24"
+              strokeWidth={2.2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
               aria-hidden="true"
             >
-              <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+              <path d="m5 13 4 4 10-11" />
             </svg>
           </div>
-          <p className="text-base font-semibold text-gray-900">
+          <p className="text-[17px] font-extrabold text-gray-900">
             {t('sharedWithMe.import.successTitle')}
           </p>
-          <p className="text-sm text-gray-600" dir="auto">
+          <p className="max-w-[360px] text-[13.5px] leading-relaxed text-gray-500" dir="auto">
             {t('sharedWithMe.import.successBody', {
               name: contractName,
               project: selectedProject?.name ?? '',
@@ -316,7 +363,7 @@ export default function ImportContractModal({
               type="button"
               onClick={() => navigate(`/app/contracts/${result.id}`)}
               data-testid="import-open-copy"
-              className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-primary-600"
+              className="rounded-lg bg-primary px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-primary-600"
             >
               {t('sharedWithMe.import.open')}
             </button>
@@ -325,41 +372,89 @@ export default function ImportContractModal({
       )}
 
       {phase === 'error' && (
-        <div className="py-2" data-testid="import-error">
-          {errorKind === 'revoked' ? (
-            <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-center">
-              <p className="text-sm font-semibold text-red-800">
-                {t('sharedWithMe.revoked.title')}
-              </p>
-              <p className="mt-1 text-sm text-red-700">
-                {t('sharedWithMe.revoked.body')}
-              </p>
-              <Link
-                to="/app/shared-with-me"
-                className="mt-3 inline-block rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-600"
+        <div
+          className="flex flex-col items-center gap-3 py-6 text-center"
+          data-testid="import-error"
+        >
+          {/* 58px danger alert disc — ONE unified failure layout; the body
+              carries the cause. */}
+          <div className="flex h-[58px] w-[58px] items-center justify-center rounded-full bg-red-50 text-red-500">
+            <svg
+              width="28"
+              height="28"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={1.9}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <circle cx="12" cy="12" r="9" />
+              <path d="M12 7.5v5.5" />
+              <path d="M12 16.2h.01" />
+            </svg>
+          </div>
+          <p className="text-[17px] font-extrabold text-gray-900">
+            {t('sharedWithMe.import.failTitle')}
+          </p>
+          <p className="max-w-[360px] text-[13.5px] leading-relaxed text-gray-500">
+            {errorKind === 'revoked'
+              ? `${t('sharedWithMe.revoked.title')} ${t('sharedWithMe.revoked.body')}`
+              : errorKind === 'planLimit'
+                ? t('sharedWithMe.import.planLimitBody')
+                : t('sharedWithMe.import.failBody')}
+          </p>
+          <div className="mt-2 flex flex-col-reverse gap-2 sm:flex-row">
+            {errorKind === 'revoked' ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setPhase('confirm')}
+                  data-testid="import-retry"
+                  className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 transition hover:border-gray-300 hover:bg-gray-50"
+                >
+                  {t('sharedWithMe.import.retry')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => navigate('/app/shared-with-me')}
+                  data-testid="import-back-to-shared"
+                  className="rounded-lg bg-primary px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-primary-600"
+                >
+                  {t('sharedWithMe.banner.back')}
+                </button>
+              </>
+            ) : errorKind === 'planLimit' ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setPhase('confirm')}
+                  data-testid="import-retry"
+                  className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 transition hover:border-gray-300 hover:bg-gray-50"
+                >
+                  {t('sharedWithMe.import.retry')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => navigate('/app/settings/subscription')}
+                  data-testid="import-view-plans"
+                  className="rounded-lg bg-primary px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-primary-600"
+                >
+                  {t('sharedWithMe.import.viewPlans')}
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setPhase('confirm')}
+                data-testid="import-retry"
+                className="rounded-lg bg-primary px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-primary-600"
               >
-                {t('sharedWithMe.banner.back')}
-              </Link>
-            </div>
-          ) : errorKind === 'planLimit' ? (
-            <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-center">
-              <p className="text-sm font-semibold text-amber-800">
-                {t('sharedWithMe.import.planLimitTitle')}
-              </p>
-              <p className="mt-1 text-sm text-amber-700">
-                {t('sharedWithMe.import.planLimitBody')}
-              </p>
-            </div>
-          ) : (
-            <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-center">
-              <p className="text-sm font-semibold text-red-800">
-                {t('sharedWithMe.import.failTitle')}
-              </p>
-              <p className="mt-1 text-sm text-red-700">
-                {t('sharedWithMe.import.failBody')}
-              </p>
-            </div>
-          )}
+                {t('sharedWithMe.import.retry')}
+              </button>
+            )}
+          </div>
         </div>
       )}
     </ModalShell>

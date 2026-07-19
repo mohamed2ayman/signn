@@ -116,18 +116,26 @@ describe('ImportContractModal (#8d)', () => {
     expect(mockNavigate).toHaveBeenCalledWith('/app/contracts/new-1');
   });
 
-  it('revoked: a 404 (binding gone) shows the revoked state with the way back — no crash, no generic error', async () => {
+  it('revoked: a 404 (binding gone) shows the unified "Import failed" layout with the revoked cause + the way back', async () => {
     vi.mocked(importSharedContract).mockRejectedValue(axiosError(404));
     renderModal();
     await screen.findByTestId('import-project-select');
     fireEvent.click(screen.getByTestId('import-confirm'));
     await screen.findByTestId('import-error');
-    expect(screen.getByText('sharedWithMe.revoked.title')).toBeInTheDocument();
-    expect(screen.getByText('sharedWithMe.banner.back')).toBeInTheDocument();
-    expect(screen.queryByText('sharedWithMe.import.failTitle')).not.toBeInTheDocument();
+    // The design's unified failure: one "Import failed" title, the cause in
+    // the body (the shipped revoked sentences), Try again + the filled
+    // Back-to-Shared-with-me action.
+    expect(screen.getByText('sharedWithMe.import.failTitle')).toBeInTheDocument();
+    expect(
+      screen.getByText(/sharedWithMe\.revoked\.title sharedWithMe\.revoked\.body/),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId('import-retry')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('import-back-to-shared'));
+    expect(mockNavigate).toHaveBeenCalledWith('/app/shared-with-me');
+    expect(screen.queryByText('sharedWithMe.import.failBody')).not.toBeInTheDocument();
   });
 
-  it('plan-limit branch exists (DORMANT — no backend quota emits it in v1)', async () => {
+  it('plan-limit branch exists (DORMANT — no backend quota emits it in v1): unified layout + View plans', async () => {
     vi.mocked(importSharedContract).mockRejectedValue(
       axiosError(403, { code: 'PLAN_LIMIT_CONTRACTS' }),
     );
@@ -135,7 +143,10 @@ describe('ImportContractModal (#8d)', () => {
     await screen.findByTestId('import-project-select');
     fireEvent.click(screen.getByTestId('import-confirm'));
     await screen.findByTestId('import-error');
-    expect(screen.getByText('sharedWithMe.import.planLimitTitle')).toBeInTheDocument();
+    expect(screen.getByText('sharedWithMe.import.failTitle')).toBeInTheDocument();
+    expect(screen.getByText('sharedWithMe.import.planLimitBody')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('import-view-plans'));
+    expect(mockNavigate).toHaveBeenCalledWith('/app/settings/subscription');
   });
 
   it('generic failure → "Try again" returns to confirm and a deliberate retry re-POSTs (guard releases — lesson #238)', async () => {

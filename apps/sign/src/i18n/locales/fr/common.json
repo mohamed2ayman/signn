@@ -1604,7 +1604,7 @@
     "import": {
       "button": "Importer dans mon espace",
       "title": "Importer dans mon espace ?",
-      "from": "{{name}} — de {{org}}",
+      "from": "de {{org}}",
       "point1": {
         "title": "Une copie est créée dans votre organisation.",
         "body": "L’original reste chez {{org}} et n’est ni modifié ni notifié."
@@ -1615,7 +1615,7 @@
       },
       "point3": {
         "title": "La copie ne reste pas synchronisée.",
-        "body": "Si {{org}} modifie l’original plus tard, votre copie n’est pas affectée."
+        "body": "S’ils modifient l’original plus tard, votre copie n’est pas affectée."
       },
       "project": "Importer dans le projet",
       "loadingProjects": "Chargement de vos projets…",
@@ -1625,14 +1625,14 @@
       "importing": "Importation du contrat…",
       "importingBody": "Copie du contrat et de ses clauses dans {{project}}.",
       "successTitle": "Importé dans votre espace",
-      "successBody": "« {{name}} » est maintenant dans {{project}}. Il est à vous — lancez votre propre analyse à tout moment.",
+      "successBody": "{{name}} est maintenant dans {{project}}. Il est à vous — lancez votre propre analyse à tout moment.",
       "open": "Ouvrir ma copie",
       "stay": "Rester ici",
       "failTitle": "Échec de l’importation",
       "failBody": "Une erreur s’est produite lors de l’importation. Aucune copie n’a été créée.",
       "retry": "Réessayer",
-      "planLimitTitle": "La limite de contrats de votre forfait est atteinte",
-      "planLimitBody": "Passez à un forfait supérieur pour importer davantage de contrats."
+      "viewPlans": "Voir les forfaits",
+      "planLimitBody": "Vous avez atteint la limite de contrats de votre forfait. Passez à un forfait supérieur ou libérez de l’espace pour importer ce contrat."
     }
   }
 }
