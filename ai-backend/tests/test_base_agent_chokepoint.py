@@ -10,7 +10,10 @@ the call MECHANISM, not what is sent to Anthropic:
     extractor) is invoked with EXACTLY the kwargs the agent sent before the
     refactor: ``model`` = the centralized model id, the agent's own
     ``max_tokens``, its ``system`` prompt, its ``messages`` — and NOTHING else
-    (no injected ``temperature``, nothing dropped).
+    (no injected ``temperature``, nothing dropped). EXCEPTION (prompt-caching,
+    Step 1): the two opt-in agents — ``clause_extractor`` and ``risk_analyzer`` —
+    send ``system`` as an ephemeral cache_control block instead of a bare string
+    (``cache_system=True``); the other seven still send a plain string.
   * clause_extractor specifically still hits ``with_raw_response.create`` and
     ``.parse()``s the raw wrapper (its rate-limit header path). (The header READ
     is additionally covered by the gate tests in
@@ -70,17 +73,19 @@ def _capture_plain_call(mocker, agent_cls, invoke, ret_text: str) -> dict:
     return client.messages.create.call_args.kwargs
 
 
-# One row per simple agent: (class, invoke, expected max_tokens, expected system, mock JSON).
+# One row per simple agent: (class, invoke, expected max_tokens, expected system,
+# mock JSON, caches_system). `caches_system` is True for the prompt-caching
+# opt-in agents (Step 1) — their `system` is sent as an ephemeral cache block.
 SIMPLE_CASES = [
     pytest.param(
         summarizer.SummarizerAgent,
         lambda a: a.summarize("Some contract text."),
-        4096, summarizer.SYSTEM_PROMPT, "{}", id="summarizer",
+        4096, summarizer.SYSTEM_PROMPT, "{}", False, id="summarizer",
     ),
     pytest.param(
         risk_analyzer.RiskAnalyzerAgent,
         lambda a: a.analyze([{"id": "1", "text": "A sample clause."}]),
-        4096, risk_analyzer.SYSTEM_PROMPT, "[]", id="risk_analyzer",
+        4096, risk_analyzer.SYSTEM_PROMPT, "[]", True, id="risk_analyzer",
     ),
     pytest.param(
         compliance_checker.ComplianceCheckerAgent,
@@ -89,7 +94,7 @@ SIMPLE_CASES = [
             jurisdiction="EG",
             clauses=[{"id": "1", "text": "A sample clause."}],
         ),
-        8192, compliance_checker.SYSTEM_PROMPT, "{}", id="compliance_checker",
+        8192, compliance_checker.SYSTEM_PROMPT, "{}", False, id="compliance_checker",
     ),
     pytest.param(
         conflict_detector.ConflictDetectorAgent,
@@ -97,12 +102,12 @@ SIMPLE_CASES = [
             [{"id": "1", "text": "A sample clause.",
               "document_label": "DocA", "document_priority": 1}]
         ),
-        8192, conflict_detector.SYSTEM_PROMPT, "{}", id="conflict_detector",
+        8192, conflict_detector.SYSTEM_PROMPT, "{}", False, id="conflict_detector",
     ),
     pytest.param(
         obligations_extractor.ObligationsExtractorAgent,
         lambda a: a.extract([{"id": "1", "text": "A sample clause."}]),
-        4096, obligations_extractor.SYSTEM_PROMPT, "[]", id="obligations_extractor",
+        4096, obligations_extractor.SYSTEM_PROMPT, "[]", False, id="obligations_extractor",
     ),
     pytest.param(
         diff_analyzer.DiffAnalyzerAgent,
@@ -110,38 +115,48 @@ SIMPLE_CASES = [
             [{"id": "1", "text": "Original clause."}],
             [{"id": "1", "text": "Modified clause."}],
         ),
-        4096, diff_analyzer.SYSTEM_PROMPT, "{}", id="diff_analyzer",
+        4096, diff_analyzer.SYSTEM_PROMPT, "{}", False, id="diff_analyzer",
     ),
     pytest.param(
         research_agent.ResearchAgent,
         lambda a: a.research(["delay damages"], jurisdiction="EG"),
-        4096, research_agent.SYSTEM_PROMPT, "[]", id="research_agent",
+        4096, research_agent.SYSTEM_PROMPT, "[]", False, id="research_agent",
     ),
     pytest.param(
         conversational_agent.ConversationalAgent,
         lambda a: a.chat("What is the payment term?"),
         4096, conversational_agent.SYSTEM_PROMPT,
-        '{"response": "ok", "citations": []}', id="conversational_agent",
+        '{"response": "ok", "citations": []}', False, id="conversational_agent",
     ),
 ]
 
 
+def _expected_system(system: str, cached: bool):
+    """The system value we expect on the wire: a bare string, or (for the
+    prompt-caching opt-in agents) an ephemeral cache_control text block."""
+    if cached:
+        return [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
+    return system
+
+
 @pytest.mark.parametrize(
-    "agent_cls, invoke, expected_max_tokens, expected_system, ret_text", SIMPLE_CASES
+    "agent_cls, invoke, expected_max_tokens, expected_system, ret_text, caches_system",
+    SIMPLE_CASES,
 )
 def test_agent_forwards_unchanged_kwargs(
-    mocker, agent_cls, invoke, expected_max_tokens, expected_system, ret_text
+    mocker, agent_cls, invoke, expected_max_tokens, expected_system, ret_text, caches_system
 ):
     kw = _capture_plain_call(mocker, agent_cls, invoke, ret_text)
 
     # The strongest no-change assertion: EXACTLY these four kwargs reach Anthropic
-    # — nothing injected (no temperature), nothing dropped.
+    # — nothing injected (no temperature), nothing dropped. (Prompt caching only
+    # changes the SHAPE of `system`, never the set of kwargs.)
     assert set(kw) == {"model", "max_tokens", "system", "messages"}, (
         f"chokepoint must forward exactly these 4 kwargs; got {sorted(kw)}"
     )
     assert kw["model"] == get_settings().ANTHROPIC_MODEL
     assert kw["max_tokens"] == expected_max_tokens
-    assert kw["system"] == expected_system
+    assert kw["system"] == _expected_system(expected_system, caches_system)
     assert isinstance(kw["messages"], list) and kw["messages"]
     assert kw["messages"][-1]["role"] == "user"
     assert "temperature" not in kw
@@ -170,7 +185,12 @@ def test_clause_extractor_uses_raw_path_and_forwards_kwargs(mocker):
         f"raw chokepoint must forward exactly these 4 kwargs; got {sorted(kw)}"
     )
     assert kw["model"] == get_settings().ANTHROPIC_MODEL
-    assert kw["system"] == clause_extractor.SYSTEM_PROMPT
+    # Prompt caching (Step 1): clause_extractor opts in, so `system` is sent as an
+    # ephemeral cache_control block rather than a bare string.
+    assert kw["system"] == [
+        {"type": "text", "text": clause_extractor.SYSTEM_PROMPT,
+         "cache_control": {"type": "ephemeral"}}
+    ]
     assert isinstance(kw["max_tokens"], int) and kw["max_tokens"] > 0  # dynamically sized
     assert "temperature" not in kw
 
@@ -223,10 +243,10 @@ def test_call_model_temperature_none_is_omitted_from_wire(mocker):
 # ─────────────────────────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize(
-    "agent_cls, invoke, _max_tokens, _system, ret_text", SIMPLE_CASES
+    "agent_cls, invoke, _max_tokens, _system, ret_text, _caches_system", SIMPLE_CASES
 )
 def test_camp1_agents_opt_in_to_scrub(
-    mocker, agent_cls, invoke, _max_tokens, _system, ret_text
+    mocker, agent_cls, invoke, _max_tokens, _system, ret_text, _caches_system
 ):
     """Every Camp-1 agent passes ``scrub=True`` to the chokepoint — the
     explicit, per-agent opt-in surface of Slice 1."""

@@ -71,6 +71,7 @@ class BaseAgent:
         temperature: float | None = None,
         raw: bool = False,
         scrub: bool = False,
+        cache_system: bool = False,
         **kwargs: Any,
     ) -> Any:
         """Single chokepoint for every model call.
@@ -98,6 +99,17 @@ class BaseAgent:
         ``raw=True`` raises ``ValueError``: the only raw caller is the clause
         extractor, and extraction is unscrubbed by design (BAA posture, D1).
 
+        ``cache_system=True`` (opt-in; clause_extractor + risk_analyzer today):
+        the (post-scrub) system prompt is sent as an Anthropic prompt-caching
+        block — ``[{"type":"text","text":<system>,"cache_control":{"type":
+        "ephemeral"}}]`` — so repeated calls with the SAME large system read the
+        cached prefix at 0.1x instead of 1x (write once at 1.25x, 5-min TTL). It
+        is applied AFTER scrubbing, so the cached bytes match what actually goes
+        on the wire. Below the model's minimum cacheable size (1024 tok Sonnet /
+        2048 tok Haiku) Anthropic silently ignores the block — no benefit, no
+        harm. With ``cache_system=False`` (default) the ``system`` value is passed
+        through UNCHANGED (same object) — byte-identical to before.
+
         ``model=self._model`` is injected here (the single centralized source).
         ``temperature=None`` (the default) is OMITTED from the API call — no
         agent sends one today, and injecting one would change the wire payload;
@@ -121,10 +133,23 @@ class BaseAgent:
                         "pii_scrub: scrubbed %s before model call",
                         scrubber.counts_summary(),
                     )
+            # Prompt caching (opt-in). Wrap the POST-SCRUB system prompt in an
+            # ephemeral cache_control block so the cached bytes equal the wire
+            # payload. When off (default), pass `system` through unchanged so the
+            # payload is byte-identical to before (same object).
+            system_param: Any = system
+            if cache_system and isinstance(system, str) and system:
+                system_param = [
+                    {
+                        "type": "text",
+                        "text": system,
+                        "cache_control": {"type": "ephemeral"},
+                    }
+                ]
             call_kwargs: dict[str, Any] = dict(
                 model=self._model,
                 max_tokens=max_tokens,
-                system=system,
+                system=system_param,
                 messages=messages,
                 **kwargs,
             )

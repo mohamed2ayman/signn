@@ -996,6 +996,10 @@ class ClauseExtractorAgent(BaseAgent):
                     system=SYSTEM_PROMPT,
                     messages=[{"role": "user", "content": user_content}],
                     raw=True,
+                    # Prompt caching: the ~2.3k-tok SYSTEM_PROMPT is identical
+                    # across every chunk of a large document (up to 9 calls,
+                    # seconds apart) — cache it so chunks 2..N read at 0.1x.
+                    cache_system=True,
                 )
                 # Feed the live rate-limit headers to the gate BEFORE parsing so
                 # peers see a low-window signal as early as possible.
