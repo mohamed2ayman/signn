@@ -87,6 +87,8 @@ const DEFAULT_ENTITIES = [
   'ContractPartyContact', // → ContractParty → Contract
   // Guest Signing v1 — slip capability rows (direct contract_id)
   'GuestSignSlip',
+  // 7.19 Slice 1 — counterparty redlining spine
+  'ClauseRedline', // direct contract_id
   // NOTE: PartyRole is deliberately NOT listed — it is a GLOBAL registry
   // (no org/contract rooting), same class as ContractRelationshipType.
 ];

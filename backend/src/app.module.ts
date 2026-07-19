@@ -38,6 +38,7 @@ import { CollaborationModule } from './modules/collaboration/collaboration.modul
 import { ContractTemplatesModule } from './modules/contract-templates/contract-templates.module';
 import { ContractRelationshipTypesModule } from './modules/contract-relationship-types/contract-relationship-types.module';
 import { ContractPartiesModule } from './modules/contract-parties/contract-parties.module';
+import { RedlineModule } from './modules/redlines/redline.module';
 import { ClaimsModule } from './modules/claims/claims.module';
 import { NoticesModule } from './modules/notices/notices.module';
 import { SubContractsModule } from './modules/subcontracts/subcontracts.module';
@@ -310,6 +311,8 @@ import { dataSourceOptions } from './config/data-source';
     ContractRelationshipTypesModule,
     // Multi-tier trunk T0c-1 — contract parties + party-role registry (GET /party-roles).
     ContractPartiesModule,
+    // 7.19 Slice 1 — counterparty redlining spine (clause_redlines negotiation loop).
+    RedlineModule,
     ClaimsModule,
     NoticesModule,
     SubContractsModule,
