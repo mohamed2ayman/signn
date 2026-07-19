@@ -1221,10 +1221,13 @@
       "humanReviewRecommended": "Révision recommandée — Qualité de scan insuffisante",
       "reuploadTip": "Supprimez ce document et importez une version de meilleure qualité pour de meilleurs résultats.",
       "continueAnyway": "Continuer quand même avec l'extraction partielle",
+      "incompleteExtractionTitle": "L'extraction est peut-être incomplète — veuillez vérifier",
+      "rerunExtraction": "Relancer l'extraction",
       "qualityWarning": {
         "blur": "Scan flou détecté (score de netteté : {{score}}). Le texte risque d'être mal lu.",
         "contrast": "Contraste faible détecté (score de contraste : {{score}}). Le texte peut être pâle ou délavé.",
-        "rotation": "Inclinaison de page détectée ({{degrees}}°). Les clauses pourraient être extraites dans le mauvais ordre."
+        "rotation": "Inclinaison de page détectée ({{degrees}}°). Les clauses pourraient être extraites dans le mauvais ordre.",
+        "incompleteExtraction": "{{count}} section(s) trop volumineuse(s) n'ont pas pu être entièrement traitées et certaines clauses peuvent manquer. Veuillez vérifier les clauses extraites et relancer l'extraction si nécessaire."
       }
     }
   },

@@ -9,6 +9,7 @@ import threading
 import time
 import unicodedata
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 from difflib import SequenceMatcher
 from typing import Any
 
@@ -40,6 +41,20 @@ _COMBINED_CONDITIONS_FLAG = "combined_conditions_file"
 # Set when adjacent partials of the SAME clause (split across a chunk boundary)
 # were stitched back into one. Value carries the count of stitches performed.
 _SPLIT_CLAUSE_FLAG_PREFIX = "split_clause:"
+# (FIX C) Set when ≥1 chunk's response could NOT be fully parsed as a complete
+# JSON array — a max_tokens truncation (even after retrying with more headroom) OR
+# any other cut-off/malformed array — so the salvage parser recovered only the
+# clauses that DID parse and some may be missing. Value carries the count of such
+# chunks. NestJS persists this flag to document.quality_flags (it does NOT change
+# the terminal status); the frontend surfaces it as an amber "extraction may be
+# incomplete — please review" banner even on a completed (CLAUSES_EXTRACTED)
+# document — so an incomplete extraction is flagged + reviewable, never silent.
+_TRUNCATION_FLAG_PREFIX = "clause_extraction_incomplete:"
+
+# (FIX B) max_tokens is a CEILING, billed per ACTUAL output token — a generous
+# ceiling costs nothing extra, it only prevents dense-Arabic verbatim output from
+# being cut off. This is the hard ceiling a truncation-retry may bump up to.
+_MAX_TOKENS_CEILING = 64_000
 
 SYSTEM_PROMPT = """\
 You are an expert contract clause extraction agent for the SIGN construction \
@@ -196,6 +211,17 @@ _SUB_ARTICLE_RE = re.compile(
 )
 
 
+@dataclass
+class _ApiResult:
+    """Result of one extraction API call: the response text + whether it was cut
+    off at max_tokens (stop_reason == 'max_tokens') even after retrying with more
+    headroom. `truncated=True` means the JSON may be incomplete — the caller
+    salvages what parsed and flags the document for review."""
+
+    text: str
+    truncated: bool
+
+
 def _group_by_boundaries(
     text: str,
     boundaries: list[int],
@@ -344,6 +370,30 @@ class ClauseExtractorAgent(BaseAgent):
         # combined-conditions). Read by the Celery task into the result so the
         # signals are visible downstream. Reset at the start of every extract().
         self.last_quality_flags: list[str] = []
+        # (FIX C) Count of chunks whose response was TRUNCATED at max_tokens and
+        # could not be recovered by retrying. Appended to across the parallel
+        # chunk threads (list.append is atomic under the GIL); read by extract()
+        # to raise the `clause_extraction_incomplete` flag. Reset per extract().
+        self._truncated_chunks = 0
+        self._truncation_lock = threading.Lock()
+
+    def _note_truncation(self) -> None:
+        """Thread-safe increment of the incomplete-chunk counter (FIX C).
+
+        Called from `_parse_json` whenever a chunk's response could not be fully
+        parsed as a complete JSON array (a max_tokens truncation OR any other
+        cut-off/malformed array) — keyed on the EFFECT (parse failure), so it
+        also catches non-max_tokens malformations, not just truncation. Guarded by
+        the lock because chunk parsing runs across the parallel `_run_chunk`
+        threads. Lazily tolerant of an instance built via `__new__` (no __init__),
+        used by a couple of pure-parser unit tests.
+        """
+        lock = getattr(self, "_truncation_lock", None)
+        if lock is None:
+            self._truncated_chunks = getattr(self, "_truncated_chunks", 0) + 1
+            return
+        with lock:
+            self._truncated_chunks += 1
 
     # ------------------------------------------------------------------
     # Public entry point
@@ -377,6 +427,7 @@ class ClauseExtractorAgent(BaseAgent):
             A list of clause dicts matching the ``ExtractedClauseItem`` schema.
         """
         self.last_quality_flags = []
+        self._truncated_chunks = 0
         if len(full_text) <= 30_000:
             clauses = self._extract_single(full_text, contract_type, document_label)
         else:
@@ -407,6 +458,23 @@ class ClauseExtractorAgent(BaseAgent):
                 "SEPARATE files. Extracted %d clause(s).",
                 len(clauses),
             )
+
+        # (FIX C) If any chunk's response could not be fully parsed (max_tokens
+        # truncation or other malformation), the salvage parser kept the clauses
+        # that DID parse but some may be missing. Raise a LOUD flag so the
+        # incompleteness is SURFACED to the user (a review banner) downstream —
+        # never let an incomplete extraction complete silently.
+        if self._truncated_chunks > 0:
+            self.last_quality_flags.append(
+                f"{_TRUNCATION_FLAG_PREFIX}{self._truncated_chunks}"
+            )
+            logger.warning(
+                "Extraction INCOMPLETE: %d chunk response(s) could not be fully "
+                "parsed (truncated / malformed) — some clauses may be missing. "
+                "Document flagged for review. Extracted %d clause(s).",
+                self._truncated_chunks,
+                len(clauses),
+            )
         return clauses
 
     # ------------------------------------------------------------------
@@ -427,8 +495,10 @@ class ClauseExtractorAgent(BaseAgent):
             f"{full_text}\n"
             "---END DOCUMENT---"
         )
-        raw = self._call_api_with_retry(user_content)
-        return self._parse_json(raw)
+        result = self._call_api_with_retry(user_content)
+        # Incompleteness is flagged inside _parse_json (effect-based) — it fires on
+        # a truncated OR otherwise-unparseable array, so no separate note here.
+        return self._parse_json(result.text)
 
     # ------------------------------------------------------------------
     # Chunked path (large documents)
@@ -569,6 +639,18 @@ class ClauseExtractorAgent(BaseAgent):
 
         A 200-char overlap is added between pieces so the AI never loses
         context at a split edge.
+
+        NOTE (deferred FIX A): a sentence-boundary tier + a smaller safe target
+        were prototyped here but REVERTED — for a boundary-less oversized article
+        the resulting ~12k pieces are far larger than the PR #117 stitcher's
+        junction-overlap threshold (~0.2 × piece length), so they cannot be
+        rejoined; the fixed 200-char overlap is nowhere near enough. That would
+        trade a truncation (now caught by FIX B headroom + FIX C salvage/flag) for
+        UNFLAGGED over-fragmentation / tail-drop on the exact path it targets. Any
+        future re-introduction MUST scale the overlap with the stitch threshold
+        (and/or count a still-un-stitched multi-piece single-article split toward
+        the incomplete flag). See docs/oversized-chunk-truncation-investigation.md
+        + docs/stitch-threshold-large-clause-investigation.md.
         """
         overlap = 200
 
@@ -683,8 +765,15 @@ class ClauseExtractorAgent(BaseAgent):
             def _run_chunk(job: tuple[int, str]) -> tuple[int, list[dict[str, Any]]]:
                 j_idx, user_content = job
                 logger.info("Processing chunk %d/%d", j_idx, total)
-                raw = self._call_api_with_retry(user_content, gate=gate)
-                chunk_clauses = self._parse_json(raw)
+                result = self._call_api_with_retry(user_content, gate=gate)
+                if result.truncated:
+                    logger.warning(
+                        "Chunk %d/%d response truncated at max_tokens even after "
+                        "retrying — salvaging the parseable clauses.", j_idx, total,
+                    )
+                # Incompleteness (truncation OR malformation) is flagged inside
+                # _parse_json (effect-based) — see _note_truncation.
+                chunk_clauses = self._parse_json(result.text)
                 logger.info(
                     "Chunk %d/%d returned %d clauses", j_idx, total, len(chunk_clauses)
                 )
@@ -949,26 +1038,33 @@ class ClauseExtractorAgent(BaseAgent):
 
     @staticmethod
     def _calculate_max_tokens(text_length: int) -> int:
-        """Return max_tokens based on input size tier.
+        """Return max_tokens based on input size tier (FIX B — headroom).
 
-        Arabic JSON output is hard to estimate precisely, so we use
-        conservative fixed tiers that are still 50-75 % cheaper than
-        the old hard-coded 64 000:
+        The clause `content` is the EXACT verbatim source text, and Arabic is
+        token-DENSE (often ~1 token per 1-1.5 chars) — so the JSON output of a
+        near-15k chunk can approach or exceed the OLD 16k/24k/32k tiers and get
+        cut off mid-array (silent clause loss). max_tokens is a CEILING billed per
+        ACTUAL output token, so a generous ceiling costs nothing extra when the
+        response is short — it only prevents truncation. Tiers stay input-length-
+        keyed but are raised to give dense Arabic real room:
 
-          < 10 000 chars  →  16 000 tokens  (saves 75 %)
-          < 20 000 chars  →  24 000 tokens  (saves 63 %)
-          ≥ 20 000 chars  →  32 000 tokens  (saves 50 %)
+          <  6 000 chars  →  24 000 tokens
+          < 12 000 chars  →  40 000 tokens
+          ≥ 12 000 chars  →  56 000 tokens
+
+        A truncation-aware retry (see `_call_api_with_retry`) can bump further, up
+        to `_MAX_TOKENS_CEILING`, if a response is still cut off.
         """
-        if text_length < 10_000:
-            return 16_000
-        elif text_length < 20_000:
+        if text_length < 6_000:
             return 24_000
+        elif text_length < 12_000:
+            return 40_000
         else:
-            return 32_000
+            return 56_000
 
     def _call_api_with_retry(
         self, user_content: str, gate: _RateLimitGate | None = None
-    ) -> str:
+    ) -> _ApiResult:
         """Call the Anthropic API with bounded, Retry-After-aware retry.
 
         The SDK's own retry layer is pinned OFF (``max_retries=0`` in __init__),
@@ -978,6 +1074,14 @@ class ClauseExtractorAgent(BaseAgent):
         is supplied (the parallel chunked path) every thread paces against the
         live ``anthropic-ratelimit-*`` headers so the pool never runs the account
         into a wall of 429s.
+
+        (FIX C — truncation-aware.) A max_tokens truncation is an HTTP **200** with
+        ``stop_reason == 'max_tokens'`` — NOT an exception — so the old code
+        returned the cut-off text as "success" and its clauses were silently lost.
+        Now, on a truncated response, we RETRY with doubled max_tokens (up to
+        ``_MAX_TOKENS_CEILING``) within the attempt budget; if it STILL truncates,
+        we return the text marked ``truncated=True`` so the caller salvages the
+        partial clauses AND flags the document for review — never a silent drop.
         """
         max_attempts = 4
         base_delay = 4              # seconds — exponential 4, 8, 16 …
@@ -1006,7 +1110,27 @@ class ClauseExtractorAgent(BaseAgent):
                 if gate is not None:
                     gate.note_headers(raw_response.headers)
                 message = raw_response.parse()
-                return message.content[0].text  # success
+                text = message.content[0].text
+                if getattr(message, "stop_reason", None) == "max_tokens":
+                    # Truncated mid-array. Retry with more headroom if we still
+                    # can grow max_tokens AND have attempts left; else salvage.
+                    bumped = min(max_tokens * 2, _MAX_TOKENS_CEILING)
+                    if bumped > max_tokens and attempt < max_attempts:
+                        logger.warning(
+                            "Extraction response truncated at max_tokens=%d "
+                            "(attempt %d/%d) — retrying with max_tokens=%d",
+                            max_tokens, attempt, max_attempts, bumped,
+                        )
+                        max_tokens = bumped
+                        continue
+                    logger.warning(
+                        "Extraction response STILL truncated at max_tokens=%d "
+                        "after %d attempt(s) — salvaging partial clauses and "
+                        "flagging the document for review.",
+                        max_tokens, attempt,
+                    )
+                    return _ApiResult(text=text, truncated=True)
+                return _ApiResult(text=text, truncated=False)  # clean success
             except APIStatusError as exc:
                 # 529 = overloaded, 500/502/503/504 = transient server errors
                 if exc.status_code in (429, 500, 502, 503, 504, 529):
@@ -1108,6 +1232,41 @@ class ClauseExtractorAgent(BaseAgent):
                 return self._strip_article_prefix(clauses)
             except json.JSONDecodeError:
                 pass
+
+        # (FIX C — salvage) A response TRUNCATED at max_tokens is a valid JSON
+        # PREFIX cut off mid-array — a full json.loads fails, but its LEADING
+        # objects are complete. Decode objects one at a time from the first '['
+        # and keep everything before the first incomplete one (mirrors
+        # risk_analyzer._parse_risk_array). Turns "lose the whole chunk" into
+        # "lose only the trailing partial clause".
+        if bracket_start != -1:
+            decoder = json.JSONDecoder()
+            i = bracket_start + 1
+            n = len(cleaned)
+            salvaged: list[dict[str, Any]] = []
+            while i < n:
+                while i < n and cleaned[i] in " \t\r\n,":
+                    i += 1
+                if i >= n or cleaned[i] == "]":
+                    break
+                try:
+                    obj, end = decoder.raw_decode(cleaned, i)
+                except (json.JSONDecodeError, ValueError):
+                    break  # truncated / incomplete object — keep what completed
+                if isinstance(obj, dict):
+                    salvaged.append(obj)
+                i = end
+            if salvaged:
+                self._note_truncation()  # incomplete array — flag it (FIX C)
+                logger.warning(
+                    "Recovered %d clause(s) from a truncated/partial JSON array "
+                    "(the remainder was cut off / malformed).", len(salvaged),
+                )
+                return self._strip_article_prefix(salvaged)
+            # A '[' was present but nothing parsed AND nothing salvaged — a
+            # cut-off/broken array that yielded 0 clauses. Flag the incompleteness
+            # (FIX C) so a 0-clause truncated chunk is visible, not silent.
+            self._note_truncation()
 
         # Nothing parseable found — log a warning and return empty
         logger.warning(

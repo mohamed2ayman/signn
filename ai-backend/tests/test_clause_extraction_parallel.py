@@ -20,7 +20,7 @@ import re
 import threading
 import time
 
-from app.agents.clause_extractor import ClauseExtractorAgent
+from app.agents.clause_extractor import ClauseExtractorAgent, _ApiResult
 
 
 def _clause(title: str, content: str, section: str | None) -> dict:
@@ -69,7 +69,7 @@ class _FakeCalls:
         self.max_in_flight = 0
         self.calls = 0
 
-    def __call__(self, user_content: str, gate=None) -> str:
+    def __call__(self, user_content: str, gate=None) -> _ApiResult:
         with self._lock:
             self.in_flight += 1
             self.calls += 1
@@ -78,7 +78,7 @@ class _FakeCalls:
         try:
             idx = int(re.search(r"ZMARK(\d+)Z", user_content).group(1))
             time.sleep(self._delay_fn(idx))
-            return json.dumps(CANNED[idx])
+            return _ApiResult(text=json.dumps(CANNED[idx]), truncated=False)
         finally:
             with self._lock:
                 self.in_flight -= 1
@@ -182,5 +182,6 @@ def test_retry_honors_retry_after_header(mocker):
     sleep_mock = mocker.patch("app.agents.clause_extractor.time.sleep")
 
     out = agent._call_api_with_retry("hello")
-    assert out == "[]"
+    assert out.text == "[]"
+    assert out.truncated is False
     sleep_mock.assert_called_once_with(7.0)

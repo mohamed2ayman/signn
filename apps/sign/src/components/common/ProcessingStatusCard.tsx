@@ -83,6 +83,10 @@ function parseQualityFlag(
       return t('document.processing.qualityWarning.rotation', {
         degrees: num !== null ? Math.round(num) : '?',
       });
+    case 'clause_extraction_incomplete':
+      return t('document.processing.qualityWarning.incompleteExtraction', {
+        count: num !== null ? Math.round(num) : '?',
+      });
     default:
       return flag;
   }
@@ -116,6 +120,15 @@ export default function ProcessingStatusCard({
     document.processing_status === DocumentProcessingStatus.CLAUSES_EXTRACTED;
   const isHumanReview =
     document.processing_status === DocumentProcessingStatus.HUMAN_REVIEW_RECOMMENDED;
+
+  // (FIX C) A completed extraction whose response was truncated at max_tokens
+  // carries the `clause_extraction_incomplete:<n>` quality flag — some clauses may
+  // be missing. Surface a review banner even though the status is CLAUSES_EXTRACTED
+  // (which normally shows no banner), so a truncated extraction is NEVER silent.
+  const incompleteFlag = document.quality_flags?.find((f) =>
+    f.startsWith('clause_extraction_incomplete'),
+  );
+  const showIncompleteBanner = !!incompleteFlag && !isHumanReview;
 
   // Compute which stage dot to highlight for HUMAN_REVIEW_RECOMMENDED.
   // It branches off during EXTRACTING_TEXT, so we show the second dot as current.
@@ -294,6 +307,29 @@ export default function ProcessingStatusCard({
               className="mt-2 text-xs font-medium text-amber-700 underline hover:text-amber-900"
             >
               {t('document.processing.continueAnyway')}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Incomplete-extraction review banner (FIX C) — a truncated extraction
+          completed as CLAUSES_EXTRACTED but may be missing clauses. Surfaced so
+          the user reviews / re-runs rather than trusting a silent partial. */}
+      {showIncompleteBanner && (
+        <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+          <p className="mb-1 text-xs font-semibold text-amber-800">
+            {t('document.processing.incompleteExtractionTitle')}
+          </p>
+          <p className="text-xs text-amber-800" dir="auto">
+            {parseQualityFlag(incompleteFlag as string, t)}
+          </p>
+          {onRetry && (
+            <button
+              type="button"
+              onClick={onRetry}
+              className="mt-2 text-xs font-medium text-amber-700 underline hover:text-amber-900"
+            >
+              {t('document.processing.rerunExtraction')}
             </button>
           )}
         </div>
