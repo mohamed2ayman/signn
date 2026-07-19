@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
@@ -56,6 +56,16 @@ vi.mock('@/components/guest/GuestComments', () => ({
   default: (props: Record<string, unknown>) => {
     mockCommentsCalls.push(props);
     return <div data-testid="guest-comments" />;
+  },
+}));
+// #8d — the import modal is unit-tested in its own spec; here we capture the
+// props the page wires into it (and keep projectService/axios out of this
+// test's module graph).
+const mockImportModalCalls: Array<Record<string, unknown>> = [];
+vi.mock('@/components/guest/ImportContractModal', () => ({
+  default: (props: Record<string, unknown>) => {
+    mockImportModalCalls.push(props);
+    return props.isOpen ? <div data-testid="import-modal-open" /> : null;
   },
 }));
 
@@ -225,5 +235,35 @@ describe('SharedContractViewerPage — managing-session entry into the guest vie
         attemptsBeforeManualRetry,
       ),
     );
+  });
+
+  it('#8d — supplies onImport to GuestContractView (THIS page is the sole supplier) and wires the modal props', async () => {
+    vi.mocked(getSharedContract).mockResolvedValue(CONTRACT);
+    vi.mocked(getMyShares).mockResolvedValue([SHARE_ROW]);
+    renderViewer();
+
+    await screen.findByTestId('guest-contract-view');
+    // The shared-viewer-only gate: the page passes a real onImport function.
+    expect(typeof mockGcvCalls.at(-1)?.onImport).toBe('function');
+    // The modal is mounted (closed) with the full wiring: contract identity,
+    // the sharing org for the copy semantics, and the MANAGING token as the
+    // explicit guest-surface credential.
+    const modalProps = mockImportModalCalls.at(-1);
+    expect(modalProps?.isOpen).toBe(false);
+    expect(modalProps?.contractId).toBe('c-1');
+    expect(modalProps?.contractName).toBe('Alexandria Metro Line 3');
+    expect(modalProps?.sharedByOrg).toBe('Acme Construction');
+    expect(modalProps?.guestJwt).toBe('managing-token');
+  });
+
+  it('#8d — the Import button opens the modal (onImport → isOpen)', async () => {
+    vi.mocked(getSharedContract).mockResolvedValue(CONTRACT);
+    vi.mocked(getMyShares).mockResolvedValue([SHARE_ROW]);
+    renderViewer();
+
+    await screen.findByTestId('guest-contract-view');
+    const onImport = mockGcvCalls.at(-1)?.onImport as () => void;
+    act(() => onImport());
+    expect(screen.getByTestId('import-modal-open')).toBeInTheDocument();
   });
 });

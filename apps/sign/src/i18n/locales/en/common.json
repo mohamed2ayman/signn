@@ -1591,6 +1591,39 @@
     "revoked": {
       "title": "This contract is no longer shared with you.",
       "body": "The other organization revoked your access while this page was open."
+    },
+    "import": {
+      "button": "Import to my workspace",
+      "title": "Import to my workspace?",
+      "from": "from {{org}}",
+      "point1": {
+        "title": "A copy is created in your organization.",
+        "body": "The original stays with {{org}} and is not modified or notified."
+      },
+      "point2": {
+        "title": "Run your own analysis.",
+        "body": "Your team can run risk analysis and compliance, add private comments, and track obligations on your copy."
+      },
+      "point3": {
+        "title": "The copy does not stay in sync.",
+        "body": "If they later amend the original, your copy is unaffected."
+      },
+      "project": "Import into project",
+      "loadingProjects": "Loading your projects…",
+      "noProjects": "You need a project in your workspace first. Create one in the app, then come back here.",
+      "cancel": "Cancel",
+      "confirm": "Import contract",
+      "importing": "Importing contract…",
+      "importingBody": "Copying the contract and its clauses into {{project}}.",
+      "successTitle": "Imported to your workspace",
+      "successBody": "{{name}} is now in {{project}}. It's yours — run your own analysis anytime.",
+      "open": "Open my copy",
+      "stay": "Stay here",
+      "failTitle": "Import failed",
+      "failBody": "Something went wrong while importing. No copy was created.",
+      "retry": "Try again",
+      "viewPlans": "View plans",
+      "planLimitBody": "You've reached your plan's contract limit. Upgrade your plan or free up space to import this contract."
     }
   }
 }

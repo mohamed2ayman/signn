@@ -10,6 +10,7 @@ import GuestLayout from '@/components/guest/GuestLayout';
 import GuestContractView from '@/components/guest/GuestContractView';
 import GuestChatPanel from '@/components/guest/GuestChatPanel';
 import GuestComments from '@/components/guest/GuestComments';
+import ImportContractModal from '@/components/guest/ImportContractModal';
 import {
   getMyShares,
   getSharedContract,
@@ -44,6 +45,7 @@ export default function SharedContractViewerPage() {
   const currentUser = useSelector((s: RootState) => s.auth.user);
 
   const [chatOpen, setChatOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   const contractQuery = useQuery({
     queryKey: ['shared-contract', contractId],
@@ -193,6 +195,19 @@ export default function SharedContractViewerPage() {
             contract={contract}
             guestJwt={managingToken}
             onAskAi={() => setChatOpen(true)}
+            /* #8d — the Import affordance is SHARED-VIEWER-ONLY: this page is
+               the single place that supplies onImport (the token-entered
+               GuestViewerPage never does — a pure guest has no workspace). */
+            onImport={() => setImportOpen(true)}
+          />
+
+          <ImportContractModal
+            isOpen={importOpen}
+            onClose={() => setImportOpen(false)}
+            contractId={contract.id}
+            contractName={contract.name}
+            sharedByOrg={sharedByOrg}
+            guestJwt={managingToken}
           />
 
           <GuestChatPanel

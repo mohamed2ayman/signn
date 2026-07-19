@@ -262,6 +262,38 @@ export async function getGuestDocumentStatus(
   return data;
 }
 
+/** The import result — the copy's id drives "Open my copy" navigation (#8d). */
+export interface ImportedContractResult {
+  id: string;
+  name: string;
+  project_id: string;
+}
+
+/**
+ * Import a shared contract into the caller's OWN workspace (#8d).
+ *
+ * POST /guest/contracts/:id/import — binding-walled (the guest_contract_access
+ * binding is the sole grant; a revoked binding → uniform 404), copies the
+ * guest-visible content (contract scalars + live clauses) into a project of
+ * the CALLER'S org as a fresh DRAFT. The source is untouched and un-notified.
+ *
+ * Rides the isolated `guestHttp` client with an explicit per-request Bearer —
+ * on the shared-viewer surface `guestJwt` carries the MANAGING access token
+ * (Model A; see the prop note in SharedContractViewerPage).
+ */
+export async function importSharedContract(
+  contractId: string,
+  guestJwt: string,
+  destinationProjectId: string,
+): Promise<ImportedContractResult> {
+  const { data } = await guestHttp.post<ImportedContractResult>(
+    `/guest/contracts/${contractId}/import`,
+    { destinationProjectId },
+    { headers: { Authorization: `Bearer ${guestJwt}` } },
+  );
+  return data;
+}
+
 // ─── MANAGING USER (for completeness — uses the normal authenticated client) ─
 
 export interface CreateGuestInvitationInput {

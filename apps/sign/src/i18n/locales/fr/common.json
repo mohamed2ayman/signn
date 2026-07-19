@@ -1600,6 +1600,39 @@
     "revoked": {
       "title": "Ce contrat n’est plus partagé avec vous.",
       "body": "L’autre organisation a révoqué votre accès pendant que cette page était ouverte."
+    },
+    "import": {
+      "button": "Importer dans mon espace",
+      "title": "Importer dans mon espace ?",
+      "from": "de {{org}}",
+      "point1": {
+        "title": "Une copie est créée dans votre organisation.",
+        "body": "L’original reste chez {{org}} et n’est ni modifié ni notifié."
+      },
+      "point2": {
+        "title": "Menez votre propre analyse.",
+        "body": "Votre équipe peut lancer l’analyse des risques et de la conformité, ajouter des commentaires privés et suivre les obligations sur votre copie."
+      },
+      "point3": {
+        "title": "La copie ne reste pas synchronisée.",
+        "body": "S’ils modifient l’original plus tard, votre copie n’est pas affectée."
+      },
+      "project": "Importer dans le projet",
+      "loadingProjects": "Chargement de vos projets…",
+      "noProjects": "Vous devez d’abord avoir un projet dans votre espace. Créez-en un dans l’application, puis revenez ici.",
+      "cancel": "Annuler",
+      "confirm": "Importer le contrat",
+      "importing": "Importation du contrat…",
+      "importingBody": "Copie du contrat et de ses clauses dans {{project}}.",
+      "successTitle": "Importé dans votre espace",
+      "successBody": "{{name}} est maintenant dans {{project}}. Il est à vous — lancez votre propre analyse à tout moment.",
+      "open": "Ouvrir ma copie",
+      "stay": "Rester ici",
+      "failTitle": "Échec de l’importation",
+      "failBody": "Une erreur s’est produite lors de l’importation. Aucune copie n’a été créée.",
+      "retry": "Réessayer",
+      "viewPlans": "Voir les forfaits",
+      "planLimitBody": "Vous avez atteint la limite de contrats de votre forfait. Passez à un forfait supérieur ou libérez de l’espace pour importer ce contrat."
     }
   }
 }

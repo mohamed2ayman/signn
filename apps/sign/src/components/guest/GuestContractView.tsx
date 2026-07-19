@@ -61,12 +61,22 @@ export default function GuestContractView({
   contract,
   guestJwt,
   onAskAi,
+  onImport,
 }: {
   contract: Contract;
   guestJwt?: string | null;
   /** Opens the Guest AI Assistant drawer (Feature #6). Path-B gated like
    *  Upload/Download — rendered only inside the `{guestJwt && …}` row. */
   onAskAi?: () => void;
+  /** Opens the "Import to my workspace" modal (#8d). SHARED-VIEWER-ONLY:
+   *  supplied exclusively by SharedContractViewerPage (a bound MANAGING
+   *  arrival with a workspace to import into). Deliberately NOT gated on
+   *  `guestJwt` — an established token-guest also has one, but has no org
+   *  to import to; the token-entered GuestViewerPage never passes this prop,
+   *  so pure guests never see the button. When present, Import takes the
+   *  filled-primary lead slot and Ask AI demotes to the outline style
+   *  (one filled button per row — the design rule). */
+  onImport?: () => void;
 }) {
   const { t } = useTranslation();
   const [downloading, setDownloading] = useState(false);
@@ -234,14 +244,49 @@ export default function GuestContractView({
             {guestJwt && (
               <div className="flex flex-col items-end gap-1.5">
                 <div className="flex flex-wrap items-center justify-end gap-2">
+                  {/* Import to my workspace (#8d) — shared-viewer-only (see
+                      the onImport prop note). First in the row: for a managing
+                      reviewer, taking the contract home is the marquee action. */}
+                  {onImport && (
+                    <button
+                      type="button"
+                      onClick={onImport}
+                      data-testid="guest-import"
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-primary-600"
+                    >
+                      {/* The design's arrow-into-tray glyph (verbatim paths). */}
+                      <svg
+                        aria-hidden="true"
+                        className="h-4 w-4"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                        strokeWidth={1.85}
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M12 3v10" />
+                        <path d="m8 9 4 4 4-4" />
+                        <path d="M4 14v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" />
+                      </svg>
+                      {t('sharedWithMe.import.button')}
+                    </button>
+                  )}
                   {/* Ask AI — the assistant trigger (Feature #6). Filled
-                      primary = the lead affordance of the row per the design. */}
+                      primary = the lead affordance of the row per the design —
+                      EXCEPT when Import is present (managing viewers), where
+                      Ask AI demotes to the outline style so the row keeps one
+                      filled button. */}
                   {onAskAi && (
                     <button
                       type="button"
                       onClick={onAskAi}
                       data-testid="guest-ask-ai"
-                      className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-primary-600"
+                      className={
+                        onImport
+                          ? 'inline-flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/[0.04] px-3 py-1.5 text-xs font-medium text-primary transition-colors hover:bg-primary/[0.1]'
+                          : 'inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-primary-600'
+                      }
                     >
                       <svg
                         aria-hidden="true"
