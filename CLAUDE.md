@@ -5767,7 +5767,121 @@ state).
   `viewerService` · host & guest chat · backend + ai-backend.
 
 ### NEXT (Guest Portal remaining)
-- **#8d** — "Import to my workspace" (copies a shared contract into the
-  importer's org; designed, NOT built).
+- **#8d** — "Import to my workspace" — ✅ **SHIPPED** (PR #174, merged
+  `23554e5`; see the "Guest Portal #8d" section below).
 - **#8c** — guest sign-in + guest dashboard (DEFERRED; a guest-session posture
   decision needs Ayman).
+
+---
+
+## Guest Portal #8d — Import to my workspace (shipped 2026-07-19, PR #174, merged `23554e5`) — the first WRITE on the guest track
+
+A real (MANAGING) customer viewing a contract another org shared with them (the
+#8b Shared-with-me → guest viewer flow) clicks **"Import to my workspace"** →
+SIGN copies the contract into a project in THEIR OWN org, so they can run their
+own risk analysis / comments / obligations. The original stays with the sharing
+org, untouched and un-notified. This is the FIRST **write-path** on the shared
+external-access foundation; #8a/#8b were read-only.
+
+### The engine — `POST /guest/contracts/:id/import`
+`GuestImportController` + `GuestImportService` + `ImportSharedContractDto`, in
+`guest-portal.module.ts`. Body `{ destinationProjectId }`. Ordering:
+1. **BINDING-ALONE authz** — `assertGuestContractAccess(contractId, caller.id)`
+   runs **FIRST** (NOT the org-first `findAccessibleContract` dispatch, which
+   would admit an own-org manager WITHOUT a binding — lesson #265). Every denial
+   is a **uniform 404**; a revoked binding at call time → the same clean 404,
+   nothing copied.
+2. **Copy source = the guest-scoped read** — content is read via
+   `findAccessibleContract` (the exact wall + shape the guest viewer renders:
+   contract scalars + LIVE clauses `is_proposed=false` only). Comments (incl.
+   internal notes), risk findings, obligations, versions, documents, and T0c
+   `contract_parties` rows are **never even loaded**, so the copy structurally
+   cannot contain anything the guest couldn't already see.
+3. **Destination-project org-ownership check** — `destinationProjectId` must
+   belong to the **caller's own org** (404 otherwise). Reading
+   `caller.organization_id` here authorizes the DESTINATION (their own
+   workspace) — it is never the source/metering subject (standing invariant 3).
+   A pure GUEST account (null org) → 404, nothing to import into.
+4. **ONE transaction (atomic)** — new `Contract` (importer's org via the chosen
+   project, fresh **DRAFT / v1 / unsigned / unpinned / unapproved**,
+   `creation_flow='IMPORT'`, no relationship/parent — would point cross-org) +
+   **fresh `Clause` rows** minted in the importer's org (never reusing the
+   source `clause_id` — `clauses` carry `organization_id` and are shareable, so
+   reuse would cross-link tenants) + fresh `ContractClause` junctions + the
+   initial **V1 `CREATED` snapshot** — all commit together or roll back
+   together.
+
+**DROPPED** (not copied): source comments, risk findings, obligations, guest
+bindings, the signed-state pin. `source_document_id` is set **NULL** on copied
+clauses — the source's `DocumentUpload` rows are source-org storage and are not
+guest-visible; copying the reference would mint a cross-tenant pointer to
+unreachable rows (lesson #264). Cosmetic cost only: the copy's Risk-tab
+doc-grouping uses a fallback group. **The source contract is UNTOUCHED** — the
+path writes only new rows in the importer's org, and sends **no notification**
+to the sharing org.
+
+### ⭐ Proven by the Part-A leak battery (9/9 real Postgres, `guest-import.real-pg.spec.ts`)
+Correct copy (row-identical clause content/section/order, party names, type,
+name, value; DRAFT/v1/unsigned/unpinned; fresh org-A clause rows; V1 CREATED
+snapshot) · **source byte-untouched** (full before/after state compare) ·
+**GUEST-SCOPED SOURCE** (seeded internal notes / risk / obligations / proposed
+clause → ZERO in the copy) · **ATOMIC rollback** (forced mid-copy failure → no
+orphan contract, no partial clauses) · destination-ownership 404 · binding wall
+(unbound + bound-guest) 404 · revoked 404 · DTO 400 · 401.
+
+### Decisions (locked)
+- **Permission = binding-alone** — authorized purely by holding a
+  `guest_contract_access` binding to the source; **no host opt-in**.
+- **Copy method = duplicate the extracted clause rows** — a pure NestJS
+  transactional copy, **NOT re-running extraction**. **ai-backend is not
+  invoked** (0 diff).
+- **Pure snapshot** — the copy is independent; it does not stay in sync if the
+  source is later amended. `creation_flow='IMPORT'` is the only provenance
+  marker.
+
+### Frontend (shared-viewer-only)
+- The **Import button** lives in `GuestContractView`'s action row (first,
+  filled-primary; Ask AI demotes to outline), gated on a dedicated `onImport`
+  prop supplied **only** by `SharedContractViewerPage` — NOT on `guestJwt` (an
+  established token-guest also has one). The token-invitation `GuestViewerPage`
+  never passes `onImport`, so **pure guests never see the button** —
+  `GuestViewerPage` is at **ZERO diff**.
+- The **confirm modal** (`ImportContractModal` on the shared `ModalShell`):
+  identity-echo card + three icon-disc semantics + destination-project picker →
+  importing → success ("Open my copy" → `/app/contracts/:newId`) → failure. A
+  synchronous in-flight ref guards the confirm (one POST on a same-tick
+  double-click; a deliberate retry after failure re-POSTs); close inert while
+  importing.
+- **Reconciled to the approved design export** (walked state-by-state in EN +
+  Arabic — 9 drifts fixed: icon-disc SVGs not emoji, a unified failure layout,
+  verbatim EN/AR copy, disc/spinner sizes, the button glyph — lesson #267).
+  i18n en/ar/fr exact parity, direct UTF-8 (lesson #262); real `SignLogo`, no
+  placeholder (lesson #222).
+
+### Plan-limit — DORMANT by design
+No per-org contract-count limit exists (the plan has only
+`max_contracts_per_project`; the sole contract-count code is the dead,
+org-blind `SubscriptionGuard`). The endpoint ships **without a fabricated
+limit**; the modal's plan-limit branch (`PLAN_LIMIT_CONTRACTS` → "View plans" →
+`/app/settings/subscription`) is present but **unreachable** until a real quota
+model lands.
+
+### Notes
+- The imported copy's **empty Risk tab is CORRECT** — a fresh copy inherits no
+  analysis (the importer runs their own).
+- An **unrelated pre-existing** `ContractDetailPage` tab-overflow (History /
+  Approvals off-screen on narrow widths) is a **separate deferred item** —
+  confirmed #8d is 0-diff on that file; filed as a background chip.
+
+### ⭐ INVARIANT — any future cross-org copy/write MUST
+gate on the **binding first** (before the org-first fallback); be **atomic** +
+**source-read-only** (prove both by test); copy **only guest-visible content**
+(drive it off the caller-scoped read); and **null any reference pointing INTO
+the source tenant** (never copy a cross-tenant FK verbatim). See lessons
+#264–#267.
+
+### GUEST PORTAL #8 TRACK STATUS
+- **#8a** (bindings list endpoint) ✅ · **#8b** (Shared with me + managing-JWT
+  viewer entry) ✅ · **#8d** (Import to my workspace) ✅.
+- Remaining: **#8c** (guest sign-in + guest dashboard) — **DEFERRED**, carries a
+  guest-session posture decision that needs Ayman.
