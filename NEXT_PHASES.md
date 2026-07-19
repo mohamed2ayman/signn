@@ -1159,8 +1159,8 @@ hard gate — quality decides.** Migrate one prompt at a time; the embeddings mo
 - **Still DRAFT (`_TODO`):** Arabic/French `riskTab.*` + category + swap labels pending Youssef's legal review (does NOT block the gold set).
 - **✅ DONE — risk-analyzer same-language output (Arabic in → Arabic out) — PR #163 (Issue 4):** `RiskAnalyzerAgent` now emits `description`/`suggestion` in the clause's language (Arabic in → Arabic out), matching `ClauseRewriterAgent`. Shipped as part of the batched/parallel/replace risk-analysis rework (PR #163, Issues 4 + 5 — see CLAUDE.md "AI Pipeline Architecture").
 - **BACKLOG (post-annotation — surfaced during the gold-set build):**
-  1. **Chunking-truncation fix — ✅ CODE FIXED + MERGED (PR #165, Issue 1); remaining = verification on a real 81k GC doc.** Long Arabic multi-bullet clauses lost their tails DETERMINISTICALLY per template family (NTA twins lose GC secs 10/12/15/38; Orascom family loses GC sec 3 in 4/4; O&M twins both lose clause 9); ~16+ clauses REJECTED. Root cause (grounded on Project_2Depot GC sec 10, truncated at source offset 14,835 ≈ `_CHUNK_SIZE`): the packer overshot 15k, hard-split the boundary article, and the "skip continuations" note dropped the orphaned tail (no partial to stitch — lesson #239). FIX (PR #165): the packer now moves an overshooting article WHOLE into the next chunk (never hard-split at packing). **Still OPEN:** existing contracts are NOT re-extracted — verify on a FRESH upload of a bullet-heavy 81k General-Conditions doc that the previously-truncated sections carry full tails, then (optionally) re-extract the affected legacy contracts. See `docs/issue-1-clause-extraction-investigation.md`.
-  2. **Parties-extraction bug** — the reversed-party EXTRACTION regex in `document-processing.service.ts` fails in ~7/15 contracts (missing / second-missing / swapped); fix the root, don't rely on manual correction (lesson #242).
+  1. **Chunking-truncation fix — ✅ CODE FIXED + MERGED (PR #165, Issue 1); remaining = verification on a real 81k GC doc.** Long Arabic multi-bullet clauses lost their tails DETERMINISTICALLY per template family (NTA twins lose GC secs 10/12/15/38; Orascom family loses GC sec 3 in 4/4; O&M twins both lose clause 9); ~16+ clauses REJECTED. Root cause (grounded on Project_2Depot GC sec 10, truncated at source offset 14,835 ≈ `_CHUNK_SIZE`): the packer overshot 15k, hard-split the boundary article, and the "skip continuations" note dropped the orphaned tail (no partial to stitch — lesson #239). FIX (PR #165): the packer now moves an overshooting article WHOLE into the next chunk (never hard-split at packing). **Real-81k verification ✅ DONE (PR #177)** — the truncation fix live-ran the 81k GC fixture end-to-end: **38/38 clauses, no truncation** (`stop_reason=end_turn` on every chunk, largest chunk used the raised 56k ceiling). Existing legacy contracts are still not re-extracted (optional). See `docs/issue-1-clause-extraction-investigation.md` + `docs/oversized-chunk-truncation-investigation.md`.
+  2. **Parties-extraction bug — ✅ FIXED + MERGED (PR #173).** The Arabic-only whole-document regex fixed only 3/15 contracts (first/second missing or swapped — lesson #242). Rewritten in `document-processing.service.ts`: preamble-window search (before clause 1, via `computePreambleWindow` — not the whole doc), best-result-wins across a contract's documents, Arabic + English patterns, and a Haiku fallback (`/agents/extract-parties`) when the regex finds < 2 parties. Writes the legacy `contracts.party_first_name/second_name` fields (T0c wiring deferred — item 13); never overwrites `is_parties_edited_by_user`. See `docs/parties-extraction-bug-investigation.md`.
   3. **✅ DONE — Project14 document-tab UI bug — PR #163 (Issue 3):** the clause-review document tabs mis-rendered when documents shared a label (5 of 6 shown, a clause hidden); fixed — duplicate-label fallback to filename, overflow-scroll tab bar, zero-clause "No clauses in this document" empty state, `dir="auto"`. Shipped in PR #163.
   4. **Clause-edit snapshot + revert + unlock** — clause TEXT edits overwrite in place with no original snapshot AND lock the review card afterward; give clause edits the same snapshot/revert/unlock treatment risk/party edits have (lesson #241).
   5. **🔴 SECURITY — exposed GitHub token (flagged this session):** investigate and **ROTATE immediately**; if it was ever committed, purge from history. **Prioritize.**
@@ -1169,6 +1169,10 @@ hard gate — quality decides.** Migrate one prompt at a time; the embeddings mo
   8. **Category vocabulary redesign (needs Youssef)** — three vocabularies remain misaligned: the AI prompt's category names, the 8-row `risk_categories` taxonomy, and the 17 clause-type labels the annotation UI uses. Issue-5 shipped a minimal `RISK_CATEGORY_ALIASES` map + broadened prompt (Uncategorized → 0% on the pilot) as a bridge; the real fix is ONE agreed taxonomy. Needs Youssef's legal-terminology decision.
   9. **Obligations job parse failure** (`Expecting value: line 1 column 1`) — the obligations extraction job failed to parse the AI response during the Project9 pilots. Separate from the risk pipeline; likely the same fence-/prose-tolerant-parse gap already fixed in the risk agent. Root-cause the obligations agent's response parse.
   10. **Project14 Annex-7 DB label patch must be re-run on other environments** — a 1-row DB patch fixing the Project14 "ملحق العقد رقم 7" (Annex 7) document label was applied LOCALLY only during annotation. It is NOT a migration — re-run the same 1-row `UPDATE` on any other environment that carries Project14 data.
+  11. **FIX A — extraction truncation PREVENTION (sentence/sub-split) — DEFERRED.** The truncation SAFETY NET shipped in PR #177 (FIX B raised max_tokens tiers + FIX C stop_reason retry / JSON salvage / needs-review flag). The PREVENTION layer (sentence-split an oversized boundary-less article into smaller pieces) was built then **REVERTED**: its ~12k pieces are far larger than the PR #117 stitcher's junction-overlap threshold (~0.2 × piece length vs a fixed 200-char overlap), so they can't be rejoined → would trade a caught truncation for **UNFLAGGED over-fragmentation / tail-drop**. Re-introduce ONLY after scaling the split overlap to the stitch threshold (or flagging un-stitched multi-piece single-article splits). See `_break_oversized_chunk` docstring + `docs/oversized-chunk-truncation-investigation.md` (lesson #270).
+  12. **Oversized boundary-less article (>15k, no `\n\n`, no sub-article `N-M`) stitch limitation — KNOWN BUG (pre-existing, distinct from truncation).** Such an article still hard-splits into ≤15k pieces the PR #117 stitcher cannot rejoin → the one clause over-fragments or its tail drops. FIX B's headroom removed the max_tokens TRUNCATION on those pieces but not this stitch gap; it depends on the same overlap-scaling fix as item 11. See `docs/stitch-threshold-large-clause-investigation.md`.
+  13. **T0c parties-wiring — auto-extraction should write the `contract_parties` spine, not just legacy fields.** PR #173's extractor writes only `contracts.party_first_name/second_name`. Wire it to ALSO populate the T0c `contract_parties` / `contract_party_contacts` spine (party-role registry) so auto-extracted parties feed the Parties Editor. Additive on top of the shipped T0c backend.
+  14. **Contracts missing their Agreement document — OUT OF SCOPE for parties extraction (documented, not a bug).** ~4/15 gold contracts (Project3/8/9/14) have no uploaded Agreement doc, so no `بين كل من …` preamble exists in ANY document — the extractor cannot invent parties absent from every uploaded file. Parties for these depend on the Agreement upload. See `docs/parties-extraction-bug-investigation.md`.
 
 ---
 
@@ -1203,6 +1207,28 @@ hard gate — quality decides.** Migrate one prompt at a time; the embeddings mo
 - Define training pipeline: data prep → train → evaluate → deploy
 - Cost estimate: SageMaker training is charged per compute hour
 - Only needed when you have enough annotated data (500+ examples minimum)
+
+---
+
+## 💰 AI Cost-Optimization Initiative (tracked)
+**Status:** in progress. Staged plan to cut Anthropic spend WITHOUT losing Arabic accuracy. Every
+step is gated on the Arabic accuracy suite (`ai-backend/tests/accuracy/`) HOLDING-OR-IMPROVING vs the
+`claude-sonnet-4-6` baseline (the 8.1 rule — Arabic accuracy decides; cost is recorded, never the
+gate). Caching/model swaps must be proven **output-neutral** (caching) or **accuracy-neutral** (model
+swap) before adoption.
+
+| Step | What | Status |
+|---|---|---|
+| 0 | **Parties extraction** — regex-first + Haiku fallback (cheap model on the cheap task) | ✅ done (PR #173) |
+| 1 | **Prompt caching** — opt-in `cache_system` on clause_extractor + risk_analyzer (biggest stable prompts); billing-only, output-neutral | ✅ done (PR #175) |
+| — | **Truncation fix** — raised max_tokens tiers + safety net (removes the silent nondeterministic clause loss; prerequisite for trusting any cost change) | ✅ done (PR #177) |
+| 3 | **Haiku for risk + compliance** — route these analyses to Haiku where accuracy holds (A/B vs Sonnet on the Arabic suite) | ⏳ pending |
+| 4 | **Chat router** — cheap model (Haiku) + prompt-cache the conversation/context prefix (the deferred Step-4 caching work on `conversational_agent`) | ⏳ pending |
+| 2 | **Clause-type classification models** — 8.4 ContractBERT / 8.5 LEGAL-XLM-RoBERTa vs the Claude baseline (self-hosted; benchmark first) | ⏳ pending (Phase 8.4/8.5) |
+| 5 | **Extraction bake-off** — self-hosted OSS extractors (Qwen3 / Llama 4) vs Claude on the Arabic accuracy suite | ⏳ pending |
+| 6 | **AWS + Bedrock** — host the winning OSS models in-VPC (data-locality per the 8.1 self-hosting rationale) | ⏳ pending |
+
+See lesson #268 (caching is billing-only) + the migration rule in 8.1.
 
 ---
 
