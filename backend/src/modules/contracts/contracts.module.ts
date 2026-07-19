@@ -15,6 +15,7 @@ import {
   User,
   ContractApprover,
   GuestContractAccess,
+  GuestSignSlip,
 } from '../../database/entities';
 import { ContractsController } from './contracts.controller';
 import { ContractsService } from './contracts.service';
@@ -25,6 +26,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
 import { ScopedRepositoryModule } from '../scoped-repository/scoped-repository.module';
 import { ContractAccessService } from './services/contract-access.service';
 import { ContractPinningService } from './services/contract-pinning.service';
+import { GuestSignSlipService } from './services/guest-sign-slip.service';
 import { GuestPortalSchemaCheckService } from './services/guest-portal-schema-check.service';
 
 @Module({
@@ -47,6 +49,8 @@ import { GuestPortalSchemaCheckService } from './services/guest-portal-schema-ch
       ContractApprover,
       // Phase 7.18 bucket 1a — guest binding storage.
       GuestContractAccess,
+      // Guest Signing v1 — the SLIP capability records.
+      GuestSignSlip,
       // Signed-state pinning (Slice 1) — ContractPinningService's best-effort
       // pin audit write.
       AuditLog,
@@ -70,8 +74,16 @@ import { GuestPortalSchemaCheckService } from './services/guest-portal-schema-ch
     // Signed-state pinning (Slice 1) — the ONE shared pin operation both
     // execution doors funnel through (DocuSign webhook + manual mark-signed).
     ContractPinningService,
+    // Guest Signing v1 — slip issuance/list/void (host) + the binding+slip
+    // guest door (consumed by guest-portal's GuestSignController).
+    GuestSignSlipService,
     GuestPortalSchemaCheckService,
   ],
-  exports: [ContractsService, ContractAccessService, ContractPinningService],
+  exports: [
+    ContractsService,
+    ContractAccessService,
+    ContractPinningService,
+    GuestSignSlipService,
+  ],
 })
 export class ContractsModule {}

@@ -52,6 +52,9 @@ import { GuestStatusController } from './controllers/guest-status.controller';
 import { GuestChatController } from './controllers/guest-chat.controller';
 import { GuestMyContractsController } from './controllers/guest-my-contracts.controller';
 import { GuestImportController } from './controllers/guest-import.controller';
+// Guest Signing v1 — the binding+slip sign door (service exported by
+// ContractsModule; authz = the atomic binding+slip gate, uniform 404).
+import { GuestSignController } from './controllers/guest-sign.controller';
 
 /**
  * Phase 7.18 — Guest Portal module.
@@ -111,6 +114,7 @@ import { GuestImportController } from './controllers/guest-import.controller';
     GuestChatController,
     GuestMyContractsController,
     GuestImportController,
+    GuestSignController,
   ],
   providers: [
     InvitationTokenService,

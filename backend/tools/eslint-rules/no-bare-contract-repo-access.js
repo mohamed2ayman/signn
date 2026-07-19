@@ -85,6 +85,8 @@ const DEFAULT_ENTITIES = [
   // Multi-tier T0c-1 — contract parties spine
   'ContractParty', // direct contract_id
   'ContractPartyContact', // → ContractParty → Contract
+  // Guest Signing v1 — slip capability rows (direct contract_id)
+  'GuestSignSlip',
   // NOTE: PartyRole is deliberately NOT listed — it is a GLOBAL registry
   // (no org/contract rooting), same class as ContractRelationshipType.
 ];

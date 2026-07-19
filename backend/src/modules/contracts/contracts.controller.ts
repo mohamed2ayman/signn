@@ -22,6 +22,8 @@ import { UserRole, PermissionLevel } from '../../database/entities';
 import { ContractsService } from './contracts.service';
 import { ContractAccessService } from './services/contract-access.service';
 import { ContractPinningService } from './services/contract-pinning.service';
+import { GuestSignSlipService } from './services/guest-sign-slip.service';
+import { CreateSignSlipDto } from './dto/create-sign-slip.dto';
 import {
   CreateContractDto,
   UpdateContractDto,
@@ -44,6 +46,7 @@ export class ContractsController {
     private readonly contractsService: ContractsService,
     private readonly contractAccess: ContractAccessService,
     private readonly contractPinning: ContractPinningService,
+    private readonly guestSignSlips: GuestSignSlipService,
   ) {}
 
   // ─── Contract CRUD ─────────────────────────────────────────
@@ -141,6 +144,50 @@ export class ContractsController {
     @OrganizationId() orgId: string,
   ) {
     return this.contractPinning.verifyContractPin(id, orgId);
+  }
+
+  // ─── Guest Signing v1 — host slip management ───────────────────
+  // A SLIP is the per-(guest, contract) capability that authorizes the
+  // guest sign door. Default-deny: a bare binding never implies signing —
+  // issuance is this explicit host action (APPROVER, mirroring mark-signed).
+
+  @Post(':id/sign-slips')
+  @RequirePermission(PermissionLevel.APPROVER)
+  async issueSignSlip(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CreateSignSlipDto,
+    @CurrentUser() user: any,
+    @OrganizationId() orgId: string,
+  ) {
+    return this.guestSignSlips.issueSlip(id, dto.grantee_user_id, {
+      userId: user.id,
+      orgId,
+    });
+  }
+
+  @Get(':id/sign-slips')
+  @RequirePermission(PermissionLevel.APPROVER)
+  async listSignSlips(
+    @Param('id', ParseUUIDPipe) id: string,
+    @OrganizationId() orgId: string,
+  ) {
+    return this.guestSignSlips.listSlips(id, orgId);
+  }
+
+  /** Host VOID — cancel a slip pre-execution (PENDING|ACCEPTED → VOIDED
+   *  only; already-EXECUTED → 400). */
+  @Post(':id/sign-slips/:slipId/void')
+  @RequirePermission(PermissionLevel.APPROVER)
+  async voidSignSlip(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('slipId', ParseUUIDPipe) slipId: string,
+    @CurrentUser() user: any,
+    @OrganizationId() orgId: string,
+  ) {
+    return this.guestSignSlips.voidSlip(id, slipId, {
+      userId: user.id,
+      orgId,
+    });
   }
 
   @Delete(':id')
