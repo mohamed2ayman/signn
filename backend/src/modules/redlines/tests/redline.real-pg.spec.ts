@@ -60,6 +60,7 @@ describeReal('RedlineService — 7.19 Slice 1 (real Postgres)', () => {
   const hostUserId = randomUUID();
   const cpUserId = randomUUID();
   const unrelatedUserId = randomUUID();
+  const guestUserId = randomUUID(); // bound GUEST account (write-exclusion fixtures)
   const projectId = randomUUID();
   const contractId = randomUUID(); // the negotiated contract (host org)
   const otherContractId = randomUUID(); // sibling contract, SAME host org (IDOR fixtures)
@@ -82,8 +83,24 @@ describeReal('RedlineService — 7.19 Slice 1 (real Postgres)', () => {
     role: UserRole.OWNER_ADMIN,
     account_type: AccountType.MANAGING,
   };
+  // An established-identity GUEST account holding a binding to the contract.
+  // The wall ADMITS it (binding = grant); the write-exclusion gate must still
+  // 404 its propose/counter while leaving list/withdraw open.
+  const guestCaller: ManagingOrGuestCaller = {
+    id: guestUserId,
+    organization_id: null,
+    role: UserRole.GUEST,
+    account_type: AccountType.GUEST,
+  };
 
-  const insertUser = (id: string, org: string | null, first: string, last: string) =>
+  const insertUser = (
+    id: string,
+    org: string | null,
+    first: string,
+    last: string,
+    role = 'OWNER_ADMIN',
+    accountType = 'MANAGING',
+  ) =>
     dataSource.query(
       `INSERT INTO users (
          id, email, password_hash, first_name, last_name, role, account_type,
@@ -91,9 +108,9 @@ describeReal('RedlineService — 7.19 Slice 1 (real Postgres)', () => {
          preferred_language, failed_login_attempts, onboarding_completed,
          onboarding_level, email_digest_opt_out, marketing_email_opt_in,
          ai_training_opt_in
-       ) VALUES ($1,$2,$3,$4,$5,'OWNER_ADMIN','MANAGING',$6,
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,
                  TRUE,TRUE,FALSE,'en',0,TRUE,'none',FALSE,FALSE,FALSE)`,
-      [id, `rl-${id.slice(0, 8)}@test.local`, '$2a$10$dummy.hash.redline.spec', first, last, org],
+      [id, `rl-${id.slice(0, 8)}@test.local`, '$2a$10$dummy.hash.redline.spec', first, last, role, accountType, org],
     );
 
   /** Seed a LIVE clause + junction on a contract; returns ids. */
@@ -246,6 +263,7 @@ describeReal('RedlineService — 7.19 Slice 1 (real Postgres)', () => {
     await insertUser(hostUserId, hostOrgId, 'Hana', 'Host');
     await insertUser(cpUserId, cpOrgId, 'Cara', 'Counterparty');
     await insertUser(unrelatedUserId, unrelatedOrgId, 'Uri', 'Unrelated');
+    await insertUser(guestUserId, null, 'Gina', 'Guest', 'GUEST', 'GUEST');
     await dataSource.query(
       `INSERT INTO projects (id, organization_id, name, created_by) VALUES ($1,$2,'rl-project',$3)`,
       [projectId, hostOrgId, hostUserId],
@@ -263,6 +281,13 @@ describeReal('RedlineService — 7.19 Slice 1 (real Postgres)', () => {
       `INSERT INTO guest_contract_access (id, user_id, contract_id, granted_by)
        VALUES ($1,$2,$3,$4)`,
       [randomUUID(), cpUserId, contractId, hostUserId],
+    );
+    // A GUEST-account binding too — the wall admits it; the write-exclusion
+    // gate is what must close propose/counter for this caller.
+    await dataSource.query(
+      `INSERT INTO guest_contract_access (id, user_id, contract_id, granted_by)
+       VALUES ($1,$2,$3,$4)`,
+      [randomUUID(), guestUserId, contractId, hostUserId],
     );
   });
 
@@ -316,10 +341,11 @@ describeReal('RedlineService — 7.19 Slice 1 (real Postgres)', () => {
         otherContractId,
       ]);
       await dataSource.query(`DELETE FROM projects WHERE id = $1`, [projectId]);
-      await dataSource.query(`DELETE FROM users WHERE id IN ($1,$2,$3)`, [
+      await dataSource.query(`DELETE FROM users WHERE id IN ($1,$2,$3,$4)`, [
         hostUserId,
         cpUserId,
         unrelatedUserId,
+        guestUserId,
       ]);
       await dataSource.query(`DELETE FROM organizations WHERE id IN ($1,$2,$3)`, [
         hostOrgId,
@@ -400,6 +426,52 @@ describeReal('RedlineService — 7.19 Slice 1 (real Postgres)', () => {
       redlines.propose(contractId, randomUUID(), { proposedContent: 'x' }, cpCaller),
     ).rejects.toBeInstanceOf(NotFoundException);
     expect(await redlineCount()).toBe(0);
+  });
+
+  // ══════════════════════════════════════════════════════════════════════
+  // GUEST WRITE-EXCLUSION (static gate — writes closed until #8c hardening)
+  // ══════════════════════════════════════════════════════════════════════
+
+  it('propose by a BOUND GUEST account → uniform 404 (write-exclusion), zero side effects', async () => {
+    const { clauseId, ccId } = await seedLive('GW', 'Guest-gate body.', 0);
+    await expect(
+      redlines.propose(contractId, ccId, { proposedContent: 'x' }, guestCaller),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(await redlineCount()).toBe(0); // no redline row created
+    await assertUntouched({ clauseId, ccId });
+  });
+
+  it('counter by a BOUND GUEST account → uniform 404, original stays PROPOSED, no child', async () => {
+    const { ccId } = await seedLive('GW2', 'Body.', 0);
+    const rl = await redlines.propose(contractId, ccId, { proposedContent: 'x' }, cpCaller);
+    const before = await redlineCount();
+    await expect(
+      redlines.counter(contractId, rl.id, guestCaller, { proposedContent: 'y' }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(await redlineCount()).toBe(before);
+    expect((await redlineRow(rl.id)).status).toBe('PROPOSED');
+  });
+
+  it('list by a BOUND GUEST account still works (reads are NOT gated)', async () => {
+    const { ccId } = await seedLive('GW3', 'Body.', 0);
+    const rl = await redlines.propose(contractId, ccId, { proposedContent: 'x' }, cpCaller);
+    const view = await redlines.list(contractId, guestCaller);
+    expect(view.map((r) => r.id)).toContain(rl.id);
+  });
+
+  it('withdraw by a GUEST author of a pre-gate redline still works (author cleanup NOT gated)', async () => {
+    const { ccId } = await seedLive('GW4', 'Body.', 0);
+    // A guest-authored PROPOSED row can only pre-date the gate — seed directly.
+    const preGateId = randomUUID();
+    await dataSource.query(
+      `INSERT INTO clause_redlines (id, contract_id, contract_clause_id, round,
+         proposed_content, base_content_snapshot, author_user_id,
+         author_identity_source, status)
+       VALUES ($1,$2,$3,1,'pre-gate proposal','Body.',$4,'GUEST','PROPOSED')`,
+      [preGateId, contractId, ccId, guestUserId],
+    );
+    const updated = await redlines.withdraw(contractId, preGateId, guestCaller);
+    expect(updated.status).toBe('WITHDRAWN');
   });
 
   // ══════════════════════════════════════════════════════════════════════

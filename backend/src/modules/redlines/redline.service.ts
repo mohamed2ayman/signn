@@ -126,6 +126,13 @@ export class RedlineService {
       contractId,
       caller,
     );
+    // GUEST WRITE-EXCLUSION (after the wall, before any write): redline
+    // WRITES are closed to guest accounts until the #8c-hardened guest
+    // surface exists (lesson #278). Same uniform 404 as the wall — never a
+    // 403, no existence oracle. Reads (list) and the author's own withdraw
+    // are NOT gated. The identity predicate is the dispatcher's own
+    // isGuestUser — one definition, no drift.
+    this.assertNotGuestWriter(caller);
     // PIN second (after the wall — 404 before 409, no existence oracle). A
     // signed contract's legal content is frozen; proposing against it is
     // rejected up front rather than farming doomed STALE/409 accepts.
@@ -442,6 +449,10 @@ export class RedlineService {
     dto: CounterRedlineDto,
   ): Promise<ClauseRedline> {
     const contract = await this.hostContract(contractId, caller);
+    // GUEST WRITE-EXCLUSION — defense-in-depth: a guest account (null org)
+    // already dies at the hostContract wall, but the gate keys on identity,
+    // not on the org field happening to be null. Same uniform 404.
+    this.assertNotGuestWriter(caller);
     const redline = await this.loadRedline(contractId, redlineId);
     this.assertProposed(redline);
     // PIN after the wall — a counter proposes future clause-content change on
@@ -605,12 +616,28 @@ export class RedlineService {
     });
   }
 
+  /**
+   * The static guest write-exclusion gate (7.19 Slice 1 hardening). Redline
+   * WRITES that create negotiation state (propose / counter) are closed to
+   * guest accounts until the #8c-hardened guest surface exists; when guest
+   * redlining ships, it re-opens ATOMICALLY WITH its own hardened gate, never
+   * before (lesson #278). Runs AFTER the access wall; throws the wall's exact
+   * uniform NotFoundException (no 403, no oracle). Deliberately NOT applied
+   * to list (read) or withdraw (author's own cleanup).
+   */
+  private assertNotGuestWriter(caller: ManagingOrGuestCaller): void {
+    if (this.contractAccess.isGuestUser(caller)) {
+      throw new NotFoundException('Contract not found');
+    }
+  }
+
   private identitySourceOf(
     caller: ManagingOrGuestCaller,
   ): RedlineAuthorIdentitySource {
-    // Slice 1 traffic is Model A managing counterparties; recorded honestly
-    // if an established-identity GUEST account (admitted by its binding via
-    // the same wall) ever proposes here.
+    // Model A traffic is MANAGING; the GUEST branch is unreachable for NEW
+    // rows while assertNotGuestWriter gates the write paths — kept (with the
+    // enum's GUEST value) so the DATA MODEL stays identity-agnostic for the
+    // later #8c-gated guest slice.
     return caller.account_type === AccountType.GUEST
       ? RedlineAuthorIdentitySource.GUEST
       : RedlineAuthorIdentitySource.MANAGING_USER;

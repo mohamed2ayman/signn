@@ -6000,6 +6000,13 @@ asserts ZERO side effects, + the boot smoke + `lint:contract-repo`
    binding-fallback; the binding stays the SOLE cross-org grant; the caller's
    `organization_id` is never read on the binding path) and **every denial is
    a uniform 404** — including non-author withdraw (no authorship oracle).
+2a. **Guest accounts are HARD-EXCLUDED from redline WRITES** (propose /
+   counter) at the service seam: `assertNotGuestWriter` (reusing the
+   dispatcher's `isGuestUser` predicate — one identity definition) runs AFTER
+   the wall and throws the same uniform 404. `list` and the author's own
+   `withdraw` stay open; the `author_identity_source` GUEST enum value stays
+   (data model is identity-agnostic). Guest redlining re-opens ATOMICALLY
+   WITH the #8c-hardened guest slice's own gate, never before (lesson #278).
 3. **`assertContractMutable` runs AFTER the access wall** on propose / accept
    / counter (404-before-409). Reject and withdraw are deliberately NOT
    pin-guarded (no clause mutation; post-pin cleanup allowed).
@@ -6013,5 +6020,7 @@ asserts ZERO side effects, + the boot smoke + `lint:contract-repo`
 ### Slice boundaries (do NOT assume built)
 Slice 2: negotiation status machine (`UNDER_REVIEW`/`AGREED`/`READY_TO_SIGN`
 are net-new — no ContractStatus value covers them). Slice 4: notifications.
-Later, gated on #8c: /guest/* redline writes for org-less counterparties, and
-the counterparty-side accept-of-a-counter signal path.
+Later, gated on #8c: guest-account redline writes (currently HARD-EXCLUDED at
+the service seam — hard rule 2a; the future slice removes `assertNotGuestWriter`
+atomically WITH its own hardened gate), and the counterparty-side
+accept-of-a-counter signal path.

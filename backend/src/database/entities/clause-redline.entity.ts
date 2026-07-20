@@ -42,9 +42,11 @@ export enum RedlineStatus {
 /**
  * Who the author IS structurally. Slice 1 traffic is Model A managing-user
  * counterparties (via "Shared with me" bindings) → MANAGING_USER. GUEST is
- * reserved for the later org-less-counterparty slice (gated on #8c); it is
- * recorded honestly if an established-identity GUEST account (which the
- * access wall already admits via its binding) ever proposes here.
+ * reserved for the later org-less-counterparty slice (gated on #8c): guest
+ * accounts are currently HARD-EXCLUDED from redline writes at the service
+ * seam (RedlineService.assertNotGuestWriter — uniform 404), so no new row
+ * carries GUEST today; the enum keeps the data model identity-agnostic for
+ * when that slice re-opens writes atomically with its hardened gate.
  */
 export enum RedlineAuthorIdentitySource {
   MANAGING_USER = 'MANAGING_USER',
