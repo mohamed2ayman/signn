@@ -37,6 +37,11 @@ import { GuestSignController } from '../controllers/guest-sign.controller';
  *      → INDISTINGUISHABLE uniform 404 (equal status AND deep-equal body)
  *      for BOTH the slip-status GET and the accept POST. A bare binding
  *      NEVER implies signing (default-deny).
+ *   1b. ORPHAN SLIP (Ayman's regression) — LIVE slip + REVOKED binding →
+ *      uniform 404 on GET and accept, IDENTICAL to the no-binding and
+ *      binding-no-slip 404s; nothing pinned, slip never advances. Guards the
+ *      !hasBinding term (the sole cross-org grant) WITH a live slip present —
+ *      a live slip alone must never authorize.
  *   2. ORG-ID-INERT — the grantee is seeded with a NON-NULL foreign
  *      organization_id and the door works purely on binding + slip: the
  *      caller's org is never read, never required, never a grant.
@@ -99,6 +104,7 @@ describeReal('⭐ Guest Signing v1 — slip door (real Postgres)', () => {
   const contractVoidId = randomUUID(); // void-before-execute
   const contractLeakId = randomUUID(); // leak-safety (binding for boundNoSlip)
   const contractDraftId = randomUUID(); // issuance status guard (DRAFT)
+  const contractOrphanId = randomUUID(); // orphan slip: LIVE slip + REVOKED binding
 
   const allContractIds = [
     contractMainId,
@@ -106,6 +112,7 @@ describeReal('⭐ Guest Signing v1 — slip door (real Postgres)', () => {
     contractVoidId,
     contractLeakId,
     contractDraftId,
+    contractOrphanId,
   ];
 
   let injectedUser: any;
@@ -326,6 +333,9 @@ describeReal('⭐ Guest Signing v1 — slip door (real Postgres)', () => {
     await insertContract(contractVoidId, `عقد الإلغاء ${tag}`, 'ACTIVE');
     await insertContract(contractLeakId, `عقد التسريب ${tag}`, 'ACTIVE');
     await insertContract(contractDraftId, `عقد مسودة ${tag}`, 'DRAFT');
+    // Orphan-slip fixture: ACTIVE (signable) so the slip can be ISSUED; its
+    // binding is created + then REVOKED inside the test (not here).
+    await insertContract(contractOrphanId, `عقد اليتيم ${tag}`, 'ACTIVE');
     for (const cid of [contractMainId, contractPrePinId, contractVoidId]) {
       await seedClause(cid, 1);
       await seedClause(cid, 2);
@@ -424,6 +434,86 @@ describeReal('⭐ Guest Signing v1 — slip door (real Postgres)', () => {
         .get(`/guest/contracts/${contractLeakId}/sign-slip`)
         .set('Authorization', 'Bearer test-jwt');
       expect(res.status).toBe(401);
+    });
+  });
+
+  // ═══ 1b. ORPHAN SLIP — LIVE slip + REVOKED binding (Ayman's regression) ════
+  //
+  // The suite's leak-safety cases exercise the !slip term (binding-but-no-slip)
+  // and the double-miss (no-binding). This case exercises the !hasBinding term
+  // WITH A LIVE SLIP present — the ONLY cross-org authorization on the sign
+  // path. A slip issued while bound must NOT survive the binding's revocation:
+  // the binding, never the slip, is the grant (standing invariant 1). If the
+  // gate ever regressed to "a live slip alone authorizes", THIS is the only
+  // fixture that would catch it.
+
+  describe('ORPHAN SLIP: live slip + revoked binding', () => {
+    let orphanSlipId: string;
+
+    beforeAll(async () => {
+      // (1) bind, (2) issue a PENDING slip via the REAL issuance path…
+      await insertBinding(counterpartyId, contractOrphanId);
+      const slip = await slipService.issueSlip(
+        contractOrphanId,
+        counterpartyId,
+        { userId: hostOwnerId, orgId: hostOrgId },
+      );
+      orphanSlipId = slip.id;
+      expect(slip.status).toBe('PENDING');
+      // (3) …then REVOKE the binding — orphan state: slip live, binding gone.
+      await dataSource.query(
+        `DELETE FROM guest_contract_access
+          WHERE user_id = $1 AND contract_id = $2`,
+        [counterpartyId, contractOrphanId],
+      );
+    });
+
+    it('GET sign-slip → uniform 404 (revoked binding, despite the live slip)', async () => {
+      const res = await getSlip(COUNTERPARTY(), contractOrphanId);
+      expect(res.status).toBe(404);
+      expect(res.body.message).toBe('Contract not found');
+    });
+
+    it('POST accept → uniform 404 (revoked binding, despite the live slip)', async () => {
+      const res = await acceptSlip(COUNTERPARTY(), contractOrphanId);
+      expect(res.status).toBe(404);
+      expect(res.body.message).toBe('Contract not found');
+    });
+
+    it('the orphan 404 is IDENTICAL to the no-binding AND binding-no-slip cases (no oracle)', async () => {
+      // The three denial shapes must be byte-identical (status + body): a
+      // revoked-binding orphan must not be distinguishable from "never bound"
+      // or "bound-but-no-slip".
+      const orphanGet = await getSlip(COUNTERPARTY(), contractOrphanId);
+      const noBindingGet = await getSlip(UNBOUND(), contractLeakId);
+      const bindingNoSlipGet = await getSlip(BOUND_NO_SLIP(), contractLeakId);
+      expect(orphanGet.status).toBe(noBindingGet.status);
+      expect(orphanGet.status).toBe(bindingNoSlipGet.status);
+      expect(orphanGet.body).toEqual(noBindingGet.body);
+      expect(orphanGet.body).toEqual(bindingNoSlipGet.body);
+
+      const orphanPost = await acceptSlip(COUNTERPARTY(), contractOrphanId);
+      const noBindingPost = await acceptSlip(UNBOUND(), contractLeakId);
+      const bindingNoSlipPost = await acceptSlip(BOUND_NO_SLIP(), contractLeakId);
+      expect(orphanPost.status).toBe(noBindingPost.status);
+      expect(orphanPost.status).toBe(bindingNoSlipPost.status);
+      expect(orphanPost.body).toEqual(noBindingPost.body);
+      expect(orphanPost.body).toEqual(bindingNoSlipPost.body);
+    });
+
+    it('nothing pinned, slip never advanced, no signed audit', async () => {
+      // The contract is untouched…
+      const row = await getContractRow(contractOrphanId);
+      expect(row.pinned_version_id).toBeNull();
+      expect(row.signature_status).not.toBe('FULLY_EXECUTED');
+      // …the slip stayed PENDING (never ACCEPTED/EXECUTED)…
+      const [slip] = await getSlipRows(contractOrphanId);
+      expect(slip.id).toBe(orphanSlipId);
+      expect(slip.status).toBe('PENDING');
+      expect(slip.accepted_at).toBeNull();
+      expect(slip.accepted_version_id).toBeNull();
+      // …and no execution audit was ever emitted.
+      expect(await getSignAudits(contractOrphanId)).toHaveLength(0);
     });
   });
 
