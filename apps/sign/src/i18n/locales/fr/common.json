@@ -1417,6 +1417,32 @@
     }
   },
   "guest": {
+    "sign": {
+      "panel": {
+        "title": "Prêt pour votre signature",
+        "body": "L'autre partie vous propose ce contrat pour exécution. Examinez les clauses ci-dessous, puis acceptez pour exécuter cette version.",
+        "button": "Accepter et exécuter"
+      },
+      "executedPanel": {
+        "title": "Contrat exécuté",
+        "body": "Votre acceptation a été enregistrée et cette version est la version exécutée du contrat.",
+        "hashLabel": "Reçu d'intégrité (SHA-256)"
+      },
+      "modal": {
+        "title": "Accepter et exécuter",
+        "warnTitle": "Vous êtes sur le point d'exécuter ce contrat.",
+        "warnBody": "Votre acceptation sera enregistrée et cette version du contrat sera verrouillée comme version exécutée. Cette action est irréversible.",
+        "confirm": "Accepter et exécuter",
+        "executing": "Exécution en cours…",
+        "cancel": "Annuler",
+        "error_gone": "Cette demande de signature n'est plus active. Actualisez la page ou contactez l'autre partie.",
+        "error_transient": "Impossible de joindre le serveur. Vérifiez votre connexion et réessayez.",
+        "error_generic": "Une erreur est survenue. Veuillez réessayer.",
+        "successTitle": "Contrat exécuté",
+        "successBody": "Votre acceptation a été enregistrée et cette version est désormais la version exécutée du contrat.",
+        "close": "Terminé"
+      }
+    },
     "uploadStatus": {
       "processingTitle": "Traitement de votre nouvelle version…",
       "processingHint": "Nous extrayons les clauses de la version que vous avez téléversée.",

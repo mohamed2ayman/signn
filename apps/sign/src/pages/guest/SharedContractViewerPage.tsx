@@ -199,6 +199,13 @@ export default function SharedContractViewerPage() {
                the single place that supplies onImport (the token-entered
                GuestViewerPage never does — a pure guest has no workspace). */
             onImport={() => setImportOpen(true)}
+            /* Guest Signing v1 — SHARED-VIEWER-ONLY (Model A, locked): this
+               page is the single place that enables the Accept & Execute
+               affordance; GuestViewerPage stays untouched until #8c. The
+               affordance renders only when the slip API confirms an ACTIVE
+               slip; the backend re-checks binding + slip on every call. */
+            enableSignSlip
+            onExecuted={() => void contractQuery.refetch()}
           />
 
           <ImportContractModal

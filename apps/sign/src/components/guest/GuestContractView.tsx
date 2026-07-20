@@ -3,10 +3,15 @@ import { useTranslation } from 'react-i18next';
 import type { Contract } from '@/types';
 import GuestClauseCard from './GuestClauseCard';
 import GuestUploadStatus from './GuestUploadStatus';
+import AcceptExecuteModal from './AcceptExecuteModal';
 import {
   downloadGuestContractPdf,
   uploadGuestContractVersion,
 } from '@/services/api/guestService';
+import {
+  getGuestSignSlip,
+  GuestSignSlip,
+} from '@/services/api/guestSignService';
 
 const UPLOAD_ACCEPT = '.pdf,.docx,.doc';
 const UPLOAD_MAX_MB = 50;
@@ -62,6 +67,8 @@ export default function GuestContractView({
   guestJwt,
   onAskAi,
   onImport,
+  enableSignSlip,
+  onExecuted,
 }: {
   contract: Contract;
   guestJwt?: string | null;
@@ -77,6 +84,18 @@ export default function GuestContractView({
    *  filled-primary lead slot and Ask AI demotes to the outline style
    *  (one filled button per row — the design rule). */
   onImport?: () => void;
+  /** Guest Signing v1 — enables the "Accept & Execute" affordance.
+   *  SHARED-VIEWER-ONLY in v1 (Model A, the locked scope decision): supplied
+   *  exclusively by SharedContractViewerPage; the token-entered
+   *  GuestViewerPage never passes it, so pure org-less guests see no sign
+   *  affordance (#8c will flip that — a one-line change here). The affordance
+   *  renders ONLY when the slip API confirms an ACTIVE slip; the backend
+   *  RE-CHECKS binding + slip on every call — this gate is UX, never the
+   *  authority. */
+  enableSignSlip?: boolean;
+  /** Fired after a successful Accept & Execute so the parent can refetch the
+   *  contract (its signature status just changed). */
+  onExecuted?: () => void;
 }) {
   const { t } = useTranslation();
   const [downloading, setDownloading] = useState(false);
@@ -86,6 +105,9 @@ export default function GuestContractView({
   const [uploadError, setUploadError] = useState<string | null>(null);
   // The guest's just-uploaded new version (drives the live status surface).
   const [uploadedDoc, setUploadedDoc] = useState<InflightDoc | null>(null);
+  // Guest Signing v1 — the slip render gate (shared-viewer path only).
+  const [signSlip, setSignSlip] = useState<GuestSignSlip | null>(null);
+  const [signModalOpen, setSignModalOpen] = useState(false);
   const clauses = [...(contract.contract_clauses ?? [])].sort(
     (a, b) => (a.order_index ?? 0) - (b.order_index ?? 0),
   );
@@ -97,6 +119,26 @@ export default function GuestContractView({
     const persisted = readInflight(contract.id);
     if (persisted) setUploadedDoc(persisted);
   }, [contract.id, guestJwt]);
+
+  // Guest Signing v1 — fetch the slip status on mount (shared-viewer path
+  // only). A uniform 404 (no binding / no slip / voided — indistinguishable
+  // by design) resolves to null → no affordance. Any other failure ALSO
+  // resolves to null: the sign affordance simply doesn't render; the backend
+  // re-checks binding + slip on the actual accept call regardless.
+  useEffect(() => {
+    if (!enableSignSlip || !guestJwt) return;
+    let cancelled = false;
+    getGuestSignSlip(contract.id, guestJwt)
+      .then((slip) => {
+        if (!cancelled) setSignSlip(slip);
+      })
+      .catch(() => {
+        if (!cancelled) setSignSlip(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [contract.id, guestJwt, enableSignSlip]);
 
   const handleDownload = async () => {
     if (!guestJwt || downloading) return;
@@ -220,6 +262,88 @@ export default function GuestContractView({
           </div>
         )}
       </div>
+
+      {/* Guest Signing v1 — Accept & Execute. Renders ONLY when the slip API
+          confirmed an ACTIVE slip for this guest+contract (default-deny: a
+          bare binding never implies signing; the backend re-checks binding +
+          slip on the accept call — do NOT copy the host mark-signed button's
+          no-gate pattern). ACCEPTED is the crash-resume state: the accept
+          call is idempotent and finalizes it. */}
+      {enableSignSlip &&
+        guestJwt &&
+        (signSlip?.status === 'PENDING' || signSlip?.status === 'ACCEPTED') && (
+          <div className="mt-6 rounded-xl border border-primary/25 bg-primary/[0.04] p-5 shadow-sm sm:p-6">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="min-w-0">
+                <h2 className="text-sm font-semibold text-gray-900">
+                  {t('guest.sign.panel.title')}
+                </h2>
+                <p className="mt-1 text-xs leading-relaxed text-gray-500">
+                  {t('guest.sign.panel.body')}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSignModalOpen(true)}
+                data-testid="guest-accept-execute"
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-600"
+              >
+                <svg
+                  aria-hidden="true"
+                  className="h-4 w-4"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="m5 13 4 4L19 7" />
+                </svg>
+                {t('guest.sign.panel.button')}
+              </button>
+            </div>
+          </div>
+        )}
+      {enableSignSlip && guestJwt && signSlip?.status === 'EXECUTED' && (
+        <div className="mt-6 rounded-xl border border-emerald-200 bg-emerald-50/60 p-5 shadow-sm sm:p-6">
+          <div className="flex items-start gap-3">
+            <span
+              aria-hidden="true"
+              className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-600"
+            >
+              <svg
+                className="h-4 w-4"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="m5 13 4 4L19 7" />
+              </svg>
+            </span>
+            <div className="min-w-0">
+              <h2 className="text-sm font-semibold text-emerald-800">
+                {t('guest.sign.executedPanel.title')}
+              </h2>
+              <p className="mt-1 text-xs leading-relaxed text-emerald-700">
+                {t('guest.sign.executedPanel.body')}
+              </p>
+              {signSlip.accepted_content_hash && (
+                <p className="mt-2 text-[11px] text-emerald-700/80">
+                  {t('guest.sign.executedPanel.hashLabel')}
+                  <span
+                    className="mt-0.5 block break-all font-mono text-[10px] text-emerald-700/60"
+                    dir="ltr"
+                  >
+                    {signSlip.accepted_content_hash}
+                  </span>
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Clauses */}
       <div className="relative mt-6">
@@ -430,6 +554,28 @@ export default function GuestContractView({
           )}
         </div>
       </div>
+
+      {/* Accept & Execute confirmation (Guest Signing v1). */}
+      {signModalOpen && guestJwt && (
+        <AcceptExecuteModal
+          contractId={contract.id}
+          contractName={contract.name}
+          guestJwt={guestJwt}
+          onClose={() => setSignModalOpen(false)}
+          onExecuted={(result) => {
+            // Flip the panel to the executed receipt; the parent refetches the
+            // contract (its signature status just changed).
+            setSignSlip({
+              slip_id: result.slip_id,
+              status: result.status,
+              granted_at: result.granted_at,
+              accepted_at: result.accepted_at,
+              accepted_content_hash: result.accepted_content_hash,
+            });
+            onExecuted?.();
+          }}
+        />
+      )}
     </div>
   );
 }

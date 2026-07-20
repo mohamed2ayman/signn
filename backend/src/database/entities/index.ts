@@ -73,6 +73,8 @@ export { KnowledgeAssetVersion } from './knowledge-asset-version.entity';
 export { GuestContractAccess } from './guest-contract-access.entity';
 // ─── Phase 7.18 — Bucket 1b-i: Guest invitation + pre-password viewer ─────
 export { GuestInvitation, GuestInvitationStatus } from './guest-invitation.entity';
+// ─── Guest Signing v1 — the SLIP capability record (binding + slip door) ──
+export { GuestSignSlip, GuestSignSlipStatus } from './guest-sign-slip.entity';
 // ─── Phase 7.27 — Legal Corpus Foundation ─────────────────────────────────
 export {
   LegalDocument,

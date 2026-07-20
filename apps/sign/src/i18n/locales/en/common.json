@@ -1408,6 +1408,32 @@
     }
   },
   "guest": {
+    "sign": {
+      "panel": {
+        "title": "Ready for your signature",
+        "body": "The other party has offered this contract for execution. Review the clauses below, then accept to execute this version.",
+        "button": "Accept & Execute"
+      },
+      "executedPanel": {
+        "title": "Contract executed",
+        "body": "Your acceptance has been recorded and this version is the executed contract.",
+        "hashLabel": "Integrity receipt (SHA-256)"
+      },
+      "modal": {
+        "title": "Accept & Execute",
+        "warnTitle": "You are about to execute this contract.",
+        "warnBody": "Your acceptance will be recorded and this version of the contract will be locked as the executed version. This action cannot be undone.",
+        "confirm": "Accept & Execute",
+        "executing": "Executing…",
+        "cancel": "Cancel",
+        "error_gone": "This signing request is no longer active. Refresh the page or contact the other party.",
+        "error_transient": "We couldn't reach the server. Please check your connection and try again.",
+        "error_generic": "Something went wrong. Please try again.",
+        "successTitle": "Contract executed",
+        "successBody": "Your acceptance has been recorded and this version is now the executed contract.",
+        "close": "Done"
+      }
+    },
     "uploadStatus": {
       "processingTitle": "Processing your new version…",
       "processingHint": "We're extracting the clauses from the version you uploaded.",

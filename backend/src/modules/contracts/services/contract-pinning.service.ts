@@ -23,8 +23,8 @@ import {
   PinPayload,
 } from '../utils/canonical-pin.util';
 
-/** The two doors through which a contract reaches FULLY_EXECUTED. */
-export type PinDoor = 'DOCUSIGN_WEBHOOK' | 'MANUAL_MARK_SIGNED';
+/** The three doors through which a contract reaches FULLY_EXECUTED. */
+export type PinDoor = 'DOCUSIGN_WEBHOOK' | 'MANUAL_MARK_SIGNED' | 'GUEST_SIGN';
 
 export interface PinResult {
   /** True when THIS call performed the pin (false = already pinned, no-op). */
@@ -56,8 +56,12 @@ export interface PinVerificationResult {
  * philosophy of createEnvelope (which requires APPROVED) but widens to the
  * post-approval circulation states, because wet-sign paperwork happens at any
  * point after internal approval.
+ *
+ * EXPORTED (Guest Signing v1): slip issuance + the guest sign door's
+ * fresh-pin path apply the SAME signable-status set — one source, never
+ * duplicated.
  */
-const MARK_SIGNED_ALLOWED_STATUSES: ReadonlySet<ContractStatus> = new Set([
+export const MARK_SIGNED_ALLOWED_STATUSES: ReadonlySet<ContractStatus> = new Set([
   ContractStatus.APPROVED,
   ContractStatus.ACTIVE,
   ContractStatus.PENDING_TENDERING,
