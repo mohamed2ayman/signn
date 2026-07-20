@@ -14,6 +14,10 @@ from __future__ import annotations
 # USD per 1,000,000 tokens. PLACEHOLDER — verify against current pricing.
 PRICING_USD_PER_MTOK: dict[str, dict[str, float]] = {
     "claude-sonnet-4-6": {"input": 3.00, "output": 15.00},
+    # Haiku 4.5 (Step 3 cost benchmark). Both the pinned id and the alias are
+    # listed so `estimate_cost_usd` resolves either.
+    "claude-haiku-4-5-20251001": {"input": 1.00, "output": 5.00},
+    "claude-haiku-4-5": {"input": 1.00, "output": 5.00},
 }
 
 # Used when the active model id is not in the table above.
