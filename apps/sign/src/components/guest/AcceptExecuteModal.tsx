@@ -34,7 +34,10 @@ export default function AcceptExecuteModal({
 }) {
   const { t } = useTranslation();
   const [executing, setExecuting] = useState(false);
-  const [error, setError] = useState(false);
+  // The i18n key of the error to show, or null. Distinct outcomes get distinct
+  // copy (gone / transient / generic) so an IRREVERSIBLE action never shows a
+  // misleading "not executed" on a contract that IS executed.
+  const [errorKey, setErrorKey] = useState<string | null>(null);
   const [result, setResult] = useState<GuestAcceptResult | null>(null);
   const inFlight = useRef(false);
 
@@ -47,16 +50,34 @@ export default function AcceptExecuteModal({
     if (inFlight.current) return;
     inFlight.current = true;
     setExecuting(true);
-    setError(false);
+    setErrorKey(null);
     try {
-      const res = await acceptAndExecuteContract(contractId, guestJwt);
-      setResult(res);
-      onExecuted(res);
+      const outcome = await acceptAndExecuteContract(contractId, guestJwt);
+      switch (outcome.kind) {
+        // Fresh execute AND idempotent replay both mean the contract IS
+        // executed — render the same success receipt, never an error.
+        case 'success':
+        case 'already_executed':
+          setResult(outcome.result);
+          onExecuted(outcome.result);
+          break;
+        // Slip voided / revoked / gone between render and click — uniform 404
+        // by invariant; the copy stays generic (no leak) and offers no retry.
+        case 'gone':
+          setErrorKey('guest.sign.modal.error_gone');
+          break;
+        // Network / timeout / auth blip — retry / reconnect is appropriate.
+        case 'transient':
+          setErrorKey('guest.sign.modal.error_transient');
+          break;
+        // Anything unclassified — neutral fallback, no "not executed" claim.
+        default:
+          setErrorKey('guest.sign.modal.error_generic');
+      }
     } catch {
-      // No-leak generic error — the guest surface never surfaces backend
-      // detail; the slip may also have been voided meanwhile (404), which
-      // the parent's refetch will reflect once the modal closes.
-      setError(true);
+      // Defensive: the service classifies internally and shouldn't throw, but
+      // never let an unexpected throw escape the confirm handler.
+      setErrorKey('guest.sign.modal.error_generic');
     } finally {
       inFlight.current = false;
       setExecuting(false);
@@ -163,9 +184,9 @@ export default function AcceptExecuteModal({
             {t('guest.sign.modal.warnBody')}
           </p>
         </div>
-        {error && (
+        {errorKey && (
           <p className="text-xs text-red-500" role="alert">
-            {t('guest.sign.modal.error')}
+            {t(errorKey)}
           </p>
         )}
       </div>

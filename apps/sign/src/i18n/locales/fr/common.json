@@ -1435,7 +1435,9 @@
         "confirm": "Accepter et exécuter",
         "executing": "Exécution en cours…",
         "cancel": "Annuler",
-        "error": "Une erreur est survenue et le contrat n'a pas été exécuté — veuillez réessayer.",
+        "error_gone": "Cette demande de signature n'est plus active. Actualisez la page ou contactez l'autre partie.",
+        "error_transient": "Impossible de joindre le serveur. Vérifiez votre connexion et réessayez.",
+        "error_generic": "Une erreur est survenue. Veuillez réessayer.",
         "successTitle": "Contrat exécuté",
         "successBody": "Votre acceptation a été enregistrée et cette version est désormais la version exécutée du contrat.",
         "close": "Terminé"

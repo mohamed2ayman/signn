@@ -124,9 +124,8 @@ describe('GuestContractView — Accept & Execute affordance (Guest Signing v1)',
   it('executes through the modal, flips to the receipt panel, and notifies the parent', async () => {
     vi.mocked(getGuestSignSlip).mockResolvedValue(PENDING_SLIP);
     vi.mocked(acceptAndExecuteContract).mockResolvedValue({
-      ...EXECUTED_SLIP,
-      executed: true,
-      already_pinned: false,
+      kind: 'success',
+      result: { ...EXECUTED_SLIP, executed: true, already_pinned: false },
     });
     const onExecuted = vi.fn();
     render(
@@ -154,6 +153,74 @@ describe('GuestContractView — Accept & Execute affordance (Guest Signing v1)',
     expect(
       screen.getByText('guest.sign.executedPanel.title'),
     ).toBeInTheDocument();
+  });
+
+  it('⭐ ALREADY-EXECUTED (idempotent replay) shows the SUCCESS receipt, never "not executed"', async () => {
+    vi.mocked(getGuestSignSlip).mockResolvedValue(PENDING_SLIP);
+    vi.mocked(acceptAndExecuteContract).mockResolvedValue({
+      kind: 'already_executed',
+      result: { ...EXECUTED_SLIP, executed: true, already_pinned: true },
+    });
+    const onExecuted = vi.fn();
+    render(
+      <GuestContractView
+        contract={CONTRACT}
+        guestJwt="managing-token"
+        enableSignSlip
+        onExecuted={onExecuted}
+      />,
+    );
+    fireEvent.click(await screen.findByTestId('guest-accept-execute'));
+    fireEvent.click(screen.getByTestId('sign-confirm'));
+
+    // Treated as success: the receipt close button appears, the parent is
+    // notified, and NO error copy is shown.
+    expect(await screen.findByTestId('sign-success-close')).toBeInTheDocument();
+    expect(onExecuted).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText('guest.sign.modal.error_generic')).not.toBeInTheDocument();
+    expect(screen.queryByText('guest.sign.modal.error_gone')).not.toBeInTheDocument();
+  });
+
+  it('⭐ SLIP GONE (404 → kind:gone) shows error_gone and keeps the modal open (no success)', async () => {
+    vi.mocked(getGuestSignSlip).mockResolvedValue(PENDING_SLIP);
+    vi.mocked(acceptAndExecuteContract).mockResolvedValue({ kind: 'gone' });
+    const onExecuted = vi.fn();
+    render(
+      <GuestContractView
+        contract={CONTRACT}
+        guestJwt="managing-token"
+        enableSignSlip
+        onExecuted={onExecuted}
+      />,
+    );
+    fireEvent.click(await screen.findByTestId('guest-accept-execute'));
+    fireEvent.click(screen.getByTestId('sign-confirm'));
+
+    expect(
+      await screen.findByText('guest.sign.modal.error_gone'),
+    ).toBeInTheDocument();
+    // Not a success: no receipt, parent never told the contract executed.
+    expect(screen.queryByTestId('sign-success-close')).not.toBeInTheDocument();
+    expect(onExecuted).not.toHaveBeenCalled();
+  });
+
+  it('⭐ TRANSIENT (network / timeout → kind:transient) shows error_transient', async () => {
+    vi.mocked(getGuestSignSlip).mockResolvedValue(PENDING_SLIP);
+    vi.mocked(acceptAndExecuteContract).mockResolvedValue({ kind: 'transient' });
+    render(
+      <GuestContractView
+        contract={CONTRACT}
+        guestJwt="managing-token"
+        enableSignSlip
+      />,
+    );
+    fireEvent.click(await screen.findByTestId('guest-accept-execute'));
+    fireEvent.click(screen.getByTestId('sign-confirm'));
+
+    expect(
+      await screen.findByText('guest.sign.modal.error_transient'),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId('sign-success-close')).not.toBeInTheDocument();
   });
 });
 
@@ -186,27 +253,43 @@ describe('AcceptExecuteModal — confirm safety (in-flight ref)', () => {
     fireEvent.click(confirm);
     fireEvent.click(confirm);
     expect(acceptAndExecuteContract).toHaveBeenCalledTimes(1);
-    resolveCall({ ...EXECUTED_SLIP, executed: true, already_pinned: false });
+    resolveCall({
+      kind: 'success',
+      result: { ...EXECUTED_SLIP, executed: true, already_pinned: false },
+    });
     await screen.findByTestId('sign-success-close');
   });
 
   it('⭐ a deliberate retry after failure genuinely re-POSTs (the ref resets)', async () => {
+    // First attempt fails transient; the modal stays open for a retry.
+    vi.mocked(acceptAndExecuteContract).mockResolvedValueOnce({
+      kind: 'transient',
+    });
+    renderModal();
+    fireEvent.click(screen.getByTestId('sign-confirm'));
+    expect(
+      await screen.findByText('guest.sign.modal.error_transient'),
+    ).toBeInTheDocument();
+
+    // Retry succeeds (already-executed replay counts as success).
+    vi.mocked(acceptAndExecuteContract).mockResolvedValueOnce({
+      kind: 'already_executed',
+      result: { ...EXECUTED_SLIP, executed: true, already_pinned: true },
+    });
+    fireEvent.click(screen.getByTestId('sign-confirm'));
+    await screen.findByTestId('sign-success-close');
+    expect(acceptAndExecuteContract).toHaveBeenCalledTimes(2);
+  });
+
+  it('⭐ an unexpected THROW from the service is caught → error_generic (defensive)', async () => {
     vi.mocked(acceptAndExecuteContract).mockRejectedValueOnce(
       new Error('boom'),
     );
     renderModal();
     fireEvent.click(screen.getByTestId('sign-confirm'));
-    // Failure: generic no-leak error, modal stays open for a retry.
-    expect(await screen.findByText('guest.sign.modal.error')).toBeInTheDocument();
-
-    vi.mocked(acceptAndExecuteContract).mockResolvedValueOnce({
-      ...EXECUTED_SLIP,
-      executed: true,
-      already_pinned: true,
-    });
-    fireEvent.click(screen.getByTestId('sign-confirm'));
-    await screen.findByTestId('sign-success-close');
-    expect(acceptAndExecuteContract).toHaveBeenCalledTimes(2);
+    expect(
+      await screen.findByText('guest.sign.modal.error_generic'),
+    ).toBeInTheDocument();
   });
 
   it('close is inert while executing', async () => {
@@ -220,7 +303,10 @@ describe('AcceptExecuteModal — confirm safety (in-flight ref)', () => {
     // Mid-flight: cancel must not close.
     fireEvent.click(screen.getByText('guest.sign.modal.cancel'));
     expect(onClose).not.toHaveBeenCalled();
-    resolveCall({ ...EXECUTED_SLIP, executed: true, already_pinned: false });
+    resolveCall({
+      kind: 'success',
+      result: { ...EXECUTED_SLIP, executed: true, already_pinned: false },
+    });
     await screen.findByTestId('sign-success-close');
   });
 });

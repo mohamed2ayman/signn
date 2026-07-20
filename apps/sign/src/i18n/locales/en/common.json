@@ -1426,7 +1426,9 @@
         "confirm": "Accept & Execute",
         "executing": "Executing…",
         "cancel": "Cancel",
-        "error": "Something went wrong and the contract was not executed — please try again.",
+        "error_gone": "This signing request is no longer active. Refresh the page or contact the other party.",
+        "error_transient": "We couldn't reach the server. Please check your connection and try again.",
+        "error_generic": "Something went wrong. Please try again.",
         "successTitle": "Contract executed",
         "successBody": "Your acceptance has been recorded and this version is now the executed contract.",
         "close": "Done"
