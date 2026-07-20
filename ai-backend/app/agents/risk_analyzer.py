@@ -9,6 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from app.agents.base_agent import BaseAgent
+from app.config.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -192,6 +193,14 @@ text outside the JSON array.
 
 class RiskAnalyzerAgent(BaseAgent):
     """Analyses contract clauses and surfaces legal / commercial risks."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        # Per-stage model override (Step 3 cost work). Empty setting → keep the
+        # centralized ANTHROPIC_MODEL (production unchanged). Mirrors the
+        # party_extractor pattern; reads via settings, no hardcoded literal.
+        _s = get_settings()
+        self._model = _s.RISK_ANALYSIS_MODEL or _s.ANTHROPIC_MODEL
 
     def analyze(
         self,

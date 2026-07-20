@@ -26,6 +26,13 @@ class Settings(BaseSettings):
     # non-Arabic-critical path — NOT gated by the Arabic clause-extraction
     # accuracy suite (that gate protects ANTHROPIC_MODEL / clause extraction).
     PARTY_EXTRACT_MODEL: str = "claude-haiku-4-5-20251001"
+    # Per-stage model overrides for the cost-optimization work (Step 3). EMPTY by
+    # default → the agent falls back to ANTHROPIC_MODEL, so production is UNCHANGED
+    # until an env var is set. Set to a Haiku id to A/B a cheaper model on that
+    # stage ONLY (risk / compliance), independently of every other agent. Gated on
+    # the Arabic accuracy rule — never flip in production without the benchmark.
+    RISK_ANALYSIS_MODEL: str = ""
+    COMPLIANCE_MODEL: str = ""
     OPENAI_API_KEY: str = ""
 
     # Max number of chunk-extraction Anthropic calls issued CONCURRENTLY for a

@@ -18,6 +18,7 @@ import json
 from typing import Any
 
 from app.agents.base_agent import BaseAgent
+from app.config.settings import get_settings
 
 
 SYSTEM_PROMPT = """\
@@ -112,6 +113,14 @@ Return ONLY the JSON object. No prose before or after.
 
 class ComplianceCheckerAgent(BaseAgent):
     """Single-call multi-layer compliance evaluator."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        # Per-stage model override (Step 3 cost work). Empty setting → keep the
+        # centralized ANTHROPIC_MODEL (production unchanged). Mirrors the
+        # party_extractor pattern; reads via settings, no hardcoded literal.
+        _s = get_settings()
+        self._model = _s.COMPLIANCE_MODEL or _s.ANTHROPIC_MODEL
 
     def check(
         self,
