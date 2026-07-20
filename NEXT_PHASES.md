@@ -1222,13 +1222,28 @@ swap) before adoption.
 | 0 | **Parties extraction** — regex-first + Haiku fallback (cheap model on the cheap task) | ✅ done (PR #173) |
 | 1 | **Prompt caching** — opt-in `cache_system` on clause_extractor + risk_analyzer (biggest stable prompts); billing-only, output-neutral | ✅ done (PR #175) |
 | — | **Truncation fix** — raised max_tokens tiers + safety net (removes the silent nondeterministic clause loss; prerequisite for trusting any cost change) | ✅ done (PR #177) |
-| 3 | **Haiku for risk + compliance** — route these analyses to Haiku where accuracy holds (A/B vs Sonnet on the Arabic suite) | ⏳ pending |
+| 3 | **Haiku for risk + compliance** — A/B vs Sonnet on the Arabic gold. **REJECTED** — Haiku under-rates severity (Arabic verified-High recall **57% vs Sonnet 91%**; English 75% vs 93%); Sonnet retained. Reusable model-comparison harness now at `ai-backend/tests/accuracy/model_compare/` (per-agent `RISK_ANALYSIS_MODEL` / `COMPLIANCE_MODEL` overrides → default Sonnet, production unchanged). | ✅ done (PR #180) |
 | 4 | **Chat router** — cheap model (Haiku) + prompt-cache the conversation/context prefix (the deferred Step-4 caching work on `conversational_agent`) | ⏳ pending |
 | 2 | **Clause-type classification models** — 8.4 ContractBERT / 8.5 LEGAL-XLM-RoBERTa vs the Claude baseline (self-hosted; benchmark first) | ⏳ pending (Phase 8.4/8.5) |
-| 5 | **Extraction bake-off** — self-hosted OSS extractors (Qwen3 / Llama 4) vs Claude on the Arabic accuracy suite | ⏳ pending |
+| 5 | **Extraction bake-off** — self-hosted OSS extractors (Qwen3 / Llama 4) vs Claude on the Arabic accuracy suite (reuse the Step-3 `model_compare/` harness — `run_stage("extraction", …)`) | ⏳ pending |
 | 6 | **AWS + Bedrock** — host the winning OSS models in-VPC (data-locality per the 8.1 self-hosting rationale) | ⏳ pending |
 
 See lesson #268 (caching is billing-only) + the migration rule in 8.1.
+
+**Backlog / follow-ups (surfaced by Step 3):**
+- **Compliance-agent truncation — assigned to Youssef.** `compliance_checker.check()` hardcodes
+  `max_tokens = 8192` and does a bare `json.loads` (no salvage). On large Arabic contracts the findings
+  JSON overruns the ceiling and is cut mid-object → `json.loads` throws → **ALL findings silently lost**
+  (4/6 Arabic calls dropped every finding in the Step-3 run; nondeterministic even on English — an
+  8,373-token English response was already over the ceiling). Same silent-truncation class already fixed
+  for clause extraction in PR #177 — apply the SAME pattern to compliance: raise the max_tokens tier + a
+  `stop_reason == 'max_tokens'` retry + a `raw_decode` JSON-salvage path. See lesson #274.
+- **Regenerate legacy risks for the ~13 pre-Issue-5 contracts.** Contracts pre-labelled before the
+  Issue-5 append→replace fix (PR #163) still hold STACKED / duplicated `risk_analyses` rows (e.g.
+  Project6 / Project12 ≈ 97 rows across ~7 run-clusters; Project7 ≈ 76 across 5). Re-run risk analysis on
+  each (the poller now REPLACEs non-human, non-merged AI rows) to collapse the stacks. This did NOT
+  affect the Step-3 benchmark — that scored the clean EXPORTED gold + live generation, verified (lesson
+  #273) — but the live DB rows remain dirty for any production / UI consumer.
 
 ---
 
