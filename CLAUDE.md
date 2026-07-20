@@ -301,6 +301,18 @@ model string** (Phase 8.1). A guard test (`ai-backend/tests/accuracy/test_model_
 fails if a literal is reintroduced. **Hard rule: never change the model without first running the
 Arabic accuracy suite** (`ai-backend/tests/accuracy/`) — see NEXT_PHASES 8.1.
 
+**Per-agent model overrides (opt-in, default → `ANTHROPIC_MODEL`).** Two agents can be pointed at a
+different model in isolation via `RISK_ANALYSIS_MODEL` and `COMPLIANCE_MODEL` in `settings.py` — **empty
+by default, so the agent falls back to `ANTHROPIC_MODEL` and production is byte-unchanged until an env
+var is set**. `RiskAnalyzerAgent.__init__` / `ComplianceCheckerAgent.__init__` set
+`self._model = get_settings().<X> or ANTHROPIC_MODEL` (the `party_extractor` pattern — guard-safe: reads
+via `get_settings()`, no literal, so the model-centralization guard stays green). **Risk and compliance
+are intentionally kept on Sonnet: Haiku 4.5 was benchmarked and REJECTED** — it under-rates severity
+(Arabic verified-High recall **57% vs Sonnet 91%**; English 75% vs 93%), so the ~3× saving does not
+justify the recall drop on these safety-critical stages (Step 3, PR #180). The reusable
+model-comparison harness lives at `ai-backend/tests/accuracy/model_compare/` (`run_stage(stage, model,
+payload)` over risk/compliance/extraction; reusable for the Step 5 extraction bake-off). See lesson #272.
+
 **Prompt caching is OPT-IN** (Anthropic ephemeral cache; PR #175). The single `_call_model`
 chokepoint in `ai-backend/app/agents/base_agent.py` takes a `cache_system` flag; when set it wraps
 the (POST-scrub) system prompt in a `cache_control` block so repeated calls with the same large
