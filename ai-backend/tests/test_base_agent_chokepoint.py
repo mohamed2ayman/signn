@@ -94,7 +94,10 @@ SIMPLE_CASES = [
             jurisdiction="EG",
             clauses=[{"id": "1", "text": "A sample clause."}],
         ),
-        8192, compliance_checker.SYSTEM_PROMPT, "{}", False, id="compliance_checker",
+        # 16k flat ceiling since the compliance truncation fix (was 8192);
+        # billed per actual output token, so the raise is cost-free headroom.
+        compliance_checker._MAX_TOKENS,
+        compliance_checker.SYSTEM_PROMPT, "{}", False, id="compliance_checker",
     ),
     pytest.param(
         conflict_detector.ConflictDetectorAgent,

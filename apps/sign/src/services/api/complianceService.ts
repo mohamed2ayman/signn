@@ -75,6 +75,10 @@ export interface ComplianceCheck {
     by_layer?: Record<string, number>;
     by_severity?: Record<string, number>;
     overall_status?: string;
+    /** True when the AI response was truncated and findings were salvaged from a partial result. */
+    incomplete?: boolean;
+    /** AI-side failure reason, stored on the FAILED branch. */
+    error?: string;
   } | null;
   obligation_extraction_status: ComplianceExtractionStatus;
   ai_job_id: string | null;

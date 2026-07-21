@@ -17,6 +17,7 @@ from anthropic import APIConnectionError, APIStatusError
 
 from app.agents.base_agent import BaseAgent
 from app.config.settings import get_settings
+from app.utils.json_salvage import salvage_json_array
 
 logger = logging.getLogger(__name__)
 
@@ -1235,27 +1236,13 @@ class ClauseExtractorAgent(BaseAgent):
 
         # (FIX C — salvage) A response TRUNCATED at max_tokens is a valid JSON
         # PREFIX cut off mid-array — a full json.loads fails, but its LEADING
-        # objects are complete. Decode objects one at a time from the first '['
-        # and keep everything before the first incomplete one (mirrors
-        # risk_analyzer._parse_risk_array). Turns "lose the whole chunk" into
-        # "lose only the trailing partial clause".
+        # objects are complete. The shared util decodes objects one at a time
+        # from the first '[' and keeps everything before the first incomplete
+        # one (the loop previously mirrored here from risk_analyzer now lives
+        # ONCE in app/utils/json_salvage.py). Turns "lose the whole chunk"
+        # into "lose only the trailing partial clause".
         if bracket_start != -1:
-            decoder = json.JSONDecoder()
-            i = bracket_start + 1
-            n = len(cleaned)
-            salvaged: list[dict[str, Any]] = []
-            while i < n:
-                while i < n and cleaned[i] in " \t\r\n,":
-                    i += 1
-                if i >= n or cleaned[i] == "]":
-                    break
-                try:
-                    obj, end = decoder.raw_decode(cleaned, i)
-                except (json.JSONDecodeError, ValueError):
-                    break  # truncated / incomplete object — keep what completed
-                if isinstance(obj, dict):
-                    salvaged.append(obj)
-                i = end
+            salvaged = salvage_json_array(cleaned)
             if salvaged:
                 self._note_truncation()  # incomplete array — flag it (FIX C)
                 logger.warning(

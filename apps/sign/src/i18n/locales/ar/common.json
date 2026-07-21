@@ -1,4 +1,10 @@
 {
+  "complianceTab": {
+    "incomplete": {
+      "title": "قد تكون النتائج غير مكتملة.",
+      "body": "تم اقتطاع استجابة الذكاء الاصطناعي قبل اكتمالها — وقد تم استرداد النتائج أدناه من نتيجة جزئية. يُرجى إعادة تشغيل الفحص أو مراجعتها بعناية."
+    }
+  },
   "riskTab": {
     "_TODO": "PENDING LEGAL REVIEW (Youssef): the Arabic risk-tab / re-phrase terms below are DRAFT starting values — verify wording before finalizing.",
     "document": "مستند",

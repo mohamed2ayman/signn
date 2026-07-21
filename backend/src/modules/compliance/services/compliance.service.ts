@@ -316,6 +316,14 @@ export class ComplianceService {
         await this.startObligationExtraction(check);
       } else if (job.status === 'failed') {
         check.overall_status = ComplianceOverallStatus.FAILED;
+        // Store the AI-side error so genuine failures stop being reasonless
+        // (rides the findings_summary jsonb — no schema change). Salvaged
+        // partials never reach this branch: they come back as terminal
+        // SUCCESS labeled summary.incomplete, and commit their reservation.
+        check.findings_summary = {
+          ...(check.findings_summary ?? {}),
+          error: job.error ?? 'AI compliance job failed',
+        };
         await this.checkRepo.save(check); // lint-exempt: write (persist check/finding state); the chokepoint is read-only
         // Phase 7.18 Part 2 — TERMINAL FAILURE from the AI side.
         await this.releaseReservationOnFailure(check);

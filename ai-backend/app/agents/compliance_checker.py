@@ -15,10 +15,25 @@ Claude call produces findings partitioned across four layers:
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 from app.agents.base_agent import BaseAgent
 from app.config.settings import get_settings
+from app.utils.json_salvage import salvage_json_array
+
+logger = logging.getLogger(__name__)
+
+# Truncation fix — mirrors the audited PR #177 extraction pattern, adapted to
+# compliance's shape (ONE non-chunked call, OBJECT-wrapped output). max_tokens
+# is a CEILING billed per ACTUAL output token — raising it costs nothing when
+# the response is short; it only stops finding-dense contracts being cut off.
+# FLAT (not input-tiered): compliance output scales with the number of
+# findings the model generates, not with verbatim input length.
+_MAX_TOKENS = 16_000
+# A max_tokens cut-off is an HTTP 200 with stop_reason == 'max_tokens', NOT an
+# exception. On truncation we retry ONCE with doubled headroom before salvaging.
+_RETRY_MAX_TOKENS = 32_000
 
 
 SYSTEM_PROMPT = """\
@@ -171,25 +186,120 @@ class ComplianceCheckerAgent(BaseAgent):
 
         message = self._call_model(
             scrub=True,  # Camp-1: structured-PII scrubbed (Slice 1)
-            max_tokens=8192,
+            max_tokens=_MAX_TOKENS,
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_content}],
         )
+        truncated = getattr(message, "stop_reason", None) == "max_tokens"
+        if truncated:
+            # Retry once with doubled headroom. (No raw=True: stop_reason is on
+            # the parsed message, and a single non-chunked call needs no
+            # rate-limit-header access — do not blind-copy the extractor.)
+            logger.warning(
+                "Compliance response truncated at max_tokens=%d — retrying "
+                "once with max_tokens=%d",
+                _MAX_TOKENS,
+                _RETRY_MAX_TOKENS,
+            )
+            message = self._call_model(
+                scrub=True,  # Camp-1: structured-PII scrubbed (Slice 1)
+                max_tokens=_RETRY_MAX_TOKENS,
+                system=SYSTEM_PROMPT,
+                messages=[{"role": "user", "content": user_content}],
+            )
+            truncated = getattr(message, "stop_reason", None) == "max_tokens"
+            if truncated:
+                logger.warning(
+                    "Compliance response STILL truncated at max_tokens=%d — "
+                    "salvaging partial findings and flagging the result "
+                    "incomplete.",
+                    _RETRY_MAX_TOKENS,
+                )
 
         raw_text = message.content[0].text
+        return self._parse_result(raw_text, truncated=truncated)
+
+    def _parse_result(
+        self, raw_text: str, *, truncated: bool
+    ) -> dict[str, Any]:
+        """Parse the model's object response; salvage instead of total loss.
+
+        The old bare ``json.loads`` raised on a truncated response → the whole
+        check FAILED with zero findings persisted (reasonless, and the user's
+        retry burned a fresh metered reservation). Now a truncated/malformed
+        response salvages the complete leading findings, recomputes the
+        summary, and labels the result ``summary.incomplete = true`` —
+        partial + flagged, never total loss. A response with NOTHING
+        salvageable still raises: a loud failure beats fabricating an empty
+        COMPLIANT result (that WOULD be a silent false-pass).
+        """
+        cleaned = raw_text
         # Strip code-fences just in case
-        if raw_text.lstrip().startswith("```"):
-            raw_text = raw_text.strip().lstrip("`").lstrip("json").rstrip("`").strip()
-        result: dict[str, Any] = json.loads(raw_text)
+        if cleaned.lstrip().startswith("```"):
+            cleaned = (
+                cleaned.strip().lstrip("`").lstrip("json").rstrip("`").strip()
+            )
+        try:
+            result: dict[str, Any] = json.loads(cleaned)
+        except json.JSONDecodeError:
+            salvaged = self._salvage_findings(cleaned)
+            if not salvaged:
+                raise
+            logger.warning(
+                "Recovered %d compliance finding(s) from a truncated/partial "
+                "response (the remainder was cut off / malformed).",
+                len(salvaged),
+            )
+            result = {"findings": salvaged}
+            truncated = True
         # Defensive defaults
-        result.setdefault("findings", [])
-        result.setdefault(
-            "summary",
-            {
-                "total": len(result.get("findings", [])),
-                "by_layer": {},
-                "by_severity": {},
-                "overall_status": "COMPLIANT",
-            },
-        )
+        if not isinstance(result.get("findings"), list):
+            result["findings"] = []
+        if not isinstance(result.get("summary"), dict):
+            result["summary"] = _recompute_summary(result["findings"])
+        if truncated:
+            # Charge-on-salvage is the decided posture: this result is a
+            # SUCCESS (findings persisted, reservation committed) — labeled
+            # incomplete so the UI can say so. Rides findings_summary jsonb
+            # verbatim through persistFindings; no schema change.
+            result["summary"]["incomplete"] = True
         return result
+
+    @staticmethod
+    def _salvage_findings(cleaned: str) -> list[dict[str, Any]]:
+        """Salvage the inner ``findings`` array from a cut-off object response.
+
+        Compliance output is OBJECT-wrapped (``{"findings": [...], "summary":
+        {...}}``), unlike extraction/risk (bare arrays) — so anchor the shared
+        array salvage on the ``"findings"`` key when present, else on the
+        first ``[``.
+        """
+        key = cleaned.find('"findings"')
+        return salvage_json_array(cleaned[key:] if key != -1 else cleaned)
+
+
+def _recompute_summary(findings: list[dict[str, Any]]) -> dict[str, Any]:
+    """Rebuild the summary block from a (possibly salvaged) findings list.
+
+    Mirrors the SYSTEM_PROMPT's OVERALL STATUS RULES: any CRITICAL →
+    NON_COMPLIANT; else any HIGH → PARTIALLY_COMPLIANT; else COMPLIANT.
+    """
+    by_layer: dict[str, int] = {}
+    by_severity: dict[str, int] = {}
+    for f in findings:
+        layer = str(f.get("layer") or "STANDARD")
+        severity = str(f.get("severity") or "MEDIUM")
+        by_layer[layer] = by_layer.get(layer, 0) + 1
+        by_severity[severity] = by_severity.get(severity, 0) + 1
+    if by_severity.get("CRITICAL", 0) > 0:
+        overall = "NON_COMPLIANT"
+    elif by_severity.get("HIGH", 0) > 0:
+        overall = "PARTIALLY_COMPLIANT"
+    else:
+        overall = "COMPLIANT"
+    return {
+        "total": len(findings),
+        "by_layer": by_layer,
+        "by_severity": by_severity,
+        "overall_status": overall,
+    }
