@@ -1,0 +1,15 @@
+# Eval-ONLY dependencies for the clause-type feasibility screen (Step 2, Stage 1).
+# NOT part of the production runtime — do NOT add these to requirements.txt and do
+# NOT install them in the production Celery/API image. Install locally only to run
+# the offline benchmark:
+#
+#   pip install -r requirements-eval.txt
+#   RUN_CLASSIFICATION=1 GOLD_DIR=/path/to/gold \
+#     python -m tests.accuracy.model_compare.run_classification
+#
+# CPU-only. No GPU, no API, no billing. Downloads two ~440MB HF checkpoints on
+# first run (cached under HF_HOME). See
+# docs/step2-clause-classification-benchmark-investigation.md.
+torch>=2.2,<3.0
+transformers>=4.40,<5.0
+scikit-learn>=1.4,<2.0
