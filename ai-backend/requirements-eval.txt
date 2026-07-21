@@ -13,3 +13,5 @@
 torch>=2.2,<3.0
 transformers>=4.40,<5.0
 scikit-learn>=1.4,<2.0
+# Stage 2: XLSX human-labeling sheet (dropdown + hidden map) export/import.
+openpyxl>=3.1,<4.0
