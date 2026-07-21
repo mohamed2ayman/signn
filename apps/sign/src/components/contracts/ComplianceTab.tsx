@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { format, formatDistanceToNow } from 'date-fns';
 import complianceService, {
@@ -24,6 +25,7 @@ interface Props {
  * a Run-New-Check button, and the 3 "Email Report" buttons.
  */
 export default function ComplianceTab({ contractId, contractName, userEmail }: Props) {
+  const { t } = useTranslation();
   const qc = useQueryClient();
   const [activeLayer, setActiveLayer] =
     useState<ComplianceFindingLayer>('STANDARD');
@@ -165,6 +167,21 @@ export default function ComplianceTab({ contractId, contractName, userEmail }: P
                 check.obligation_extraction_status === 'RUNNING' ||
                 check.obligation_extraction_status === 'PENDING') && (
               <ProgressBar check={check} />
+            )}
+
+            {/* Truncation-salvage banner — the AI response was cut off and the
+                findings below were recovered from a partial result (mirrors the
+                #177 ProcessingStatusCard amber banner). */}
+            {summary?.incomplete && (
+              <div
+                dir="auto"
+                className="mt-4 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800"
+              >
+                <strong className="font-semibold">
+                  {t('complianceTab.incomplete.title')}
+                </strong>{' '}
+                {t('complianceTab.incomplete.body')}
+              </div>
             )}
 
             {/* Summary */}

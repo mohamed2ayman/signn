@@ -1,4 +1,10 @@
 {
+  "complianceTab": {
+    "incomplete": {
+      "title": "Les résultats peuvent être incomplets.",
+      "body": "La réponse de l'IA a été tronquée avant la fin — les constats ci-dessous proviennent d'un résultat partiel. Relancez la vérification ou examinez-les attentivement."
+    }
+  },
   "riskTab": {
     "_TODO": "PENDING LEGAL REVIEW: the French risk-tab / re-phrase terms below are DRAFT values pending verification.",
     "document": "Document",

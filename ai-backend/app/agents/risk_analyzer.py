@@ -10,6 +10,7 @@ from typing import Any
 
 from app.agents.base_agent import BaseAgent
 from app.config.settings import get_settings
+from app.utils.json_salvage import salvage_json_array
 
 logger = logging.getLogger(__name__)
 
@@ -56,22 +57,9 @@ def _parse_risk_array(raw: str) -> list[dict[str, Any]]:
         except (json.JSONDecodeError, ValueError):
             pass
     # Salvage path: decode complete objects until the first incomplete one.
-    dec = json.JSONDecoder()
-    i = a + 1
-    objs: list[dict[str, Any]] = []
-    while i < len(s):
-        while i < len(s) and s[i] in " \t\r\n,":
-            i += 1
-        if i >= len(s) or s[i] == "]":
-            break
-        try:
-            obj, end = dec.raw_decode(s, i)
-        except (json.JSONDecodeError, ValueError):
-            break  # truncated / incomplete object — keep what completed
-        if isinstance(obj, dict):
-            objs.append(obj)
-        i = end
-    return objs
+    # (The loop previously inlined here is now the shared util — same logic,
+    # same first-'[' start point, byte-identical output.)
+    return salvage_json_array(s)
 
 # ═══════════════════════════════════════════════════════════════════════════
 # ⚠️  PHASE 7.17 PROMPT 1 — A.1 PROMPT UPDATE

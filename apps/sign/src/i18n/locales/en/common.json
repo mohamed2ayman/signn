@@ -1,4 +1,10 @@
 {
+  "complianceTab": {
+    "incomplete": {
+      "title": "Results may be incomplete.",
+      "body": "The AI response was cut off before it finished — the findings below were recovered from a partial result. Re-run the check or review them carefully."
+    }
+  },
   "riskTab": {
     "document": "Document",
     "riskCount": "{{count}} risks",
