@@ -90,3 +90,9 @@ export { ContractRelationshipType } from './contract-relationship-type.entity';
 export { PartyRole } from './party-role.entity';
 export { ContractParty } from './contract-party.entity';
 export { ContractPartyContact } from './contract-party-contact.entity';
+// ─── 7.19 Slice 1 — counterparty redlining spine ──────────────────────────
+export {
+  ClauseRedline,
+  RedlineStatus,
+  RedlineAuthorIdentitySource,
+} from './clause-redline.entity';

@@ -17,6 +17,13 @@ export enum ClauseSource {
   MANUAL = 'MANUAL',
   AI_EXTRACTED = 'AI_EXTRACTED',
   AI_DRAFTED = 'AI_DRAFTED',
+  /**
+   * 7.19 — a clause version minted by accepting a counterparty redline
+   * (clause_redlines). Content authored by the counterparty, promoted by the
+   * host. Additive varchar value (the column is varchar(20) — this fits
+   * exactly); no ALTER TYPE needed.
+   */
+  COUNTERPARTY_REDLINE = 'COUNTERPARTY_REDLINE',
 }
 
 export enum ClauseReviewStatus {

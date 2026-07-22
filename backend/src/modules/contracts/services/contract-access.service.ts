@@ -380,7 +380,14 @@ export class ContractAccessService {
     return (caller as ViewerCaller).type === 'viewer';
   }
 
-  private isGuestUser(caller: ContractAccessCaller): boolean {
+  /**
+   * PUBLIC (7.19 Slice 1): also consumed by RedlineService's guest
+   * write-exclusion gate — redline WRITES (propose/counter) are closed to
+   * guest accounts until the #8c-hardened guest surface exists, and that
+   * gate must key on the SAME identity predicate this dispatcher uses (one
+   * definition, no drift), throwing the same uniform 404.
+   */
+  isGuestUser(caller: ContractAccessCaller): boolean {
     if (this.isViewer(caller)) return false;
     return (
       caller.account_type === AccountType.GUEST || caller.role === UserRole.GUEST

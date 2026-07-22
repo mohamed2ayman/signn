@@ -5961,3 +5961,66 @@ the source tenant** (never copy a cross-tenant FK verbatim). See lessons
   viewer entry) ✅ · **#8d** (Import to my workspace) ✅.
 - Remaining: **#8c** (guest sign-in + guest dashboard) — **DEFERRED**, carries a
   guest-session posture decision that needs Ayman.
+
+---
+
+## 7.19 Slice 1 — Counterparty Redlining Backend Spine (Model A)
+
+The PRIMARY negotiation loop for clause-level changes, shipped as a NET-NEW
+`clause_redlines` table + `RedlineService`/`RedlineController`
+(`backend/src/modules/redlines/`, migration `1772000000001`). A counterparty —
+Model A: a real MANAGING account acting via a "Shared with me"
+`guest_contract_access` binding — PROPOSES a full replacement clause body
+(BLOCK-REPLACE unit; clause bodies are opaque `text`, so there is no
+sub-clause tracked-change primitive); the host ACCEPTS / REJECTS / COUNTERS;
+the author WITHDRAWS. Accepting resolves INTO the existing version model:
+snapshot-BEFORE-promote via `createVersionSnapshot(…, manager)` + the
+parent-chain promotion (new Clause `parent_clause_id`/`version+1`, original
+`is_active=false`, junction repointed via `update()` not `save()`) —
+REPLICATED from `applyProposedVersion`'s mechanics (the RiskRephraseService
+precedent), NOT extracted; `applyProposedVersion` and the pin service are
+byte-untouched. New `ClauseSource.COUNTERPARTY_REDLINE` marks promoted rows.
+Statuses (varchar): `PROPOSED | ACCEPTED | REJECTED | COUNTERED | WITHDRAWN |
+STALE`. `base_content_snapshot` (the body at propose-time) is both the diff
+base and the staleness guard — an accept over a changed clause flips the
+redline STALE (persisted OUTSIDE the rolled-back txn, lesson #275) and 409s
+`STALE_REDLINE` with zero side effects. Every decision is a CONDITIONAL
+status-flip (`WHERE status='PROPOSED'`, affected-rows gate) — the same-row
+race resolves to one winner; the same-CLAUSE two-redline race needs a
+junction `FOR UPDATE` row-lock, filed as the known follow-up (lesson #277).
+Proven by 32 real-PG tests (`redline.real-pg.spec.ts`) where every negative
+asserts ZERO side effects, + the boot smoke + `lint:contract-repo`
+(`ClauseRedline` added to the enforced set, wall-protected annotations).
+
+### Hard rules — never violate
+1. **Redline clause-content mutations execute HOST-side ONLY** (`findInOrg`
+   wall on accept/reject/counter). A counterparty "accept" of a host counter
+   is a SIGNAL for a later slice — never a direct cross-org clause write.
+2. **propose / list / withdraw ride `findAccessibleContract`** (org-first →
+   binding-fallback; the binding stays the SOLE cross-org grant; the caller's
+   `organization_id` is never read on the binding path) and **every denial is
+   a uniform 404** — including non-author withdraw (no authorship oracle).
+2a. **Guest accounts are HARD-EXCLUDED from redline WRITES** (propose /
+   counter) at the service seam: `assertNotGuestWriter` (reusing the
+   dispatcher's `isGuestUser` predicate — one identity definition) runs AFTER
+   the wall and throws the same uniform 404. `list` and the author's own
+   `withdraw` stay open; the `author_identity_source` GUEST enum value stays
+   (data model is identity-agnostic). Guest redlining re-opens ATOMICALLY
+   WITH the #8c-hardened guest slice's own gate, never before (lesson #278).
+3. **`assertContractMutable` runs AFTER the access wall** on propose / accept
+   / counter (404-before-409). Reject and withdraw are deliberately NOT
+   pin-guarded (no clause mutation; post-pin cleanup allowed).
+4. **The accept is ONE transaction** — pin re-check, staleness re-check,
+   snapshot, promotion, conditional flip — all-or-nothing; the snapshot rides
+   the SAME EntityManager (`applyProposedVersion`'s exact ordering).
+5. **The list author projection stays scrubbed** (display name + TEAM/GUEST
+   keyed on HOST-org membership + `is_author` only — no emails, roles, or
+   user/org UUIDs), mirroring the guest comment-read scrub.
+
+### Slice boundaries (do NOT assume built)
+Slice 2: negotiation status machine (`UNDER_REVIEW`/`AGREED`/`READY_TO_SIGN`
+are net-new — no ContractStatus value covers them). Slice 4: notifications.
+Later, gated on #8c: guest-account redline writes (currently HARD-EXCLUDED at
+the service seam — hard rule 2a; the future slice removes `assertNotGuestWriter`
+atomically WITH its own hardened gate), and the counterparty-side
+accept-of-a-counter signal path.
