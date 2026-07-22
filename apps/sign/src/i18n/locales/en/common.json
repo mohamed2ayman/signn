@@ -1453,6 +1453,21 @@
     },
     "readOnlyBadge": "Read-only guest view",
     "poweredBy": "Powered by",
+    "dashboard": {
+      "title": "Contracts shared with me",
+      "subtitle": "Review and act on contracts external partners have shared with you.",
+      "cardTitle": "Shared contracts",
+      "signOut": "Sign out",
+      "empty": {
+        "title": "Nothing shared with you yet",
+        "subtitle": "When an organization invites you to review a contract, it appears here."
+      },
+      "error": {
+        "title": "Couldn’t load your contracts",
+        "subtitle": "Something went wrong while fetching the contracts shared with you.",
+        "retry": "Retry"
+      }
+    },
     "loading": "Loading shared contract…",
     "contractView": {
       "firstParty": "First party",
