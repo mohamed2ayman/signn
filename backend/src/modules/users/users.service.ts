@@ -3,9 +3,10 @@ import {
   NotFoundException,
   BadRequestException,
   ConflictException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, EntityManager, Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 
@@ -18,6 +19,13 @@ import {
   UpdateRoleDto,
   CreateOperationsUserDto,
 } from './dto';
+import { ORG_ADMIN_ROLES, canAssignRole } from './role-authz';
+
+/** JWT-derived caller context for the team-management endpoints. */
+interface ActorContext {
+  id: string;
+  role: UserRole;
+}
 
 // Invitation is considered expired after 72 hours with no login
 const INVITATION_EXPIRY_HOURS = 72;
@@ -32,6 +40,7 @@ export class UsersService {
     @InjectRepository(Organization)
     private readonly organizationRepository: Repository<Organization>,
     private readonly emailService: EmailService,
+    private readonly dataSource: DataSource,
   ) {}
 
   async findById(id: string): Promise<User> {
@@ -152,7 +161,21 @@ export class UsersService {
     return users;
   }
 
-  async inviteUser(organizationId: string, dto: InviteUserDto, inviterName: string) {
+  async inviteUser(
+    organizationId: string,
+    dto: InviteUserDto,
+    inviterName: string,
+    actor: ActorContext,
+  ) {
+    // Rank ceiling (defense-in-depth on top of the DTO allow-list): a caller
+    // can never invite a role that OUTRANKS their own. Closes the invite
+    // escalation vector even if the allow-list were widened later.
+    if (!canAssignRole(actor.role, dto.role)) {
+      throw new ForbiddenException(
+        'You cannot invite a user with a role higher than your own.',
+      );
+    }
+
     // Check if user already exists with this email
     const existingUser = await this.userRepository.findOne({
       where: { email: dto.email },
@@ -210,16 +233,113 @@ export class UsersService {
     };
   }
 
-  async updateUserRole(userId: string, dto: UpdateRoleDto) {
+  /**
+   * Org-scoped user lookup — the tenancy wall for team-management writes.
+   * Mirrors ContractAccessService.findInOrg: a target outside the caller's org
+   * is a 404 (never 403), so cross-tenant existence is not leaked.
+   *
+   * Nullable-org guard: a caller with no org (orgId null/undefined) can reach
+   * NO ONE — we never fall through to an unscoped or null-matching query.
+   */
+  private async findUserInOrg(
+    userId: string,
+    orgId: string | null | undefined,
+  ): Promise<User> {
+    if (!orgId) {
+      throw new NotFoundException('User not found');
+    }
     const user = await this.userRepository.findOne({
-      where: { id: userId },
+      where: { id: userId, organization_id: orgId },
     });
-
     if (!user) {
       throw new NotFoundException('User not found');
     }
+    return user;
+  }
 
-    await this.userRepository.update(userId, { role: dto.role });
+  /**
+   * Atomic last-admin (org-decapitation) guard. Runs INSIDE the caller's
+   * transaction and pessimistic-write-LOCKS the org's active admin-tier rows
+   * (SELECT … FOR UPDATE) before counting, so two concurrent operations that
+   * each remove an admin serialize: the first commits, the second re-reads the
+   * reduced set under the lock and is rejected. The invariant "an org always
+   * keeps ≥ 1 active admin" therefore holds even under a mutual-demote race —
+   * which the previous non-locking count() did NOT guarantee. Mirrors the
+   * metering / guest-sign-slip pessimistic-write pattern.
+   *
+   * No-op unless the operation REMOVES the target's admin-tier status
+   * (targetWasAdmin && !targetWillBeAdmin) — i.e. deactivating an admin, or
+   * re-roling an admin to a non-admin role. Admin-tier = ORG_ADMIN_ROLES.
+   */
+  private async assertNotLastOrgAdmin(
+    manager: EntityManager,
+    orgId: string,
+    targetUserId: string,
+    targetWasAdmin: boolean,
+    targetWillBeAdmin: boolean,
+  ): Promise<void> {
+    if (!targetWasAdmin || targetWillBeAdmin) {
+      return;
+    }
+    const activeAdmins = await manager
+      .getRepository(User)
+      .createQueryBuilder('u')
+      .setLock('pessimistic_write')
+      .where('u.organization_id = :orgId', { orgId })
+      .andWhere('u.is_active = :active', { active: true })
+      .andWhere('u.role IN (:...roles)', { roles: ORG_ADMIN_ROLES })
+      .getMany();
+    // Would ANY active admin remain after this op strips the target's
+    // admin-tier status? (Exclude the target — it is the one losing it.)
+    const remaining = activeAdmins.filter((a) => a.id !== targetUserId).length;
+    if (remaining < 1) {
+      throw new ForbiddenException(
+        'Cannot remove the last active admin of the organization.',
+      );
+    }
+  }
+
+  async updateUserRole(
+    userId: string,
+    dto: UpdateRoleDto,
+    orgId: string | null | undefined,
+    actor: ActorContext,
+  ) {
+    // (L1) Org-wall: a target outside the caller's org → 404. Closes the
+    // cross-tenant re-role AND the email disclosure (a foreign user never
+    // loads, so the response can never carry its email).
+    const user = await this.findUserInOrg(userId, orgId);
+
+    // (L3) No self-role-change — blocks self-promotion. There is no legitimate
+    // self-service role-change flow (updateUserRole is the ONLY User.role write
+    // path; the /me + profile DTOs carry no role field).
+    if (user.id === actor.id) {
+      throw new ForbiddenException('You cannot change your own role.');
+    }
+
+    // (L2) Rank ceiling: a caller can never confer a role above their own.
+    if (!canAssignRole(actor.role, dto.role)) {
+      throw new ForbiddenException(
+        'You cannot assign a role higher than your own.',
+      );
+    }
+
+    const targetWasAdmin = ORG_ADMIN_ROLES.includes(user.role);
+    const targetWillBeAdmin = ORG_ADMIN_ROLES.includes(dto.role);
+
+    // (L3) Atomic last-admin guard + the write in ONE locked transaction:
+    // re-roling the last admin DOWN to a non-admin role cannot decapitate the
+    // org, even under a concurrent mutual-demote race.
+    await this.dataSource.transaction(async (manager) => {
+      await this.assertNotLastOrgAdmin(
+        manager,
+        orgId as string,
+        userId,
+        targetWasAdmin,
+        targetWillBeAdmin,
+      );
+      await manager.getRepository(User).update(userId, { role: dto.role });
+    });
 
     return {
       id: user.id,
@@ -228,17 +348,32 @@ export class UsersService {
     };
   }
 
-  async deactivateUser(userId: string) {
-    const user = await this.userRepository.findOne({
-      where: { id: userId },
-    });
+  async deactivateUser(
+    userId: string,
+    orgId: string | null | undefined,
+    actor: ActorContext,
+  ) {
+    // (L1) Org-wall: cross-tenant deactivation → 404.
+    const user = await this.findUserInOrg(userId, orgId);
 
-    if (!user) {
-      throw new NotFoundException('User not found');
+    // (L3) No self-deactivation.
+    if (user.id === actor.id) {
+      throw new ForbiddenException('You cannot deactivate your own account.');
     }
 
-    await this.userRepository.update(userId, {
-      is_active: false,
+    const targetWasAdmin = ORG_ADMIN_ROLES.includes(user.role);
+
+    // (L3) Atomic last-admin guard + the write in ONE locked transaction.
+    // Deactivation always strips admin-tier status (targetWillBeAdmin = false).
+    await this.dataSource.transaction(async (manager) => {
+      await this.assertNotLastOrgAdmin(
+        manager,
+        orgId as string,
+        userId,
+        targetWasAdmin,
+        false,
+      );
+      await manager.getRepository(User).update(userId, { is_active: false });
     });
 
     return {
