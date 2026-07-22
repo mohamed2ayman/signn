@@ -68,7 +68,10 @@ export class UsersController {
     const inviterName =
       `${currentUser.first_name} ${currentUser.last_name}`.trim() ||
       'A team member';
-    return this.usersService.inviteUser(organizationId, dto, inviterName);
+    return this.usersService.inviteUser(organizationId, dto, inviterName, {
+      id: currentUser.id,
+      role: currentUser.role,
+    });
   }
 
   @Put(':id/role')
@@ -76,14 +79,26 @@ export class UsersController {
   async updateUserRole(
     @Param('id', ParseUUIDPipe) userId: string,
     @Body() dto: UpdateRoleDto,
+    @OrganizationId() organizationId: string,
+    @CurrentUser() currentUser: User,
   ) {
-    return this.usersService.updateUserRole(userId, dto);
+    return this.usersService.updateUserRole(userId, dto, organizationId, {
+      id: currentUser.id,
+      role: currentUser.role,
+    });
   }
 
   @Delete(':id')
   @Roles(UserRole.OWNER_ADMIN)
-  async deactivateUser(@Param('id', ParseUUIDPipe) userId: string) {
-    return this.usersService.deactivateUser(userId);
+  async deactivateUser(
+    @Param('id', ParseUUIDPipe) userId: string,
+    @OrganizationId() organizationId: string,
+    @CurrentUser() currentUser: User,
+  ) {
+    return this.usersService.deactivateUser(userId, organizationId, {
+      id: currentUser.id,
+      role: currentUser.role,
+    });
   }
 
   // ─── Admin-only endpoints ─────────────────────────────────────
