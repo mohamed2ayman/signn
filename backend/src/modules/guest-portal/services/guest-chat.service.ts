@@ -45,6 +45,21 @@ export interface GuestChatMessageView {
 }
 
 /**
+ * Sanitized session-LIST projection (#8c chat-resume). Enough for the panel to
+ * rediscover + adopt a prior conversation on a fresh device (no localStorage
+ * pointer), never message bodies — those are fetched per-session via getSession.
+ * Carries NO user_id / org_id / reservation ids.
+ */
+export interface GuestChatSessionListItem {
+  id: string;
+  contract_id: string | null;
+  created_at: Date;
+  updated_at: Date;
+  /** Lightweight preview: total messages in the session (user + assistant). */
+  message_count: number;
+}
+
+/**
  * Guest chat Slice 1 — guest-walled multi-turn AI chat about the ONE bound
  * contract (backend only).
  *
@@ -212,6 +227,52 @@ export class GuestChatService {
       created_at: session.created_at,
       messages: messages.map((m) => this.sanitizeMessage(m)),
     };
+  }
+
+  /**
+   * List the caller's chat sessions for THIS contract, most-recent-first
+   * (#8c chat-resume). The frontend adopts the most-recent to recover a prior
+   * conversation on a fresh device / cleared storage, where the localStorage
+   * pointer is gone — server-side rediscovery, matching the host's
+   * findSessionByContract. Scope is the SAME ownership triple as
+   * loadOwnedSession minus the id ({ user_id: guest, contract_id: walled }),
+   * so a guest can never enumerate another guest's sessions. Sanitized
+   * projection only — never message bodies (fetched per-session via getSession).
+   */
+  async listSessions(
+    contractId: string,
+    guest: GuestPrincipal,
+  ): Promise<GuestChatSessionListItem[]> {
+    await this.wallContract(contractId, guest);
+    const sessions = await this.sessionRepo.find({ // lint-exempt: guest-ownership list (ChatSession by user_id + contract_id) UNDER the route's findAccessibleContract wall — not a bare contract→org read
+      where: { user_id: guest.id, contract_id: contractId },
+      order: { updated_at: 'DESC' },
+    });
+    if (sessions.length === 0) return [];
+
+    // One grouped COUNT for the message-count preview (no bodies). Raw SQL
+    // (the daily-counter idiom already used in this service) over the SAME
+    // session ids just loaded under the wall — parameterized, ownership-safe.
+    const ids = sessions.map((s) => s.id);
+    const counts: Array<{ session_id: string; count: number }> =
+      await this.dataSource.query(
+        `SELECT session_id, COUNT(*)::int AS count
+           FROM chat_messages
+          WHERE session_id = ANY($1)
+          GROUP BY session_id`,
+        [ids],
+      );
+    const countBy = new Map(
+      counts.map((r) => [r.session_id, Number(r.count)]),
+    );
+
+    return sessions.map((s) => ({
+      id: s.id,
+      contract_id: s.contract_id,
+      created_at: s.created_at,
+      updated_at: s.updated_at,
+      message_count: countBy.get(s.id) ?? 0,
+    }));
   }
 
   // ─── Send a question ───────────────────────────────────────────────────

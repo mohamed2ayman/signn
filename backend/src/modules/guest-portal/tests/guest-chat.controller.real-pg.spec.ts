@@ -851,4 +851,81 @@ describeReal('GuestChatController / GuestChatService (real Postgres)', () => {
     expect(session.body.messages[0].user_id).toBeUndefined();
     expect(session.body.messages[0].org_id).toBeUndefined();
   });
+
+  // ═══ ⭐ LIST SESSIONS (#8c chat-resume) ═══════════════════════════════════
+
+  /** GET the caller's sessions for a contract. */
+  const listSessionsHttp = (contractId: string) =>
+    request(app.getHttpServer())
+      .get(`/guest/contracts/${contractId}/chat/sessions`)
+      .set('Authorization', 'Bearer valid-token');
+
+  it("LIST — returns the caller's sessions most-recent-first with message_count, sanitized (no user_id/org_id/bodies)", async () => {
+    // Two sessions; touch the FIRST (send a message) so its updated_at is the
+    // newest → it must sort ahead of the later-created but untouched one.
+    const s1 = (await createSessionHttp(contractBoundId).expect(201)).body.id;
+    const s2 = (await createSessionHttp(contractBoundId).expect(201)).body.id;
+    await request(app.getHttpServer())
+      .post(`/guest/contracts/${contractBoundId}/chat/sessions/${s1}/messages`)
+      .set('Authorization', 'Bearer valid-token')
+      .send({ message: 'hello on s1' })
+      .expect(201);
+
+    const res = await listSessionsHttp(contractBoundId).expect(200);
+    const list = res.body as Array<Record<string, any>>;
+    expect(list).toHaveLength(2);
+
+    // Most-recent-first: the touched session leads.
+    expect(list.map((s) => s.id)).toEqual([s1, s2]);
+
+    // Lightweight preview: s1 has the user+assistant pair (2), s2 is empty (0).
+    const byId = new Map(list.map((s) => [s.id, s]));
+    expect(byId.get(s1)!.message_count).toBe(2);
+    expect(byId.get(s2)!.message_count).toBe(0);
+
+    // Sanitized shape: id + contract_id + timestamps + count; NO user_id /
+    // org_id / message bodies.
+    const item = byId.get(s1)!;
+    expect(item.contract_id).toBe(contractBoundId);
+    expect(typeof item.created_at).toBe('string');
+    expect(typeof item.updated_at).toBe('string');
+    expect(item.user_id).toBeUndefined();
+    expect(item.org_id).toBeUndefined();
+    expect(item.messages).toBeUndefined();
+    expect(item.content).toBeUndefined();
+  });
+
+  it('LIST — empty array (200) when the caller has no sessions on the contract', async () => {
+    const res = await listSessionsHttp(contractBoundId).expect(200);
+    expect(res.body).toEqual([]);
+  });
+
+  it('⭐ LIST — 404 (uniform) for a contract the guest is not bound to; nothing enumerated', async () => {
+    await listSessionsHttp(contractUnboundId).expect(404);
+  });
+
+  it("⭐ LIST — never leaks another guest's sessions on the SAME contract (per-guest isolation)", async () => {
+    // Guest B opens a session on the shared contract.
+    injectedUser = GUEST_B();
+    const sB = (await createSessionHttp(contractBoundId).expect(201)).body.id;
+
+    // Guest A opens their own session on the SAME contract.
+    injectedUser = GUEST_A();
+    const sA = (await createSessionHttp(contractBoundId).expect(201)).body.id;
+
+    // Guest A sees ONLY their own session — never guest B's.
+    const aList = (await listSessionsHttp(contractBoundId).expect(200)).body as Array<{
+      id: string;
+    }>;
+    expect(aList.map((s) => s.id)).toEqual([sA]);
+    expect(aList.map((s) => s.id)).not.toContain(sB);
+
+    // And symmetrically, guest B sees ONLY sB.
+    injectedUser = GUEST_B();
+    const bList = (await listSessionsHttp(contractBoundId).expect(200)).body as Array<{
+      id: string;
+    }>;
+    expect(bList.map((s) => s.id)).toEqual([sB]);
+    expect(bList.map((s) => s.id)).not.toContain(sA);
+  });
 });

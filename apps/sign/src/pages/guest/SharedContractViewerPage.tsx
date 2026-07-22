@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -76,9 +76,12 @@ export default function SharedContractViewerPage() {
   // On a guest-surface 401 (the access token lapsed between refreshes),
   // refetch the read through `api` — its interceptor refreshes the session
   // and the rotated token flows back down through the selector above.
-  const handleSessionExpired = () => {
+  // Stable identity: passed to memoized-effect children (GuestChatPanel resume,
+  // GuestComments) — an inline handler would re-fire their effects on every
+  // render of this page.
+  const handleSessionExpired = useCallback(() => {
     void contractQuery.refetch();
-  };
+  }, [contractQuery.refetch]);
 
   return (
     <GuestLayout contractName={contract?.name}>

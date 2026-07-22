@@ -58,6 +58,22 @@ export class GuestChatController {
     return this.guestChat.createSession(contractId, user);
   }
 
+  /**
+   * List the caller's sessions for this contract (#8c chat-resume). Powers
+   * server-side rediscovery when the localStorage pointer is gone (fresh
+   * device / cleared storage). Most-recent-first, sanitized (no bodies).
+   * Distinct path from :sid below — a bare /sessions never carries a session
+   * segment, so there is no route shadowing.
+   */
+  @Get(':id/chat/sessions')
+  async listSessions(
+    @Param('id', ParseUUIDPipe) contractId: string,
+    @CurrentUser() user: any,
+  ) {
+    await this.assertGuestSurface(user, contractId);
+    return this.guestChat.listSessions(contractId, user);
+  }
+
   /** Session history for resume. */
   @Get(':id/chat/sessions/:sid')
   async getSession(

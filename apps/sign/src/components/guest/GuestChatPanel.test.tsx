@@ -5,6 +5,7 @@ import {
   createGuestChatSession,
   getGuestChatMessageStatus,
   getGuestChatSession,
+  listGuestChatSessions,
   sendGuestChatMessage,
   type GuestChatMessage,
 } from '@/services/api/guestChatService';
@@ -24,6 +25,7 @@ vi.mock('@/services/api/guestChatService', async (importOriginal) => ({
   >()),
   createGuestChatSession: vi.fn(),
   getGuestChatSession: vi.fn(),
+  listGuestChatSessions: vi.fn(),
   sendGuestChatMessage: vi.fn(),
   getGuestChatMessageStatus: vi.fn(),
 }));
@@ -34,6 +36,7 @@ vi.mock('@/components/common/SignLogo', () => ({
 
 const mockCreate = vi.mocked(createGuestChatSession);
 const mockGetSession = vi.mocked(getGuestChatSession);
+const mockList = vi.mocked(listGuestChatSessions);
 const mockSend = vi.mocked(sendGuestChatMessage);
 const mockStatus = vi.mocked(getGuestChatMessageStatus);
 
@@ -108,6 +111,8 @@ beforeEach(() => {
   localStorage.clear();
   window.HTMLElement.prototype.scrollIntoView = vi.fn();
   mockCreate.mockResolvedValue(SESSION);
+  // Default: no server sessions to rediscover (tests override per scenario).
+  mockList.mockResolvedValue([]);
   // Default poll response: still in flight (tests override per scenario).
   mockStatus.mockResolvedValue(assistantMsg());
 });
@@ -117,18 +122,22 @@ afterEach(() => {
 });
 
 describe('GuestChatPanel — empty state / first open', () => {
-  it('shows the welcome + the 4 suggested questions when no prior session exists', () => {
+  it('shows the welcome + the 4 suggested questions when no prior session exists', async () => {
     renderPanel();
-    expect(screen.getByText('guest.assistant.welcomeTitle')).toBeInTheDocument();
+    // The panel now does async server-side rediscovery on open (#8c); the empty
+    // state settles after the (empty) list resolves.
+    expect(
+      await screen.findByText('guest.assistant.welcomeTitle'),
+    ).toBeInTheDocument();
     expect(screen.getByText('guest.assistant.suggested1')).toBeInTheDocument();
     expect(screen.getByText('guest.assistant.suggested4')).toBeInTheDocument();
-    expect(mockGetSession).not.toHaveBeenCalled(); // nothing stored
+    expect(mockGetSession).not.toHaveBeenCalled(); // nothing stored, none found
   });
 
   it('a suggested-question tap creates the session and dispatches the send', async () => {
     sendOk();
     renderPanel();
-    fireEvent.click(screen.getByText('guest.assistant.suggested1'));
+    fireEvent.click(await screen.findByText('guest.assistant.suggested1'));
     await act(async () => {});
     expect(mockCreate).toHaveBeenCalledWith('c-1', 'jwt-1');
     expect(mockSend).toHaveBeenCalledWith(
@@ -304,6 +313,196 @@ describe('GuestChatPanel — refresh-resume + New Chat', () => {
       expect(screen.getByText('guest.assistant.welcomeTitle')).toBeInTheDocument(),
     );
     expect(localStorage.getItem('guest-chat-session:c-1')).toBeNull();
+  });
+
+  // ── #8c chat-resume: server-side rediscovery when the pointer is gone ──
+  it('no stored pointer + a server session exists → adopts the MOST-RECENT (not a fresh empty) and rewrites the pointer', async () => {
+    // Fresh device / cleared storage: nothing in localStorage.
+    mockList.mockResolvedValue([
+      {
+        id: 'sid-recent',
+        contract_id: 'c-1',
+        created_at: 't0',
+        updated_at: 't1',
+        message_count: 2,
+      },
+    ]);
+    mockGetSession.mockResolvedValue({
+      ...SESSION,
+      id: 'sid-recent',
+      messages: [
+        userMsg('recovered question'),
+        assistantMsg({ id: 'a-done', status: 'COMPLETED', content: 'recovered answer' }),
+      ],
+    });
+    renderPanel();
+
+    // Prior history is rendered — the conversation is NOT orphaned.
+    await waitFor(() =>
+      expect(screen.getByText('recovered question')).toBeInTheDocument(),
+    );
+    expect(mockList).toHaveBeenCalledWith('c-1', 'jwt-1');
+    expect(mockGetSession).toHaveBeenCalledWith('c-1', 'sid-recent', 'jwt-1');
+    // The rediscovered id is written back so subsequent opens are fast.
+    expect(localStorage.getItem('guest-chat-session:c-1')).toBe('sid-recent');
+  });
+
+  it('no stored pointer + no server sessions → stays on the empty state, lazily creating a fresh session on first send', async () => {
+    mockList.mockResolvedValue([]);
+    renderPanel();
+
+    await waitFor(() =>
+      expect(screen.getByText('guest.assistant.welcomeTitle')).toBeInTheDocument(),
+    );
+    expect(mockList).toHaveBeenCalledWith('c-1', 'jwt-1');
+    // Nothing to adopt → no history fetch, no eager session, no pointer.
+    expect(mockGetSession).not.toHaveBeenCalled();
+    expect(localStorage.getItem('guest-chat-session:c-1')).toBeNull();
+
+    // Fresh session is created lazily on the first send (existing behavior).
+    sendOk();
+    await typeAndSend('first question');
+    expect(mockCreate).toHaveBeenCalledWith('c-1', 'jwt-1');
+  });
+
+  it('a valid stored pointer resolves → happy path unchanged, the list endpoint is NEVER called', async () => {
+    localStorage.setItem('guest-chat-session:c-1', 'sid-1');
+    mockGetSession.mockResolvedValue({
+      ...SESSION,
+      messages: [userMsg('stored question')],
+    });
+    renderPanel();
+
+    await waitFor(() =>
+      expect(screen.getByText('stored question')).toBeInTheDocument(),
+    );
+    expect(mockGetSession).toHaveBeenCalledWith('c-1', 'sid-1', 'jwt-1');
+    // Rediscovery must NOT run when the pointer is good (no wasted round-trip).
+    expect(mockList).not.toHaveBeenCalled();
+  });
+
+  it('a STALE stored pointer (404) → clears it, rediscovers, and adopts a DIFFERENT server session (rewrites the pointer)', async () => {
+    // The primary real-world trigger #8c fixes: a returning device whose single
+    // stored pointer has gone stale (revoked / rotated).
+    localStorage.setItem('guest-chat-session:c-1', 'sid-stale');
+    mockGetSession
+      .mockRejectedValueOnce(axiosErr(404, {})) // the stale pointer
+      .mockResolvedValue({
+        ...SESSION,
+        id: 'sid-recent',
+        messages: [userMsg('recovered after stale')],
+      });
+    mockList.mockResolvedValue([
+      {
+        id: 'sid-recent',
+        contract_id: 'c-1',
+        created_at: 't0',
+        updated_at: 't1',
+        message_count: 2,
+      },
+    ]);
+    renderPanel();
+
+    await waitFor(() =>
+      expect(screen.getByText('recovered after stale')).toBeInTheDocument(),
+    );
+    // Tried the stale id first, then fell through to rediscovery + adopt.
+    expect(mockGetSession).toHaveBeenNthCalledWith(1, 'c-1', 'sid-stale', 'jwt-1');
+    expect(mockList).toHaveBeenCalledWith('c-1', 'jwt-1');
+    expect(mockGetSession).toHaveBeenNthCalledWith(2, 'c-1', 'sid-recent', 'jwt-1');
+    // Pointer rewritten to the recovered session, not left stale.
+    expect(localStorage.getItem('guest-chat-session:c-1')).toBe('sid-recent');
+  });
+
+  it('rediscovery adopt failure (list returns an id, get-one then 404s) → NO pointer written, empty state', async () => {
+    mockList.mockResolvedValue([
+      {
+        id: 'sid-gone',
+        contract_id: 'c-1',
+        created_at: 't0',
+        updated_at: 't1',
+        message_count: 1,
+      },
+    ]);
+    mockGetSession.mockRejectedValue(axiosErr(404, {}));
+    renderPanel();
+
+    await waitFor(() =>
+      expect(screen.getByText('guest.assistant.welcomeTitle')).toBeInTheDocument(),
+    );
+    // A failed adopt must NOT poison the pointer for the next open.
+    expect(localStorage.getItem('guest-chat-session:c-1')).toBeNull();
+  });
+
+  it('rediscovering an IN-FLIGHT session begins polling (cross-device mid-turn resume)', async () => {
+    mockList.mockResolvedValue([
+      {
+        id: 'sid-live',
+        contract_id: 'c-1',
+        created_at: 't0',
+        updated_at: 't1',
+        message_count: 2,
+      },
+    ]);
+    mockGetSession.mockResolvedValue({
+      ...SESSION,
+      id: 'sid-live',
+      messages: [
+        userMsg('mid-turn question'),
+        assistantMsg({ id: 'a-live', status: 'PENDING' }),
+      ],
+    });
+    mockStatus.mockResolvedValue(
+      assistantMsg({ id: 'a-live', status: 'COMPLETED', content: 'finished later' }),
+    );
+    renderPanel();
+
+    await waitFor(() =>
+      expect(screen.getByText('mid-turn question')).toBeInTheDocument(),
+    );
+    // The adopted in-flight assistant turn is polled to terminal.
+    await waitFor(() => expect(mockStatus).toHaveBeenCalled());
+  });
+
+  it('list rejects 401 during rediscovery → session-expired notice + onSessionExpired fires once', async () => {
+    mockList.mockRejectedValue(axiosErr(401, {}));
+    const { onSessionExpired } = renderPanel();
+
+    await waitFor(() =>
+      expect(screen.getByTestId('guest-chat-expired')).toBeInTheDocument(),
+    );
+    expect(onSessionExpired).toHaveBeenCalledTimes(1);
+  });
+
+  it('list rejects with a generic error during rediscovery → degrades to the empty state, no pointer', async () => {
+    mockList.mockRejectedValue(new Error('boom'));
+    renderPanel();
+
+    await waitFor(() =>
+      expect(screen.getByText('guest.assistant.welcomeTitle')).toBeInTheDocument(),
+    );
+    expect(localStorage.getItem('guest-chat-session:c-1')).toBeNull();
+  });
+
+  it('unmount mid-init: a stored-pointer 401 that settles AFTER unmount does not fire onSessionExpired (cancelled guard)', async () => {
+    localStorage.setItem('guest-chat-session:c-1', 'sid-1');
+    let rejectGet: (e: unknown) => void = () => {};
+    mockGetSession.mockImplementation(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectGet = reject;
+        }) as never,
+    );
+    const { onSessionExpired, unmount } = renderPanel();
+
+    // Unmount before the get settles, then settle it as a 401.
+    unmount();
+    rejectGet(axiosErr(401, {}));
+    await act(async () => {});
+
+    // The cancelled guard must swallow the post-unmount 401 — no parent
+    // callback, no state update on a torn-down panel.
+    expect(onSessionExpired).not.toHaveBeenCalled();
   });
 
   it('New Chat starts a fresh server session and keeps the quota pill (no reset exploit)', async () => {
