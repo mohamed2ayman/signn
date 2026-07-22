@@ -50,6 +50,19 @@ export interface GuestChatSessionView extends GuestChatSessionSummary {
   messages: GuestChatMessage[];
 }
 
+/**
+ * Sanitized session-list item (#8c chat-resume). Enough to rediscover + adopt
+ * a prior conversation when the localStorage pointer is gone (fresh device /
+ * cleared storage); never message bodies. The list is most-recent-first.
+ */
+export interface GuestChatSessionListItem {
+  id: string;
+  contract_id: string | null;
+  created_at: string;
+  updated_at: string;
+  message_count: number;
+}
+
 export interface GuestChatSendResult {
   user_message: GuestChatMessage;
   assistant_message: GuestChatMessage;
@@ -111,6 +124,22 @@ export async function createGuestChatSession(
   const res = await guestHttp.post<GuestChatSessionSummary>(
     `/guest/contracts/${contractId}/chat/sessions`,
     {},
+    authHeader(guestJwt),
+  );
+  return res.data;
+}
+
+/**
+ * List the guest's chat sessions for this contract (#8c chat-resume),
+ * most-recent-first. Powers server-side rediscovery when the localStorage
+ * pointer is gone — mirrors the host's findSessionByContract.
+ */
+export async function listGuestChatSessions(
+  contractId: string,
+  guestJwt: string,
+): Promise<GuestChatSessionListItem[]> {
+  const res = await guestHttp.get<GuestChatSessionListItem[]>(
+    `/guest/contracts/${contractId}/chat/sessions`,
     authHeader(guestJwt),
   );
   return res.data;

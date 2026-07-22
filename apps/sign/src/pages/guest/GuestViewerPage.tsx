@@ -136,12 +136,12 @@ export default function GuestViewerPage() {
     }
   };
 
-  const handleGuestSessionExpired = () => {
+  const handleGuestSessionExpired = useCallback(() => {
     // Guest JWT (15-min access) lapsed — drop back to read-only so the UI is
     // honest rather than silently failing further posts.
     setGuestJwt(null);
     setGuestUser(null);
-  };
+  }, []);
 
   const guestName = guestUser
     ? `${guestUser.first_name ?? t('guest.comments.defaultName')} ${guestUser.last_name ?? ''}`.trim()

@@ -7,6 +7,7 @@ import {
   createGuestChatSession,
   getGuestChatMessageStatus,
   getGuestChatSession,
+  listGuestChatSessions,
   sendGuestChatMessage,
   type GuestChatMessage,
 } from '@/services/api/guestChatService';
@@ -429,39 +430,81 @@ export default function GuestChatPanel({
     let cancelled = false;
 
     const init = async () => {
-      const storedSid = readStoredSession(contractId);
-      if (!storedSid) return;
       setLoadingHistory(true);
       try {
-        const session = await getGuestChatSession(
-          contractId,
-          storedSid,
-          guestJwt,
-        );
+        let session: Awaited<ReturnType<typeof getGuestChatSession>> | null =
+          null;
+
+        // 1 — stored pointer: the fast, unchanged happy path.
+        const storedSid = readStoredSession(contractId);
+        if (storedSid) {
+          try {
+            session = await getGuestChatSession(
+              contractId,
+              storedSid,
+              guestJwt,
+            );
+          } catch (err) {
+            // Preserve HEAD's cancelled-on-unmount contract: if the panel
+            // closed/unmounted or its deps changed while this await was in
+            // flight, do nothing (no markExpired/onSessionExpired after cancel).
+            if (cancelled) return;
+            const kind = classifyGuestChatError(err).kind;
+            if (kind === 'session-expired') {
+              markExpired();
+              return;
+            }
+            // A generic error is transient — surface as empty rather than
+            // wrongly discarding a possibly-valid pointer. Only a 404 (stale /
+            // revoked / different contract) drops the pointer and rediscovers.
+            if (kind !== 'not-found') throw err;
+            clearStoredSession(contractId);
+          }
+        }
+
+        // 2 — no usable pointer (fresh device / cleared storage) → rediscover
+        // server-side and adopt the MOST-RECENT session (the list is
+        // most-recent-first), mirroring the host's findSessionByContract. This
+        // is the fix: the persisted conversation is no longer orphaned when the
+        // localStorage pointer is gone.
+        if (!session) {
+          const sessions = await listGuestChatSessions(contractId, guestJwt);
+          const mostRecent = sessions[0];
+          if (mostRecent) {
+            session = await getGuestChatSession(
+              contractId,
+              mostRecent.id,
+              guestJwt,
+            );
+            writeStoredSession(contractId, mostRecent.id);
+          }
+        }
+
         if (cancelled) return;
-        setSessionId(session.id);
-        setMessages(session.messages);
-        // Resume polling if a prior turn is still in-flight (refresh mid-turn).
-        const inFlight = [...session.messages]
-          .reverse()
-          .find(
-            (m) =>
-              m.role === 'ASSISTANT' &&
-              (m.status === 'PENDING' || m.status === 'PROCESSING'),
-          );
-        if (inFlight) setPollMessageId(inFlight.id);
+
+        // 3 — adopt if found; otherwise stay on the empty state and lazily
+        // create a fresh session on the first send (existing behavior).
+        if (session) {
+          setSessionId(session.id);
+          setMessages(session.messages);
+          // Resume polling if a prior turn is still in-flight (refresh /
+          // rediscovery mid-turn).
+          const inFlight = [...session.messages]
+            .reverse()
+            .find(
+              (m) =>
+                m.role === 'ASSISTANT' &&
+                (m.status === 'PENDING' || m.status === 'PROCESSING'),
+            );
+          if (inFlight) setPollMessageId(inFlight.id);
+        }
       } catch (err) {
         if (cancelled) return;
-        const kind = classifyGuestChatError(err).kind;
-        if (kind === 'session-expired') {
+        // session-expired → notice; not-found (no binding — unexpected for an
+        // open panel) / generic → empty state (the guest can still start one).
+        if (classifyGuestChatError(err).kind === 'session-expired') {
           markExpired();
-        } else if (kind === 'not-found') {
-          // Stale stored session (revoked / different contract) — start clean.
-          clearStoredSession(contractId);
-          setSessionId(null);
-          setMessages([]);
         }
-        // generic → empty state; the guest can still start a conversation.
       } finally {
         if (!cancelled) setLoadingHistory(false);
       }
