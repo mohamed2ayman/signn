@@ -1462,6 +1462,21 @@
     },
     "readOnlyBadge": "Vue invité en lecture seule",
     "poweredBy": "Propulsé par",
+    "dashboard": {
+      "title": "Contrats partagés avec moi",
+      "subtitle": "Consultez et traitez les contrats que des partenaires externes ont partagés avec vous.",
+      "cardTitle": "Contrats partagés",
+      "signOut": "Se déconnecter",
+      "empty": {
+        "title": "Rien ne vous a encore été partagé",
+        "subtitle": "Lorsqu’une organisation vous invite à examiner un contrat, il apparaît ici."
+      },
+      "error": {
+        "title": "Impossible de charger vos contrats",
+        "subtitle": "Une erreur s’est produite lors de la récupération des contrats partagés avec vous.",
+        "retry": "Réessayer"
+      }
+    },
     "loading": "Chargement du contrat partagé…",
     "contractView": {
       "firstParty": "Première partie",

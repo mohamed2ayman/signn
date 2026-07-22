@@ -10,13 +10,20 @@ import { ManagexMark } from '@/components/common/ManagexLogo';
  * unauthenticated guest) and from the narrow `AuthLayout` card (too small for
  * a full contract). Wide content column, a persistent read-only cue, SIGN
  * branding, and the mandated MANAGEX attribution.
+ *
+ * `headerRight` is an optional slot rendered after the read-only pill — used by
+ * the pure-guest dashboard (#8c) for the language toggle + email + sign-out. The
+ * single-contract viewer pages (GuestViewerPage / SharedContractViewerPage) pass
+ * nothing, so their header stays byte-identical.
  */
 export default function GuestLayout({
   children,
   contractName,
+  headerRight,
 }: {
   children: ReactNode;
   contractName?: string | null;
+  headerRight?: ReactNode;
 }) {
   const { t } = useTranslation();
   const manageXUrl = import.meta.env.VITE_MANAGEX_URL || 'http://localhost:5175';
@@ -42,13 +49,16 @@ export default function GuestLayout({
               </span>
             )}
           </div>
-          <span className="inline-flex flex-shrink-0 items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
-            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-            </svg>
-            {t('guest.readOnlyBadge')}
-          </span>
+          <div className="flex flex-shrink-0 items-center gap-2 sm:gap-3">
+            <span className="inline-flex flex-shrink-0 items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
+              <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+              </svg>
+              {t('guest.readOnlyBadge')}
+            </span>
+            {headerRight}
+          </div>
         </div>
       </header>
 

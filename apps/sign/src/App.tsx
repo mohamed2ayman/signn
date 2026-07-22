@@ -76,6 +76,7 @@ import AcceptPartyInvitationPage from '@/pages/contractor/AcceptInvitationPage';
 // Guest Portal — external invited-party viewer (public, token-gated)
 import GuestViewerPage from '@/pages/guest/GuestViewerPage';
 import SharedContractViewerPage from '@/pages/guest/SharedContractViewerPage';
+import GuestDashboardPage from '@/pages/guest/GuestDashboardPage';
 
 // Legal pages (public)
 import LegalHubPage from '@/pages/legal/LegalHubPage';
@@ -226,6 +227,22 @@ function App() {
           entirely separate from the legacy /contractor/* role stub. */}
       <Route path="/guest/invitation/:token" element={<GuestViewerPage />} />
       <Route path="/guest/view" element={<GuestViewerPage />} />
+
+      {/* ─── Guest Dashboard (#8c) — AUTHED, session-gated ─── */}
+      {/* The "home" a signed-in pure guest lands on: every contract shared with
+          them across all orgs (their guest_contract_access bindings). Rendered
+          in the lighter GuestLayout shell, not the managing AppLayout. Requires
+          a real session but no role gate — a pure guest holds bindings, not a
+          workspace role. (Guest sign-in — #8c Part 1 — routes here after login;
+          that's a separate build.) */}
+      <Route
+        path="/guest/dashboard"
+        element={
+          <ProtectedRoute>
+            <GuestDashboardPage />
+          </ProtectedRoute>
+        }
+      />
 
       {/* ─── "Shared with me" viewer entry (#8b) — AUTHED, session-gated ─── */}
       {/* A managing user opening a contract another org shared with them
