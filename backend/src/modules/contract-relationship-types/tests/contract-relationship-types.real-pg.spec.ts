@@ -120,6 +120,7 @@ describeReal('contract_relationship_types — Slice T0a (real Postgres)', () => 
       {} as any,
       dataSource.getRepository(Clause),
       registryService,
+      {} as any, // 20 negotiationStatus (7.19 S2) — share hook not exercised here
     );
 
     await dataSource.query(`INSERT INTO organizations (id, name) VALUES ($1,$2)`, [

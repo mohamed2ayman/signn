@@ -23,6 +23,7 @@ import {
   ContractAccessService,
   ManagingOrGuestCaller,
 } from '../contracts/services/contract-access.service';
+import { NegotiationStatusService } from '../contracts/services/negotiation-status.service';
 import { assertContractMutable } from '../contracts/utils/contract-pin-guard.util';
 import {
   AcceptRedlineDto,
@@ -110,6 +111,13 @@ export class RedlineService {
     private readonly ccRepo: Repository<ContractClause>,
     private readonly contractAccess: ContractAccessService,
     private readonly contractsService: ContractsService,
+    // 7.19 Slice 2 — negotiation-lane auto-hook on propose (SHARED →
+    // UNDER_REVIEW; AGREED → UNDER_REVIEW bounce-back). Exported by
+    // ContractsModule. LAST param on purpose (the ContractsService
+    // convention): existing positional spec instantiations get `undefined`,
+    // dereferenced only inside propose's txn, which the negotiation spec
+    // supplies for real.
+    private readonly negotiationStatus: NegotiationStatusService,
   ) {}
 
   // ────────────────────────────────────────────────────────────────────────
@@ -158,7 +166,17 @@ export class RedlineService {
       author_identity_source: this.identitySourceOf(caller),
       status: RedlineStatus.PROPOSED,
     });
-    return this.redlineRepo.save(redline); // lint-exempt: wall-protected (findAccessibleContract) — contract validated before write
+    // 7.19 Slice 2 — the insert + the negotiation-lane auto-transition ride
+    // ONE transaction: a rollback reverts BOTH (no orphan UNDER_REVIEW
+    // without its redline, and no redline without the lane catching up).
+    // autoOnProposeOpened is idempotent (only SHARED/AGREED move; DRAFT,
+    // UNDER_REVIEW, READY_TO_SIGN are untouched) and routes THROUGH the
+    // guarded transition.
+    return this.redlineRepo.manager.transaction(async (manager) => {
+      const saved = await manager.getRepository(ClauseRedline).save(redline); // lint-exempt: wall-protected (findAccessibleContract) txn-bound repo — contract validated before write
+      await this.negotiationStatus.autoOnProposeOpened(contractId, manager);
+      return saved;
+    });
   }
 
   // ────────────────────────────────────────────────────────────────────────

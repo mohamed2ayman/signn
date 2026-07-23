@@ -21,6 +21,7 @@ import {
   ContractAccessService,
   ManagingOrGuestCaller,
 } from '../../contracts/services/contract-access.service';
+import { NegotiationStatusService } from '../../contracts/services/negotiation-status.service';
 import { RedlineService } from '../redline.service';
 
 /**
@@ -242,12 +243,20 @@ describeReal('RedlineService — 7.19 Slice 1 (real Postgres)', () => {
       {} as any,
       dataSource.getRepository(Clause),
       {} as any, // relationshipTypes (T0a) — not exercised
+      {} as any, // 20 negotiationStatus (7.19 S2) — share hook not exercised here
     );
     redlines = new RedlineService(
       dataSource.getRepository(ClauseRedline),
       dataSource.getRepository(ContractClause),
       contractAccess,
       contractsService,
+      // 7.19 Slice 2 — real negotiation service (propose's auto-hook rides
+      // the txn; every contract here sits at lane DRAFT, so the hook no-ops
+      // and Slice-1 behavior is unchanged).
+      new NegotiationStatusService(
+        dataSource.getRepository(Contract),
+        contractAccess,
+      ),
     );
 
     for (const [org, name] of [

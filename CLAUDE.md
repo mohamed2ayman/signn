@@ -6017,10 +6017,34 @@ asserts ZERO side effects, + the boot smoke + `lint:contract-repo`
    keyed on HOST-org membership + `is_author` only — no emails, roles, or
    user/org UUIDs), mirroring the guest comment-read scrub.
 
+### Slice 2 — negotiation status machine (SHIPPED)
+`contracts.negotiation_status` (varchar, NOT NULL DEFAULT 'DRAFT', migration
+`1772000000002`) — a SEPARATE lane, ORTHOGONAL to the lifecycle
+`ContractStatus` and the signing `SignatureStatus`; never overload either.
+Values: `DRAFT → SHARED → UNDER_REVIEW → AGREED → READY_TO_SIGN`.
+**READY_TO_SIGN is 7.19's TERMINAL value — the slip→pin handoff past it
+belongs to the #2 signing track; negotiation code never calls it.**
+
+Hard rules (additive to 1–5 above):
+6. **ALL `negotiation_status` writes go through
+   `NegotiationStatusService.applyTransition`** (transition map + coded 409s
+   `INVALID_NEGOTIATION_TRANSITION` / `OPEN_REDLINES_EXIST` + a conditional
+   from-status UPDATE) — no raw write anywhere, including auto-hooks
+   (lesson #279).
+7. **`→ AGREED` requires ZERO open (PROPOSED) redlines**, enforced INSIDE the
+   guard, never only at a controller.
+8. **Auto-hooks are idempotent and never move the lane backward**: share
+   (`updateStatus` → SENT_TO_CONTRACTOR) fires only DRAFT→SHARED;
+   redline-propose fires only SHARED→UNDER_REVIEW and AGREED→UNDER_REVIEW
+   (bounce-back), riding propose's OWN transaction so a rollback reverts the
+   lane with the redline. READY_TO_SIGN is never pulled backward.
+9. **Manual `agree` / `ready-to-sign` are HOST-ORG ONLY (findInOrg)**; the
+   status read rides `findAccessibleContract` (either bound party, uniform
+   404). Note: the guard map also allows UNDER_REVIEW→SHARED (step-back) —
+   defined but with NO caller in Slice 2.
+
 ### Slice boundaries (do NOT assume built)
-Slice 2: negotiation status machine (`UNDER_REVIEW`/`AGREED`/`READY_TO_SIGN`
-are net-new — no ContractStatus value covers them). Slice 4: notifications.
-Later, gated on #8c: guest-account redline writes (currently HARD-EXCLUDED at
-the service seam — hard rule 2a; the future slice removes `assertNotGuestWriter`
-atomically WITH its own hardened gate), and the counterparty-side
-accept-of-a-counter signal path.
+Slice 4: notifications. Later, gated on #8c: guest-account redline writes
+(currently HARD-EXCLUDED at the service seam — hard rule 2a; the future slice
+removes `assertNotGuestWriter` atomically WITH its own hardened gate), and the
+counterparty-side accept-of-a-counter signal path.

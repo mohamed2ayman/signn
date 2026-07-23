@@ -28,6 +28,8 @@ import { ContractAccessService } from './services/contract-access.service';
 import { ContractPinningService } from './services/contract-pinning.service';
 import { GuestSignSlipService } from './services/guest-sign-slip.service';
 import { GuestPortalSchemaCheckService } from './services/guest-portal-schema-check.service';
+import { NegotiationStatusService } from './services/negotiation-status.service';
+import { NegotiationStatusController } from './negotiation-status.controller';
 
 @Module({
   imports: [
@@ -64,7 +66,7 @@ import { GuestPortalSchemaCheckService } from './services/guest-portal-schema-ch
     // dto.relationship_type against ACTIVE registry codes.
     ContractRelationshipTypesModule,
   ],
-  controllers: [ContractsController],
+  controllers: [ContractsController, NegotiationStatusController],
   providers: [
     ContractsService,
     PermissionLevelGuard,
@@ -77,6 +79,9 @@ import { GuestPortalSchemaCheckService } from './services/guest-portal-schema-ch
     // Guest Signing v1 — slip issuance/list/void (host) + the binding+slip
     // guest door (consumed by guest-portal's GuestSignController).
     GuestSignSlipService,
+    // 7.19 Slice 2 — the negotiation status machine (SEPARATE lane from the
+    // lifecycle status; also consumed by RedlineModule's propose auto-hook).
+    NegotiationStatusService,
     GuestPortalSchemaCheckService,
   ],
   exports: [
@@ -84,6 +89,7 @@ import { GuestPortalSchemaCheckService } from './services/guest-portal-schema-ch
     ContractAccessService,
     ContractPinningService,
     GuestSignSlipService,
+    NegotiationStatusService,
   ],
 })
 export class ContractsModule {}

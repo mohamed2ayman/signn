@@ -26,6 +26,7 @@ import { ContractTemplatesService } from '../contract-templates/contract-templat
 import { ContractRelationshipTypesService } from '../contract-relationship-types/contract-relationship-types.service';
 import { EmailService } from '../notifications/email.service';
 import { ContractAccessService } from './services/contract-access.service';
+import { NegotiationStatusService } from './services/negotiation-status.service';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
@@ -271,6 +272,9 @@ describe('ContractsService', () => {
         // Multi-tier T0a — relationship-type registry validation. The unit
         // fixtures never pass relationship_type, so any active code resolves.
         { provide: ContractRelationshipTypesService,       useValue: mockRelationshipTypesService },
+        // 7.19 Slice 2 — negotiation-lane share auto-hook (idempotent no-op
+        // here; these unit fixtures never drive SENT_TO_CONTRACTOR).
+        { provide: NegotiationStatusService,               useValue: { autoOnShare: jest.fn() } },
       ],
     }).compile();
 

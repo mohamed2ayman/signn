@@ -52,6 +52,29 @@ export enum SignatureStatus {
   FULLY_EXECUTED = 'FULLY_EXECUTED',
 }
 
+/**
+ * 7.19 Slice 2 — the NEGOTIATION lane. A SEPARATE, ORTHOGONAL status from the
+ * lifecycle `ContractStatus` and the signing `SignatureStatus` — never overload
+ * either. Stored varchar (the SignatureStatus / RedlineStatus convention, not a
+ * pg enum — adding a value later is code-only). Transitions are enforced
+ * EXCLUSIVELY by NegotiationStatusService (no raw writes anywhere):
+ *
+ *   DRAFT → SHARED → UNDER_REVIEW → AGREED → READY_TO_SIGN
+ *            ↑______________|  ↑________|      (UNDER_REVIEW→SHARED step-back;
+ *                                               AGREED→UNDER_REVIEW bounce-back
+ *                                               on a new redline)
+ *
+ * READY_TO_SIGN is 7.19's TERMINAL value — the slip→pin handoff past it belongs
+ * to the #2 signing track and is never called from negotiation code.
+ */
+export enum NegotiationStatus {
+  DRAFT = 'DRAFT',
+  SHARED = 'SHARED',
+  UNDER_REVIEW = 'UNDER_REVIEW',
+  AGREED = 'AGREED',
+  READY_TO_SIGN = 'READY_TO_SIGN',
+}
+
 export enum LicenseOrganization {
   FIDIC = 'FIDIC',
   NEC = 'NEC',
@@ -210,6 +233,14 @@ export class Contract {
 
   @Column({ type: 'varchar', length: 30, nullable: true })
   signature_status: SignatureStatus | null;
+
+  /**
+   * 7.19 Slice 2 — negotiation lane (see NegotiationStatus doc). Writes go
+   * ONLY through NegotiationStatusService's guarded transition — never set
+   * this field directly.
+   */
+  @Column({ type: 'varchar', length: 30, default: NegotiationStatus.DRAFT })
+  negotiation_status: NegotiationStatus;
 
   @Column({ type: 'jsonb', nullable: true })
   signature_signers: Array<{
