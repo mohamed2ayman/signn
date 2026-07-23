@@ -204,6 +204,105 @@
     "proposed": "Guest proposed",
     "rtlIndicator": "Arabic · reads right-to-left"
   },
+  "redlines": {
+    "title": "Redlines",
+    "loading": "Loading redlines…",
+    "unknownClause": "Clause",
+    "round": "Round {{round}}",
+    "noteLabel": "Note",
+    "decisionNoteLabel": "Decision note",
+    "noteOptional": "Note (optional)",
+    "staleHint": "The clause changed after this was proposed — this redline is stale and must be re-proposed against the current text.",
+    "viewChanges": "View changes",
+    "cancel": "Cancel",
+    "submitting": "Working…",
+    "empty": {
+      "title": "No redlines yet",
+      "host": "When the counterparty proposes clause changes, they will appear here for your review.",
+      "counterparty": "Propose a change to a clause to start the negotiation."
+    },
+    "status": {
+      "PROPOSED": "Proposed",
+      "ACCEPTED": "Accepted",
+      "REJECTED": "Rejected",
+      "COUNTERED": "Countered",
+      "WITHDRAWN": "Withdrawn",
+      "STALE": "Stale"
+    },
+    "role": {
+      "team": "Team",
+      "external": "External"
+    },
+    "diff": {
+      "title": "Review proposed change",
+      "current": "Current clause",
+      "proposed": "Proposed"
+    },
+    "propose": {
+      "button": "Propose change",
+      "title": "Propose a clause change",
+      "subtitle": "Propose a full replacement text for one clause",
+      "clauseLabel": "Clause",
+      "clausePlaceholder": "Select a clause…",
+      "contentLabel": "Proposed text",
+      "contentPlaceholder": "The full replacement clause text…",
+      "submit": "Propose",
+      "success": "Redline proposed."
+    },
+    "accept": {
+      "title": "Accept this redline?",
+      "body": "Accepting promotes the proposed text into the contract as a new clause version. A snapshot of the current contract is saved to Version History first.",
+      "editToggle": "Edit the text before accepting",
+      "confirm": "Accept",
+      "success": "Redline accepted — the clause was updated."
+    },
+    "reject": {
+      "title": "Reject this redline?",
+      "body": "Rejecting leaves the contract unchanged. The proposer can see your decision and note.",
+      "confirm": "Reject",
+      "success": "Redline rejected."
+    },
+    "counter": {
+      "title": "Counter-propose",
+      "body": "Your counter-proposal replaces this redline with a new round for the counterparty to consider.",
+      "contentLabel": "Counter-proposal text",
+      "confirm": "Send counter-proposal",
+      "success": "Counter-proposal sent."
+    },
+    "withdraw": {
+      "title": "Withdraw this redline?",
+      "body": "Withdrawing removes this proposal from consideration. The contract is not changed.",
+      "confirm": "Withdraw",
+      "success": "Redline withdrawn."
+    },
+    "negotiation": {
+      "DRAFT": "Draft",
+      "SHARED": "Shared",
+      "UNDER_REVIEW": "Under review",
+      "AGREED": "Agreed",
+      "READY_TO_SIGN": "Ready to sign",
+      "markAgreed": "Mark as agreed",
+      "readyToSign": "Ready to sign",
+      "agreeTitle": "Mark this contract as agreed?",
+      "agreeBody": "This records that both parties have agreed on the current text. All open redlines must be resolved first.",
+      "agreeConfirm": "Mark as agreed",
+      "agreeSuccess": "Negotiation marked as agreed.",
+      "readyToSignTitle": "Mark as ready to sign?",
+      "readyToSignBody": "This closes the negotiation. Signing is handled separately after this step.",
+      "readyToSignConfirm": "Ready to sign",
+      "readyToSignSuccess": "Negotiation marked ready to sign."
+    },
+    "errors": {
+      "stale": "The clause changed since this redline was proposed. The redline is now stale — please re-propose against the current text.",
+      "pinned": "This contract has been signed and its content is locked. No further changes are possible.",
+      "openRedlines": "There are still open redlines awaiting a decision. Resolve them before marking the contract as agreed.",
+      "notProposed": "This redline has already been decided.",
+      "invalidTransition": "This step is not available in the current negotiation state.",
+      "notFound": "The requested item was not found.",
+      "generic": "Something went wrong. Please try again.",
+      "loadFailed": "Could not load redlines."
+    }
+  },
   "hostReview": {
     "reviewingGuestVersion": "Reviewing guest version",
     "proposedBy": "Proposed by {{name}}",
@@ -713,7 +812,8 @@
       "obligations": "Obligations",
       "versions": "Versions",
       "subcontractPackages": "Sub-Contract Packages",
-      "parties": "Parties"
+      "parties": "Parties",
+      "redlines": "Redlines"
     },
     "noClauses": "No clauses yet. Add clauses from the library.",
     "addClause": "Add Clause",

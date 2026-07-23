@@ -22,6 +22,7 @@ import {
   ManagingOrGuestCaller,
 } from '../../contracts/services/contract-access.service';
 import { NegotiationStatusService } from '../../contracts/services/negotiation-status.service';
+import { computeClauseDiff } from '../../contracts/utils/clause-diff.util';
 import { RedlineService } from '../redline.service';
 
 /**
@@ -550,6 +551,43 @@ describeReal('RedlineService — 7.19 Slice 1 (real Postgres)', () => {
     });
     expect(byClause).toHaveLength(1);
     expect(byClause[0].status).toBe('REJECTED');
+  });
+
+  it('list rows carry word_level_diff matching the SHARED clause-diff util (Slice 3); null when identical', async () => {
+    const { ccId } = await seedLive('WD', 'The employer shall pay within 30 days.', 0);
+    const rl = await redlines.propose(
+      contractId,
+      ccId,
+      { proposedContent: 'The employer shall pay within 45 days.' },
+      cpCaller,
+    );
+    // A byte-identical "proposal" → UNCHANGED pair → null diff.
+    const same = await redlines.propose(
+      contractId,
+      ccId,
+      { proposedContent: 'The employer shall pay within 30 days.' },
+      cpCaller,
+    );
+
+    const rows = await redlines.list(contractId, hostCaller);
+    const changed = rows.find((r) => r.id === rl.id)!;
+    const identical = rows.find((r) => r.id === same.id)!;
+
+    // Shape + content must equal the SAME shared util's output for the pair —
+    // the frontend DiffView consumes this byte-consistently with version diffs.
+    const expected = computeClauseDiff(
+      [{ clause_id: 'k', clause_title: '', clause_content: changed.base_content_snapshot, section_number: null }],
+      [{ clause_id: 'k', clause_title: '', clause_content: changed.proposed_content, section_number: null }],
+    ).changes[0].wordLevelDiff;
+    expect(changed.word_level_diff).toEqual(expected);
+    expect(changed.word_level_diff!.some((s) => s.added)).toBe(true);
+    expect(changed.word_level_diff!.some((s) => s.removed)).toBe(true);
+    // Reconstruction invariant: non-removed segments concatenate to the proposal.
+    expect(
+      changed.word_level_diff!.filter((s) => !s.removed).map((s) => s.value).join(''),
+    ).toBe(changed.proposed_content);
+
+    expect(identical.word_level_diff).toBeNull();
   });
 
   // ══════════════════════════════════════════════════════════════════════

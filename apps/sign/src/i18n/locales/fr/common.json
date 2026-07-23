@@ -206,6 +206,105 @@
     "proposed": "Proposé par l'invité",
     "rtlIndicator": "Arabe · se lit de droite à gauche"
   },
+  "redlines": {
+    "title": "Révisions proposées",
+    "loading": "Chargement des révisions…",
+    "unknownClause": "Clause",
+    "round": "Tour {{round}}",
+    "noteLabel": "Note",
+    "decisionNoteLabel": "Note de décision",
+    "noteOptional": "Note (facultatif)",
+    "staleHint": "La clause a changé après cette proposition — cette révision est obsolète et doit être reproposée sur le texte actuel.",
+    "viewChanges": "Voir les modifications",
+    "cancel": "Annuler",
+    "submitting": "En cours…",
+    "empty": {
+      "title": "Aucune révision pour le moment",
+      "host": "Les modifications de clauses proposées par l'autre partie apparaîtront ici pour votre examen.",
+      "counterparty": "Proposez une modification d'une clause pour démarrer la négociation."
+    },
+    "status": {
+      "PROPOSED": "Proposée",
+      "ACCEPTED": "Acceptée",
+      "REJECTED": "Rejetée",
+      "COUNTERED": "Contre-proposée",
+      "WITHDRAWN": "Retirée",
+      "STALE": "Obsolète"
+    },
+    "role": {
+      "team": "Équipe",
+      "external": "Externe"
+    },
+    "diff": {
+      "title": "Examiner la modification proposée",
+      "current": "Clause actuelle",
+      "proposed": "Proposée"
+    },
+    "propose": {
+      "button": "Proposer une modification",
+      "title": "Proposer une modification de clause",
+      "subtitle": "Proposez un texte de remplacement complet pour une clause",
+      "clauseLabel": "Clause",
+      "clausePlaceholder": "Sélectionnez une clause…",
+      "contentLabel": "Texte proposé",
+      "contentPlaceholder": "Le texte de remplacement complet de la clause…",
+      "submit": "Proposer",
+      "success": "Révision proposée."
+    },
+    "accept": {
+      "title": "Accepter cette révision ?",
+      "body": "L'acceptation intègre le texte proposé au contrat comme nouvelle version de la clause. Un instantané du contrat actuel est d'abord enregistré dans l'historique des versions.",
+      "editToggle": "Modifier le texte avant d'accepter",
+      "confirm": "Accepter",
+      "success": "Révision acceptée — la clause a été mise à jour."
+    },
+    "reject": {
+      "title": "Rejeter cette révision ?",
+      "body": "Le rejet laisse le contrat inchangé. L'auteur de la proposition voit votre décision et votre note.",
+      "confirm": "Rejeter",
+      "success": "Révision rejetée."
+    },
+    "counter": {
+      "title": "Contre-proposer",
+      "body": "Votre contre-proposition remplace cette révision par un nouveau tour à examiner par l'autre partie.",
+      "contentLabel": "Texte de la contre-proposition",
+      "confirm": "Envoyer la contre-proposition",
+      "success": "Contre-proposition envoyée."
+    },
+    "withdraw": {
+      "title": "Retirer cette révision ?",
+      "body": "Le retrait supprime cette proposition de l'examen. Le contrat n'est pas modifié.",
+      "confirm": "Retirer",
+      "success": "Révision retirée."
+    },
+    "negotiation": {
+      "DRAFT": "Brouillon",
+      "SHARED": "Partagé",
+      "UNDER_REVIEW": "En cours d'examen",
+      "AGREED": "Convenu",
+      "READY_TO_SIGN": "Prêt à signer",
+      "markAgreed": "Marquer comme convenu",
+      "readyToSign": "Prêt à signer",
+      "agreeTitle": "Marquer ce contrat comme convenu ?",
+      "agreeBody": "Ceci consigne l'accord des deux parties sur le texte actuel. Toutes les révisions ouvertes doivent d'abord être résolues.",
+      "agreeConfirm": "Marquer comme convenu",
+      "agreeSuccess": "Négociation marquée comme convenue.",
+      "readyToSignTitle": "Marquer comme prêt à signer ?",
+      "readyToSignBody": "Ceci clôt la négociation. La signature est gérée séparément après cette étape.",
+      "readyToSignConfirm": "Prêt à signer",
+      "readyToSignSuccess": "Négociation marquée prête à signer."
+    },
+    "errors": {
+      "stale": "La clause a changé depuis cette proposition. La révision est obsolète — veuillez la reproposer sur le texte actuel.",
+      "pinned": "Ce contrat a été signé et son contenu est verrouillé. Aucune modification n'est possible.",
+      "openRedlines": "Des révisions ouvertes attendent encore une décision. Résolvez-les avant de marquer le contrat comme convenu.",
+      "notProposed": "Cette révision a déjà été tranchée.",
+      "invalidTransition": "Cette étape n'est pas disponible dans l'état de négociation actuel.",
+      "notFound": "L'élément demandé est introuvable.",
+      "generic": "Une erreur s'est produite. Veuillez réessayer.",
+      "loadFailed": "Impossible de charger les révisions."
+    }
+  },
   "hostReview": {
     "reviewingGuestVersion": "Révision de la version de l'invité",
     "proposedBy": "Proposé par {{name}}",
@@ -715,7 +814,8 @@
       "obligations": "Obligations",
       "versions": "Versions",
       "subcontractPackages": "Lots de sous-traitance",
-      "parties": "Parties"
+      "parties": "Parties",
+      "redlines": "Révisions"
     },
     "noClauses": "Aucune clause pour l'instant. Ajoutez des clauses depuis la bibliothèque.",
     "addClause": "Ajouter une clause",

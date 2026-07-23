@@ -27,6 +27,7 @@ import ComplianceTab from '@/components/contracts/ComplianceTab';
 import ObligationsTab from '@/components/contracts/ObligationsTab';
 import ContractPartiesEditor from '@/components/contracts/parties/ContractPartiesEditor';
 import GuestProposedVersionsPanel from '@/components/contracts/GuestProposedVersionsPanel';
+import RedlinesTab from '@/components/contracts/RedlinesTab';
 import { documentProcessingService } from '@/services/api/documentProcessingService';
 import { useDocumentProcessing } from '@/hooks/useDocumentProcessing';
 import ProcessingStatusCard from '@/components/common/ProcessingStatusCard';
@@ -246,6 +247,10 @@ const tabConfig = [
   // DRAFT onward). Label localized via t('contract.tabs.parties').
   { key: 'parties' as const, label: 'Parties', icon: 'M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z' },
   { key: 'comments' as const, label: 'Comments', icon: 'M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.129.166 2.27.293 3.423.379.35.026.67.21.865.501L12 21l2.755-4.133a1.14 1.14 0 01.865-.501 48.172 48.172 0 003.423-.379c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z' },
+  // 7.19 Slice 3 — counterparty redlining + negotiation lane. NOT status-
+  // gated (negotiation spans DRAFT onward). Label localized via
+  // t('contract.tabs.redlines').
+  { key: 'redlines' as const, label: 'Redlines', icon: 'M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10' },
   { key: 'risks' as const, label: 'Risk Analysis', icon: 'M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z' },
   // Phase 7.1 Step 2 — Obligations tab inserted between Risk Analysis and Claims.
   // NOT activeOnly: available on DRAFT contracts too (obligations are extracted
@@ -275,7 +280,7 @@ export default function ContractDetailPage() {
   const [risks, setRisks] = useState<RiskAnalysis[]>([]);
   const [availableClauses, setAvailableClauses] = useState<Clause[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'clauses' | 'parties' | 'comments' | 'risks' | 'obligations' | 'claims' | 'notices' | 'subcontracts' | 'compliance' | 'history' | 'approvals'>('clauses');
+  const [activeTab, setActiveTab] = useState<'clauses' | 'parties' | 'comments' | 'redlines' | 'risks' | 'obligations' | 'claims' | 'notices' | 'subcontracts' | 'compliance' | 'history' | 'approvals'>('clauses');
   // Obligation count mirrored from ObligationsTab for the tab-label badge.
   const [obligationCount, setObligationCount] = useState<number>(0);
   const [diffPair, setDiffPair] = useState<{ a: string; b: string } | null>(null);
@@ -343,6 +348,18 @@ export default function ContractDetailPage() {
   const [processingChecked, setProcessingChecked] = useState(false);
 
   const currentUser = useSelector((state: RootState) => state.auth.user);
+
+  // 7.19 Slice 3 — host vs bound-counterparty viewer. The contract read
+  // (org-first → binding-fallback) hydrates project.organization_id for BOTH
+  // viewers; HOST = caller's org matches the contract's project org. The
+  // shared Contract type doesn't declare the project relation — local
+  // extension per the 7.20 rule (never widen shared types in passing).
+  const contractProjectOrgId = (contract as (Contract & { project?: { organization_id?: string } }) | null)?.project
+    ?.organization_id;
+  const isHost =
+    !!currentUser?.organization_id &&
+    !!contractProjectOrgId &&
+    currentUser.organization_id === contractProjectOrgId;
 
   const {
     documents: processingDocs,
@@ -1445,7 +1462,9 @@ export default function ContractDetailPage() {
                   ? t('contract.tabs.subcontractPackages')
                   : tab.key === 'parties'
                     ? t('contract.tabs.parties')
-                    : tab.label}
+                    : tab.key === 'redlines'
+                      ? t('contract.tabs.redlines')
+                      : tab.label}
                 {tab.key === 'clauses' && <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold text-gray-500">{clauses.length}</span>}
                 {tab.key === 'comments' && comments.length > 0 && <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold text-gray-500">{comments.length}</span>}
                 {tab.key === 'risks' && risks.length > 0 && (
@@ -1778,6 +1797,11 @@ export default function ContractDetailPage() {
       )}
 
       {/* ── Risks Tab ────────────────────────────────────────────── */}
+      {/* ── Redlines Tab (7.19 Slice 3) ──────────────────────────── */}
+      {activeTab === 'redlines' && (
+        <RedlinesTab contractId={contract.id} clauses={clauses} isHost={isHost} />
+      )}
+
       {activeTab === 'risks' && (
         <div className="space-y-4">
           {/* Risk Summary Bar */}
