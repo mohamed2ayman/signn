@@ -313,6 +313,7 @@ describeReal('⭐ Feature #8d — POST /guest/contracts/:id/import (real Postgre
               {} as any,
               ds.getRepository(Clause),
               {} as any, // relationshipTypes (T0a) — not exercised by import
+              {} as any, // 20 negotiationStatus (7.19 S2) — share hook not exercised here
             );
             importService = new GuestImportService(
               ds,

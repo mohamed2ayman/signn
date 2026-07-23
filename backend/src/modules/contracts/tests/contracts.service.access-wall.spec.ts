@@ -72,6 +72,7 @@ describe('ContractsService — cross-tenant access wall (Tier 1 WRITEs)', () => 
       opts.contractCommentScoped ?? noop, // contractCommentScoped (Option B S2b)
       noop, // clauseRepository (2a — unused here)
       {} as any, // 19 relationshipTypes (T0a) — not exercised: no fixture passes relationship_type
+      {} as any, // 20 negotiationStatus (7.19 S2) — share hook not exercised here
     );
   }
 

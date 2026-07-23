@@ -45,6 +45,7 @@ import { ContractTemplatesService, isStandardForm, getLicenseOrg } from '../cont
 import { ContractRelationshipTypesService } from '../contract-relationship-types/contract-relationship-types.service';
 import { EmailService } from '../notifications/email.service';
 import { ContractAccessService } from './services/contract-access.service';
+import { NegotiationStatusService } from './services/negotiation-status.service';
 import { ContractScopedRepository } from '../scoped-repository/contract-scoped.repository';
 import { ContractVersionScopedRepository } from '../scoped-repository/contract-version-scoped.repository';
 import { ContractorResponseScopedRepository } from '../scoped-repository/contractor-response-scoped.repository';
@@ -106,6 +107,12 @@ export class ContractsService {
     // the ACTIVE registry codes (the registry is the single source of truth;
     // no enum, no hardcoded code list here).
     private readonly relationshipTypes: ContractRelationshipTypesService,
+    // 7.19 Slice 2 — negotiation lane auto-hook on share. LAST param on
+    // purpose: existing positional spec instantiations pass one arg fewer and
+    // get `undefined`, which is only dereferenced inside the
+    // SENT_TO_CONTRACTOR branch no legacy spec exercises. DI always provides
+    // it (ContractsModule); the boot smoke guards the wiring.
+    private readonly negotiationStatus: NegotiationStatusService,
   ) {}
 
   // ─── Contract CRUD ─────────────────────────────────────────
@@ -432,6 +439,14 @@ export class ContractsService {
     }
 
     await this.contractRepository.save(contract); // lint-exempt: wall-protected (findInOrg) — row validated before write
+
+    // 7.19 Slice 2 — negotiation-lane auto-hook: the first share starts the
+    // lane (DRAFT → SHARED). Idempotent — any later negotiation state is left
+    // untouched. Routed THROUGH the guarded transition so an illegal move
+    // would surface as a coded 409 bug signal, never a silent write.
+    if (newStatus === ContractStatus.SENT_TO_CONTRACTOR) {
+      await this.negotiationStatus.autoOnShare(id);
+    }
 
     this.logger.log(
       `Contract ${id} status changed: ${oldStatus} -> ${newStatus} by ${userId}`,

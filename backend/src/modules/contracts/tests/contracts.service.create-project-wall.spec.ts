@@ -47,6 +47,7 @@ describe('ContractsService.create — project→org ownership wall (S0)', () => 
       noop, // contractCommentScoped (Option B S2b — unused by create())
       noop, // clauseRepository (2a — unused here)
       {} as any, // 19 relationshipTypes (T0a) — not exercised: no fixture passes relationship_type
+      {} as any, // 20 negotiationStatus (7.19 S2) — share hook not exercised here
     );
   }
 
