@@ -4,7 +4,10 @@ import LoadingSpinner from '@/components/common/LoadingSpinner';
 import type { User, UserRole } from '@/types';
 import { JOB_TITLES, JOB_TITLE_DEFAULT_PERMISSION, PermissionLevel } from '@/types';
 
-const INVITABLE_ROLES: { value: string; label: string; description: string }[] = [
+// Full role → display metadata. DISPLAY ONLY (the member-role badge + the
+// selected-role description). OWNER_ADMIN is retained here so an existing
+// OWNER_ADMIN member still renders "Organization Admin", not a bare "OWNER ADMIN".
+const ROLE_LABELS: { value: string; label: string; description: string }[] = [
   {
     value: 'OWNER_ADMIN',
     label: 'Organization Admin',
@@ -21,6 +24,13 @@ const INVITABLE_ROLES: { value: string; label: string; description: string }[] =
     description: 'Can review and comment on contracts within assigned projects',
   },
 ];
+
+// Roles an OWNER_ADMIN may actually CONFER via invite — pairs with the backend
+// authz wall in #185 (role-authz.ts). An OWNER_ADMIN cannot confer OWNER_ADMIN
+// (strict rank ceiling: canAssignRole → 403), so it is excluded from the invite
+// offer while remaining in ROLE_LABELS for display. Derived from ROLE_LABELS so
+// the labels live in one place.
+const ASSIGNABLE_ROLES = ROLE_LABELS.filter((r) => r.value !== 'OWNER_ADMIN');
 
 const PERMISSION_LEVELS: {
   value: PermissionLevel;
@@ -215,7 +225,7 @@ export default function TeamPage() {
                   </td>
                   <td className="px-6 py-3.5">
                     <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
-                      {INVITABLE_ROLES.find((r) => r.value === user.role)
+                      {ROLE_LABELS.find((r) => r.value === user.role)
                         ?.label || user.role.replace(/_/g, ' ')}
                     </span>
                   </td>
@@ -315,14 +325,14 @@ export default function TeamPage() {
                   }
                   className="w-full rounded-lg border border-gray-200 bg-white px-3.5 py-2.5 text-sm transition-colors focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
                 >
-                  {INVITABLE_ROLES.map((r) => (
+                  {ASSIGNABLE_ROLES.map((r) => (
                     <option key={r.value} value={r.value}>
                       {r.label}
                     </option>
                   ))}
                 </select>
                 <p className="mt-1 text-xs text-gray-400">
-                  {INVITABLE_ROLES.find((r) => r.value === inviteForm.role)
+                  {ROLE_LABELS.find((r) => r.value === inviteForm.role)
                     ?.description}
                 </p>
               </div>
