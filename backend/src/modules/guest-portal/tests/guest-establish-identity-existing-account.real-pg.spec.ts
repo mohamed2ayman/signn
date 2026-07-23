@@ -376,7 +376,7 @@ describeReal(
     });
 
     // ⭐ PATH-A UNAFFECTED — view-only exchange never touches users.
-    it('Path-A exchange still issues a viewer credential for a real-account email', async () => {
+    it('Path-A exchange still issues a viewer credential for a real-account email — and reports account_exists=true', async () => {
       const token = issueToken(invitationManagingId);
 
       const result = await service.exchange(token);
@@ -385,11 +385,38 @@ describeReal(
       expect(typeof result.viewer_token).toBe('string');
       expect(result.viewer_token.length).toBeGreaterThan(10);
       expect(result.viewer_expires_at.getTime()).toBeGreaterThan(Date.now());
+      // #8c Part 1 — the returning-guest signal: this email has an account.
+      // A plain boolean; the payload never carries account_type/role/name.
+      expect(result.account_exists).toBe(true);
+      expect(result).not.toHaveProperty('account_type');
+      expect(result).not.toHaveProperty('role');
 
       // And it changed neither the user row nor the binding count.
       const rows = await userRowsByEmail(MANAGING_EMAIL);
       expect(rows).toHaveLength(1);
       expect(rows[0].password_hash).toBe(managingHash);
+    });
+
+    // ⭐ account_exists — brand-new email (no account anywhere) reports FALSE.
+    it('exchange reports account_exists=false for an invited email with no SIGN account', async () => {
+      // A fresh invitation whose email NEVER establishes identity in this
+      // suite — inserted + cleaned up inside the test to keep it hermetic.
+      const invitationNeverId = randomUUID();
+      const NEVER_EMAIL = `nevermember-${invitationNeverId.slice(0, 8)}@external.test`;
+      await insertInvitation(invitationNeverId, NEVER_EMAIL, contractId);
+      try {
+        const token = issueToken(invitationNeverId);
+
+        const result = await service.exchange(token);
+
+        expect(result.account_exists).toBe(false);
+        // Existence check is read-only — it must not create a user row.
+        expect(await userRowsByEmail(NEVER_EMAIL)).toHaveLength(0);
+      } finally {
+        await dataSource.query(`DELETE FROM guest_invitations WHERE id = $1`, [
+          invitationNeverId,
+        ]);
+      }
     });
   },
 );

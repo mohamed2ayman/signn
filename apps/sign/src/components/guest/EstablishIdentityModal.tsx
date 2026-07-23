@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'react-hot-toast';
 import axios from 'axios';
+import { Eye, EyeOff } from 'lucide-react';
 import ModalShell from '@/components/obligations/ModalShell';
 import {
   establishGuestIdentity,
@@ -14,17 +15,30 @@ const PASSWORD_RE =
   /^(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]).{12,}$/;
 
 /**
- * Progressive-identity step: a guest sets a password to gain a durable
- * (restricted) identity so they can leave attributed comments. On success the
- * caller receives the GUEST JWT pair and transitions the page into the
- * "identity established" state. The JWT is held in page state only — never the
- * app store.
+ * Progressive-identity step, in two modes driven by exchange's
+ * `account_exists` (#8c Part 1):
+ *
+ * CREATE (returning=false): a first-time guest SETS a password to gain a
+ * durable (restricted) identity — name fields, password + confirm, the
+ * complexity hint, autoComplete="new-password".
+ *
+ * RETURNING (returning=true): the invited email already has a SIGN account —
+ * prompt for the EXISTING password only (no names, no confirm, no complexity
+ * pre-check: the account's password already satisfied policy when it was set),
+ * autoComplete="current-password". A 401 here means WRONG PASSWORD and is
+ * recoverable inline — unlike create mode, where a 401 is a terminal token
+ * failure (the invitation itself is unusable).
+ *
+ * On success the caller receives the GUEST JWT pair; the page hydrates the
+ * shared auth store (access token only) and routes returning guests to the
+ * dashboard while first-timers stay on the contract.
  */
 export default function EstablishIdentityModal({
   isOpen,
   onClose,
   token,
   invitedEmail,
+  returning = false,
   onEstablished,
   onUnusable,
 }: {
@@ -32,14 +46,16 @@ export default function EstablishIdentityModal({
   onClose: () => void;
   token: string;
   invitedEmail?: string | null;
+  /** The invited email already has a SIGN account (exchange `account_exists`). */
+  returning?: boolean;
   onEstablished: (identity: GuestIdentity) => void;
   /**
    * Fired when establish-identity reports a TERMINAL token failure (the
    * invitation can no longer be used to set up access — already used,
-   * expired, revoked, or the supplied password doesn't match an identity
-   * already established with this invitation). The page uses this to swap
-   * the "Set a password to comment" CTA for a friendly note so the doomed
-   * form can't be re-opened.
+   * expired, or revoked). The page uses this to swap the "Set a password
+   * to comment" CTA for a friendly note so the doomed form can't be
+   * re-opened. Never fired for a returning guest's wrong password — that
+   * is recoverable inline.
    */
   onUnusable?: () => void;
 }) {
@@ -48,6 +64,8 @@ export default function EstablishIdentityModal({
   const [lastName, setLastName] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   // Terminal state: the invitation can no longer establish identity. The
@@ -65,6 +83,8 @@ export default function EstablishIdentityModal({
     setLastName('');
     setPassword('');
     setConfirm('');
+    setShowPassword(false);
+    setShowConfirm(false);
     setError('');
     setSubmitting(false);
     setBlocked(false);
@@ -79,21 +99,33 @@ export default function EstablishIdentityModal({
 
   const submit = async () => {
     setError('');
-    if (!PASSWORD_RE.test(password)) {
-      setError(t('guest.identity.errors.weakPassword'));
-      return;
-    }
-    if (password !== confirm) {
-      setError(t('guest.identity.errors.mismatch'));
-      return;
+    if (returning) {
+      // Their password already exists — the only client-side gate is presence.
+      // Re-running the complexity regex against an EXISTING password would
+      // block legitimate sign-ins for nothing (the server verifies the hash).
+      if (!password) {
+        setError(t('guest.identity.errors.wrongPassword'));
+        return;
+      }
+    } else {
+      if (!PASSWORD_RE.test(password)) {
+        setError(t('guest.identity.errors.weakPassword'));
+        return;
+      }
+      if (password !== confirm) {
+        setError(t('guest.identity.errors.mismatch'));
+        return;
+      }
     }
     setSubmitting(true);
     try {
       const identity = await establishGuestIdentity({
         token,
         password,
-        first_name: firstName.trim() || undefined,
-        last_name: lastName.trim() || undefined,
+        // Names are only meaningful when CREATING the identity — the backend
+        // ignores them for an existing account.
+        first_name: returning ? undefined : firstName.trim() || undefined,
+        last_name: returning ? undefined : lastName.trim() || undefined,
       });
       if (identity.requires_login || !identity.access_token) {
         // Unified membership — existing account with MFA: the binding is
@@ -103,18 +135,28 @@ export default function EstablishIdentityModal({
         setLinked(true);
         return;
       }
-      toast.success(t('guest.identity.success'));
+      toast.success(
+        t(returning ? 'guest.identity.returning.success' : 'guest.identity.success'),
+      );
       reset();
       onEstablished(identity);
     } catch (err) {
       const status = axios.isAxiosError(err) ? err.response?.status : undefined;
+      if (status === 401 && returning) {
+        // RETURNING mode: exchange just proved this email HAS an account, so a
+        // 401 here overwhelmingly means "wrong password" — recoverable. Keep
+        // the form so the guest can retype (the shared account lockout still
+        // caps attempts at 5; a lockout surfaces as 403 below).
+        setError(t('guest.identity.errors.wrongPassword'));
+        setSubmitting(false);
+        return;
+      }
       if (status === 401 || status === 404) {
-        // TERMINAL. The backend returns a single generic 401 for every
-        // "this invitation can't establish identity" axis (invalid/expired/
-        // revoked token, or a password that doesn't match an identity
-        // already set up with this invitation). We can't tell them apart —
-        // and must not — so we stop the form here instead of letting the
-        // user re-submit into the same wall. The page swaps the CTA too.
+        // TERMINAL (create mode). The backend returns a single generic 401
+        // for every "this invitation can't establish identity" axis
+        // (invalid/expired/revoked token). We can't tell them apart — and
+        // must not — so we stop the form here instead of letting the user
+        // re-submit into the same wall. The page swaps the CTA too.
         setBlocked(true);
         setError('');
         setSubmitting(false);
@@ -130,19 +172,9 @@ export default function EstablishIdentityModal({
         return;
       }
       if (status === 409) {
-        // The backend distinguishes two 409 axes by CODE (the message
-        // field is never displayed — copy lives in i18n, keyed on the
-        // code): EXISTING_ACCOUNT_EMAIL = the invited email belongs to a
-        // real (non-guest) SIGN account, so no password can ever succeed
-        // here; anything else = the established-guest password conflict.
-        const code = axios.isAxiosError(err)
-          ? (err.response?.data as { error?: string } | undefined)?.error
-          : undefined;
-        setError(
-          code === 'EXISTING_ACCOUNT_EMAIL'
-            ? t('guest.identity.errors.existingAccount')
-            : t('guest.identity.errors.conflict'),
-        );
+        // Concurrent-establish collision (UNIQUE-key race) — retrying lands on
+        // the race-guard branch, so keep the form submittable.
+        setError(t('guest.identity.errors.conflict'));
       } else if (status === 429) {
         setError(t('guest.identity.errors.throttled'));
       } else {
@@ -153,15 +185,29 @@ export default function EstablishIdentityModal({
     }
   };
 
+  const passwordToggle = (shown: boolean, flip: () => void) => (
+    <button
+      type="button"
+      onClick={flip}
+      className="absolute top-1/2 -translate-y-1/2 text-gray-400 transition-colors hover:text-gray-600 ltr:right-3 rtl:left-3"
+      tabIndex={-1}
+      aria-label={t(shown ? 'guest.identity.hidePassword' : 'guest.identity.showPassword')}
+    >
+      {shown ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+    </button>
+  );
+
   return (
     <ModalShell
       isOpen={isOpen}
       onClose={close}
-      title={t('guest.identity.title')}
+      title={t(returning ? 'guest.identity.returning.title' : 'guest.identity.title')}
       subtitle={
-        invitedEmail
-          ? t('guest.identity.subtitleEmail', { email: invitedEmail })
-          : t('guest.identity.subtitle')
+        returning
+          ? t('guest.identity.returning.subtitle')
+          : invitedEmail
+            ? t('guest.identity.subtitleEmail', { email: invitedEmail })
+            : t('guest.identity.subtitle')
       }
       size="sm"
       footer={
@@ -205,7 +251,9 @@ export default function EstablishIdentityModal({
               disabled={submitting}
               className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-600 disabled:opacity-60"
             >
-              {submitting ? t('guest.identity.submitting') : t('guest.identity.submit')}
+              {submitting
+                ? t('guest.identity.submitting')
+                : t(returning ? 'guest.identity.returning.submit' : 'guest.identity.submit')}
             </button>
           </>
         )
@@ -241,64 +289,83 @@ export default function EstablishIdentityModal({
         </div>
       ) : (
       <div className="space-y-4">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <div>
-            <label className="mb-1 block text-xs font-medium text-gray-600">
-              {t('guest.identity.firstName')}{' '}
-              <span className="text-gray-400">{t('guest.identity.optional')}</span>
-            </label>
-            <input
-              type="text"
-              value={firstName}
-              onChange={(e) => setFirstName(e.target.value)}
-              maxLength={100}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary focus:outline-none"
-              dir="auto"
-            />
+        {!returning && (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-600">
+                {t('guest.identity.firstName')}{' '}
+                <span className="text-gray-400">{t('guest.identity.optional')}</span>
+              </label>
+              <input
+                type="text"
+                value={firstName}
+                onChange={(e) => setFirstName(e.target.value)}
+                maxLength={100}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary focus:outline-none"
+                dir="auto"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-600">
+                {t('guest.identity.lastName')}{' '}
+                <span className="text-gray-400">{t('guest.identity.optional')}</span>
+              </label>
+              <input
+                type="text"
+                value={lastName}
+                onChange={(e) => setLastName(e.target.value)}
+                maxLength={100}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary focus:outline-none"
+                dir="auto"
+              />
+            </div>
           </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-gray-600">
-              {t('guest.identity.lastName')}{' '}
-              <span className="text-gray-400">{t('guest.identity.optional')}</span>
-            </label>
-            <input
-              type="text"
-              value={lastName}
-              onChange={(e) => setLastName(e.target.value)}
-              maxLength={100}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary focus:outline-none"
-              dir="auto"
-            />
-          </div>
-        </div>
+        )}
 
         <div>
           <label className="mb-1 block text-xs font-medium text-gray-600">{t('guest.identity.password')}</label>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            autoComplete="new-password"
-            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary focus:outline-none"
-          />
-          <p className="mt-1 text-xs text-gray-400">
-            {t('guest.identity.passwordHint')}
-          </p>
+          <div className="relative">
+            <input
+              type={showPassword ? 'text' : 'password'}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              autoComplete={returning ? 'current-password' : 'new-password'}
+              onKeyDown={
+                returning
+                  ? (e) => {
+                      if (e.key === 'Enter') submit();
+                    }
+                  : undefined
+              }
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary focus:outline-none ltr:pr-10 rtl:pl-10"
+            />
+            {passwordToggle(showPassword, () => setShowPassword((s) => !s))}
+          </div>
+          {!returning && (
+            <p className="mt-1 text-xs text-gray-400">
+              {t('guest.identity.passwordHint')}
+            </p>
+          )}
         </div>
 
-        <div>
-          <label className="mb-1 block text-xs font-medium text-gray-600">{t('guest.identity.confirmPassword')}</label>
-          <input
-            type="password"
-            value={confirm}
-            onChange={(e) => setConfirm(e.target.value)}
-            autoComplete="new-password"
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') submit();
-            }}
-            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary focus:outline-none"
-          />
-        </div>
+        {!returning && (
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-600">{t('guest.identity.confirmPassword')}</label>
+            <div className="relative">
+              <input
+                type={showConfirm ? 'text' : 'password'}
+                value={confirm}
+                onChange={(e) => setConfirm(e.target.value)}
+                autoComplete="new-password"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') submit();
+                }}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary focus:outline-none ltr:pr-10 rtl:pl-10"
+              />
+              {passwordToggle(showConfirm, () => setShowConfirm((s) => !s))}
+            </div>
+          </div>
+        )}
 
         {error && (
           <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">

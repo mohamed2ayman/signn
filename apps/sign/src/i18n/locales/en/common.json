@@ -1458,6 +1458,10 @@
       "subtitle": "Review and act on contracts external partners have shared with you.",
       "cardTitle": "Shared contracts",
       "signOut": "Sign out",
+      "sessionEnded": {
+        "title": "Your guest session has ended",
+        "body": "For your security, guest sessions expire after about an hour. Reopen your invitation link and enter your password to sign back in."
+      },
       "empty": {
         "title": "Nothing shared with you yet",
         "subtitle": "When an organization invites you to review a contract, it appears here."
@@ -1496,18 +1500,29 @@
     "commentCta": {
       "title": "Want to comment on this contract?",
       "body": "Set a password to leave attributed comments, upload versions, and ask the AI assistant about this contract. Your access stays limited to this contract.",
-      "button": "Set a password to comment"
+      "button": "Set a password to comment",
+      "returningTitle": "Welcome back",
+      "returningBody": "Enter your password to comment on this contract and see everything shared with you.",
+      "returningButton": "Enter your password"
     },
     "identity": {
       "title": "Set a password to comment",
       "subtitle": "You'll get a guest identity limited to this contract.",
       "subtitleEmail": "You'll get a guest identity for {{email}}, limited to this contract.",
+      "returning": {
+        "title": "Enter your password",
+        "subtitle": "This email already has a SIGN identity. Enter your existing password to continue.",
+        "submit": "Continue",
+        "success": "Welcome back — loading your shared contracts."
+      },
       "firstName": "First name",
       "lastName": "Last name",
       "optional": "(optional)",
       "password": "Password",
       "passwordHint": "At least 12 characters, with an uppercase letter, a number, and a special character.",
       "confirmPassword": "Confirm password",
+      "showPassword": "Show password",
+      "hidePassword": "Hide password",
       "cancel": "Cancel",
       "submit": "Create guest identity",
       "submitting": "Setting up…",
@@ -1515,9 +1530,9 @@
       "errors": {
         "weakPassword": "Password must be at least 12 characters and include an uppercase letter, a number, and a special character.",
         "mismatch": "Passwords do not match.",
+        "wrongPassword": "Incorrect password. Please try again.",
         "invalid": "This invitation is no longer valid. Ask the sender for a fresh link.",
         "conflict": "An account already exists for this invitation, and the password did not match. Use the original password, or contact the sender.",
-        "existingAccount": "This email is already registered with a SIGN account. Accessing shared contracts with an existing account isn't available yet — please contact whoever shared this contract with you.",
         "throttled": "Too many attempts. Please wait a minute and try again.",
         "accountLocked": "This account is temporarily locked after too many failed password attempts. Please try again in about 30 minutes.",
         "generic": "Could not set your password just now. Please try again."

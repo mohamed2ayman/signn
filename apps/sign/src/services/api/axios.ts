@@ -5,6 +5,7 @@ import axios, {
 } from 'axios';
 import { store } from '@/store';
 import { setToken, logout } from '@/store/slices/authSlice';
+import { isGuestAccessToken } from './guestTokenGuard';
 
 const API_BASE_URL =
   import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1';
@@ -61,6 +62,20 @@ api.interceptors.response.use(
 
     // If 401 and not already retrying
     if (error.response?.status === 401 && !originalRequest._retry) {
+      // #8c Part 1 — ENFORCED no-silent-renewal for guest tokens. A pure-guest
+      // access token (role=GUEST) must NEVER trigger the refresh rotation,
+      // regardless of which call site stored it or which store it came from —
+      // a guest session ends at expiry; return is by re-clicking the
+      // invitation link. Checked on the FAILED REQUEST's own bearer first
+      // (the authoritative "who 401'd"), falling back to the store token.
+      const failedAuth = originalRequest.headers?.Authorization;
+      const failedBearer =
+        typeof failedAuth === 'string' && failedAuth.startsWith('Bearer ')
+          ? failedAuth.slice('Bearer '.length)
+          : store.getState().auth.token;
+      if (isGuestAccessToken(failedBearer)) {
+        return Promise.reject(error);
+      }
       if (isRefreshing) {
         return new Promise((resolve, reject) => {
           failedQueue.push({ resolve, reject });

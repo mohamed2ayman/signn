@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useParams, useSearchParams } from 'react-router-dom';
+import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import type { Contract } from '@/types';
+import { saveGuestSession } from '@/services/guestSession';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
 import GuestLayout from '@/components/guest/GuestLayout';
 import GuestErrorScreen, {
@@ -31,9 +32,11 @@ function errorKindFromStatus(status?: number): GuestErrorKind {
 /**
  * Public Guest Portal viewer. Entered with an invitation token (path param or
  * `?token=`). Orchestrates: exchange → viewer read → (optional) progressive
- * identity → guest comments. No auth required to arrive; the guest JWT obtained
- * at identity time is held in page state only and never written to the app
- * store.
+ * identity. No auth required to arrive. On establish-identity success the
+ * guest session is saved to the GUEST-ONLY sessionStorage store (ACCESS TOKEN
+ * ONLY — never the shared redux/localStorage auth slots; see
+ * `services/guestSession.ts`), and a RETURNING guest (`account_exists`) is
+ * routed to /guest/dashboard while a first-timer stays on this contract.
  */
 // Guest UI locales the viewer can switch into from an invitation's
 // `invited_language`. Must mirror the locales registered in `@/i18n`.
@@ -41,6 +44,7 @@ const SUPPORTED_GUEST_LANGS = ['en', 'ar', 'fr'];
 
 export default function GuestViewerPage() {
   const { t, i18n } = useTranslation();
+  const navigate = useNavigate();
   const params = useParams<{ token?: string }>();
   const [searchParams] = useSearchParams();
   const invitationToken = params.token || searchParams.get('token') || '';
@@ -50,7 +54,11 @@ export default function GuestViewerPage() {
   const [contract, setContract] = useState<Contract | null>(null);
   const [invitedEmail] = useState<string | null>(null);
 
-  // Progressive identity — held in page state ONLY, never the Redux store.
+  // Progressive-identity modal open/closed. On success the session is saved
+  // to the GUEST-ONLY sessionStorage store (never redux/localStorage); a
+  // returning guest then navigates to the dashboard, while a first-timer
+  // stays here — the guestJwt/guestUser page state below powers this page's
+  // own comment/chat surfaces.
   const [identityOpen, setIdentityOpen] = useState(false);
   // Set when establish-identity reports a TERMINAL token failure (invitation
   // already used to set up access / expired / revoked). The exchange that let
@@ -61,6 +69,9 @@ export default function GuestViewerPage() {
   const [guestJwt, setGuestJwt] = useState<string | null>(null);
   const [guestUser, setGuestUser] = useState<GuestIdentity['user'] | null>(null);
   const [seedComments, setSeedComments] = useState<GuestComment[]>([]);
+  // From exchange: the invited email already has a SIGN account. Drives the
+  // modal's returning-guest state AND the returning-only dashboard navigation.
+  const [accountExists, setAccountExists] = useState(false);
   // Guest AI Assistant drawer (Feature #6) — page owns the open/closed bit.
   const [chatOpen, setChatOpen] = useState(false);
 
@@ -75,6 +86,7 @@ export default function GuestViewerPage() {
     }
     try {
       const cred = await exchangeInvitation(invitationToken);
+      setAccountExists(cred.account_exists === true);
       // Honor the guest's invited language: switch the whole viewer (chrome +
       // direction) to it. `i18n.changeLanguage` fires the global
       // `languageChanged` listener in `@/i18n`, which sets `dir="rtl"` on
@@ -117,6 +129,27 @@ export default function GuestViewerPage() {
   }, [initSession]);
 
   const handleEstablished = (identity: GuestIdentity) => {
+    if (!identity.access_token) {
+      // No session was minted (MFA-protected real account → requires_login).
+      // The modal owns that "linked — sign in" state; nothing to hydrate here.
+      return;
+    }
+    // Save the guest session in BOTH branches — GUEST-ONLY sessionStorage key,
+    // ACCESS TOKEN ONLY (the store's API cannot even accept a refresh token).
+    // Never the shared redux/localStorage slots: isolation from the managing
+    // session is structural, and silent renewal is impossible — the axios
+    // guard + the backend /auth/refresh GUEST rejection enforce it. Return
+    // after expiry is by re-clicking the invitation link.
+    saveGuestSession(identity.access_token, identity.user);
+    if (accountExists) {
+      // RETURNING guest — they came back for their list: route to the guest
+      // dashboard (every contract shared with this identity, across orgs).
+      navigate('/guest/dashboard');
+      return;
+    }
+    // FIRST-TIME guest — they just created a password mid-read: stay on the
+    // contract viewer so they can immediately comment/act on it (the dashboard
+    // stays reachable via the hydrated session).
     setGuestJwt(identity.access_token);
     setGuestUser(identity.user);
     setIdentityOpen(false);
@@ -203,17 +236,29 @@ export default function GuestViewerPage() {
               ) : (
                 <div className="rounded-xl border border-primary/20 bg-primary/[0.04] p-5 text-center sm:p-6">
                   <h3 className="text-base font-semibold text-gray-900">
-                    {t('guest.commentCta.title')}
+                    {t(
+                      accountExists
+                        ? 'guest.commentCta.returningTitle'
+                        : 'guest.commentCta.title',
+                    )}
                   </h3>
                   <p className="mx-auto mt-1 max-w-md text-sm text-gray-500">
-                    {t('guest.commentCta.body')}
+                    {t(
+                      accountExists
+                        ? 'guest.commentCta.returningBody'
+                        : 'guest.commentCta.body',
+                    )}
                   </p>
                   <button
                     type="button"
                     onClick={() => setIdentityOpen(true)}
                     className="mt-4 rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-primary-600"
                   >
-                    {t('guest.commentCta.button')}
+                    {t(
+                      accountExists
+                        ? 'guest.commentCta.returningButton'
+                        : 'guest.commentCta.button',
+                    )}
                   </button>
                 </div>
               )
@@ -233,6 +278,7 @@ export default function GuestViewerPage() {
             onClose={() => setIdentityOpen(false)}
             token={invitationToken}
             invitedEmail={invitedEmail}
+            returning={accountExists}
             onEstablished={handleEstablished}
             onUnusable={() => setIdentityUnusable(true)}
           />

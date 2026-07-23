@@ -1467,6 +1467,10 @@
       "subtitle": "Consultez et traitez les contrats que des partenaires externes ont partagés avec vous.",
       "cardTitle": "Contrats partagés",
       "signOut": "Se déconnecter",
+      "sessionEnded": {
+        "title": "Votre session invité a expiré",
+        "body": "Pour votre sécurité, les sessions invité expirent après environ une heure. Rouvrez votre lien d’invitation et saisissez votre mot de passe pour vous reconnecter."
+      },
       "empty": {
         "title": "Rien ne vous a encore été partagé",
         "subtitle": "Lorsqu’une organisation vous invite à examiner un contrat, il apparaît ici."
@@ -1505,18 +1509,29 @@
     "commentCta": {
       "title": "Vous souhaitez commenter ce contrat ?",
       "body": "Définissez un mot de passe pour laisser des commentaires nominatifs, téléverser des versions et interroger l'assistant IA sur ce contrat. Votre accès reste limité à ce contrat.",
-      "button": "Définir un mot de passe pour commenter"
+      "button": "Définir un mot de passe pour commenter",
+      "returningTitle": "Bon retour",
+      "returningBody": "Saisissez votre mot de passe pour commenter ce contrat et consulter tout ce qui est partagé avec vous.",
+      "returningButton": "Saisir votre mot de passe"
     },
     "identity": {
       "title": "Définir un mot de passe pour commenter",
       "subtitle": "Vous obtiendrez une identité invité limitée à ce contrat.",
       "subtitleEmail": "Vous obtiendrez une identité invité pour {{email}}, limitée à ce contrat.",
+      "returning": {
+        "title": "Saisissez votre mot de passe",
+        "subtitle": "Cette adresse e-mail possède déjà une identité SIGN. Saisissez votre mot de passe existant pour continuer.",
+        "submit": "Continuer",
+        "success": "Bon retour — chargement de vos contrats partagés."
+      },
       "firstName": "Prénom",
       "lastName": "Nom",
       "optional": "(facultatif)",
       "password": "Mot de passe",
       "passwordHint": "Au moins 12 caractères, comprenant une lettre majuscule, un chiffre et un caractère spécial.",
       "confirmPassword": "Confirmer le mot de passe",
+      "showPassword": "Afficher le mot de passe",
+      "hidePassword": "Masquer le mot de passe",
       "cancel": "Annuler",
       "submit": "Créer l'identité invité",
       "submitting": "Configuration en cours…",
@@ -1524,9 +1539,9 @@
       "errors": {
         "weakPassword": "Le mot de passe doit comporter au moins 12 caractères et inclure une lettre majuscule, un chiffre et un caractère spécial.",
         "mismatch": "Les mots de passe ne correspondent pas.",
+        "wrongPassword": "Mot de passe incorrect. Veuillez réessayer.",
         "invalid": "Cette invitation n'est plus valable. Demandez un nouveau lien à l'expéditeur.",
         "conflict": "Un compte existe déjà pour cette invitation, et le mot de passe ne correspond pas. Utilisez le mot de passe initial ou contactez l'expéditeur.",
-        "existingAccount": "Cette adresse e-mail est déjà associée à un compte SIGN. L'accès aux contrats partagés avec un compte existant n'est pas encore disponible — veuillez contacter la personne qui a partagé ce contrat avec vous.",
         "throttled": "Trop de tentatives. Veuillez patienter une minute et réessayer.",
         "accountLocked": "Ce compte est temporairement verrouillé après trop de tentatives de mot de passe échouées. Veuillez réessayer dans environ 30 minutes.",
         "generic": "Impossible de définir votre mot de passe pour le moment. Veuillez réessayer."

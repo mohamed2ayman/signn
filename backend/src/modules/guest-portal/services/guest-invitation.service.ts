@@ -192,12 +192,23 @@ export class GuestInvitationService {
    * PUBLIC. Verify the long-lived token and mint a short-lived viewer
    * credential. The invitation token is NEVER returned to the caller
    * after exchange — only the viewer credential.
+   *
+   * `account_exists` (#8c Part 1, CTO-approved): a PLAIN BOOLEAN telling the
+   * viewer whether the invited email already has a SIGN account, so the
+   * establish-identity modal can prompt a RETURNING guest for their EXISTING
+   * password instead of "create a password". Never account_type / role / name.
+   * Bounded disclosure: reaching exchange requires a valid, unexpired,
+   * unrevoked HMAC token, and the email is server-read from the invitation row
+   * (inviter-chosen, never caller-supplied) — so a token holder learns only
+   * whether the ONE address they were already handed has an account, the same
+   * bit establish-identity's outcome already reveals, one step earlier.
    */
   async exchange(token: string): Promise<{
     viewer_token: string;
     viewer_expires_at: Date;
     contract_id: string;
     invited_language: string;
+    account_exists: boolean;
   }> {
     const result = await this.tokenService.verify(token);
     if (!result.ok) {
@@ -221,11 +232,18 @@ export class GuestInvitationService {
     const { token: viewerToken, expires_at: viewerExpiresAt } =
       this.viewerService.issue(invitation.contract_id, invitation.id);
 
+    // Existence only — never load the row (no account_type/role/name leaves
+    // the DB). User is not a contract-scoped entity (no chokepoint needed).
+    const accountExists = await this.dataSource
+      .getRepository(User)
+      .exists({ where: { email: invitation.invited_email } });
+
     return {
       viewer_token: viewerToken,
       viewer_expires_at: viewerExpiresAt,
       contract_id: invitation.contract_id,
       invited_language: invitation.invited_language,
+      account_exists: accountExists,
     };
   }
 

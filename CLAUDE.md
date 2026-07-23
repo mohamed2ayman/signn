@@ -903,9 +903,9 @@ Finalised 2026-05-20. All password-setting flows enforce identical rules.
 - At least **1 number**
 - At least **1 special character** from `!@#$%^&*()_+-=[]{};\\':"\\|,.<>/?`
 
-### All Six Password DTOs — ALL Must Stay in Sync
+### All Seven Password DTOs — ALL Must Stay in Sync
 
-There are six DTOs that accept a password field. **Editing only one has no effect on the others.** When changing password rules, update all six in the same commit.
+There are seven DTOs that accept a password field. **Editing only one has no effect on the others.** When changing password rules, update all seven in the same commit.
 
 | File | Endpoint | Notes |
 |------|----------|-------|
@@ -915,6 +915,7 @@ There are six DTOs that accept a password field. **Editing only one has no effec
 | `backend/src/modules/auth/dto/register.dto.ts` | `POST /auth/register` | New account registration |
 | `backend/src/modules/auth/dto/reset-password.dto.ts` | `POST /auth/reset-password` | Password reset via email token |
 | `backend/src/modules/auth/dto/accept-invitation.dto.ts` | `POST /auth/accept-invitation` | Invited-user first-time password — equivalent to registration |
+| `backend/src/modules/guest-portal/dto/establish-identity.dto.ts` | `POST /public/guest-invitations/establish-identity` | Guest progressive-identity password — first-time guest sets their own password (equivalent to registration). Rules currently match `register.dto.ts` byte-for-byte. Added to the registry #8c Part 1 (previously an untracked seventh). |
 
 ### DB Policy — Must Stay in Sync With DTOs
 `security_policies` table row `id='global'`:
@@ -932,7 +933,7 @@ One page enforces a length-only check (no full regex — backend enforces the re
 - `ProfilePage.tsx` — change password (length check `< 12` only, routes to `POST /me/change-password` via `meService.changePassword()`, added Phase 5.8)
 
 ### Hard Rules — Never Violate
-1. When updating password validation rules, update **ALL SIX DTOs + the DB policy + ALL FIVE frontend pages** in the same commit. Search first: `grep -rn "password" backend/src --include="*.dto.ts"` to find every DTO with a password field.
+1. When updating password validation rules, update **ALL SEVEN DTOs + the DB policy + ALL FIVE frontend pages** in the same commit. Search first: `grep -rn "password" backend/src --include="*.dto.ts"` to find every DTO with a password field.
 2. Always trace `meService.ts → API route → controller → DTO import` before editing any DTO — never assume by filename.
 3. Never test change-password or other destructive endpoints with your real admin account on the live DB — use a dedicated test user.
 4. The `@Matches` regex and `@Length(12, 128)` on each DTO are the DTO-level floor. The `PasswordPolicyService` DB-driven check runs on top — if an admin lowers `password_min_length` below 12, the DTO still enforces 12.

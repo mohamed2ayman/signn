@@ -177,6 +177,8 @@ describe('AuthService — Phase 4.2 token security', () => {
         JWT_REFRESH_SECRET: 'refresh-secret-key-minimum-32-chars-test-value',
         JWT_ACCESS_EXPIRES_IN: '15m',
         JWT_REFRESH_EXPIRES_IN: '7d',
+        // #8c Part 1 — pure-GUEST access TTL (issueGuestSession only).
+        JWT_GUEST_ACCESS_EXPIRES_IN: '1h',
       };
       return map[key];
     }),
@@ -439,5 +441,104 @@ describe('AuthService — Phase 4.2 token security', () => {
     expect(bPayload.jti).toMatch(uuidRegex);
 
     expect(aPayload.jti).not.toBe(bPayload.jti);
+  });
+
+  // ─────────────────────────────────────────────────────────────────────
+  // TEST 6 — #8c Part 1: guest-scoped access TTL (managing unaffected)
+  // ─────────────────────────────────────────────────────────────────────
+  it('issueGuestSession signs a pure-GUEST access token with JWT_GUEST_ACCESS_EXPIRES_IN (1h); managing paths stay on JWT_ACCESS_EXPIRES_IN', async () => {
+    // Pure GUEST → 1h access expiry.
+    const guestUser = {
+      ...MOCK_USER,
+      id: 'guest-user-ttl',
+      email: 'ttl-guest@external.test',
+      role: UserRole.GUEST,
+      account_type: 'GUEST',
+      organization_id: null,
+    } as unknown as User;
+    await service.issueGuestSession(guestUser);
+    const guestAccessCall = (mockJwtService.signAsync.mock.calls as [any, any][]).find(
+      ([payload]) => payload.sub === 'guest-user-ttl' && 'jti' in payload,
+    );
+    expect(guestAccessCall).toBeDefined();
+    expect(guestAccessCall![1].expiresIn).toBe('1h');
+    // The refresh token keeps the GLOBAL refresh expiry (it exists for the
+    // session-row machinery; /auth/refresh rejects its use for guests).
+    const guestRefreshCall = (mockJwtService.signAsync.mock.calls as [any, any][]).find(
+      ([payload]) => payload.sub === 'guest-user-ttl' && 'family_id' in payload,
+    );
+    expect(guestRefreshCall![1].expiresIn).toBe('7d');
+
+    // MANAGING account through the SAME method (unified membership, Model A)
+    // → default 15m access expiry; the guest TTL never leaks to real accounts.
+    jest.clearAllMocks();
+    const managingUser = {
+      ...MOCK_USER,
+      id: 'managing-user-ttl',
+      email: 'ttl-managing@managing.test',
+      account_type: 'MANAGING',
+    } as unknown as User;
+    await service.issueGuestSession(managingUser);
+    const managingAccessCall = (mockJwtService.signAsync.mock.calls as [any, any][]).find(
+      ([payload]) => payload.sub === 'managing-user-ttl' && 'jti' in payload,
+    );
+    expect(managingAccessCall![1].expiresIn).toBe('15m');
+
+    // Managing LOGIN (the everyday path) → default 15m, byte-unchanged.
+    jest.clearAllMocks();
+    mockUserRepository.findOne.mockResolvedValue({
+      ...MOCK_USER,
+      account_type: 'MANAGING',
+    });
+    await service.login({ email: MOCK_USER.email!, password: 'pw' });
+    const loginAccessCall = (mockJwtService.signAsync.mock.calls as [any, any][]).find(
+      ([payload]) => 'jti' in payload,
+    );
+    expect(loginAccessCall![1].expiresIn).toBe('15m');
+  });
+
+  // ─────────────────────────────────────────────────────────────────────
+  // TEST 7 — #8c Part 1: /auth/refresh REJECTS a GUEST account_type
+  // ─────────────────────────────────────────────────────────────────────
+  it('refreshToken rejects a pure-GUEST account (enforced no-renewal), while a managing account still rotates', async () => {
+    // Issue a real guest session so a valid, unrevoked session row exists —
+    // proving the rejection is the account_type guard, not a missing session.
+    const guestUser = {
+      ...MOCK_USER,
+      id: 'guest-user-refresh',
+      email: 'refresh-guest@external.test',
+      role: UserRole.GUEST,
+      account_type: 'GUEST',
+      organization_id: null,
+    } as unknown as User;
+    const session = await service.issueGuestSession(guestUser);
+    expect(session.refresh_token).toBeDefined();
+
+    mockUserRepository.findOne.mockResolvedValue(guestUser);
+    const sessionsBefore = sessions.filter((s) => !s.revoked_at).length;
+
+    await expect(service.refreshToken(session.refresh_token)).rejects.toThrow(
+      UnauthorizedException,
+    );
+    await expect(
+      service.refreshToken(session.refresh_token),
+    ).rejects.toThrow('Guest sessions cannot be renewed');
+
+    // The guard fires BEFORE rotation: the old session was NOT revoked and
+    // no new session row was minted.
+    expect(mockSessionService.revokeByToken).not.toHaveBeenCalled();
+    expect(sessions.filter((s) => !s.revoked_at).length).toBe(sessionsBefore);
+
+    // Contrast: a MANAGING account with the same flow still rotates fine.
+    const managingUser = {
+      ...MOCK_USER,
+      id: 'managing-user-refresh',
+      email: 'refresh-managing@managing.test',
+      account_type: 'MANAGING',
+    } as unknown as User;
+    const managingSession = await service.issueGuestSession(managingUser);
+    mockUserRepository.findOne.mockResolvedValue(managingUser);
+    const rotated = await service.refreshToken(managingSession.refresh_token);
+    expect(rotated.access_token).toBeDefined();
   });
 });

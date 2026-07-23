@@ -79,6 +79,11 @@ import { dataSourceOptions } from './config/data-source';
         JWT_REFRESH_SECRET: Joi.string().min(32).required(),
         JWT_ACCESS_EXPIRES_IN: Joi.string().default('15m'),
         JWT_REFRESH_EXPIRES_IN: Joi.string().default('7d'),
+        // #8c Part 1 — pure-GUEST access-token TTL (read ONLY by
+        // issueGuestSession). Guests cannot refresh (refreshToken rejects
+        // GUEST account_type), so this is the FULL guest session length.
+        // Managing users stay on JWT_ACCESS_EXPIRES_IN.
+        JWT_GUEST_ACCESS_EXPIRES_IN: Joi.string().default('1h'),
         JWT_EXPIRES_IN: Joi.string().default('7d'),
         NESTJS_INTERNAL_TOKEN: Joi.string().required(),
 

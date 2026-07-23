@@ -1,6 +1,7 @@
 import { guestHttp } from './guestHttp';
 import api from './axios';
 import type { User } from '@/types';
+import type { SharedContractRow } from './sharedContractsService';
 
 // ─── Response shapes (mirror backend guest-portal controllers) ──────────────
 
@@ -9,6 +10,12 @@ export interface ViewerCredential {
   viewer_expires_at: string;
   contract_id: string;
   invited_language: string;
+  /**
+   * #8c Part 1 — the invited email already has a SIGN account (plain boolean,
+   * never account_type/role/name). Drives the returning-guest modal state
+   * ("enter your password") and the returning-only dashboard navigation.
+   */
+  account_exists: boolean;
 }
 
 export interface GuestIdentityResume {
@@ -109,6 +116,23 @@ export async function establishGuestIdentity(
   const { data } = await guestHttp.post<GuestIdentity>(
     '/public/guest-invitations/establish-identity',
     input,
+  );
+  return data;
+}
+
+/**
+ * #8c Part 1 — the guest dashboard's bindings list, on the ISOLATED guestHttp
+ * client with an EXPLICIT Bearer (the guest-surface pattern: comments / chat /
+ * upload / download). Same endpoint + row shape as the managing-side
+ * `getMyShares` (sharedContractsService), but it never touches the shared
+ * `api` client, its redux token, its refresh rotation, or its login redirect.
+ */
+export async function getMyGuestContracts(
+  guestJwt: string,
+): Promise<SharedContractRow[]> {
+  const { data } = await guestHttp.get<SharedContractRow[]>(
+    '/guest/my-contracts',
+    { headers: { Authorization: `Bearer ${guestJwt}` } },
   );
   return data;
 }
