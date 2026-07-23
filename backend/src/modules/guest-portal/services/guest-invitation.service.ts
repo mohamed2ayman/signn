@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
@@ -369,6 +370,15 @@ export class GuestInvitationService {
         where: { email: invitation.invited_email },
       });
       if (existingUser) {
+        // Deactivated accounts are refused here exactly as login refuses them
+        // (auth.service.ts login(): 403 'Account has been deactivated', checked
+        // BEFORE lockout and the password compare). A stolen invitation token
+        // must not reactivate access to — or bind onto — a disabled account.
+        // Inside the txn: nothing has been written, so the rollback is a no-op.
+        if (!existingUser.is_active) {
+          throw new ForbiddenException('Account has been deactivated');
+        }
+
         // Account-level lockout — the SAME control login uses (shared
         // AccountLockoutService). A locked account is refused BEFORE the
         // password is checked (403), so this cross-org-binding door is not a
