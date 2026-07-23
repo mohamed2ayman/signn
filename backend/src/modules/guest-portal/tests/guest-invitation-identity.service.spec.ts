@@ -244,6 +244,7 @@ describe('GuestInvitationService — 1b-ii identity transition', () => {
       role: UserRole.GUEST,
       password_hash: 'hashed-placeholder',
       organization_id: null,
+      is_active: true,
     } as any;
     existingBinding = {
       id: 'binding-uuid',
@@ -285,6 +286,7 @@ describe('GuestInvitationService — 1b-ii identity transition', () => {
       role: UserRole.GUEST,
       password_hash: 'hashed-placeholder',
       organization_id: null,
+      is_active: true,
     } as any;
     existingBinding = {
       id: 'binding-uuid',

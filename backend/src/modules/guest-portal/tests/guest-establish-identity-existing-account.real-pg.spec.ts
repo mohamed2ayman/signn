@@ -1,4 +1,4 @@
-import { UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule } from '@nestjs/config';
@@ -85,15 +85,19 @@ describeReal(
     const managingUserId = randomUUID(); // real customer, no MFA
     const mfaUserId = randomUUID(); // real customer WITH MFA enabled
     const projectId = randomUUID();
+    const deactivatedUserId = randomUUID(); // existing GUEST, is_active = FALSE
     const contractId = randomUUID(); // fresh-guest tests
     const contractMId = randomUUID(); // managing-branch tests
     const contractMfaId = randomUUID(); // MFA-branch test
+    const contractDeactId = randomUUID(); // deactivated-branch test
     const invitationManagingId = randomUUID(); // → MANAGING email, contractMId
     const invitationMfaId = randomUUID(); // → MFA email, contractMfaId
     const invitationFreshId = randomUUID(); // → brand-new email, contractId
+    const invitationDeactId = randomUUID(); // → deactivated GUEST email, contractDeactId
     const MANAGING_EMAIL = `customer-${managingUserId.slice(0, 8)}@managing.test`;
     const MFA_EMAIL = `mfacust-${mfaUserId.slice(0, 8)}@managing.test`;
     const FRESH_EMAIL = `newguest-${invitationFreshId.slice(0, 8)}@external.test`;
+    const DEACTIVATED_EMAIL = `disabled-${deactivatedUserId.slice(0, 8)}@external.test`;
     let managingHash = '';
 
     const issueToken = (invitationId: string) =>
@@ -200,6 +204,21 @@ describeReal(
         );
       await insertRealUser(managingUserId, MANAGING_EMAIL, false);
       await insertRealUser(mfaUserId, MFA_EMAIL, true);
+      // A DEACTIVATED existing GUEST account (is_active = FALSE) — the
+      // returning-guest whose access was disabled. establish-identity must
+      // refuse it exactly as login does, before the password compare.
+      await dataSource.query(
+        `INSERT INTO users (
+           id, email, password_hash, first_name, last_name, role, account_type,
+           organization_id, is_active, is_email_verified, mfa_enabled,
+           preferred_language, failed_login_attempts, onboarding_completed,
+           onboarding_level, email_digest_opt_out, marketing_email_opt_in,
+           ai_training_opt_in
+         )
+         VALUES ($1, $2, $3, 'Disabled', 'Guest', 'GUEST', 'GUEST',
+                 NULL, FALSE, TRUE, FALSE, 'en', 0, TRUE, 'none', FALSE, FALSE, FALSE)`,
+        [deactivatedUserId, DEACTIVATED_EMAIL, managingHash],
+      );
       await dataSource.query(
         `INSERT INTO projects (id, organization_id, name, created_by)
          VALUES ($1, $2, 'unified1-project', $3)`,
@@ -209,6 +228,7 @@ describeReal(
         [contractId, 'Unified1 Contract Fresh'],
         [contractMId, 'Unified1 Contract Managing'],
         [contractMfaId, 'Unified1 Contract MFA'],
+        [contractDeactId, 'Unified1 Contract Deactivated'],
       ] as const) {
         await dataSource.query(
           `INSERT INTO contracts (id, project_id, name, contract_type, created_by)
@@ -219,25 +239,37 @@ describeReal(
       await insertInvitation(invitationManagingId, MANAGING_EMAIL, contractMId);
       await insertInvitation(invitationMfaId, MFA_EMAIL, contractMfaId);
       await insertInvitation(invitationFreshId, FRESH_EMAIL, contractId);
+      await insertInvitation(
+        invitationDeactId,
+        DEACTIVATED_EMAIL,
+        contractDeactId,
+      );
     });
 
     afterAll(async () => {
       if (dataSource?.isInitialized) {
         await dataSource.query(
           `DELETE FROM guest_contract_access WHERE contract_id = ANY($1)`,
-          [[contractId, contractMId, contractMfaId]],
+          [[contractId, contractMId, contractMfaId, contractDeactId]],
         );
         await dataSource.query(
           `DELETE FROM guest_invitations WHERE id = ANY($1)`,
-          [[invitationManagingId, invitationMfaId, invitationFreshId]],
+          [
+            [
+              invitationManagingId,
+              invitationMfaId,
+              invitationFreshId,
+              invitationDeactId,
+            ],
+          ],
         );
         await dataSource.query(`DELETE FROM contracts WHERE id = ANY($1)`, [
-          [contractId, contractMId, contractMfaId],
+          [contractId, contractMId, contractMfaId, contractDeactId],
         ]);
         await dataSource.query(`DELETE FROM projects WHERE id = $1`, [projectId]);
         await dataSource.query(
           `DELETE FROM users WHERE email = ANY($1)`,
-          [[MANAGING_EMAIL, MFA_EMAIL, FRESH_EMAIL]],
+          [[MANAGING_EMAIL, MFA_EMAIL, FRESH_EMAIL, DEACTIVATED_EMAIL]],
         );
         await dataSource.query(`DELETE FROM organizations WHERE id = $1`, [orgId]);
       }
@@ -373,6 +405,39 @@ describeReal(
       expect(result.contract_id).toBe(contractId);
       expect(await userRowsByEmail(FRESH_EMAIL)).toHaveLength(1);
       expect(await bindingsFor(contractId)).toHaveLength(1);
+    });
+
+    // ⭐ is_active PARITY — a DEACTIVATED existing (guest) account is refused
+    //    exactly as login refuses it: 403, before the password compare, so no
+    //    binding is written and no failed-attempt is recorded (the is_active
+    //    guard sits BEFORE the lockout counter, matching auth.service login()).
+    it('deactivated existing GUEST account + CORRECT password → 403 Forbidden; NO binding; no failed-attempt recorded (login parity)', async () => {
+      const token = issueToken(invitationDeactId);
+
+      await expect(
+        service.establishIdentity({
+          token,
+          password: VALID_PASSWORD,
+        } as any),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+
+      // No binding — a disabled account cannot be reactivated / bound via a token.
+      expect(await bindingsFor(contractDeactId)).toHaveLength(0);
+
+      // Identity untouched, still deactivated, and — because is_active is checked
+      // BEFORE lockout — the failed-attempt counter did NOT move (unlike a wrong
+      // password, which DOES record one). This proves the ordering matches login.
+      const rows = await userRowsByEmail(DEACTIVATED_EMAIL);
+      expect(rows).toHaveLength(1);
+      expect(rows[0].id).toBe(deactivatedUserId);
+      expect(rows[0].is_active).toBe(false);
+      expect(rows[0].account_type).toBe(AccountType.GUEST);
+      expect(Number(rows[0].failed_login_attempts)).toBe(0);
+      expect(rows[0].locked_until).toBeNull();
+
+      // Invitation NOT flipped to ACCEPTED (the transaction rolled back).
+      const [inv] = await invitationStatus(invitationDeactId);
+      expect(inv.status).toBe('PENDING');
     });
 
     // ⭐ PATH-A UNAFFECTED — view-only exchange never touches users.
