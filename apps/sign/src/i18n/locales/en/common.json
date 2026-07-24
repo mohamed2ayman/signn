@@ -221,6 +221,12 @@
       "host": "When the counterparty proposes clause changes, they will appear here for your review.",
       "counterparty": "Propose a change to a clause to start the negotiation."
     },
+    "actions": {
+      "accept": "Accept",
+      "reject": "Reject",
+      "counter": "Counter",
+      "withdraw": "Withdraw"
+    },
     "status": {
       "PROPOSED": "Proposed",
       "ACCEPTED": "Accepted",
@@ -1732,6 +1738,7 @@
       "subtitle": "Something went wrong while fetching your shares.",
       "retry": "Retry"
     },
+    "negotiateRedlines": "Negotiate redlines",
     "banner": {
       "title": "You’re viewing this contract as a guest.",
       "body": "{{org}} shared it with you — your access here is limited to this contract.",

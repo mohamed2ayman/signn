@@ -223,6 +223,12 @@
       "host": "Les modifications de clauses proposées par l'autre partie apparaîtront ici pour votre examen.",
       "counterparty": "Proposez une modification d'une clause pour démarrer la négociation."
     },
+    "actions": {
+      "accept": "Accepter",
+      "reject": "Rejeter",
+      "counter": "Contre-proposer",
+      "withdraw": "Retirer"
+    },
     "status": {
       "PROPOSED": "Proposée",
       "ACCEPTED": "Acceptée",
@@ -1741,6 +1747,7 @@
       "subtitle": "Une erreur s’est produite lors du chargement de vos partages.",
       "retry": "Réessayer"
     },
+    "negotiateRedlines": "Négocier les révisions",
     "banner": {
       "title": "Vous consultez ce contrat en tant qu’invité.",
       "body": "{{org}} l’a partagé avec vous — votre accès ici est limité à ce contrat.",

@@ -393,12 +393,24 @@ export default function ContractDetailPage() {
   const loadContract = async () => {
     if (!id) return;
     try {
-      const [contractData, clauseData, commentData, riskData, approverData] = await Promise.all([
-        contractService.getById(id),
-        contractService.getClauses(id),
-        contractService.getComments(id),
-        riskAnalysisService.getByContract(id),
-        contractService.getApprovers(id),
+      // Primary read — org-first → binding-fallback (PR #164): a bound
+      // counterparty gets the contract HERE. Only this read is fatal.
+      const contractData = await contractService.getById(id);
+      // Secondary reads are org-walled managing endpoints — they 404 for a
+      // bound counterparty viewing via the binding. Each is BEST-EFFORT so
+      // the page (and the Redlines tab) renders on the primary read alone;
+      // clauses fall back to the primary payload's hydrated live set.
+      const [clauseData, commentData, riskData, approverData] = await Promise.all([
+        contractService
+          .getClauses(id)
+          .catch(
+            () =>
+              (contractData as Contract & { contract_clauses?: ContractClause[] })
+                .contract_clauses ?? [],
+          ),
+        contractService.getComments(id).catch(() => []),
+        riskAnalysisService.getByContract(id).catch(() => []),
+        contractService.getApprovers(id).catch(() => []),
       ]);
       setContract(contractData);
       setClauses(clauseData);

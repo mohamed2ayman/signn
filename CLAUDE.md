@@ -6058,6 +6058,17 @@ Withdraw), coded-409s surfaced as readable i18n messages, `redlines.*` i18n
   coalescing only; the shared `DiffView` is the ONE diff renderer (never fork).
 - Clause/proposal text uses `dir="auto"` + `unicodeBidi:'plaintext'`; DiffView
   owns its own RTL handling.
+- **Counterparty entry points:** the Shared-with-me row + the shared-viewer
+  banner both carry an OUTLINE "Negotiate redlines" link →
+  `/app/contracts/:id` (visually distinct from the FILLED Import button, which
+  creates a COPY — the two were confused into 8 accidental duplicates).
+  ContractDetailPage's secondary loads (clauses/comments/risks/approvers) are
+  BEST-EFFORT with fallbacks — they 404 for a bound counterparty; only the
+  primary org-first→binding read is fatal.
+- **i18n coverage guard** (`redlinesI18nCoverage.test.ts`): every t() key used
+  by the redline-slice components must exist in en/ar/fr — locale PARITY
+  cannot catch a key missing from all three (lesson #282); extend its SOURCES
+  list when adding redline-slice components.
 
 ### Slice boundaries (do NOT assume built)
 Slice 4: notifications. Later, gated on #8c: guest-account redline writes
