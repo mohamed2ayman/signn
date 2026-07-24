@@ -6043,6 +6043,33 @@ Hard rules (additive to 1–5 above):
    404). Note: the guard map also allows UNDER_REVIEW→SHARED (step-back) —
    defined but with NO caller in Slice 2.
 
+### Slice 3 — Redlines tab UI (SHIPPED — pending Youssef's visual gate at merge time)
+The "Redlines" tab on ContractDetailPage (`RedlinesTab.tsx` + `redlineService.ts`):
+role-aware list grouped by clause (host = Accept/Reject/Counter + the Slice-2
+agree/ready-to-sign actions; bound counterparty = Propose; API `is_author` =
+Withdraw), coded-409s surfaced as readable i18n messages, `redlines.*` i18n
+×3 locales. Conventions to keep:
+- **Host-vs-counterparty signal** = `currentUser.organization_id ===
+  contract.project.organization_id` (the contract read hydrates project for
+  BOTH viewers; local type extension — never widen the shared Contract type).
+- **Word-level diffs are BACKEND-computed platform-wide** (lesson #281): the
+  redline list carries `word_level_diff` from a single-pair `computeClauseDiff`
+  call — jsdiff is NOT a frontend dependency; `wordDiff.ts` is render-layer
+  coalescing only; the shared `DiffView` is the ONE diff renderer (never fork).
+- Clause/proposal text uses `dir="auto"` + `unicodeBidi:'plaintext'`; DiffView
+  owns its own RTL handling.
+- **Counterparty entry points:** the Shared-with-me row + the shared-viewer
+  banner both carry an OUTLINE "Negotiate redlines" link →
+  `/app/contracts/:id` (visually distinct from the FILLED Import button, which
+  creates a COPY — the two were confused into 8 accidental duplicates).
+  ContractDetailPage's secondary loads (clauses/comments/risks/approvers) are
+  BEST-EFFORT with fallbacks — they 404 for a bound counterparty; only the
+  primary org-first→binding read is fatal.
+- **i18n coverage guard** (`redlinesI18nCoverage.test.ts`): every t() key used
+  by the redline-slice components must exist in en/ar/fr — locale PARITY
+  cannot catch a key missing from all three (lesson #282); extend its SOURCES
+  list when adding redline-slice components.
+
 ### Slice boundaries (do NOT assume built)
 Slice 4: notifications. Later, gated on #8c: guest-account redline writes
 (currently HARD-EXCLUDED at the service seam — hard rule 2a; the future slice

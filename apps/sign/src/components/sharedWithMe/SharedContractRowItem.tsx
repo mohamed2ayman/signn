@@ -42,6 +42,7 @@ export function SignaturePill({ signatureStatus }: { signatureStatus: string | n
  */
 export default function SharedContractRowItem({ row }: { row: SharedContractRow }) {
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const open = () => navigate(`/guest/shared/${row.contract_id}`);
 
   return (
@@ -92,6 +93,19 @@ export default function SharedContractRowItem({ row }: { row: SharedContractRow 
         </div>
       </div>
       <div className="flex flex-shrink-0 items-center gap-3">
+        {/* 7.19 Slice 3 — direct entry to the redline UI (workspace contract
+            view). stopPropagation: the row itself opens the guest VIEWER;
+            this button is the separate negotiate path. Outline style keeps it
+            visually distinct from any filled primary action. */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            navigate(`/app/contracts/${row.contract_id}`);
+          }}
+          className="hidden rounded-lg border border-primary/40 px-2.5 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/5 sm:inline-flex"
+        >
+          {t('sharedWithMe.negotiateRedlines')}
+        </button>
         <ContractStatusDot status={row.status} />
         <SignaturePill signatureStatus={row.signature_status} />
         {/* Dates always read LTR, even inside an RTL row. */}

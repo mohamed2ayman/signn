@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { X } from 'lucide-react';
 import { VersionDiffChange } from '@/types';
 import { coalesceWordDiffToWholeWords } from './wordDiff';
@@ -52,6 +53,7 @@ export function DiffView({
   rtlIndicator,
   onClose,
 }: Props) {
+  const { t } = useTranslation();
   const [filter, setFilter] = useState<FilterKey>('CHANGES');
   const [inline, setInline] = useState(false);
 
@@ -93,16 +95,16 @@ export function DiffView({
             <div className="flex items-center justify-between gap-4 flex-wrap">
               <div className="flex items-center gap-2 text-sm">
                 <span className="px-2 py-1 rounded bg-emerald-100 text-emerald-700">
-                  +{data.summary.added} added
+                  {t('diff.chip.added', { count: data.summary.added })}
                 </span>
                 <span className="px-2 py-1 rounded bg-red-100 text-red-700">
-                  -{data.summary.removed} removed
+                  {t('diff.chip.removed', { count: data.summary.removed })}
                 </span>
                 <span className="px-2 py-1 rounded bg-amber-100 text-amber-700">
-                  ~{data.summary.modified} modified
+                  {t('diff.chip.modified', { count: data.summary.modified })}
                 </span>
                 <span className="px-2 py-1 rounded bg-slate-200 text-slate-600">
-                  {data.summary.unchanged} unchanged
+                  {t('diff.chip.unchanged', { count: data.summary.unchanged })}
                 </span>
                 {rtl && rtlIndicator && (
                   <span className="px-2 py-1 rounded bg-violet-100 text-violet-700">
@@ -121,12 +123,12 @@ export function DiffView({
                         : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'
                     }`}
                   >
-                    {k === 'CHANGES' ? 'Changes Only' : k.charAt(0) + k.slice(1).toLowerCase()}
+                    {t(`diff.filter.${k}`)}
                   </button>
                 ))}
                 <label className="inline-flex items-center gap-1 text-xs text-slate-600 ml-2 cursor-pointer">
                   <input type="checkbox" checked={inline} onChange={(e) => setInline(e.target.checked)} />
-                  Inline
+                  {t('diff.inline')}
                 </label>
               </div>
             </div>
@@ -135,10 +137,10 @@ export function DiffView({
 
         {/* Body */}
         <div className="flex-1 overflow-auto px-6 py-4">
-          {loading && <div className="text-center text-slate-500 py-10">Loading diff…</div>}
+          {loading && <div className="text-center text-slate-500 py-10">{t('diff.loading')}</div>}
           {error && <div className="text-center text-red-600 py-10">{error}</div>}
           {data && !filtered.length && (
-            <div className="text-center text-slate-500 py-10">No changes to display.</div>
+            <div className="text-center text-slate-500 py-10">{t('diff.noChanges')}</div>
           )}
           <div className="space-y-5">
             {filtered.map((c) => (
@@ -171,6 +173,7 @@ function ClauseDiff({
   colLabelA: string;
   colLabelB: string;
 }) {
+  const { t } = useTranslation();
   const headerColor =
     change.changeType === 'ADDED'
       ? 'bg-emerald-50 border-emerald-200'
@@ -203,7 +206,7 @@ function ClauseDiff({
     <div className={`border rounded-lg ${headerColor}`}>
       {/* Card header stays LTR chrome. */}
       <div className="px-4 py-2 border-b border-current/10 flex items-center gap-2" dir="ltr">
-        <span className="text-xs font-semibold uppercase tracking-wide">{change.changeType}</span>
+        <span className="text-xs font-semibold uppercase tracking-wide">{t(`diff.changeType.${change.changeType}`)}</span>
         {change.clauseNumber && <span className="text-xs text-slate-500">§ {change.clauseNumber}</span>}
         <span className="font-semibold text-slate-900 truncate" dir="auto">
           {change.clauseTitle}

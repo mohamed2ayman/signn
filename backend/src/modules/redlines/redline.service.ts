@@ -24,6 +24,7 @@ import {
   ManagingOrGuestCaller,
 } from '../contracts/services/contract-access.service';
 import { NegotiationStatusService } from '../contracts/services/negotiation-status.service';
+import { computeClauseDiff } from '../contracts/utils/clause-diff.util';
 import { assertContractMutable } from '../contracts/utils/contract-pin-guard.util';
 import {
   AcceptRedlineDto,
@@ -68,6 +69,15 @@ export interface RedlineListRow {
   author_name: string;
   author_role: 'TEAM' | 'GUEST';
   is_author: boolean;
+  /**
+   * 7.19 Slice 3 — the word-level diff of base_content_snapshot → proposed
+   * content, computed by the SAME shared util the version compare uses
+   * (computeClauseDiff / diffWordsWithSpace) so the frontend DiffView renders
+   * redlines byte-consistently with version diffs (jsdiff is not a frontend
+   * dependency — the word diff is backend-computed everywhere). Null when the
+   * proposal is byte-identical to the base.
+   */
+  word_level_diff: Array<{ value: string; added?: boolean; removed?: boolean }> | null;
 }
 
 /**
@@ -283,8 +293,28 @@ export class RedlineService {
         author_name: name || (isTeam ? 'SIGN Team' : 'Guest'),
         author_role: isTeam ? 'TEAM' : 'GUEST',
         is_author: r.author_user_id != null && r.author_user_id === caller.id,
+        word_level_diff: this.wordDiffOf(r.id, r.base_content_snapshot, r.proposed_content),
       };
     });
+  }
+
+  /**
+   * 7.19 Slice 3 — per-redline word diff via the SHARED clause-diff util (a
+   * single-pair computeClauseDiff call — never a second diff algorithm). Same
+   * key both sides → the pair resolves MODIFIED (wordLevelDiff) when content
+   * differs, UNCHANGED (null) when byte-identical. Titles are held constant so
+   * ONLY content participates in the diff.
+   */
+  private wordDiffOf(
+    key: string,
+    base: string,
+    proposed: string,
+  ): Array<{ value: string; added?: boolean; removed?: boolean }> | null {
+    const change = computeClauseDiff(
+      [{ clause_id: key, clause_title: '', clause_content: base, section_number: null }],
+      [{ clause_id: key, clause_title: '', clause_content: proposed, section_number: null }],
+    ).changes[0];
+    return change?.wordLevelDiff ?? null;
   }
 
   // ────────────────────────────────────────────────────────────────────────

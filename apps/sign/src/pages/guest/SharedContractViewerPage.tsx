@@ -165,6 +165,28 @@ export default function SharedContractViewerPage() {
                 org: sharedByOrg ?? t('sharedWithMe.banner.orgFallback'),
               })}
             </p>
+            {/* 7.19 Slice 3 — the DISCOVERABLE entry to the redline UI:
+                ContractDetailPage's Redlines tab lives at /app/contracts/:id
+                (served to a bound counterparty via the org-first → binding
+                read). Deliberately styled as an OUTLINE pill — visually
+                distinct from the filled Import button, which creates a COPY
+                in the viewer's own org (a completely different action). */}
+            <Link
+              to={`/app/contracts/${contractId}`}
+              className="inline-flex flex-shrink-0 items-center gap-1.5 rounded-lg border border-primary/40 px-3 py-1.5 text-sm font-medium text-primary transition-colors hover:bg-primary/5"
+            >
+              <svg
+                className="h-3.5 w-3.5"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z" />
+              </svg>
+              {t('sharedWithMe.negotiateRedlines')}
+            </Link>
             <Link
               to="/app/shared-with-me"
               className="inline-flex flex-shrink-0 items-center gap-1 text-sm font-medium text-primary transition-colors hover:text-primary-600"
