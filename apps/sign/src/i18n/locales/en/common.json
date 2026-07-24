@@ -197,6 +197,34 @@
   "parties": {
     "swap": "Swap First ⇄ Second"
   },
+  "diff": {
+    "chip": {
+      "added": "+{{count}} added",
+      "removed": "-{{count}} removed",
+      "modified": "~{{count}} modified",
+      "unchanged": "{{count}} unchanged"
+    },
+    "filter": {
+      "ALL": "All",
+      "CHANGES": "Changes Only",
+      "ADDED": "Added",
+      "REMOVED": "Removed",
+      "MODIFIED": "Modified"
+    },
+    "changeType": {
+      "ADDED": "Added",
+      "REMOVED": "Removed",
+      "MODIFIED": "Modified",
+      "UNCHANGED": "Unchanged"
+    },
+    "inline": "Inline",
+    "loading": "Loading diff…",
+    "noChanges": "No changes to display.",
+    "loadFailed": "Failed to load diff",
+    "versionComparison": "Version Comparison",
+    "previous": "Previous",
+    "current": "Current"
+  },
   "proposedDiff": {
     "title": "Review proposed changes",
     "subtitle": "Current contract ↔ guest's proposed version",

@@ -28,11 +28,15 @@ import fr from '@/i18n/locales/fr/common.json';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
-/** The redline-slice component sources under guard. */
+/** The redline-slice component sources under guard (+ the shared DiffView,
+ *  whose chrome strings were localized in this slice — it serves version
+ *  comparison too, so its keys regressing breaks two surfaces). */
 const SOURCES = [
   resolve(here, './RedlinesTab.tsx'),
   resolve(here, '../sharedWithMe/SharedContractRowItem.tsx'),
   resolve(here, '../../pages/guest/SharedContractViewerPage.tsx'),
+  resolve(here, '../versions/DiffView.tsx'),
+  resolve(here, '../versions/DiffViewerModal.tsx'),
 ];
 
 /** Dynamic template families expanded over their full domains. */
@@ -56,6 +60,9 @@ const DYNAMIC_KEYS: string[] = [
     `redlines.negotiation.${a}Confirm`,
     `redlines.negotiation.${a}Success`,
   ]),
+  // DiffView dynamic families (t(`diff.filter.${k}`) / t(`diff.changeType.${…}`)).
+  ...['ALL', 'CHANGES', 'ADDED', 'REMOVED', 'MODIFIED'].map((k) => `diff.filter.${k}`),
+  ...['ADDED', 'REMOVED', 'MODIFIED', 'UNCHANGED'].map((k) => `diff.changeType.${k}`),
 ];
 
 function extractStaticKeys(source: string): string[] {

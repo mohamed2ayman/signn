@@ -199,6 +199,34 @@
   "parties": {
     "swap": "Échanger premier ⇄ second"
   },
+  "diff": {
+    "chip": {
+      "added": "+{{count}} ajoutées",
+      "removed": "-{{count}} supprimées",
+      "modified": "~{{count}} modifiées",
+      "unchanged": "{{count}} inchangées"
+    },
+    "filter": {
+      "ALL": "Tout",
+      "CHANGES": "Modifications seules",
+      "ADDED": "Ajoutées",
+      "REMOVED": "Supprimées",
+      "MODIFIED": "Modifiées"
+    },
+    "changeType": {
+      "ADDED": "Ajoutée",
+      "REMOVED": "Supprimée",
+      "MODIFIED": "Modifiée",
+      "UNCHANGED": "Inchangée"
+    },
+    "inline": "En ligne",
+    "loading": "Chargement de la comparaison…",
+    "noChanges": "Aucune modification à afficher.",
+    "loadFailed": "Échec du chargement de la comparaison",
+    "versionComparison": "Comparaison des versions",
+    "previous": "Précédente",
+    "current": "Actuelle"
+  },
   "proposedDiff": {
     "title": "Examiner les modifications proposées",
     "subtitle": "Contrat actuel ↔ version proposée par l'invité",

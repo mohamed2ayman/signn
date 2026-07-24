@@ -199,6 +199,34 @@
   "parties": {
     "swap": "تبديل الطرف الأول ⇄ الطرف الثاني"
   },
+  "diff": {
+    "chip": {
+      "added": "+{{count}} مضاف",
+      "removed": "-{{count}} محذوف",
+      "modified": "~{{count}} معدّل",
+      "unchanged": "{{count}} دون تغيير"
+    },
+    "filter": {
+      "ALL": "الكل",
+      "CHANGES": "التغييرات فقط",
+      "ADDED": "مضاف",
+      "REMOVED": "محذوف",
+      "MODIFIED": "معدّل"
+    },
+    "changeType": {
+      "ADDED": "مضاف",
+      "REMOVED": "محذوف",
+      "MODIFIED": "معدّل",
+      "UNCHANGED": "دون تغيير"
+    },
+    "inline": "عرض مضمّن",
+    "loading": "جارٍ تحميل المقارنة…",
+    "noChanges": "لا توجد تغييرات للعرض.",
+    "loadFailed": "تعذّر تحميل المقارنة",
+    "versionComparison": "مقارنة النسخ",
+    "previous": "السابقة",
+    "current": "الحالية"
+  },
   "proposedDiff": {
     "title": "مراجعة التغييرات المقترحة",
     "subtitle": "العقد الحالي ↔ النسخة المقترحة من الضيف",

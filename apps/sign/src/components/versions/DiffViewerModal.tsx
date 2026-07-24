@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { VersionComparisonResult } from '@/types';
 import { contractService } from '@/services/api/contractService';
+import { useTranslation } from 'react-i18next';
 import { DiffView } from './DiffView';
 
 interface Props {
@@ -17,6 +18,7 @@ interface Props {
  * (Latin → LTR, byte-identical). DiffView adds auto-RTL for Arabic content.
  */
 export function DiffViewerModal({ contractId, versionAId, versionBId, onClose }: Props) {
+  const { t } = useTranslation();
   const [data, setData] = useState<VersionComparisonResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -27,7 +29,7 @@ export function DiffViewerModal({ contractId, versionAId, versionBId, onClose }:
     contractService
       .compareVersions(contractId, versionAId, versionBId)
       .then((d) => m && setData(d))
-      .catch((e) => m && setError(e?.message || 'Failed to load diff'))
+      .catch((e) => m && setError(e?.message || t('diff.loadFailed')))
       .finally(() => m && setLoading(false));
     return () => {
       m = false;
@@ -42,10 +44,10 @@ export function DiffViewerModal({ contractId, versionAId, versionBId, onClose }:
 
   return (
     <DiffView
-      title="Version Comparison"
+      title={t('diff.versionComparison')}
       subtitle={subtitle}
-      colLabelA="Previous"
-      colLabelB="Current"
+      colLabelA={t('diff.previous')}
+      colLabelB={t('diff.current')}
       data={data ? { summary: data.summary, changes: data.changes } : null}
       loading={loading}
       error={error}
