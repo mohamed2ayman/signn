@@ -2,8 +2,16 @@ import {
   Injectable,
   NotFoundException,
   Logger,
+  Optional,
+  Inject,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import {
+  CLAUSE_TYPE_PROVIDER,
+  IClauseTypeProvider,
+} from '../clause-typing/interfaces/clause-type-provider.interface';
+import { InlineExtractionProvider } from '../clause-typing/providers/inline-extraction.provider';
+import { applyClauseTypeEdit } from '../clause-typing/clause-type-correction.util';
 import { EntityManager, ILike, In, IsNull, Repository } from 'typeorm';
 import { randomUUID } from 'crypto';
 import {
@@ -157,6 +165,12 @@ export class DocumentProcessingService {
     // clauses + backfill.
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    // Clause-type provider seam (Step 2). @Optional so the existing direct-
+    // construction unit tests (positional args, no provider) keep working — they
+    // fall back to the inline provider below. Production DI injects the real one.
+    @Optional()
+    @Inject(CLAUSE_TYPE_PROVIDER)
+    private readonly clauseTypeProvider?: IClauseTypeProvider,
   ) {}
 
   /**
@@ -973,6 +987,18 @@ export class DocumentProcessingService {
     orgId: string,
     isProposed: boolean,
   ): Promise<void> {
+    // Clause-type provider seam (Step 2). Default = inline provider (a pure
+    // passthrough of the extractor's own clause_type → byte-unchanged). @Optional
+    // constructor dep, so direct-construction unit tests fall back to inline here.
+    const provider = this.clauseTypeProvider ?? new InlineExtractionProvider();
+    const typed = await provider.assignTypes(
+      extractedClauses.map((ec) => ({
+        title: ec.title,
+        content: ec.content,
+        clause_type: ec.clause_type,
+      })),
+    );
+
     for (let i = 0; i < extractedClauses.length; i++) {
       const ec = extractedClauses[i];
 
@@ -981,7 +1007,13 @@ export class DocumentProcessingService {
         organization_id: orgId,
         title: ec.title,
         content: ec.content,
-        clause_type: ec.clause_type,
+        // clause_type = provider result (= ec.clause_type for the inline default);
+        // original_ai_clause_type snapshots the AI's inline extraction label so a
+        // later human correction is queryable against it (retrain signal).
+        clause_type: typed[i].clause_type,
+        original_ai_clause_type: ec.clause_type,
+        clause_type_source: typed[i].source,
+        is_type_edited_by_user: false,
         version: 1,
         is_active: true,
         source: ClauseSource.AI_EXTRACTED,
@@ -1301,7 +1333,9 @@ export class DocumentProcessingService {
 
     if (data.title !== undefined) clause.title = data.title;
     if (data.content !== undefined) clause.content = data.content;
-    if (data.clause_type !== undefined) clause.clause_type = data.clause_type;
+    // Capture a reviewer's type correction (snapshot-once + edit flag) — this
+    // review flow is a primary place a human changes the type.
+    if (data.clause_type !== undefined) applyClauseTypeEdit(clause, data.clause_type);
 
     return this.clauseRepository.save(clause);
   }

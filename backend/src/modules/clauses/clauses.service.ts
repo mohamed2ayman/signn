@@ -8,6 +8,7 @@ import { Clause } from '../../database/entities';
 import { CreateClauseDto, UpdateClauseDto } from './dto';
 import { escapeLikeParam } from '../../common/utils/escape-like';
 import { assertClauseMutable } from '../contracts/utils/contract-pin-guard.util';
+import { applyClauseTypeEdit } from '../clause-typing/clause-type-correction.util';
 
 @Injectable()
 export class ClausesService {
@@ -97,7 +98,9 @@ export class ClausesService {
 
     if (dto.title !== undefined) clause.title = dto.title;
     if (dto.content !== undefined) clause.content = dto.content;
-    if (dto.clause_type !== undefined) clause.clause_type = dto.clause_type;
+    // Capture a human type correction (snapshot-once + edit flag; no-op on
+    // unchanged value) for the future retrain corpus.
+    if (dto.clause_type !== undefined) applyClauseTypeEdit(clause, dto.clause_type);
     if (dto.is_active !== undefined) clause.is_active = dto.is_active;
 
     return this.clauseRepository.save(clause);
