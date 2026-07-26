@@ -109,12 +109,25 @@ export interface RedlineListRow {
  *  - assertContractMutable ALWAYS runs AFTER the access wall (cross-org stays
  *    404 first; CONTRACT_PINNED 409 never becomes an existence oracle).
  *
- * Concurrency posture (Slice 1): every status transition is a CONDITIONAL
- * UPDATE keyed on status = PROPOSED (affected-rows gate, lesson #149's
- * discipline) — two racing deciders resolve to exactly one winner for the
- * FLIP itself. A full row-lock (SELECT … FOR UPDATE) around the accept's
- * read-then-promote span is a known follow-up; the in-txn conditional flip
- * covers the common case.
+ * Concurrency posture: TWO complementary guards, because they cover DIFFERENT
+ * races (lesson #277).
+ *  1. SAME-ROW race — every status transition is a CONDITIONAL UPDATE keyed on
+ *     status = PROPOSED (affected-rows gate, lesson #149's discipline), so two
+ *     deciders on the SAME redline resolve to exactly one winner and the loser
+ *     rolls its whole txn back.
+ *  2. SAME-TARGET race — a conditional flip only guards the row it flips, so
+ *     two DIFFERENT PROPOSED redlines on the SAME clause each flipped their own
+ *     row and BOTH promoted: two children of one parent, the junction landing
+ *     on the last committer and the first's promoted clause orphaned. Closed by
+ *     `lockLiveJunction` — a `SELECT … FOR UPDATE` on the shared junction row
+ *     taken BEFORE the staleness read, so the loser's content re-read
+ *     serializes behind the winner's commit and dies cleanly as STALE.
+ *
+ * LOCK ORDER IS FIXED: junction (contract_clauses) FIRST, then the redline row.
+ * `counter` therefore takes its junction lock BEFORE its conditional flip — the
+ * opposite order would let an accept(R) racing a counter(R) on the SAME redline
+ * cycle into a Postgres deadlock (40P01 → a 500 instead of a clean coded 409).
+ * Any future path that touches both MUST keep this order.
  */
 @Injectable()
 export class RedlineService {
@@ -365,14 +378,38 @@ export class RedlineService {
         //    the whole promote span).
         await assertContractMutable(manager, contract);
 
-        // b. STALENESS — re-resolve the CURRENT active body; a mismatch with
-        //    what the author saw means someone changed the clause since
-        //    propose-time → the redline dies STALE, nothing mutates.
-        const cc = await this.resolveLiveJunction(
+        // b. LOCK + STALENESS — take the junction row lock FIRST (the shared
+        //    target every decider on this clause contends for), THEN re-resolve
+        //    the CURRENT active body. A mismatch with what the author saw means
+        //    someone changed the clause since propose-time → the redline dies
+        //    STALE, nothing mutates.
+        //
+        //    The lock is what makes a SAME-CLAUSE race safe: a second accept
+        //    blocks here until the first commits, then reads the PROMOTED
+        //    content (READ COMMITTED gives the follow-up read a fresh snapshot)
+        //    and fails staleness — instead of reading the pre-promotion body,
+        //    passing staleness, and double-promoting.
+        const cc = await this.lockLiveJunction(
           manager,
           contractId,
           redline.contract_clause_id,
         );
+
+        // b2. RE-READ this redline's status UNDER the lock, before staleness.
+        //     Purely so a racing loser is INDISTINGUISHABLE from a caller who
+        //     simply arrived second: sequentially, a second accept of the SAME
+        //     redline dies at assertProposed with REDLINE_NOT_PROPOSED — without
+        //     this re-read the concurrent twin would instead surface
+        //     STALE_REDLINE (it woke after the winner's promotion). Order
+        //     matches the sequential path: not-proposed first, staleness second.
+        const current = await manager.getRepository(ClauseRedline).findOne({ // lint-exempt: wall-protected (findInOrg) txn-bound repo — row already loaded by id+contract under the wall; this is a status re-read of that same id
+          where: { id: redline.id },
+          select: { id: true, status: true },
+        });
+        if (current?.status !== RedlineStatus.PROPOSED) {
+          throw this.notProposedConflict(current?.status);
+        }
+
         const original = cc.clause;
         if (original.content !== redline.base_content_snapshot) {
           throw new StaleRedlineMarker(redline.id);
@@ -557,7 +594,24 @@ export class RedlineService {
     await this.redlineRepo.manager.transaction(async (manager) => {
       const repo = manager.getRepository(ClauseRedline);
 
-      // Conditional flip first — exactly one counter wins a race.
+      // LOCK FIRST — junction before redline, the order accept uses. Two
+      // reasons, both load-bearing:
+      //  - DEADLOCK: accept locks the junction then the redline row. If counter
+      //    took the redline row first, an accept(R) racing a counter(R) on the
+      //    SAME redline would cycle → Postgres 40P01 → a 500 instead of a clean
+      //    409. One consistent order removes the cycle entirely.
+      //  - FRESH BASE: the counter is measured against the CURRENT body, not
+      //    the original round's base. Serializing behind a concurrent accept
+      //    means the child snapshots the PROMOTED text rather than being born
+      //    already-stale against text that changed mid-flight.
+      const cc = await this.lockLiveJunction(
+        manager,
+        contractId,
+        redline.contract_clause_id,
+      );
+
+      // Conditional flip — exactly one counter wins a race (a loser rolls the
+      // whole txn back, releasing the junction lock; no child row survives).
       const flip = await repo.update(
         { id: redline.id, status: RedlineStatus.PROPOSED },
         {
@@ -569,14 +623,6 @@ export class RedlineService {
       if (flip.affected !== 1) {
         throw this.notProposedConflict();
       }
-
-      // FRESH base snapshot — the counter is measured against the CURRENT
-      // body, not the original round's base.
-      const cc = await this.resolveLiveJunction(
-        manager,
-        contractId,
-        redline.contract_clause_id,
-      );
 
       const child = repo.create({
         contract_id: contractId,
@@ -706,6 +752,49 @@ export class RedlineService {
       throw new NotFoundException('Clause not found');
     }
     return cc as ContractClause & { clause: Clause };
+  }
+
+  /**
+   * resolveLiveJunction, but SERIALIZED: takes a `FOR UPDATE` row lock on the
+   * junction before hydrating it. The junction is the shared target every
+   * decider on a clause contends for, so locking it is what turns a
+   * read-then-promote span into a critical section (lesson #277).
+   *
+   * Why the lock is a separate, join-free statement rather than
+   * `setLock('pessimistic_write')` on the findOne: Postgres refuses `FOR UPDATE`
+   * on the nullable side of an outer join, and `relations: ['clause']` emits
+   * exactly such a LEFT JOIN. Locking the junction row alone and then reading
+   * is both legal and sufficient — the junction is the contended row.
+   *
+   * Correct at READ COMMITTED (the platform's startup-enforced level): a waiter
+   * blocks here, and EvalPlanQual re-qualifies against the winner's committed
+   * row (none of `id` / `contract_id` / `is_proposed` change under a promotion,
+   * so the predicate still holds and the lock IS acquired — it does not silently
+   * vanish). The hydrating read that follows is a new statement with a fresh
+   * snapshot, so it sees the promoted `clause_id` rather than the stale one.
+   *
+   * MUST be called before the redline row is locked — see the lock-order note
+   * on the class doc.
+   */
+  private async lockLiveJunction(
+    manager: EntityManager,
+    contractId: string,
+    contractClauseId: string,
+  ): Promise<ContractClause & { clause: Clause }> {
+    // SELECT via manager.query returns a BARE rows array (the [rows, rowCount]
+    // tuple shape of lesson #148/#280 applies to UPDATE/INSERT/DELETE only).
+    const locked: Array<{ id: string }> = await manager.query(
+      `SELECT id FROM contract_clauses
+        WHERE id = $1 AND contract_id = $2 AND is_proposed = false
+        FOR UPDATE`,
+      [contractClauseId, contractId],
+    );
+    // Same uniform 404 resolveLiveJunction gives — the contract_id predicate is
+    // the IDOR guard, so a junction on another contract never leaks existence.
+    if (locked.length !== 1) {
+      throw new NotFoundException('Clause not found');
+    }
+    return this.resolveLiveJunction(manager, contractId, contractClauseId);
   }
 
   /** Load a redline scoped to the walled contract (IDOR guard); 404 otherwise. */

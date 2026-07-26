@@ -961,4 +961,246 @@ describeReal('RedlineService — 7.19 Slice 1 (real Postgres)', () => {
     ).rejects.toBeInstanceOf(NotFoundException);
     expect((await redlineRow(foreign.id)).status).toBe('PROPOSED');
   });
+
+  // ══════════════════════════════════════════════════════════════════════
+  // CONCURRENCY — the same-clause junction race (lesson #277's open window)
+  // ══════════════════════════════════════════════════════════════════════
+  //
+  // These run GENUINELY parallel transactions: each `redlines.*` call takes its
+  // own pooled connection, so the interleaving and the outcome are decided by
+  // real Postgres row locks, not by await ordering. A sequential pair of awaits
+  // would prove nothing here.
+  //
+  // The guard under test is `lockLiveJunction` (SELECT … FOR UPDATE on the
+  // shared junction row, taken before the staleness read). Remove it and the
+  // FIRST test below fails with a DOUBLE promotion — that RED verification is
+  // the whole point of this block.
+  describe('concurrent deciders on the SAME clause', () => {
+    /** How many clauses descend from `parentId` — >1 means a forked chain. */
+    const childClauseCount = async (parentId: string) =>
+      Number(
+        (
+          await dataSource.query(
+            `SELECT count(*)::int n FROM clauses WHERE parent_clause_id = $1`,
+            [parentId],
+          )
+        )[0].n,
+      );
+
+    /** Seed one live clause + TWO independent PROPOSED redlines against it. */
+    const seedTwoProposals = async (label: string, body: string) => {
+      const { clauseId, ccId } = await seedLive(label, body, 0);
+      const r1 = await redlines.propose(
+        contractId,
+        ccId,
+        { proposedContent: `${label} — proposal ONE` },
+        cpCaller,
+      );
+      const r2 = await redlines.propose(
+        contractId,
+        ccId,
+        { proposedContent: `${label} — proposal TWO` },
+        hostCaller,
+      );
+      // Both measured against the same untouched base — neither is pre-stale.
+      expect((await redlineRow(r1.id)).base_content_snapshot).toBe(body);
+      expect((await redlineRow(r2.id)).base_content_snapshot).toBe(body);
+      return { clauseId, ccId, r1, r2 };
+    };
+
+    /**
+     * The invariant every outcome must satisfy: EXACTLY ONE promotion.
+     * One version row, one child of the original, the junction on that child,
+     * the original retired, and the winner's linkage pointing at what the
+     * junction actually holds (no orphan).
+     */
+    const assertExactlyOnePromotion = async (
+      clauseId: string,
+      ccId: string,
+      winnerId: string,
+      loserId: string,
+    ) => {
+      expect(await versionCount()).toBe(1);
+      expect(await currentVersion()).toBe(1);
+      // THE orphan check — a second child means both txns promoted.
+      expect(await childClauseCount(clauseId)).toBe(1);
+
+      const winner = await redlineRow(winnerId);
+      expect(winner.status).toBe('ACCEPTED');
+      const live = await junctionClauseId(ccId);
+      // The junction holds precisely the winner's promoted clause: no
+      // last-committer-wins overwrite, no dangling resulting_clause_id.
+      expect(live).toBe(winner.resulting_clause_id);
+      const promoted = await clauseRow(live);
+      expect(promoted.parent_clause_id).toBe(clauseId);
+      expect(promoted.is_active).toBe(true);
+      expect((await clauseRow(clauseId)).is_active).toBe(false);
+
+      // The loser mutated nothing: terminal, unlinked.
+      const loser = await redlineRow(loserId);
+      expect(loser.status).not.toBe('ACCEPTED');
+      expect(loser.resulting_clause_id).toBeNull();
+      expect(loser.resulting_version_id).toBeNull();
+    };
+
+    it('⭐ TWO DIFFERENT redlines on ONE clause, accepted CONCURRENTLY → exactly one promotion, loser STALE, no orphaned clause', async () => {
+      const { clauseId, ccId, r1, r2 } = await seedTwoProposals('Race', 'Base body.');
+
+      // Genuinely parallel — two connections, two live transactions.
+      const [o1, o2] = await Promise.allSettled([
+        redlines.accept(contractId, r1.id, hostCaller, {}),
+        redlines.accept(contractId, r2.id, hostCaller, {}),
+      ]);
+
+      const fulfilled = [o1, o2].filter((o) => o.status === 'fulfilled');
+      const rejected = [o1, o2].filter((o) => o.status === 'rejected');
+      expect(fulfilled).toHaveLength(1);
+      expect(rejected).toHaveLength(1);
+
+      // The loser fails with the EXISTING coded 409 — never a deadlock (40P01),
+      // never a raw 500, never a silent success.
+      const err = (rejected[0] as PromiseRejectedResult).reason;
+      expect(err).toMatchObject({
+        response: expect.objectContaining({ error: 'STALE_REDLINE' }),
+      });
+
+      const winnerId = o1.status === 'fulfilled' ? r1.id : r2.id;
+      const loserId = o1.status === 'fulfilled' ? r2.id : r1.id;
+      await assertExactlyOnePromotion(clauseId, ccId, winnerId, loserId);
+      expect((await redlineRow(loserId)).status).toBe('STALE');
+    });
+
+    it('the concurrent outcome is IDENTICAL to running the two accepts sequentially', async () => {
+      // Same fixture, accepted one after the other — the reference state.
+      const seq = await seedTwoProposals('Seq', 'Base body.');
+      await redlines.accept(contractId, seq.r1.id, hostCaller, {});
+      await expect(
+        redlines.accept(contractId, seq.r2.id, hostCaller, {}),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({ error: 'STALE_REDLINE' }),
+      });
+      await assertExactlyOnePromotion(seq.clauseId, seq.ccId, seq.r1.id, seq.r2.id);
+
+      const reference = {
+        versions: await versionCount(),
+        currentVersion: await currentVersion(),
+        children: await childClauseCount(seq.clauseId),
+        junctionIsWinner: (await junctionClauseId(seq.ccId)) ===
+          (await redlineRow(seq.r1.id)).resulting_clause_id,
+        originalActive: (await clauseRow(seq.clauseId)).is_active,
+        winnerStatus: (await redlineRow(seq.r1.id)).status,
+        loserStatus: (await redlineRow(seq.r2.id)).status,
+      };
+
+      // Now the concurrent run, from a clean thread.
+      await dataSource.query(`DELETE FROM clause_redlines WHERE contract_id = $1`, [contractId]);
+      await dataSource.query(`DELETE FROM contract_versions WHERE contract_id = $1`, [contractId]);
+      await dataSource.query(`DELETE FROM contract_clauses WHERE contract_id = $1`, [contractId]);
+      await dataSource.query(`DELETE FROM clauses WHERE organization_id = $1`, [hostOrgId]);
+      await dataSource.query(`UPDATE contracts SET current_version = 0 WHERE id = $1`, [
+        contractId,
+      ]);
+
+      const par = await seedTwoProposals('Par', 'Base body.');
+      const [p1] = await Promise.allSettled([
+        redlines.accept(contractId, par.r1.id, hostCaller, {}),
+        redlines.accept(contractId, par.r2.id, hostCaller, {}),
+      ]);
+      const winner = p1.status === 'fulfilled' ? par.r1 : par.r2;
+      const loser = p1.status === 'fulfilled' ? par.r2 : par.r1;
+
+      expect({
+        versions: await versionCount(),
+        currentVersion: await currentVersion(),
+        children: await childClauseCount(par.clauseId),
+        junctionIsWinner: (await junctionClauseId(par.ccId)) ===
+          (await redlineRow(winner.id)).resulting_clause_id,
+        originalActive: (await clauseRow(par.clauseId)).is_active,
+        winnerStatus: (await redlineRow(winner.id)).status,
+        loserStatus: (await redlineRow(loser.id)).status,
+      }).toEqual(reference);
+    });
+
+    it('the SAME redline accepted CONCURRENTLY → one winner, loser 409 REDLINE_NOT_PROPOSED (identical to arriving second)', async () => {
+      const { clauseId, ccId } = await seedLive('Same', 'Base body.', 0);
+      const rl = await redlines.propose(contractId, ccId, { proposedContent: 'v2' }, cpCaller);
+
+      const outcomes = await Promise.allSettled([
+        redlines.accept(contractId, rl.id, hostCaller, {}),
+        redlines.accept(contractId, rl.id, hostCaller, {}),
+      ]);
+      expect(outcomes.filter((o) => o.status === 'fulfilled')).toHaveLength(1);
+      const rejected = outcomes.find((o) => o.status === 'rejected') as PromiseRejectedResult;
+      // The same coded 409 a sequential second accept produces — the racing
+      // caller is indistinguishable from one who simply arrived second.
+      expect(rejected.reason).toMatchObject({
+        response: expect.objectContaining({ error: 'REDLINE_NOT_PROPOSED' }),
+      });
+
+      expect(await versionCount()).toBe(1);
+      expect(await childClauseCount(clauseId)).toBe(1);
+      expect((await redlineRow(rl.id)).status).toBe('ACCEPTED');
+      expect(await junctionClauseId(ccId)).toBe(
+        (await redlineRow(rl.id)).resulting_clause_id,
+      );
+    });
+
+    it('accept + counter on the SAME redline CONCURRENTLY → no deadlock (40P01); one wins, the other gets a coded 409', async () => {
+      // The lock-order test: accept locks junction→redline. If counter locked
+      // redline→junction, this pair would cycle and Postgres would abort one
+      // with a 40P01 deadlock (a 500, not a clean 409).
+      const { clauseId, ccId } = await seedLive('Deadlock', 'Base body.', 0);
+      const rl = await redlines.propose(contractId, ccId, { proposedContent: 'v2' }, cpCaller);
+
+      const outcomes = await Promise.allSettled([
+        redlines.accept(contractId, rl.id, hostCaller, {}),
+        redlines.counter(contractId, rl.id, hostCaller, { proposedContent: 'host v3' }),
+      ]);
+      expect(outcomes.filter((o) => o.status === 'fulfilled')).toHaveLength(1);
+
+      const rejected = outcomes.find((o) => o.status === 'rejected') as PromiseRejectedResult;
+      const reason = rejected.reason as Error & { code?: string; response?: unknown };
+      // NEVER a deadlock, and never a raw driver error surfacing as a 500.
+      expect(reason.code).not.toBe('40P01');
+      expect(String(reason.message)).not.toMatch(/deadlock/i);
+      expect(reason).toMatchObject({
+        response: expect.objectContaining({ error: 'REDLINE_NOT_PROPOSED' }),
+      });
+
+      // Whichever won, the clause thread is coherent: at most one promotion,
+      // and the junction always points at a live clause.
+      expect(await childClauseCount(clauseId)).toBeLessThanOrEqual(1);
+      expect((await clauseRow(await junctionClauseId(ccId))).is_active).toBe(true);
+    });
+
+    it('counter racing an accept on the SAME clause reads a CONSISTENTLY SERIALIZED base — never a torn read', async () => {
+      // Two DIFFERENT redlines: r1 accepted, r2 countered, concurrently. BOTH
+      // orderings are legal — the junction lock serializes them, it does not
+      // order them. What the lock guarantees is that the counter's base is a
+      // body that was genuinely live while IT held the lock:
+      //   - counter first  → base is the ORIGINAL body (then the accept promotes)
+      //   - accept first   → base is the PROMOTED body (never born stale)
+      // A base outside that pair would mean the counter read the clause while
+      // another txn was mid-promotion, which is exactly what the lock prevents.
+      const { clauseId, ccId, r1, r2 } = await seedTwoProposals('Fresh', 'Base body.');
+
+      const [acc, ctr] = await Promise.allSettled([
+        redlines.accept(contractId, r1.id, hostCaller, {}),
+        redlines.counter(contractId, r2.id, hostCaller, { proposedContent: 'host v3' }),
+      ]);
+
+      if (acc.status === 'fulfilled' && ctr.status === 'fulfilled') {
+        const promotedBody = (await clauseRow(acc.value.resulting_clause_id!)).content;
+        expect(promotedBody).not.toBe('Base body.');
+        // Exactly one of the two legal serializations — nothing else.
+        expect(['Base body.', promotedBody]).toContain(
+          ctr.value.base_content_snapshot,
+        );
+      }
+      // Either way the thread stays coherent — one promotion at most, and the
+      // junction always points at a live clause.
+      expect(await childClauseCount(clauseId)).toBeLessThanOrEqual(1);
+      expect((await clauseRow(await junctionClauseId(ccId))).is_active).toBe(true);
+    });
+  });
 });
