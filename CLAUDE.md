@@ -5986,9 +5986,10 @@ base and the staleness guard — an accept over a changed clause flips the
 redline STALE (persisted OUTSIDE the rolled-back txn, lesson #275) and 409s
 `STALE_REDLINE` with zero side effects. Every decision is a CONDITIONAL
 status-flip (`WHERE status='PROPOSED'`, affected-rows gate) — the same-row
-race resolves to one winner; the same-CLAUSE two-redline race needs a
-junction `FOR UPDATE` row-lock, filed as the known follow-up (lesson #277).
-Proven by 32 real-PG tests (`redline.real-pg.spec.ts`) where every negative
+race resolves to one winner; the same-CLAUSE two-redline race is closed by
+`lockLiveJunction`, a join-free `SELECT … FOR UPDATE` on the shared
+`contract_clauses` row taken BEFORE the staleness read (lessons #277, #289).
+Proven by 37 real-PG tests (`redline.real-pg.spec.ts`) where every negative
 asserts ZERO side effects, + the boot smoke + `lint:contract-repo`
 (`ClauseRedline` added to the enforced set, wall-protected annotations).
 
@@ -6010,9 +6011,17 @@ asserts ZERO side effects, + the boot smoke + `lint:contract-repo`
 3. **`assertContractMutable` runs AFTER the access wall** on propose / accept
    / counter (404-before-409). Reject and withdraw are deliberately NOT
    pin-guarded (no clause mutation; post-pin cleanup allowed).
-4. **The accept is ONE transaction** — pin re-check, staleness re-check,
-   snapshot, promotion, conditional flip — all-or-nothing; the snapshot rides
-   the SAME EntityManager (`applyProposedVersion`'s exact ordering).
+4. **The accept is ONE transaction** — junction lock, pin re-check, status
+   re-read, staleness re-check, snapshot, promotion, conditional flip —
+   all-or-nothing; the snapshot rides the SAME EntityManager
+   (`applyProposedVersion`'s exact ordering).
+4a. **LOCK ORDER IS FIXED: junction (`contract_clauses`) FIRST, then the
+   redline row.** Any path that touches both must take them in that order —
+   which is why `counter` acquires its junction lock BEFORE its conditional
+   flip. The reverse order lets an `accept(R)` racing a `counter(R)` on the
+   SAME redline cycle into a Postgres `40P01` deadlock, turning a clean coded
+   409 into a 500. A conditional flip guards only the row it flips; the SHARED
+   target needs its own lock (lesson #289).
 5. **The list author projection stays scrubbed** (display name + TEAM/GUEST
    keyed on HOST-org membership + `is_author` only — no emails, roles, or
    user/org UUIDs), mirroring the guest comment-read scrub.
