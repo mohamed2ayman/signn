@@ -6070,8 +6070,83 @@ Withdraw), coded-409s surfaced as readable i18n messages, `redlines.*` i18n
   cannot catch a key missing from all three (lesson #282); extend its SOURCES
   list when adding redline-slice components.
 
+### Slice 4 — redline notifications (SHIPPED)
+Propose / accept / reject / counter notify **the OTHER party** (in-app + email);
+**withdraw notifies nobody** and the **actor is never notified of their own
+action**. Backend only. Migration `1773000000001` (`redline_notification_batches`).
+
+Hard rules (additive to 1–9 above):
+10. **Notifications are POST-COMMIT and BEST-EFFORT — always.** Every call site
+    goes through the ONE seam `RedlineService.notifyRedlineEvent`, which sits
+    OUTSIDE the redline transaction and cannot throw. `propose` was restructured
+    (`return txn(...)` → `const saved = await txn(...)`) precisely because it had
+    no post-commit seam. **Never move a notification inside a redline txn**, and
+    never assume the dispatch layer is safe: `enqueueEmail` swallows its errors
+    but **`dispatch()` does NOT** (the in-app write is unguarded) — the wrapper
+    owns the guarantee (lesson #284).
+11. **Recipient is derived, and the actor is excluded by id.** proposed → the
+    HOST (`contract.creator`); accepted/rejected/countered → the COUNTERPARTY
+    (`redline.author_user_id`; for `counter` that is the **PARENT's** author, not
+    the child's). Org for the TEAM/GUEST label derives `contract → project →
+    organization_id`, **never** `caller.organization_id`.
+12. **Channel is derived from DATA, never persona:** `userId` present → `BOTH`;
+    absent → `EMAIL` only. This is structural — `notifications.user_id` is NOT
+    NULL, so an in-app row is impossible without a user row. **No
+    `account_type` branching** (a future org-less guest degrades automatically).
+13. **The actor's name is the SHARED scrubbed projection.** `redlineAuthorLabel`
+    (extracted from `list`, byte-identical output) is the ONE definition —
+    display name + TEAM/GUEST keyed on HOST-org membership. Emails, roles, org
+    names, every UUID, and the redline's free-text note stay OUT of the
+    notification; **digests carry no actor detail at all**.
+14. **Debounce = one row per open window.** `(contract_id, event_class,
+    recipient_key)`; a single atomic conditional UPSERT returns
+    `pending_count = 0` for the LEADING EDGE (send immediately) and ≥1 for
+    suppressed. The sweeper (`redline-notifications` queue, its OWN queue —
+    `ObligationSchedulerService` blanket-wipes repeatables on its own) flushes
+    by **claim-by-DELETE**, i.e. at-most-once (lesson #287). A failed digest
+    never touches redline state.
+14a. **The UPSERT's stale-window RESET is load-bearing — never remove it.**
+    On conflict with an ELAPSED window the row RE-ARMS (`pending_count → 0`,
+    fresh `window_ends_at`) and the caller sends immediately. Without it the
+    immediate path depends on the sweeper: if the sweeper ever stops, the row
+    is never deleted and **every** notification for that key is suppressed
+    FOREVER — silently, with no error. With it, a dead sweeper degrades to
+    "digests stop, notifications keep working". RED-verified by mutation.
+14b. **Never point a Bull spec at the real `redline-notifications` queue.**
+    The repeatable is registered ONLY in `onModuleInit`, so a spec that removes
+    repeatables or obliterates that queue would de-register a *running* app's
+    sweeper until restart. `redline-digest-scheduler.real-redis.spec.ts` uses a
+    per-run throwaway queue name; the real queue name is guaranteed
+    structurally (one shared constant across registerQueue / @Processor /
+    @InjectQueue) plus the boot smoke.
+14c. **`accept` has TWO copy variants.** When the host supplies
+    `editedContent`, the promoted clause is the HOST's wording, so the
+    notification MUST use `accepted_edited` ("accepted with edits … the live
+    clause text differs from what you proposed"), never the plain `accepted`
+    copy, which asserts the counterparty's wording went live. The version
+    snapshot already records the same distinction (`acceptSummary` →
+    "accepted with host edits") — the outward message must not drop it
+    (lesson #288).
+15. **Recipient language is allowlisted, never trusted.** `resolveRecipientLang`
+    maps `ar`/`ar-*` → `ar` and **everything else — including `fr`, null, and
+    junk — → `en`**; neither write path validates the column. Arabic copy MUST
+    pass `lang: 'ar'` into `baseEmailLayout` (its `lang` option is additive; the
+    `en` path is byte-identical, so the 11 pre-existing templates are unaffected).
+    ⚠️ **KNOWN COVERAGE LIMIT:** `users.preferred_language` is stale by
+    construction — the TopBar `LanguageToggle` writes localStorage only and never
+    calls the API, so most recipients resolve to `en` (lesson #285). The
+    mechanism is correct; the input usually isn't. **Follow-up (frontend, out of
+    this backend-only slice):** fire a best-effort profile PATCH from
+    `LanguageToggle`.
+16. **No deep link to the Redlines tab exists.** `ContractDetailPage` tabs are
+    local `useState` with no URL sync, so emails link to `/app/contracts/:id`
+    and the copy says to open the Redlines tab. **Do not invent `?tab=redlines`**
+    — it would silently do nothing (lesson #152's family).
+
 ### Slice boundaries (do NOT assume built)
-Slice 4: notifications. Later, gated on #8c: guest-account redline writes
-(currently HARD-EXCLUDED at the service seam — hard rule 2a; the future slice
-removes `assertNotGuestWriter` atomically WITH its own hardened gate), and the
-counterparty-side accept-of-a-counter signal path.
+Later, gated on #8c: guest-account redline writes (currently HARD-EXCLUDED at
+the service seam — hard rule 2a; the future slice removes `assertNotGuestWriter`
+atomically WITH its own hardened gate), and the counterparty-side
+accept-of-a-counter signal path. Also NOT built: French notification copy,
+per-user notification preferences / unsubscribe for redline events, and
+deep-linkable contract tabs.

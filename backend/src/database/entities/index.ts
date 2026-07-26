@@ -96,3 +96,8 @@ export {
   RedlineStatus,
   RedlineAuthorIdentitySource,
 } from './clause-redline.entity';
+// ─── 7.19 Slice 4 — redline notification debounce windows ─────────────────
+export {
+  RedlineNotificationBatch,
+  RedlineNotificationEventClass,
+} from './redline-notification-batch.entity';

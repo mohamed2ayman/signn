@@ -258,6 +258,13 @@ describeReal('RedlineService — 7.19 Slice 1 (real Postgres)', () => {
         dataSource.getRepository(Contract),
         contractAccess,
       ),
+      // 7.19 Slice 4 — notifications DELIBERATELY absent here. Slice 1's
+      // negotiation-loop guarantees (atomicity, staleness, conditional flips,
+      // parent-chain promotion, zero-side-effect negatives) must hold with NO
+      // notifier wired, so this spec keeps the pre-Slice-4 positional shape
+      // and proves Slice 1 is unchanged. Notification behaviour is proven
+      // separately in redline-notification.real-pg.spec.ts.
+      undefined as any,
     );
 
     for (const [org, name] of [

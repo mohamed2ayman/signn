@@ -7,10 +7,22 @@ const BRAND_COLOR = '#4F6EF7';
 const BRAND_DARK = '#0F1729';
 const BRAND_BG = '#F8FAFF';
 
-export function baseEmailLayout(content: string, options?: { preheader?: string }): string {
+/**
+ * `lang` (7.19 Slice 4) is ADDITIVE and defaults to 'en' — every pre-existing
+ * caller omits it and gets a byte-identical `<html lang="en" dir="ltr">`
+ * document. Arabic copy inside an `dir="ltr"` shell renders wrong, so a
+ * template rendering RTL text MUST pass `lang: 'ar'`; the shell then flips
+ * both the `lang`/`dir` attributes and the body's text alignment.
+ */
+export function baseEmailLayout(
+  content: string,
+  options?: { preheader?: string; lang?: 'en' | 'ar' },
+): string {
+  const lang = options?.lang === 'ar' ? 'ar' : 'en';
+  const dir = lang === 'ar' ? 'rtl' : 'ltr';
   return `
 <!DOCTYPE html>
-<html lang="en" dir="ltr">
+<html lang="${lang}" dir="${dir}">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -32,7 +44,7 @@ export function baseEmailLayout(content: string, options?: { preheader?: string 
     }
   </style>
 </head>
-<body style="margin:0; padding:0; background-color:${BRAND_BG}; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+<body style="margin:0; padding:0; background-color:${BRAND_BG}; font-family: ${lang === 'ar' ? `'Segoe UI', Tahoma, 'Geeza Pro', 'Arabic Typesetting', Arial, sans-serif` : `-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif`};${lang === 'ar' ? ' direction:rtl; text-align:right;' : ''}">
   ${options?.preheader ? `<div style="display:none;font-size:1px;color:${BRAND_BG};line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;">${options.preheader}</div>` : ''}
 
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:${BRAND_BG};">
@@ -62,7 +74,7 @@ export function baseEmailLayout(content: string, options?: { preheader?: string 
             <td style="background-color:#ffffff; border-radius:16px; box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04);">
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
                 <tr>
-                  <td class="content-cell" style="padding: 40px 36px;">
+                  <td class="content-cell" style="padding: 40px 36px;${lang === 'ar' ? ' direction:rtl; text-align:right;' : ''}">
                     ${content}
                   </td>
                 </tr>

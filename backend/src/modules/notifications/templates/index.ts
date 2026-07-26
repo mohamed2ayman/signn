@@ -426,3 +426,65 @@ export function erpConnectionRemovedEmail(data: {
   `;
   return baseEmailLayout(content, { preheader: `ERP connection "${connectionName}" removed` });
 }
+
+// ─── 12. Redline Notification (7.19 Slice 4) ──────────────
+
+/**
+ * 7.19 Slice 4 — counterparty redlining notifications (propose / accept /
+ * reject / counter, plus the two digest flushes).
+ *
+ * Deliberately a DUMB RENDERER: every string arrives pre-resolved from
+ * `redlines/utils/redline-notification-copy.ts`, which owns the en/ar copy for
+ * BOTH this email and the in-app row so the two can never drift. This function
+ * owns only the branded HTML shell — the registry's job.
+ *
+ * It is also the FIRST bilingual template: it threads `lang` into
+ * `baseEmailLayout` so an Arabic body renders inside `<html lang="ar"
+ * dir="rtl">`. Passing Arabic copy without `lang` would render RTL text in an
+ * LTR shell.
+ *
+ * ESCAPING — every free-text field is user/tenant-supplied and MUST be escaped:
+ * `heading`, `body[]`, `preheader`, `contractName`, `clauseRef`. The actor name
+ * inside `body` already comes from the SHARED scrubbed projection
+ * (redlineAuthorLabel: display name + TEAM/GUEST only, never an email, role, or
+ * UUID) — escaping here is XSS defence, not the leak control. `contractLink` is
+ * server-constructed from FRONTEND_URL + a UUID and is passed raw, matching
+ * every other template's link handling.
+ */
+export function redlineNotificationEmail(data: {
+  lang: 'en' | 'ar';
+  heading: string;
+  body: string[];
+  cta: string;
+  note: string;
+  preheader: string;
+  contractName: string;
+  contractLabel: string;
+  clauseLabel: string;
+  clauseRef?: string | null;
+  contractLink: string;
+}): string {
+  const headingText = escapeHtml(data.heading);
+  const bodyParagraphs = data.body.map((p) => paragraph(escapeHtml(p))).join('');
+  const contractName = escapeHtml(data.contractName);
+  const clauseRef = data.clauseRef ? escapeHtml(data.clauseRef) : null;
+
+  const infoPairs: [string, string][] = [
+    [escapeHtml(data.contractLabel), contractName],
+  ];
+  if (clauseRef) {
+    infoPairs.push([escapeHtml(data.clauseLabel), clauseRef]);
+  }
+
+  const content = `
+    ${heading(headingText)}
+    ${bodyParagraphs}
+    ${infoBlock(infoPairs)}
+    ${ctaButton(escapeHtml(data.cta), data.contractLink)}
+    ${smallNote(escapeHtml(data.note))}
+  `;
+  return baseEmailLayout(content, {
+    preheader: escapeHtml(data.preheader),
+    lang: data.lang,
+  });
+}
