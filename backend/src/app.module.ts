@@ -24,6 +24,7 @@ import { SubscriptionsModule } from './modules/subscriptions/subscriptions.modul
 import { StorageModule } from './modules/storage/storage.module';
 import { AiModule } from './modules/ai/ai.module';
 import { DocumentProcessingModule } from './modules/document-processing/document-processing.module';
+import { ClauseTypingModule } from './modules/clause-typing/clause-typing.module';
 import { DashboardAnalyticsModule } from './modules/dashboard-analytics/dashboard-analytics.module';
 import { PortfolioAnalyticsModule } from './modules/portfolio-analytics/portfolio-analytics.module';
 import { PortfolioExportModule } from './modules/portfolio-export/portfolio-export.module';
@@ -137,6 +138,12 @@ import { dataSourceOptions } from './config/data-source';
         // 'local' (default, uses Docker named volume) or 's3' (AWS S3).
         // When 's3', AWS_S3_BUCKET + AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY are required.
         STORAGE_DRIVER: Joi.string().valid('local', 's3').default('local'),
+
+        // ── Clause-type provider (Step 2 — swap seam, default = today's behavior)
+        // 'inline' (default) = type comes free from Sonnet extraction (byte-unchanged).
+        // 'dedicated' is a reserved seam for a future Haiku/self-hosted typer (NOT
+        // implemented yet — the provider factory throws if selected).
+        CLAUSE_TYPE_PROVIDER: Joi.string().valid('inline', 'dedicated').default('inline'),
 
         // ── Encryption at rest (Phase 7.28 prerequisite) ─────────
         // Master key for the AES-256-GCM CryptoService (common/utils/crypto.ts),
@@ -293,6 +300,7 @@ import { dataSourceOptions } from './config/data-source';
     NotificationsModule,
     SubscriptionsModule,
     StorageModule,
+    ClauseTypingModule,
     AiModule,
     DocumentProcessingModule,
     DashboardAnalyticsModule,

@@ -54,6 +54,21 @@ export class Clause {
   @Column({ type: 'varchar', length: 100, nullable: true })
   clause_type: string;
 
+  // Clause-type correction tracking (Step 2 — retrain logging). Additive; mirrors
+  // the risk-annotation pattern (risk_analyses.is_edited_by_user + original_*).
+  // original_ai_clause_type: the AI's first-assigned type (snapshot-once, never
+  // overwritten). is_type_edited_by_user: true once a human changes the type (the
+  // gold correction signal). clause_type_source: the provider that produced the
+  // type ('sonnet-inline' today; a dedicated typer id in future).
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  original_ai_clause_type: string | null;
+
+  @Column({ type: 'boolean', default: false })
+  is_type_edited_by_user: boolean;
+
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  clause_type_source: string | null;
+
   @Column({ type: 'int', default: 1 })
   version: number;
 
