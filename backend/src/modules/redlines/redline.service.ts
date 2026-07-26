@@ -13,6 +13,7 @@ import {
   ClauseRedline,
   ClauseReviewStatus,
   ClauseSource,
+  Contract,
   ContractClause,
   ContractVersionEventType,
   RedlineAuthorIdentitySource,
@@ -24,6 +25,11 @@ import {
   ManagingOrGuestCaller,
 } from '../contracts/services/contract-access.service';
 import { NegotiationStatusService } from '../contracts/services/negotiation-status.service';
+import {
+  RedlineNotificationService,
+  RedlineNotifiableEvent,
+} from './services/redline-notification.service';
+import { redlineAuthorLabel } from './utils/redline-author-label.util';
 import { computeClauseDiff } from '../contracts/utils/clause-diff.util';
 import { assertContractMutable } from '../contracts/utils/contract-pin-guard.util';
 import {
@@ -128,6 +134,11 @@ export class RedlineService {
     // dereferenced only inside propose's txn, which the negotiation spec
     // supplies for real.
     private readonly negotiationStatus: NegotiationStatusService,
+    // 7.19 Slice 4 — post-commit, best-effort notifications. LAST param on
+    // purpose (the ContractsService / negotiationStatus convention): existing
+    // positional spec instantiations get `undefined`, and every use site
+    // optional-chains through `notifyRedlineEvent`, which itself never throws.
+    private readonly redlineNotifications: RedlineNotificationService,
   ) {}
 
   // ────────────────────────────────────────────────────────────────────────
@@ -182,11 +193,18 @@ export class RedlineService {
     // autoOnProposeOpened is idempotent (only SHARED/AGREED move; DRAFT,
     // UNDER_REVIEW, READY_TO_SIGN are untouched) and routes THROUGH the
     // guarded transition.
-    return this.redlineRepo.manager.transaction(async (manager) => {
-      const saved = await manager.getRepository(ClauseRedline).save(redline); // lint-exempt: wall-protected (findAccessibleContract) txn-bound repo — contract validated before write
+    const saved = await this.redlineRepo.manager.transaction(async (manager) => {
+      const row = await manager.getRepository(ClauseRedline).save(redline); // lint-exempt: wall-protected (findAccessibleContract) txn-bound repo — contract validated before write
       await this.negotiationStatus.autoOnProposeOpened(contractId, manager);
-      return saved;
+      return row;
     });
+
+    // 7.19 Slice 4 — notify the HOST. POST-COMMIT and best-effort: this sits
+    // OUTSIDE the transaction above so a mail/dispatch failure can never roll
+    // back a committed proposal, and notifyRedlineEvent never throws.
+    await this.notifyRedlineEvent('proposed', contract, saved, caller);
+
+    return saved;
   }
 
   // ────────────────────────────────────────────────────────────────────────
@@ -266,14 +284,19 @@ export class RedlineService {
     }>();
 
     return rows.map((r): RedlineListRow => {
-      const isTeam =
-        r.author_account_type !== AccountType.GUEST &&
-        r.author_org_id != null &&
-        r.author_org_id === hostOrgId;
-      const name = [r.author_first_name, r.author_last_name]
-        .filter(Boolean)
-        .join(' ')
-        .trim();
+      // The SHARED scrubbed projection (extracted verbatim in Slice 4 so the
+      // notification path renders the actor name through the SAME rule —
+      // display name + TEAM/GUEST keyed on HOST-org membership, never an
+      // email / role / UUID). Output is byte-identical to the inline version.
+      const label = redlineAuthorLabel(
+        {
+          first_name: r.author_first_name,
+          last_name: r.author_last_name,
+          account_type: r.author_account_type,
+          organization_id: r.author_org_id,
+        },
+        hostOrgId,
+      );
       return {
         id: r.id,
         contract_id: r.contract_id,
@@ -290,8 +313,8 @@ export class RedlineService {
         resulting_version_id: r.resulting_version_id ?? null,
         resulting_clause_id: r.resulting_clause_id ?? null,
         created_at: r.created_at,
-        author_name: name || (isTeam ? 'SIGN Team' : 'Guest'),
-        author_role: isTeam ? 'TEAM' : 'GUEST',
+        author_name: label.name,
+        author_role: label.role,
         is_author: r.author_user_id != null && r.author_user_id === caller.id,
         word_level_diff: this.wordDiffOf(r.id, r.base_content_snapshot, r.proposed_content),
       };
@@ -456,6 +479,20 @@ export class RedlineService {
       `redline.accepted contract=${contractId} redline=${redlineId} ` +
         `version=${versionId} clause=${promotedClauseId}`,
     );
+
+    // 7.19 Slice 4 — notify the COUNTERPARTY (the proposal's author).
+    // POST-COMMIT: the txn closed at the try/catch above, so a notification
+    // failure cannot undo the promotion, the snapshot, or the status flip.
+    //
+    // `hostEdited` selects the honest copy: when the host supplied
+    // `editedContent`, the promoted clause is the HOST's wording, not the
+    // counterparty's, so telling them "your proposed wording is now live" would
+    // be false. The same distinction acceptSummary already records in the
+    // version-history snapshot ("accepted with host edits").
+    await this.notifyRedlineEvent('accepted', contract, redline, caller, {
+      hostEdited: dto.editedContent != null,
+    });
+
     return this.reloadRedline(redlineId);
   }
 
@@ -468,7 +505,9 @@ export class RedlineService {
     caller: ManagingOrGuestCaller,
     dto: RejectRedlineDto,
   ): Promise<ClauseRedline> {
-    await this.hostContract(contractId, caller);
+    // Capture the walled contract (Slice 4 needs creator/project for the
+    // notification; the wall read already hydrates both — no extra query).
+    const contract = await this.hostContract(contractId, caller);
     const redline = await this.loadRedline(contractId, redlineId);
     this.assertProposed(redline);
 
@@ -484,6 +523,13 @@ export class RedlineService {
     if (flip.affected !== 1) {
       throw this.notProposedConflict();
     }
+
+    // 7.19 Slice 4 — notify the COUNTERPARTY. The flip above is a single
+    // auto-committed conditional UPDATE (no surrounding txn), so this point is
+    // already post-commit; it also sits AFTER the affected-rows guard, so a
+    // lost race notifies nobody.
+    await this.notifyRedlineEvent('rejected', contract, redline, caller);
+
     return this.reloadRedline(redlineId);
   }
 
@@ -549,6 +595,11 @@ export class RedlineService {
       childId = saved.id;
     });
 
+    // 7.19 Slice 4 — notify the COUNTERPARTY (the PARENT's author, i.e. whose
+    // proposal was countered — not the child's author, which is the host
+    // acting). POST-COMMIT: the txn closed above.
+    await this.notifyRedlineEvent('countered', contract, redline, caller);
+
     // The child awaits the counterparty's response — counterparty-side accept
     // is DEFERRED (a later slice's signal path); in Slice 1 it sits PROPOSED.
     return this.reloadRedline(childId);
@@ -584,6 +635,40 @@ export class RedlineService {
   // ────────────────────────────────────────────────────────────────────────
   // helpers
   // ────────────────────────────────────────────────────────────────────────
+
+  /**
+   * 7.19 Slice 4 — the ONE notification seam. Every call site reaches
+   * notifications through here, so the post-commit + best-effort posture is a
+   * single fact rather than four repeated ones.
+   *
+   * Two layers of "can never break a redline":
+   *   1. `notifyRedlineEvent` itself never throws (it wraps everything).
+   *   2. The optional-chain + try/catch here covers the case where the
+   *      dependency is absent entirely — positional spec instantiations that
+   *      predate Slice 4 pass only 5 constructor args, so it is `undefined`.
+   */
+  private async notifyRedlineEvent(
+    event: RedlineNotifiableEvent,
+    contract: Contract,
+    redline: ClauseRedline,
+    caller: ManagingOrGuestCaller,
+    opts: { hostEdited?: boolean } = {},
+  ): Promise<void> {
+    try {
+      await this.redlineNotifications?.notifyRedlineEvent({
+        event,
+        contract,
+        redline,
+        actor: caller,
+        hostEdited: opts.hostEdited,
+      });
+    } catch (err) {
+      this.logger.error(
+        `redline.notify.${event}_error contract=${contract?.id} ` +
+          `redline=${redline?.id}: ${(err as Error)?.message}`,
+      );
+    }
+  }
 
   /**
    * HOST wall — own-org only. A caller with no org (pure guest) or the wrong

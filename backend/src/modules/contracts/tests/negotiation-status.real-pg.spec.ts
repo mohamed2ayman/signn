@@ -194,6 +194,11 @@ describeReal('NegotiationStatusService — 7.19 Slice 2 (real Postgres)', () => 
       contractAccess,
       contractsService,
       negotiation, // 7.19 Slice 2 — the propose auto-hook under test
+      // 7.19 Slice 4 — notifications DELIBERATELY absent. This is the
+      // pre-Slice-4 positional shape, so these tests also prove the lane
+      // machinery is unchanged when no notifier is wired (the service
+      // optional-chains through it and never throws).
+      undefined as any,
     );
 
     for (const [org, name] of [
