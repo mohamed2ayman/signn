@@ -376,6 +376,32 @@ Youssef's legal-terminology review before they are final.** Additive migrations
 existing `risk_analyses` rows + all `contracts` untouched, clauses/clause_types and the PR
 #126 write path untouched. See lesson #201.
 
+**Clause-type correction logging + provider interface is BUILT (PR #193) — starts
+training-data capture for a future clause-type model swap; production BYTE-UNCHANGED.**
+`clauses` gained three additive columns mirroring the risk-annotation pattern above:
+**`original_ai_clause_type`** (the AI's first-assigned type, snapshot-ONCE, never
+overwritten), **`is_type_edited_by_user`** (flips true the first time a human changes the
+type — the was_corrected signal), and **`clause_type_source`** (which provider produced the
+type; `sonnet-inline` today). Written at the extraction write path
+(`document-processing.service.writeClausesInTx`) and at BOTH human-edit paths via a shared
+`applyClauseTypeEdit` helper — `clauses.service.update` (`PUT /clauses/:id`) and
+`document-processing.service.updateClauseReview` (`PUT /contracts/:id/review/clauses/:id`)
+— snapshot-once + no-op on an unchanged value. Additive migration `1772000000001`
+(IF NOT EXISTS, no backfill; the boolean default is a constant → metadata-only, no table
+rewrite). A **provider seam** (`ClauseTypeProvider`, `@Global ClauseTypingModule`, Symbol
+DI, `useFactory` on `CLAUSE_TYPE_PROVIDER`, following the Phase 9.1 adapter pattern) selects
+the typer: **`CLAUSE_TYPE_PROVIDER=inline` (default) = today's behavior** —
+`InlineExtractionProvider` returns the extractor's own `clause_type` unchanged (byte-identical
+output; only the new columns are added); `dedicated` is a reserved swap-by-flag seam that
+throws (the dedicated Haiku/self-hosted typer is NOT implemented — deferred, along with
+backfill of the ~540 pre-existing clauses). **`clause_type` is a safe DISPLAY LABEL, NOT a
+processing gate** — no stage/gate/silent-skip keys off it (verified in
+`docs/clause-type-downstream-consumers-investigation.md`); the real gates are `review_status`
+/ `is_proposed` / `is_active`. Note the **Risk-tab category dropdown writes
+`risk_analyses.risk_category`, a DIFFERENT field** — clause-type logging fires ONLY on the
+two clause-edit paths above. See lessons #290–#294 and the AI Cost-Optimization Initiative
+(Step 2) in NEXT_PHASES.md.
+
 **Risk analysis is BATCHED + PARALLEL + REPLACE-on-re-run as of PR #163 (Issues 4 + 5).**
 `RiskAnalyzerAgent.analyze()` no longer makes ONE monolithic call (which self-selected only the
 salient clauses → ~36% coverage per run, previously MASKED by append-stacking). It splits the
