@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { NotFoundException } from '@nestjs/common';
+import { IsNull } from 'typeorm';
 
 import { ContractAccessService } from '../services/contract-access.service';
 import {
@@ -102,9 +103,16 @@ describe('ContractAccessService', () => {
 
       expect(result.id).toBe(CONTRACT_X_ID);
       // Verify the binding lookup keyed BOTH on the user_id AND the
-      // contract_id — never just one.
+      // contract_id — never just one — AND (#8c Part 4a) that it is filtered
+      // to LIVE bindings. Dropping `revoked_at: IsNull()` would let a
+      // host-revoked guest keep reading the contract: this assertion is the
+      // guard, so it must fail if the predicate is ever removed.
       expect(mockGuestAccessRepository.findOne).toHaveBeenCalledWith({
-        where: { user_id: GUEST_USER_ID, contract_id: CONTRACT_X_ID },
+        where: {
+          user_id: GUEST_USER_ID,
+          contract_id: CONTRACT_X_ID,
+          revoked_at: IsNull(),
+        },
       });
     });
 
@@ -136,7 +144,11 @@ describe('ContractAccessService', () => {
       ).rejects.toThrow(NotFoundException);
 
       expect(mockGuestAccessRepository.findOne).toHaveBeenCalledWith({
-        where: { user_id: GUEST_USER_ID, contract_id: CONTRACT_SIBLING_ID },
+        where: {
+          user_id: GUEST_USER_ID,
+          contract_id: CONTRACT_SIBLING_ID,
+          revoked_at: IsNull(),
+        },
       });
       expect(contractQb.getOne).not.toHaveBeenCalled();
     });

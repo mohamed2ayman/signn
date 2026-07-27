@@ -425,6 +425,15 @@ export class GuestInvitationService {
           resetLockoutUser = existingUser;
         }
 
+        // #8c Part 4a — DELIBERATELY REVOCATION-INCLUSIVE. Do NOT add
+        // `revoked_at: IsNull()` here: this is a write-idempotency probe, not
+        // an authorization read. `uq_guest_contract_access_user_contract` is a
+        // PLAIN unique constraint, so filtering it out would make a revoked
+        // user re-clicking their invitation link miss the existing row,
+        // attempt the INSERT below, and hit a duplicate-key 500. Inclusive is
+        // also the correct security outcome: the revoked row is found,
+        // re-granting is skipped, and the binding STAYS revoked — a revoke
+        // survives a re-establish. See ContractAccessService's class doc.
         const existingBinding = await accessRepo.findOne({
           where: {
             user_id: existingUser.id,

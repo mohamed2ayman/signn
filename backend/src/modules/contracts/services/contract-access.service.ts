@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { IsNull, Repository } from 'typeorm';
 
 import {
   AccountType,
@@ -38,6 +38,35 @@ import {
  * Every denial throws NotFoundException (404) — never 403 — so existence
  * is not leaked. Matches the assertContractInOrg convention in
  * negotiation.service.ts.
+ *
+ * ─── #8c Part 4a — REVOCATION (standing invariant) ────────────────────────
+ * A binding is revoked by a SOFT stamp (`revoked_at`), never a delete. This
+ * file owns EVERY `guest_contract_access` statement in the backend, and the
+ * rule inside it is:
+ *
+ *   • AUTHORIZATION reads filter `revoked_at IS NULL` — hasGuestBinding,
+ *     findForGuest, listGuestBindings. A revoked binding grants NOTHING and
+ *     produces the SAME uniform 404 as never having been bound (no oracle:
+ *     "revoked" and "never shared" are indistinguishable to the caller).
+ *   • HISTORICAL reads deliberately do NOT filter it, because the row is the
+ *     durable record that the share once existed. There are exactly two:
+ *       (1) the idempotency probe inside revokeGuestBinding below;
+ *       (2) GuestInvitationService.establishIdentity's binding-existence
+ *           probe (guest-invitation.service.ts). That one MUST stay
+ *           revocation-INCLUSIVE: `uq_guest_contract_access_user_contract`
+ *           is a PLAIN unique constraint, so if that probe were filtered a
+ *           revoked user re-clicking their invitation link would miss the
+ *           existing row, attempt an INSERT, and hit a duplicate-key 500.
+ *           Leaving it inclusive is ALSO the correct authorization outcome:
+ *           the probe finds the revoked row, skips re-granting, and the
+ *           binding stays revoked — revoke wins over a re-establish.
+ *
+ * Adding a new binding read? It is an authorization read unless you can
+ * state why it is not — filter `revoked_at IS NULL`.
+ *
+ * NOT covered by revocation: the VIEWER-CREDENTIAL path (1b-i) never reads
+ * this table — the HMAC credential IS the auth — so revoking a binding does
+ * not invalidate a live viewer credential (it expires on its own short TTL).
  *
  * Externally observable behaviour for managing callers is byte-identical
  * to the pre-extraction contracts.service.findById: same joins, same
@@ -89,6 +118,16 @@ export interface GuestBindingListRow {
   shared_by_org: string | null;
   shared_by_user: string | null;
   granted_at: Date;
+}
+
+/** #8c Part 4a — result of a host revoking a guest's binding. */
+export interface GuestBindingRevocation {
+  contract_id: string;
+  user_id: string;
+  revoked_at: Date;
+  revoked_by: string | null;
+  /** true when this call was a no-op because the binding was already revoked. */
+  already_revoked: boolean;
 }
 
 @Injectable()
@@ -236,7 +275,12 @@ export class ContractAccessService {
    */
   async hasGuestBinding(contractId: string, userId: string): Promise<boolean> {
     const binding = await this.guestAccessRepository.findOne({
-      where: { user_id: userId, contract_id: contractId },
+      // #8c Part 4a — LIVE bindings only. A host-revoked row grants nothing.
+      where: {
+        user_id: userId,
+        contract_id: contractId,
+        revoked_at: IsNull(),
+      },
     });
     return !!binding;
   }
@@ -266,6 +310,9 @@ export class ContractAccessService {
       .leftJoin('project.organization', 'organization')
       .leftJoin('gca.granter', 'granter')
       .where('gca.user_id = :userId', { userId })
+      // #8c Part 4a — LIVE bindings only: a revoked share disappears from
+      // "Shared with me" (matching the 404 its contract now returns).
+      .andWhere('gca.revoked_at IS NULL')
       .select([
         'contract.id AS contract_id',
         'contract.name AS contract_name',
@@ -303,6 +350,70 @@ export class ContractAccessService {
     });
   }
 
+  /**
+   * #8c Part 4a — SOFT-revoke a guest binding (the host withdrawing a share).
+   *
+   * PURE DATA OPERATION — it performs NO authorization. The caller MUST have
+   * already proven host authority over `contractId` (findInOrg). It lives on
+   * this service for one reason: every `guest_contract_access` statement in
+   * the backend stays in ONE file, which is what makes the "all binding reads
+   * are revocation-filtered" property auditable by reading a single file.
+   *
+   * Race-safe + idempotent via the codebase's hot-row idiom (ARCHITECTURE
+   * RULE 9 Invariant 2): a single atomic conditional UPDATE whose
+   * affected-row count IS the gate. Two concurrent revokes → exactly one
+   * flips the row; the loser falls through to the read and returns the
+   * already-revoked row, so the FIRST revoker's identity and timestamp are
+   * never overwritten.
+   *
+   * Never deletes. See the entity doc for why the row must survive.
+   */
+  async revokeGuestBinding(
+    contractId: string,
+    granteeUserId: string,
+    revokedByUserId: string,
+  ): Promise<GuestBindingRevocation> {
+    const result = await this.guestAccessRepository
+      .createQueryBuilder()
+      .update(GuestContractAccess)
+      .set({ revoked_at: new Date(), revoked_by: revokedByUserId })
+      .where('contract_id = :contractId', { contractId })
+      .andWhere('user_id = :granteeUserId', { granteeUserId })
+      // The gate: only a LIVE row transitions. An already-revoked row is
+      // untouched, so re-revoking cannot rewrite the original actor/time.
+      .andWhere('revoked_at IS NULL')
+      .returning(['revoked_at', 'revoked_by'])
+      .execute();
+
+    if (result.affected === 1) {
+      const row = result.raw?.[0] ?? {};
+      return {
+        contract_id: contractId,
+        user_id: granteeUserId,
+        revoked_at: row.revoked_at ?? new Date(),
+        revoked_by: row.revoked_by ?? revokedByUserId,
+        already_revoked: false,
+      };
+    }
+
+    // affected === 0 → either the binding never existed, or it is already
+    // revoked. Distinguish with a REVOCATION-INCLUSIVE read (this is the
+    // idempotency probe, not an authorization read).
+    const existing = await this.guestAccessRepository.findOne({
+      where: { user_id: granteeUserId, contract_id: contractId },
+    });
+    if (!existing) {
+      throw new NotFoundException('Guest access not found');
+    }
+    return {
+      contract_id: contractId,
+      user_id: granteeUserId,
+      revoked_at: existing.revoked_at as Date,
+      revoked_by: existing.revoked_by,
+      already_revoked: true,
+    };
+  }
+
   /** Empty/whitespace labels become null — never emit a blank-looking label. */
   private labelOrNull(value: string | null | undefined): string | null {
     const trimmed = (value ?? '').trim();
@@ -320,7 +431,14 @@ export class ContractAccessService {
     userId: string,
   ): Promise<Contract> {
     const binding = await this.guestAccessRepository.findOne({
-      where: { user_id: userId, contract_id: contractId },
+      // #8c Part 4a — LIVE bindings only. Deliberately duplicated rather than
+      // delegated to hasGuestBinding (that would change this method's query
+      // count/shape); the two predicates MUST stay identical.
+      where: {
+        user_id: userId,
+        contract_id: contractId,
+        revoked_at: IsNull(),
+      },
     });
     if (!binding) {
       throw new NotFoundException('Contract not found');
