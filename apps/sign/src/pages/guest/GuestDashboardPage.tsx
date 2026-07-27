@@ -1,41 +1,37 @@
-import { useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { LoadingSpinnerStyled } from '@/components/common/LoadingSpinner';
 import LanguageToggle from '@/components/common/LanguageToggle';
 import GuestLayout from '@/components/guest/GuestLayout';
 import SharedContractRowItem from '@/components/sharedWithMe/SharedContractRowItem';
-import { getMyShares } from '@/services/api/sharedContractsService';
-import useAuth from '@/hooks/useAuth';
+import { getMyGuestContracts } from '@/services/api/guestService';
+import { clearGuestSession, getGuestSession } from '@/services/guestSession';
 
 /**
  * Guest Dashboard (#8c) — the "home" a signed-in pure guest (org-less,
  * account_type=GUEST) lands on. Lists EVERY contract shared with them across
  * ALL organizations, in every status.
  *
- * The pure-guest analog of the managing-side "Shared with me" page
- * (SharedWithMePage.tsx, #8b): same data source (GET /guest/my-contracts,
- * keyed on the caller's user id — works for a GUEST or MANAGING JWT alike) and
- * the same shared row component, but rendered in the lighter GuestLayout shell
- * rather than the managing AppLayout.
+ * SESSION POSTURE (#8c Part 1, CTO-approved): this page runs entirely on the
+ * GUEST session — the sessionStorage-only store written by establish-identity
+ * (services/guestSession.ts) — and fetches over the ISOLATED `guestHttp`
+ * client with an explicit Bearer, the same pattern as every other guest
+ * surface (comments / chat / upload / download). It never reads the shared
+ * redux auth store or the shared `api` client, so a guest token can never
+ * ride the managing client's refresh rotation or login redirect. No guest
+ * session (absent or expired ~1h TTL) → the session-ended state; a returning
+ * guest re-clicks their invitation link for a fresh session.
  *
- * Guest sign-in (#8c Part 1) is a separate build — it will route here after
- * login and populate the same auth store this page reads. For now the page
- * simply renders for any authenticated caller that reaches the route.
+ * The managing-side analog remains SharedWithMePage (#8b) on the normal authed
+ * stack — same endpoint, same row component, different session world.
  */
 export default function GuestDashboardPage() {
   const { t } = useTranslation();
-  const navigate = useNavigate();
-  const { user, logout, refreshUserProfile } = useAuth();
-
-  // Redux `user` is null after a hard page load (only the token is persisted),
-  // so the header email would be blank until something hydrates it. Mirror the
-  // AppLayout/AdminLayout mount-refresh (CLAUDE.md Known Issue #10) so the
-  // guest's email is present whether they arrive from sign-in or a refresh.
-  useEffect(() => {
-    if (!user) void refreshUserProfile();
-  }, [user, refreshUserProfile]);
+  // Read once per render pass; bump() re-reads after sign-out.
+  const [sessionTick, setSessionTick] = useState(0);
+  void sessionTick;
+  const session = getGuestSession();
 
   const {
     data: rows,
@@ -43,15 +39,18 @@ export default function GuestDashboardPage() {
     isError,
     refetch,
   } = useQuery({
-    // Shared cache with the managing "Shared with me" page and the
-    // shared-viewer banner — one fetch shape serves every binding-list consumer.
-    queryKey: ['guest-my-contracts'],
-    queryFn: getMyShares,
+    // Guest-session cache, keyed apart from the managing SharedWithMePage's
+    // ['guest-my-contracts'] entry — different client, different credential.
+    queryKey: ['guest-my-contracts', 'guest-session'],
+    queryFn: () => getMyGuestContracts(session!.token),
+    enabled: !!session,
   });
 
   const handleSignOut = () => {
-    logout();
-    navigate('/auth/login');
+    // Clears ONLY the guest session (never the managing redux/localStorage
+    // slots — a signed-in manager in another tab is untouched).
+    clearGuestSession();
+    setSessionTick((n) => n + 1);
   };
 
   // Header controls unique to the dashboard (the viewer pages don't have them):
@@ -60,34 +59,57 @@ export default function GuestDashboardPage() {
   const headerRight = (
     <>
       <LanguageToggle />
-      {user?.email && (
+      {session?.user.email && (
         <span
           className="hidden max-w-[180px] truncate text-sm text-gray-500 lg:inline"
           dir="ltr"
-          title={user.email}
+          title={session.user.email}
         >
-          {user.email}
+          {session.user.email}
         </span>
       )}
-      <button
-        type="button"
-        onClick={handleSignOut}
-        className="inline-flex flex-shrink-0 items-center gap-1.5 rounded-full border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 transition-colors hover:border-gray-300 hover:bg-gray-50"
-      >
-        <svg
-          className="h-3.5 w-3.5 rtl:rotate-180"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth={1.75}
-          viewBox="0 0 24 24"
-          aria-hidden="true"
+      {session && (
+        <button
+          type="button"
+          onClick={handleSignOut}
+          className="inline-flex flex-shrink-0 items-center gap-1.5 rounded-full border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 transition-colors hover:border-gray-300 hover:bg-gray-50"
         >
-          <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9" />
-        </svg>
-        {t('guest.dashboard.signOut')}
-      </button>
+          <svg
+            className="h-3.5 w-3.5 rtl:rotate-180"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={1.75}
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9" />
+          </svg>
+          {t('guest.dashboard.signOut')}
+        </button>
+      )}
     </>
   );
+
+  // No live guest session (never established in this tab, signed out, or the
+  // ~1h token expired) → the honest ended state. Return is the invitation
+  // link — there is deliberately NO link-less guest login to send them to.
+  if (!session) {
+    return (
+      <GuestLayout headerRight={<LanguageToggle />}>
+        <div className="mx-auto mt-16 max-w-md rounded-xl border border-amber-200 bg-amber-50 p-6 text-center">
+          <div className="mb-3 text-4xl" aria-hidden="true">
+            ⏳
+          </div>
+          <h1 className="text-base font-semibold text-gray-900" dir="auto">
+            {t('guest.dashboard.sessionEnded.title')}
+          </h1>
+          <p className="mx-auto mt-1.5 max-w-sm text-sm text-gray-600" dir="auto">
+            {t('guest.dashboard.sessionEnded.body')}
+          </p>
+        </div>
+      </GuestLayout>
+    );
+  }
 
   return (
     <GuestLayout headerRight={headerRight}>

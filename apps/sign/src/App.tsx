@@ -228,21 +228,17 @@ function App() {
       <Route path="/guest/invitation/:token" element={<GuestViewerPage />} />
       <Route path="/guest/view" element={<GuestViewerPage />} />
 
-      {/* ─── Guest Dashboard (#8c) — AUTHED, session-gated ─── */}
+      {/* ─── Guest Dashboard (#8c) — GUEST-SESSION-gated ─── */}
       {/* The "home" a signed-in pure guest lands on: every contract shared with
           them across all orgs (their guest_contract_access bindings). Rendered
-          in the lighter GuestLayout shell, not the managing AppLayout. Requires
-          a real session but no role gate — a pure guest holds bindings, not a
-          workspace role. (Guest sign-in — #8c Part 1 — routes here after login;
-          that's a separate build.) */}
-      <Route
-        path="/guest/dashboard"
-        element={
-          <ProtectedRoute>
-            <GuestDashboardPage />
-          </ProtectedRoute>
-        }
-      />
+          in the lighter GuestLayout shell, not the managing AppLayout.
+          #8c Part 1: gated on the GUEST session (the sessionStorage-only store
+          establish-identity writes — services/guestSession.ts), NOT the shared
+          redux auth store — the page self-gates and shows an honest
+          session-ended state when no live guest session exists. Reached by a
+          RETURNING guest via their invitation link (there is deliberately NO
+          link-less guest login). */}
+      <Route path="/guest/dashboard" element={<GuestDashboardPage />} />
 
       {/* ─── "Shared with me" viewer entry (#8b) — AUTHED, session-gated ─── */}
       {/* A managing user opening a contract another org shared with them

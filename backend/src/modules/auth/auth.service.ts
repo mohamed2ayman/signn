@@ -17,6 +17,7 @@ import { authenticator } from 'otplib';
 import * as QRCode from 'qrcode';
 
 import {
+  AccountType,
   User,
   UserRole,
   Organization,
@@ -138,7 +139,22 @@ export class AuthService {
     access_token: string;
     refresh_token: string;
   }> {
-    const tokens = await this.generateTokens(user);
+    // #8c Part 1 — GUEST-SCOPED TTL (~1h, env-driven), applied ONLY to pure
+    // GUEST accounts. Deliberately NOT the global JWT_ACCESS_EXPIRES_IN (15m
+    // bounces a guest mid-contract-read; changing the global would affect
+    // managing users). A pure guest's session is NON-RENEWABLE: the refresh
+    // token is still minted (the user_sessions row machinery keys on it) but
+    // is unusable — /auth/refresh rejects GUEST account_type and the frontend
+    // never stores it, so the session ends at expiry, full stop. A MANAGING
+    // account establishing via invitation (unified membership, Model A) gets
+    // its NORMAL tokens — default TTL, working refresh — exactly as before.
+    const isPureGuest = user.account_type === AccountType.GUEST;
+    const guestAccessExpiresIn =
+      this.configService.get<string>('JWT_GUEST_ACCESS_EXPIRES_IN') || '1h';
+    const tokens = await this.generateTokens(
+      user,
+      isPureGuest ? { accessExpiresIn: guestAccessExpiresIn } : {},
+    );
     await this._finalizeLogin({
       user,
       refreshToken: tokens.refresh_token,
@@ -896,6 +912,17 @@ export class AuthService {
       throw new UnauthorizedException('User not found or inactive');
     }
 
+    // #8c Part 1 — ENFORCED no-renewal for pure guests. A GUEST identity's
+    // session is deliberately non-renewable: return is by re-clicking the
+    // invitation link (unlimited — that path re-verifies the password), never
+    // by silent background renewal. This account_type check is the
+    // AUTHORITATIVE server-side guard; the frontend interceptor's guest-token
+    // check is defense-in-depth only. Managing-as-guest (Model A) accounts
+    // are MANAGING account_type and refresh normally.
+    if (user.account_type === AccountType.GUEST) {
+      throw new UnauthorizedException('Guest sessions cannot be renewed');
+    }
+
     // Rotate: revoke old session first, then mint a new one inheriting family.
     await this.sessions.revokeByToken(refreshToken);
 
@@ -1138,7 +1165,17 @@ export class AuthService {
    */
   private async generateTokens(
     user: User,
-    opts: { family_id?: string } = {},
+    opts: {
+      family_id?: string;
+      /**
+       * #8c Part 1 — GUEST-SCOPED access-token TTL override. Passed ONLY by
+       * issueGuestSession (reads JWT_GUEST_ACCESS_EXPIRES_IN, default 1h).
+       * Every other caller (login / register / verifyMfa / acceptInvitation /
+       * refreshToken) omits it, so managing sessions stay on the global
+       * JWT_ACCESS_EXPIRES_IN — never widen this to a managing path.
+       */
+      accessExpiresIn?: string;
+    } = {},
   ): Promise<{
     access_token: string;
     refresh_token: string;
@@ -1163,7 +1200,8 @@ export class AuthService {
     };
 
     const accessExpiresIn =
-      this.configService.get<string>('JWT_ACCESS_EXPIRES_IN') || '15m';
+      opts.accessExpiresIn ??
+      (this.configService.get<string>('JWT_ACCESS_EXPIRES_IN') || '15m');
     const refreshExpiresIn =
       this.configService.get<string>('JWT_REFRESH_EXPIRES_IN') || '7d';
 
