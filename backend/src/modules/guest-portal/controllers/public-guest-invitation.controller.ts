@@ -54,9 +54,16 @@ export class PublicGuestInvitationController {
     @Req() req: Request,
     @Ip() ip: string,
   ) {
-    return this.invitations.establishIdentity(dto, {
+    // Layer A — never RETURN the refresh token to a guest client. It is still
+    // MINTED inside the service (issueGuestSession → _finalizeLogin → the
+    // user_sessions SHA-256 row all complete BEFORE the service returns), so the
+    // session machinery is whole; we only omit it from the HTTP response so a
+    // guest holds an access-token-only session and cannot silently refresh.
+    // Mirrors the MFA branch, which already returns refresh_token: null.
+    const result = await this.invitations.establishIdentity(dto, {
       ip: ip ?? null,
       user_agent: (req.headers['user-agent'] as string | undefined) ?? null,
     });
+    return { ...result, refresh_token: null };
   }
 }

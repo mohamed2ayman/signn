@@ -68,6 +68,10 @@ if (SKIP_REAL_PG) {
 }
 const describeReal = SKIP_REAL_PG ? describe.skip : describe;
 
+// Full Nest module + real-PG fixtures exceed jest's 5s default (same posture
+// as the sibling real-pg specs, e.g. unified-membership-leak-battery).
+jest.setTimeout(120_000);
+
 const VALID_PASSWORD = 'GracefulSlice0@2026';
 const WRONG_PASSWORD = 'NotTheRealPassword@2026';
 

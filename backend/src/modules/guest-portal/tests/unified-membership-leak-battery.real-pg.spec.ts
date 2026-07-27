@@ -133,6 +133,11 @@ describeReal('⭐ Unified membership — cross-org leak battery (real Postgres)'
   const LOCK_WRONG = 'wrong#Guess1Nope';
   let lockHash = '';
 
+  // ── Success-path fixtures (Layer A: response omits refresh_token) ──────
+  const successInvitationId = randomUUID();
+  const successContractId = randomUUID();
+  const SUCCESS_EMAIL = `fresh-success-${successInvitationId.slice(0, 8)}@external.test`;
+
   // The principal the stubbed JwtAuthGuard injects (Model A: this is the
   // shape the manager's NORMAL managing JWT produces — nothing guest-minted).
   let injectedUser: any;
@@ -381,10 +386,39 @@ describeReal('⭐ Unified membership — cross-org leak battery (real Postgres)'
        VALUES ($1, $2, $3, 'en', 'PENDING', NOW() + interval '1 day', $4)`,
       [lockInvitationId, lockContractId, LOCK_EMAIL, ownerBId],
     );
+
+    // ── Success-path fixtures — a brand-new-email PENDING invitation on a
+    //    fresh org-B contract (fresh email → the create-new-guest branch).
+    await dataSource.query(
+      `INSERT INTO contracts (id, project_id, name, contract_type, created_by)
+       VALUES ($1, $2, 'Battery Success Contract', 'FIDIC_RED_BOOK', $3)`,
+      [successContractId, projectBId, ownerBId],
+    );
+    await dataSource.query(
+      `INSERT INTO guest_invitations
+         (id, contract_id, invited_email, invited_language, status,
+          expires_at, created_by)
+       VALUES ($1, $2, $3, 'en', 'PENDING', NOW() + interval '1 day', $4)`,
+      [successInvitationId, successContractId, SUCCESS_EMAIL, ownerBId],
+    );
   });
 
   afterAll(async () => {
     if (dataSource?.isInitialized) {
+      // Success-path cleanup — the fresh guest created by the SUCCESS test has a
+      // random id, so delete it by email. FK-safe order: binding → invitation →
+      // user → contract (before projectB is deleted below).
+      await dataSource.query(
+        `DELETE FROM guest_contract_access WHERE contract_id = $1`,
+        [successContractId],
+      );
+      await dataSource.query(`DELETE FROM guest_invitations WHERE id = $1`, [
+        successInvitationId,
+      ]);
+      await dataSource.query(`DELETE FROM users WHERE email = $1`, [SUCCESS_EMAIL]);
+      await dataSource.query(`DELETE FROM contracts WHERE id = $1`, [
+        successContractId,
+      ]);
       // Audit rows the lockout wrote for the impersonation target (LOGIN_FAILED
       // ×N + ACCOUNT_LOCKED). users FK is ON DELETE SET NULL, so this is hygiene
       // rather than a FK requirement — clear them while user_id is still set.
@@ -748,5 +782,38 @@ describeReal('⭐ Unified membership — cross-org leak battery (real Postgres)'
     expect(row.password_hash).toBe(lockHash);
     expect(row.account_type).toBe(AccountType.MANAGING);
     expect(row.organization_id).toBe(orgBId);
+  });
+
+  // ═══ 9. LAYER A — establish-identity SUCCESS response omits refresh_token ═══
+  // The token is MINTED (issueGuestSession returns a real pair here) but the
+  // CONTROLLER nulls it in the HTTP response: the guest gets an access-token-only
+  // session and cannot silently refresh. access_token still passes through.
+  it('⭐ SUCCESS (real HTTP) — fresh guest establish → 200, access_token present, refresh_token === null (controller strips the minted refresh)', async () => {
+    const issueGuestSession = moduleRef.get(AuthService)
+      .issueGuestSession as jest.Mock;
+    issueGuestSession.mockResolvedValueOnce({
+      user: {
+        id: randomUUID(),
+        email: SUCCESS_EMAIL,
+        first_name: 'Fresh',
+        last_name: 'Guest',
+        account_type: AccountType.GUEST,
+      },
+      access_token: 'BATTERY-ACCESS-TOKEN',
+      refresh_token: 'BATTERY-REFRESH-SHOULD-BE-STRIPPED', // a REAL minted token
+    });
+
+    const token = moduleRef
+      .get(InvitationTokenService)
+      .issue(successInvitationId, new Date(Date.now() + 24 * 3600 * 1000));
+
+    const res = await request(app.getHttpServer())
+      .post('/public/guest-invitations/establish-identity')
+      .send({ token, password: 'FreshGuest#2026' })
+      .expect(200);
+
+    expect(res.body.access_token).toBe('BATTERY-ACCESS-TOKEN'); // access passes through
+    expect(res.body.refresh_token).toBeNull(); // controller stripped it
+    expect(issueGuestSession).toHaveBeenCalledTimes(1); // it WAS minted
   });
 });
