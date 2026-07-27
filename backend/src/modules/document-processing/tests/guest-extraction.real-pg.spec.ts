@@ -219,10 +219,16 @@ describeReal('Guest extraction completion (real Postgres)', () => {
     });
     const docId = randomUUID();
     await dataSource.query(
+      // is_guest_upload = TRUE: this helper simulates the GUEST CHANNEL (it
+      // reserves GUEST_UPLOAD with account_type GUEST above), which is exactly
+      // what uploadAndProcess stamps on the row for that entry point. #8c
+      // Part 4a made classification read this stored channel instead of a live
+      // binding lookup, so the fixture must set it to stay faithful.
       `INSERT INTO document_uploads
          (id, contract_id, organization_id, file_url, file_name,
-          processing_status, processing_job_id, reservation_id, uploaded_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+          processing_status, processing_job_id, reservation_id, uploaded_by,
+          is_guest_upload)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, TRUE)`,
       [
         docId,
         contract,
@@ -812,18 +818,38 @@ describeReal('Guest extraction completion (real Postgres)', () => {
     expect(r?.processing_status).toBe('TEXT_EXTRACTED'); // not prematurely failed
   });
 
-  // ─── UNIFIED MEMBERSHIP — proposed-vs-live for a MANAGING-as-guest uploader ──
-  // Conscious-call #5: a REAL account (MANAGING) holding a guest_contract_access
-  // binding uploads through the guest door and is guest-channel FOR THAT
-  // CONTRACT (proposed clauses, no party backfill) — while the same account
-  // stays live-channel on contracts it is NOT bound to. Still doc-derived.
-  it('UNIFIED MEMBERSHIP — isGuestUploadedDoc: MANAGING uploader WITH a binding → guest channel (proposed); without → live; scoped per contract', async () => {
-    const probe = { uploaded_by: ownerUserId, contract_id: contractId } as any;
+  // ─── #8c Part 4a — classification is CHANNEL-derived, not binding-derived ───
+  // This SUPERSEDES the previous unified-membership probe, which asserted the
+  // pre-revocation rule "MANAGING uploader WITH a binding → guest channel".
+  // That rule read a LIVE binding, so once revocation exists it would let a
+  // host revoking a counterparty RETROACTIVELY reclassify their in-flight
+  // PROPOSED document as LIVE — promoting clauses the host never accepted.
+  //
+  // The discriminator is now the channel the upload arrived through, frozen on
+  // the row at creation (`document_uploads.is_guest_upload`). Note the old
+  // rule and the new one AGREE for every document real code can produce: a
+  // MANAGING account reaches another org's contract ONLY via the guest
+  // channel (the managing route is findInOrg-walled), and that channel is
+  // exactly what sets the flag. The old test's premise — a managing-route doc
+  // row that also has a binding — was a state no real path produces.
+  it('⭐ isGuestUploadedDoc is CHANNEL-derived: a REVOKED binding does NOT reclassify an already-uploaded guest doc', async () => {
+    const guestChannelDoc = {
+      uploaded_by: ownerUserId,
+      contract_id: contractId,
+      is_guest_upload: true,
+    } as any;
+    const managingChannelDoc = {
+      uploaded_by: ownerUserId,
+      contract_id: contractId,
+      is_guest_upload: false,
+    } as any;
 
-    // No binding → live channel (the pre-unified managing behaviour).
-    expect(await (docService as any).isGuestUploadedDoc(probe)).toBe(false);
+    // Channel decides, full stop — with NO binding row in existence.
+    expect((docService as any).isGuestUploadedDoc(guestChannelDoc)).toBe(true);
+    expect((docService as any).isGuestUploadedDoc(managingChannelDoc)).toBe(
+      false,
+    );
 
-    // Attach a binding → the SAME uploader becomes guest-channel for THIS contract.
     const bindingProbeId = randomUUID();
     await dataSource.query(
       `INSERT INTO guest_contract_access (id, user_id, contract_id, granted_by)
@@ -831,15 +857,34 @@ describeReal('Guest extraction completion (real Postgres)', () => {
       [bindingProbeId, ownerUserId, contractId, ownerUserId],
     );
     try {
-      expect(await (docService as any).isGuestUploadedDoc(probe)).toBe(true);
-      // Contract-scoped: the binding to `contractId` does NOT flip the same
-      // uploader's docs on a DIFFERENT contract to the guest channel.
-      expect(
-        await (docService as any).isGuestUploadedDoc({
-          uploaded_by: ownerUserId,
-          contract_id: contractManagingId,
-        } as any),
-      ).toBe(false);
+      // A LIVE binding does not promote a managing-channel doc…
+      expect((docService as any).isGuestUploadedDoc(managingChannelDoc)).toBe(
+        false,
+      );
+
+      // ⭐ THE CHECKPOINT B GUARANTEE. Revoke the binding — the guest doc MUST
+      // still classify as guest channel. Under the old live-binding read this
+      // flipped to LIVE, silently promoting the guest's proposed clauses into
+      // the host's canonical set and re-enabling party backfill.
+      await dataSource.query(
+        `UPDATE guest_contract_access
+            SET revoked_at = NOW(), revoked_by = $2
+          WHERE id = $1`,
+        [bindingProbeId, ownerUserId],
+      );
+      expect((docService as any).isGuestUploadedDoc(guestChannelDoc)).toBe(
+        true,
+      );
+
+      // …and it survives the binding row disappearing entirely, because
+      // classification never consults that table at all.
+      await dataSource.query(
+        `DELETE FROM guest_contract_access WHERE id = $1`,
+        [bindingProbeId],
+      );
+      expect((docService as any).isGuestUploadedDoc(guestChannelDoc)).toBe(
+        true,
+      );
     } finally {
       await dataSource.query(
         `DELETE FROM guest_contract_access WHERE id = $1`,

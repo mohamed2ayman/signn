@@ -119,6 +119,23 @@ export class DocumentUpload {
   @Column({ type: 'uuid', nullable: true })
   reservation_id: string | null;
 
+  /**
+   * #8c Part 4a — was this uploaded through the GUEST CHANNEL?
+   *
+   * Set ONCE at creation from the entry point that produced the upload, and
+   * never updated. It drives the Option-C proposed-vs-live clause decision
+   * plus party-backfill suppression (DocumentProcessingService).
+   *
+   * This is deliberately a STORED HISTORICAL FACT rather than a live
+   * `guest_contract_access` lookup: the channel a document arrived through
+   * cannot change afterwards, whereas a binding can be revoked. Deriving
+   * classification from the binding would let a revocation retroactively
+   * promote a guest's proposed clauses into the host's canonical set.
+   * Classification therefore reads THIS column and never the binding table.
+   */
+  @Column({ type: 'boolean', default: false })
+  is_guest_upload: boolean;
+
   @Column({ type: 'uuid' })
   uploaded_by: string;
 

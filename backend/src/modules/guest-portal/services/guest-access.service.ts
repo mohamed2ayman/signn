@@ -1,9 +1,13 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 
+import { AccountType, User } from '../../../database/entities';
 import {
   ContractAccessService,
   GuestBindingRevocation,
 } from '../../contracts/services/contract-access.service';
+import { AuthService } from '../../auth/auth.service';
 
 /**
  * Guest Portal #8c Part 4a — HOST-side control over a shared contract's guest
@@ -36,7 +40,12 @@ import {
 export class GuestAccessService {
   private readonly logger = new Logger(GuestAccessService.name);
 
-  constructor(private readonly contractAccess: ContractAccessService) {}
+  constructor(
+    private readonly contractAccess: ContractAccessService,
+    private readonly authService: AuthService,
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
+  ) {}
 
   /**
    * Withdraw a counterparty's access to one contract.
@@ -73,8 +82,51 @@ export class GuestAccessService {
         `Guest access revoked: user ${granteeUserId} → contract ${contractId} ` +
           `by ${actor.id}`,
       );
+      await this.tearDownGuestSessions(granteeUserId);
     }
 
     return result;
+  }
+
+  /**
+   * #8c Part 4a (Checkpoint C) — second layer behind the read filter: end the
+   * revoked party's live session instead of leaving an already-issued access
+   * token technically valid until it expires.
+   *
+   * PURE GUESTS ONLY. The predicate is `account_type === GUEST`, the same
+   * identity discriminator ContractAccessService.isGuestUser uses — a MANAGING
+   * account acting as a guest keeps its own-organisation session, because that
+   * session is not what the host granted and not theirs to revoke.
+   *
+   * Runs only on a real transition (never on an idempotent re-revoke, so
+   * re-revoking cannot be used to repeatedly boot someone) and is BEST-EFFORT:
+   * the binding stamp is already committed and is what actually stops access,
+   * so a teardown failure must never turn a successful revoke into an error.
+   * Same convention as the guest-import / ERP notify paths.
+   */
+  private async tearDownGuestSessions(granteeUserId: string): Promise<void> {
+    try {
+      const grantee = await this.userRepository.findOne({
+        where: { id: granteeUserId },
+        select: ['id', 'account_type'],
+      });
+
+      if (grantee?.account_type !== AccountType.GUEST) {
+        // MANAGING-as-guest → read filter only. Deliberate, not an omission.
+        return;
+      }
+
+      const revoked = await this.authService.revokeAllGuestSessions(
+        granteeUserId,
+      );
+      this.logger.log(
+        `Guest session teardown: ${revoked} session(s) revoked for ${granteeUserId}`,
+      );
+    } catch (err) {
+      this.logger.warn(
+        `Guest session teardown failed for ${granteeUserId} (binding IS revoked; ` +
+          `access is already blocked by the read filter): ${(err as Error).message}`,
+      );
+    }
   }
 }

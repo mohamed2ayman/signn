@@ -15,8 +15,10 @@ import {
   AccountType,
   Contract,
   GuestContractAccess,
+  User,
   UserRole,
 } from '../../../database/entities';
+import { AuthService } from '../../auth/auth.service';
 import { ContractAccessService } from '../../contracts/services/contract-access.service';
 import { GuestAccessController } from '../controllers/guest-access.controller';
 import { GuestAccessService } from '../services/guest-access.service';
@@ -79,6 +81,23 @@ describeReal('#8c Part 4a — guest binding revocation (real PG)', () => {
 
   const bindingIds: string[] = [];
   let injectedUser: any;
+
+  /**
+   * Checkpoint C wiring probe. The teardown PRIMITIVE is proven for real
+   * (Postgres + Redis, multi-family, TTL) in
+   * guest-revoke-session-teardown.real-pg.spec.ts. What is under test HERE is
+   * the BRANCH: that revoke tears down a pure guest and deliberately does NOT
+   * touch a MANAGING-as-guest, and that an idempotent re-revoke does not
+   * re-trigger it (otherwise re-revoking could be used to repeatedly boot
+   * someone).
+   */
+  const tornDown: string[] = [];
+  const authServiceStub = {
+    revokeAllGuestSessions: jest.fn(async (userId: string) => {
+      tornDown.push(userId);
+      return 1;
+    }),
+  };
 
   const HOST = () => ({
     id: hostOwnerId,
@@ -155,10 +174,14 @@ describeReal('#8c Part 4a — guest binding revocation (real PG)', () => {
       imports: [
         ConfigModule.forRoot({ isGlobal: true }),
         TypeOrmModule.forRoot({ ...dataSourceOptions, autoLoadEntities: true }),
-        TypeOrmModule.forFeature([Contract, GuestContractAccess]),
+        TypeOrmModule.forFeature([Contract, GuestContractAccess, User]),
       ],
       controllers: [GuestAccessController, GuestMyContractsController],
-      providers: [ContractAccessService, GuestAccessService],
+      providers: [
+        ContractAccessService,
+        GuestAccessService,
+        { provide: AuthService, useValue: authServiceStub },
+      ],
     })
       .overrideGuard(JwtAuthGuard)
       .useValue({
@@ -390,6 +413,41 @@ describeReal('#8c Part 4a — guest binding revocation (real PG)', () => {
       );
       expect(rows).toHaveLength(1);
       expect(rows[0].revoked_at).not.toBeNull();
+    });
+  });
+
+  // ─── C. TEARDOWN BRANCH (pure guest vs managing-as-guest) ────────────────
+
+  describe('session teardown branch', () => {
+    it('a PURE GUEST is torn down exactly ONCE — the idempotent re-revoke does NOT re-trigger it', () => {
+      // The stamp block above revoked guestId once and then re-revoked it.
+      // Only the real transition may trigger teardown, otherwise re-revoking
+      // becomes a way to repeatedly boot someone out of their session.
+      expect(tornDown.filter((id) => id === guestId)).toHaveLength(1);
+    });
+
+    it('⭐ a MANAGING-as-guest is NOT torn down — their own-org session is not the host’s to end', async () => {
+      // otherHostId is a MANAGING account in a DIFFERENT org, bound to this
+      // host's contract (unified membership, Model A).
+      await insertBinding(otherHostId, contractLiveId);
+      authServiceStub.revokeAllGuestSessions.mockClear();
+
+      const res = await revokeAs(HOST(), contractLiveId, {
+        user_id: otherHostId,
+      });
+      expect(res.status).toBe(200);
+      expect(res.body.already_revoked).toBe(false);
+
+      // Binding IS revoked (the read filter does the work for them)…
+      const [row] = await dataSource.query(
+        `SELECT revoked_at FROM guest_contract_access
+          WHERE user_id = $1 AND contract_id = $2`,
+        [otherHostId, contractLiveId],
+      );
+      expect(row.revoked_at).not.toBeNull();
+      // …but their session is untouched. Deliberate asymmetry.
+      expect(authServiceStub.revokeAllGuestSessions).not.toHaveBeenCalled();
+      expect(tornDown).not.toContain(otherHostId);
     });
   });
 
