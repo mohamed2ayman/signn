@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, EntityManager, Repository } from 'typeorm';
 import {
   AuditLog,
   Contract,
@@ -115,6 +115,29 @@ export class ContractPinningService {
       actorUserId: string | null;
       door: PinDoor;
       envelopeId?: string;
+      /**
+       * #8c Part 4a (TOCTOU, Option A) — OPTIONAL door-specific precondition,
+       * evaluated INSIDE this transaction after the contract row lock and
+       * BEFORE the idempotency branch and any write. Throwing aborts the pin:
+       * the transaction rolls back and nothing is written.
+       *
+       * This hook is deliberately GENERIC — the pin knows nothing about guest
+       * bindings, or about any other door's rules. It only offers doors a way
+       * to assert a precondition ATOMICALLY with the pin write, on this
+       * transaction's own connection. The guest-sign door uses it to re-check
+       * that the counterparty's binding has not been revoked; the DocuSign
+       * webhook and manual mark-signed doors pass nothing, so `?.()` is a
+       * no-op and their behaviour is byte-identical.
+       *
+       * WHY IT MUST RUN HERE rather than in the caller's transaction: a caller
+       * that checked beforehand would have to hold a lock across
+       * `pinExecutedContract`, which opens its own transaction on a SECOND
+       * pooled connection — holding a row lock across a nested connection
+       * acquisition is the pool-starvation pattern of lesson #177. Running the
+       * check on THIS manager makes the check and the write one transaction:
+       * no cross-connection lock, no gap between check and write.
+       */
+      precondition?: (manager: EntityManager) => Promise<void>;
     },
   ): Promise<PinResult> {
     const result = await this.dataSource.transaction(async (manager) => {
@@ -128,6 +151,15 @@ export class ContractPinningService {
       if (!contract) {
         throw new NotFoundException('Contract not found');
       }
+
+      // #8c Part 4a (TOCTOU) — door-specific precondition, on THIS manager so
+      // it is atomic with the pin write below. Placed AFTER the contract row
+      // lock (so it runs inside the serialized critical section) and BEFORE
+      // the idempotency branch (so a door whose authority has been withdrawn
+      // cannot even record an acceptance against an already-pinned contract).
+      // Throwing here rolls this transaction back — nothing is written, and
+      // the exception propagates to the caller unchanged.
+      await opts.precondition?.(manager);
 
       // IDEMPOTENT no-op: already pinned (redelivery / double-submit).
       if (contract.pinned_version_id) {

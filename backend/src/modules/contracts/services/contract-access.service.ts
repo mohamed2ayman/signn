@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { IsNull, Repository } from 'typeorm';
+import { EntityManager, IsNull, Repository } from 'typeorm';
 
 import {
   AccountType,
@@ -45,9 +45,12 @@ import {
  * rule inside it is:
  *
  *   • AUTHORIZATION reads filter `revoked_at IS NULL` — hasGuestBinding,
- *     findForGuest, listGuestBindings. A revoked binding grants NOTHING and
+ *     findForGuest, listGuestBindings, and the locking
+ *     assertGuestBindingLiveForUpdate. A revoked binding grants NOTHING and
  *     produces the SAME uniform 404 as never having been bound (no oracle:
  *     "revoked" and "never shared" are indistinguishable to the caller).
+ *     Only the last of those takes a row lock; it is the TOCTOU guard run
+ *     inside the pin's transaction (see its own doc).
  *   • HISTORICAL reads deliberately do NOT filter it, because the row is the
  *     durable record that the share once existed. There are exactly two:
  *       (1) the idempotency probe inside revokeGuestBinding below;
@@ -283,6 +286,52 @@ export class ContractAccessService {
       },
     });
     return !!binding;
+  }
+
+  /**
+   * #8c Part 4a (TOCTOU, Option A) — LOCKING liveness assertion on a binding,
+   * executed on a CALLER-SUPPLIED EntityManager.
+   *
+   * This is the one binding read that takes a row lock. It exists for exactly
+   * one caller: the guest-sign door's `precondition` closure, which the
+   * ContractPinningService invokes INSIDE the pin's own transaction. Running
+   * it there is what makes the check and the pin write atomic — see the hook's
+   * doc on `pinExecutedContract`.
+   *
+   * `FOR UPDATE` (not a plain read) is load-bearing. Under READ COMMITTED a
+   * plain SELECT sees only revocations that have already COMMITTED; an
+   * in-flight uncommitted revoke would be invisible and the pin would proceed.
+   * `FOR UPDATE` blocks on the revoking transaction instead, and when that
+   * transaction commits Postgres re-evaluates this predicate against the NEW
+   * row version (EvalPlanQual) — `revoked_at IS NULL` then fails, the row is
+   * filtered out, and we throw. So a revoke that is committed OR in flight at
+   * this instant always wins.
+   *
+   * LOCK ORDER: `guest_contract_access` is acquired LAST here, as everywhere
+   * else (cf. the fixed order documented on RedlineService). The revoking
+   * transaction locks only this same row, so the two contend on ONE row —
+   * ordinary serialization, not a cycle. The pin locks the contract row, which
+   * the revoke path never locks (its contract read is a plain MVCC SELECT).
+   *
+   * Denial is the same uniform 404 every other binding path throws.
+   */
+  async assertGuestBindingLiveForUpdate(
+    contractId: string,
+    userId: string,
+    manager: EntityManager,
+  ): Promise<void> {
+    const binding = await manager
+      .getRepository(GuestContractAccess)
+      .createQueryBuilder('gca')
+      .setLock('pessimistic_write')
+      .where('gca.contract_id = :contractId', { contractId })
+      .andWhere('gca.user_id = :userId', { userId })
+      .andWhere('gca.revoked_at IS NULL')
+      .getOne();
+
+    if (!binding) {
+      throw new NotFoundException('Contract not found');
+    }
   }
 
   /**
