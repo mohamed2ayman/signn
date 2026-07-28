@@ -215,6 +215,16 @@ export class DocumentProcessingService {
     // case is the new defense.
     const walledContract = await this.contractAccess.findInOrg(contractId, orgId);
 
+    // #8c Part 4a — the CHANNEL, decided at the entry point and frozen onto
+    // the row below. GuestUploadService is the only caller that passes
+    // MeterKey.GUEST_UPLOAD (and account_type GUEST); the managing route
+    // `POST /contracts/:contractId/documents` passes neither, so it is false
+    // there and that path is byte-unchanged. Both discriminators are checked
+    // so neither one alone can silently drift.
+    const isGuestChannel =
+      options?.meterKey === MeterKey.GUEST_UPLOAD ||
+      options?.account_type === AccountType.GUEST;
+
     // Signed-state pinning (Slice 2) — AFTER the wall (404-first), BEFORE the
     // metering reserve (a doomed upload must not charge). A pinned contract's
     // clause set is frozen; new-version extraction is rejected with 409
@@ -292,6 +302,14 @@ export class DocumentProcessingService {
         processing_status: DocumentProcessingStatus.UPLOADED,
         uploaded_by: userId,
         reservation_id: reservation.reservation_id,
+        // #8c Part 4a — freeze the CHANNEL at upload time. The guest entry
+        // point (GuestUploadService) is the only caller that passes
+        // MeterKey.GUEST_UPLOAD / account_type GUEST; the managing route
+        // passes neither, so it stays false and its behaviour is unchanged.
+        // Classification later reads this stored fact instead of asking the
+        // binding table, so a revocation can never retroactively reclassify
+        // an already-uploaded document.
+        is_guest_upload: isGuestChannel,
       });
 
       saved = await this.documentUploadRepository.save(doc); // lint-exempt: S2f-deferred (metering-entangled, walled)
@@ -440,26 +458,27 @@ export class DocumentProcessingService {
    * Is this document a GUEST-CHANNEL upload? DOC-derived (never
    * endpoint-derived), so the proposed-vs-live decision is intrinsic to the
    * document and identical no matter which route (managing status poll,
-   * guest status poll, or the SYSTEM driver) drives the advance:
-   *   - uploader is a GUEST account → guest channel (the pre-unified rule);
-   *   - uploader is a REAL account (MANAGING/FREE) holding a
-   *     guest_contract_access binding for THIS contract → guest channel too
-   *     (unified membership: they act as a guest ON this contract — proposed
-   *     clauses, no party backfill).
-   * Both discriminators are durable row facts (uploader identity + binding).
+   * guest status poll, or the SYSTEM driver) drives the advance.
+   *
+   * #8c Part 4a — this now reads ONE STORED HISTORICAL FACT
+   * (`document_uploads.is_guest_upload`, frozen at upload time) and does NOT
+   * consult `guest_contract_access` at all.
+   *
+   * It previously asked a LIVE question — "does the uploader hold a binding
+   * right now?" — which was correct only while bindings were permanent. With
+   * revocation, that live read would let a host revoking a counterparty
+   * RETROACTIVELY reclassify their in-flight PROPOSED document as a LIVE one,
+   * promoting clauses the host never accepted into the canonical set and
+   * re-enabling party backfill. "Which channel did this arrive through" cannot
+   * change after the fact, so it is stored rather than re-derived.
+   *
+   * Consequence worth keeping in mind: classification is now completely
+   * decoupled from authorization. A revoked guest cannot create NEW documents
+   * (the upload path's binding wall is revocation-filtered), so this flag is
+   * only ever set on documents that were legitimately guest-channel uploads.
    */
-  private async isGuestUploadedDoc(doc: DocumentUpload): Promise<boolean> {
-    const uploader = await this.userRepository.findOne({
-      where: { id: doc.uploaded_by },
-      select: ['id', 'account_type'],
-    });
-    if (uploader?.account_type === AccountType.GUEST) {
-      return true;
-    }
-    if (!doc.uploaded_by || !doc.contract_id) {
-      return false;
-    }
-    return this.contractAccess.hasGuestBinding(doc.contract_id, doc.uploaded_by);
+  private isGuestUploadedDoc(doc: DocumentUpload): boolean {
+    return doc.is_guest_upload === true;
   }
 
   /**
@@ -541,7 +560,7 @@ export class DocumentProcessingService {
 
     // Intrinsic to the document, not the caller: a guest upload writes proposed
     // clauses and never backfills the parent contract's party fields.
-    const isGuestUpload = await this.isGuestUploadedDoc(doc);
+    const isGuestUpload = this.isGuestUploadedDoc(doc);
 
     // Job completed — advance pipeline
     if (doc.processing_status === DocumentProcessingStatus.EXTRACTING_TEXT) {

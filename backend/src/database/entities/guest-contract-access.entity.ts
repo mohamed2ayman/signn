@@ -29,6 +29,15 @@ import { Contract } from './contract.entity';
  *    binding automatically (no orphan rows can survive).
  *  • granted_by is SET NULL on delete so revoking an admin user does
  *    not break audit trail rows pointing at historical grants.
+ *  • #8c Part 4a — REVOCATION IS A SOFT STAMP, NEVER A DELETE.
+ *    `revoked_at IS NULL` means LIVE; a non-null value means the host has
+ *    withdrawn access. The row STAYS on disk because it is the historical
+ *    record that the share once existed — DocumentProcessingService's
+ *    proposed-vs-live document classification reads that history, so a hard
+ *    delete would retroactively rewrite how an already-uploaded document is
+ *    treated. Every AUTHORIZATION read in ContractAccessService therefore
+ *    filters `revoked_at IS NULL`; historical/provenance reads deliberately
+ *    do not.
  */
 @Entity('guest_contract_access')
 @Unique('uq_guest_contract_access_user_contract', ['user_id', 'contract_id'])
@@ -61,4 +70,25 @@ export class GuestContractAccess {
   @ManyToOne(() => User, { onDelete: 'SET NULL', nullable: true })
   @JoinColumn({ name: 'granted_by' })
   granter: User | null;
+
+  /**
+   * #8c Part 4a — NULL = LIVE binding. Non-null = host-revoked; the row
+   * grants NOTHING from that moment on but is retained as history.
+   * This column is the authorization discriminator (see class doc).
+   */
+  @Column({ type: 'timestamptz', nullable: true })
+  revoked_at: Date | null;
+
+  /**
+   * Who performed the revocation. SET NULL on user delete — same contract as
+   * `granted_by`: losing the actor must not break the historical row. NULL
+   * therefore means either "never revoked" (pair with revoked_at) or
+   * "revoked by a since-deleted user".
+   */
+  @Column({ type: 'uuid', nullable: true })
+  revoked_by: string | null;
+
+  @ManyToOne(() => User, { onDelete: 'SET NULL', nullable: true })
+  @JoinColumn({ name: 'revoked_by' })
+  revoker: User | null;
 }

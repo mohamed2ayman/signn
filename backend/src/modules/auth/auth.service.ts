@@ -171,6 +171,78 @@ export class AuthService {
     };
   }
 
+  /**
+   * #8c Part 4a (Checkpoint C) — kill a PURE GUEST's live sessions.
+   *
+   * Called when a host revokes a guest binding. The revocation read-filter
+   * already 404s every resource immediately; this is the second layer that
+   * ends the session itself rather than letting the already-issued access
+   * token stay technically valid for the rest of its TTL.
+   *
+   * PURE GUESTS ONLY — the caller enforces that. A MANAGING account acting as
+   * a guest (unified membership, Model A) authenticates with its NORMAL
+   * session for its OWN organisation; tearing that down would sign them out of
+   * their own workspace over a share they never controlled. They rely on the
+   * read filter alone. A pure guest's session, by contrast, exists for nothing
+   * BUT guest access.
+   *
+   * Order is the PROVEN one from the refresh-reuse path below: enumerate the
+   * sessions → blacklist every jti in Redis → only then revoke the DB rows.
+   * Reversing it would leave already-issued access tokens live for their full
+   * TTL, because JwtStrategy checks Redis on each request and never the DB.
+   *
+   * TWO deliberate departures from that path, both load-bearing:
+   *
+   *  1. USER-scoped, not FAMILY-scoped. `issueGuestSession` mints a NEW family
+   *     per establish-identity, so a guest who returned via their link more
+   *     than once holds SEVERAL families. Revoking one family would leave the
+   *     others alive — a half-teardown. `listActive` + `revokeAllForUser`
+   *     cover every session the user has, which is the only thing that
+   *     actually ends "the guest's session".
+   *
+   *  2. The TTL is the GUEST access TTL, not JWT_ACCESS_EXPIRES_IN. A pure
+   *     guest's token is minted with JWT_GUEST_ACCESS_EXPIRES_IN (~1h) while
+   *     the global default is 15m — blacklisting for 15m would let the Redis
+   *     entry expire ~45 min BEFORE the token does, and the revoked guest's
+   *     token would start working again. We take the MAX of the two so the
+   *     blacklist always outlives the token it is suppressing.
+   *
+   * Best-effort per jti (a Redis hiccup must not abort the teardown), and the
+   * DB revoke still runs — so the worst case degrades to "row revoked, token
+   * valid until expiry", never "session left fully intact".
+   */
+  async revokeAllGuestSessions(userId: string): Promise<number> {
+    const sessions = await this.sessions.listActive(userId);
+
+    const ttlSec = Math.max(
+      parseExpiryToSeconds(
+        this.configService.get<string>('JWT_GUEST_ACCESS_EXPIRES_IN') ?? '1h',
+      ),
+      parseExpiryToSeconds(
+        this.configService.get<string>('JWT_ACCESS_EXPIRES_IN') ?? '15m',
+      ),
+    );
+
+    await Promise.all(
+      sessions
+        .filter((s) => !!s.jti)
+        .map((s) =>
+          this.tokenBlacklist
+            .blacklistToken(s.jti!, ttlSec)
+            .catch((err) =>
+              this.logger.warn(
+                `[revokeAllGuestSessions] Failed to blacklist jti ${s.jti}: ${
+                  (err as Error).message
+                }`,
+              ),
+            ),
+        ),
+    );
+
+    // Only after every jti is suppressed in Redis.
+    return this.sessions.revokeAllForUser(userId);
+  }
+
   // ─── Phase 3.3: post-login session + suspicious detection ─────
 
   /**

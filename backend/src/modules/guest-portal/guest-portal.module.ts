@@ -40,6 +40,7 @@ import { GuestChatService } from './services/guest-chat.service';
 // createVersionSnapshot rides the same transaction; Project registered for
 // the destination-ownership check).
 import { GuestImportService } from './services/guest-import.service';
+import { GuestAccessService } from './services/guest-access.service';
 import { ViewerCredentialGuard } from './guards/viewer-credential.guard';
 
 import { GuestInvitationsController } from './controllers/guest-invitations.controller';
@@ -52,6 +53,7 @@ import { GuestStatusController } from './controllers/guest-status.controller';
 import { GuestChatController } from './controllers/guest-chat.controller';
 import { GuestMyContractsController } from './controllers/guest-my-contracts.controller';
 import { GuestImportController } from './controllers/guest-import.controller';
+import { GuestAccessController } from './controllers/guest-access.controller';
 // Guest Signing v1 — the binding+slip sign door (service exported by
 // ContractsModule; authz = the atomic binding+slip gate, uniform 404).
 import { GuestSignController } from './controllers/guest-sign.controller';
@@ -115,6 +117,8 @@ import { GuestSignController } from './controllers/guest-sign.controller';
     GuestMyContractsController,
     GuestImportController,
     GuestSignController,
+    // #8c Part 4a — HOST-side binding revoke (org-walled, NOT a guest surface).
+    GuestAccessController,
   ],
   providers: [
     InvitationTokenService,
@@ -123,6 +127,7 @@ import { GuestSignController } from './controllers/guest-sign.controller';
     GuestUploadService,
     GuestChatService,
     GuestImportService,
+    GuestAccessService,
     ViewerCredentialGuard,
   ],
 })

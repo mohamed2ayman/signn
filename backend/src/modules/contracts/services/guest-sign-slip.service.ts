@@ -309,6 +309,12 @@ export class GuestSignSlipService {
    * concurrent host VOID serializes against the execution: it either lands
    * before the lock (we see VOIDED → uniform 404, nothing pinned) or waits
    * and finds EXECUTED (→ its own 400).
+   *
+   * A concurrent host REVOKE of the binding is handled differently, and
+   * deliberately NOT by a lock held here: we pass the pin a `precondition`
+   * that re-checks the binding INSIDE the pin's own transaction (#8c Part 4a,
+   * Option A). See the closure at the pin call below for why the lock must
+   * not live in this transaction.
    */
   async acceptAndExecute(
     contractId: string,
@@ -377,9 +383,31 @@ export class GuestSignSlipService {
       // connection), idempotent under already-pinned. If it throws, OUR
       // transaction rolls back to ACCEPTED at worst and the next accept
       // call resumes cleanly.
+      //
+      // #8c Part 4a (TOCTOU, Option A) — the binding was checked at the gate
+      // (resolveSlipGate → hasGuestBinding), but that is OUTSIDE this
+      // transaction: a host could revoke in the window between the gate and
+      // the pin, and we would still pin for a counterparty who no longer has
+      // access. We close that window by handing the pin a PRECONDITION it runs
+      // INSIDE its own transaction, immediately after it locks the contract
+      // row and before it writes anything. The check and the pin write are
+      // then one atomic transaction.
+      //
+      // The guest knowledge lives HERE, in this closure — the pin stays
+      // guest-agnostic and merely invokes whatever precondition its caller
+      // supplies. We deliberately do NOT take this lock in OUR transaction:
+      // holding a row lock across `pinExecutedContract` (which opens a second
+      // pooled connection) is the pool-starvation pattern of lesson #177, and
+      // would let a starved signer block the very revoke that should win.
       pin = await this.pinning.pinExecutedContract(contractId, {
         actorUserId: granteeUserId,
         door: 'GUEST_SIGN',
+        precondition: (pinManager) =>
+          this.contractAccess.assertGuestBindingLiveForUpdate(
+            contractId,
+            granteeUserId,
+            pinManager,
+          ),
       });
 
       await txSlipRepo.update(

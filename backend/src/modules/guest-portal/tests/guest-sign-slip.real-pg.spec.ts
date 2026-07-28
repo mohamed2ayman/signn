@@ -105,6 +105,11 @@ describeReal('⭐ Guest Signing v1 — slip door (real Postgres)', () => {
   const contractLeakId = randomUUID(); // leak-safety (binding for boundNoSlip)
   const contractDraftId = randomUUID(); // issuance status guard (DRAFT)
   const contractOrphanId = randomUUID(); // orphan slip: LIVE slip + REVOKED binding
+  // #8c Part 4a (TOCTOU) — one contract per interleaving, so each starts from a
+  // clean unpinned state and the assertions cannot alias each other.
+  const contractToctouCommittedId = randomUUID(); // revoke COMMITS in the gate→pin window
+  const contractToctouInflightId = randomUUID(); // revoke IN FLIGHT during the pin txn
+  const contractToctouHappyId = randomUUID(); // live binding → pins normally
 
   const allContractIds = [
     contractMainId,
@@ -113,6 +118,9 @@ describeReal('⭐ Guest Signing v1 — slip door (real Postgres)', () => {
     contractLeakId,
     contractDraftId,
     contractOrphanId,
+    contractToctouCommittedId,
+    contractToctouInflightId,
+    contractToctouHappyId,
   ];
 
   let injectedUser: any;
@@ -337,7 +345,18 @@ describeReal('⭐ Guest Signing v1 — slip door (real Postgres)', () => {
     // Orphan-slip fixture: ACTIVE (signable) so the slip can be ISSUED; its
     // binding is created + then REVOKED inside the test (not here).
     await insertContract(contractOrphanId, `عقد اليتيم ${tag}`, 'ACTIVE');
-    for (const cid of [contractMainId, contractPrePinId, contractVoidId]) {
+    // #8c Part 4a TOCTOU fixtures — ACTIVE so the fresh-pin path is reachable.
+    await insertContract(contractToctouCommittedId, `عقد السباق أ ${tag}`, 'ACTIVE');
+    await insertContract(contractToctouInflightId, `عقد السباق ب ${tag}`, 'ACTIVE');
+    await insertContract(contractToctouHappyId, `عقد السباق ج ${tag}`, 'ACTIVE');
+    for (const cid of [
+      contractMainId,
+      contractPrePinId,
+      contractVoidId,
+      contractToctouCommittedId,
+      contractToctouInflightId,
+      contractToctouHappyId,
+    ]) {
       await seedClause(cid, 1);
       await seedClause(cid, 2);
     }
@@ -348,6 +367,9 @@ describeReal('⭐ Guest Signing v1 — slip door (real Postgres)', () => {
     await insertBinding(counterpartyId, contractVoidId);
     await insertBinding(boundNoSlipId, contractLeakId); // bound, NEVER a slip
     await insertBinding(counterpartyId, contractDraftId); // bound; DRAFT status
+    await insertBinding(counterpartyId, contractToctouCommittedId);
+    await insertBinding(counterpartyId, contractToctouInflightId);
+    await insertBinding(counterpartyId, contractToctouHappyId);
   });
 
   afterAll(async () => {
@@ -750,6 +772,164 @@ describeReal('⭐ Guest Signing v1 — slip door (real Postgres)', () => {
       ).rejects.toMatchObject({ status: 400 });
       const [still] = await getSlipRows(contractMainId);
       expect(still.status).toBe('EXECUTED');
+    });
+  });
+
+  // ─── #8c Part 4a — TOCTOU: revoke vs. sign (Option A) ──────────────────────
+  //
+  // The gate (resolveSlipGate → hasGuestBinding) runs OUTSIDE the slip
+  // transaction. Between it and the pin there is a window in which a host can
+  // revoke the counterparty's binding — and, before Option A, the pin would
+  // still land: the contract would be permanently pinned as "signed" by someone
+  // whose access had already been withdrawn.
+  //
+  // Option A closes it by having the pin run a `precondition` INSIDE its OWN
+  // transaction (after it locks the contract row, before it writes anything).
+  // The check and the write are therefore one atomic transaction — there is no
+  // cross-connection lock and no gap to bridge.
+  //
+  // Both interleavings are exercised against REAL Postgres, because the whole
+  // mechanism is a claim about Postgres locking semantics and cannot be proven
+  // with mocks. In BOTH the assertion is the same: NOTHING is pinned and the
+  // slip stays un-executed.
+  describe('TOCTOU — a revoke racing the pin', () => {
+    const assertNothingPinned = async (contractId: string) => {
+      const row = await getContractRow(contractId);
+      expect(row.pinned_version_id).toBeNull();
+      expect(row.pinned_at).toBeNull();
+      expect(row.pinned_content_hash).toBeNull();
+      expect(row.signature_status).not.toBe('FULLY_EXECUTED');
+      // No EXECUTED slip, and no audit claiming a signature happened.
+      const slips = await getSlipRows(contractId);
+      expect(slips.every((s) => s.status !== 'EXECUTED')).toBe(true);
+      expect(await getSignAudits(contractId)).toHaveLength(0);
+      // The pin's snapshot must not survive either — the pin txn rolled back.
+      const versions = await dataSource.query(
+        `SELECT id FROM contract_versions WHERE contract_id = $1`,
+        [contractId],
+      );
+      expect(versions).toHaveLength(0);
+    };
+
+    it('⭐ revoke COMMITS in the gate→pin window → pin aborts, uniform 404, nothing pinned', async () => {
+      await slipService.issueSlip(
+        contractToctouCommittedId,
+        counterpartyId,
+        { userId: hostOwnerId, orgId: hostOrgId },
+      );
+
+      // Place the revoke DETERMINISTICALLY inside the gate→pin window: wrap the
+      // pin so the revoke commits (on its own connection) immediately before
+      // the real pin runs. The gate has already passed at this point — exactly
+      // the race we are closing. The REAL pinExecutedContract still executes,
+      // with the REAL precondition closure the slip service passed it.
+      const realPin = pinning.pinExecutedContract.bind(pinning);
+      const spy = jest
+        .spyOn(pinning, 'pinExecutedContract')
+        .mockImplementation(async (cid: any, opts: any) => {
+          await dataSource.query(
+            `UPDATE guest_contract_access
+                SET revoked_at = NOW(), revoked_by = $3
+              WHERE user_id = $1 AND contract_id = $2 AND revoked_at IS NULL`,
+            [counterpartyId, contractToctouCommittedId, hostOwnerId],
+          );
+          return realPin(cid, opts);
+        });
+
+      try {
+        await expect(
+          slipService.acceptAndExecute(contractToctouCommittedId, counterpartyId),
+        ).rejects.toMatchObject({ status: 404 });
+      } finally {
+        spy.mockRestore();
+      }
+
+      await assertNothingPinned(contractToctouCommittedId);
+
+      // The slip rolled back to its pre-accept state — NOT left ACCEPTED, and
+      // certainly not EXECUTED.
+      const [slip] = await getSlipRows(contractToctouCommittedId);
+      expect(slip.status).toBe('PENDING');
+      expect(slip.accepted_at).toBeNull();
+    });
+
+    it('⭐ revoke IN FLIGHT (uncommitted) during the pin txn → precondition blocks, then loses the row, pin aborts', async () => {
+      await slipService.issueSlip(
+        contractToctouInflightId,
+        counterpartyId,
+        { userId: hostOwnerId, orgId: hostOrgId },
+      );
+
+      // A concurrent host revoke that has UPDATEd the binding but NOT committed.
+      // It holds the row lock. A plain re-read would not see it — this is the
+      // case that makes `FOR UPDATE` load-bearing rather than cosmetic.
+      const revoker = dataSource.createQueryRunner();
+      await revoker.connect();
+      await revoker.startTransaction();
+      await revoker.query(
+        `UPDATE guest_contract_access
+            SET revoked_at = NOW(), revoked_by = $3
+          WHERE user_id = $1 AND contract_id = $2 AND revoked_at IS NULL`,
+        [counterpartyId, contractToctouInflightId, hostOwnerId],
+      );
+
+      let settled = false;
+      const acceptPromise = slipService
+        .acceptAndExecute(contractToctouInflightId, counterpartyId)
+        .then(
+          (r) => { settled = true; return { ok: true, r }; },
+          (e) => { settled = true; return { ok: false, e }; },
+        );
+
+      // The gate passes (the revoke is uncommitted, so the plain read still
+      // sees a live binding); the precondition's FOR UPDATE then BLOCKS on the
+      // revoker's row lock.
+      await new Promise((r) => setTimeout(r, 1200));
+      expect(settled).toBe(false); // still blocked — proof the lock is real
+      await assertNothingPinned(contractToctouInflightId);
+
+      // Release: the revoke commits. Postgres re-qualifies the precondition's
+      // predicate against the NEW row version (EvalPlanQual, READ COMMITTED),
+      // `revoked_at IS NULL` now fails, the row is filtered out → 0 rows.
+      await revoker.commitTransaction();
+      await revoker.release();
+
+      const outcome = await acceptPromise;
+      expect(outcome.ok).toBe(false);
+      expect((outcome as any).e).toMatchObject({ status: 404 });
+
+      await assertNothingPinned(contractToctouInflightId);
+      const [slip] = await getSlipRows(contractToctouInflightId);
+      expect(slip.status).toBe('PENDING');
+    });
+
+    it('happy path unregressed — a LIVE binding still pins normally through the precondition', async () => {
+      await slipService.issueSlip(contractToctouHappyId, counterpartyId, {
+        userId: hostOwnerId,
+        orgId: hostOrgId,
+      });
+
+      const res = await slipService.acceptAndExecute(
+        contractToctouHappyId,
+        counterpartyId,
+      );
+      expect(res.executed).toBe(true);
+      expect(res.accepted_content_hash).toBeTruthy();
+
+      const row = await getContractRow(contractToctouHappyId);
+      expect(row.pinned_version_id).not.toBeNull();
+      expect(row.signature_status).toBe('FULLY_EXECUTED');
+      const [slip] = await getSlipRows(contractToctouHappyId);
+      expect(slip.status).toBe('EXECUTED');
+
+      // And the binding is still live — the precondition is a check, not a
+      // side effect.
+      const [binding] = await dataSource.query(
+        `SELECT revoked_at FROM guest_contract_access
+          WHERE user_id = $1 AND contract_id = $2`,
+        [counterpartyId, contractToctouHappyId],
+      );
+      expect(binding.revoked_at).toBeNull();
     });
   });
 });
