@@ -28,6 +28,7 @@ import ObligationsTab from '@/components/contracts/ObligationsTab';
 import ContractPartiesEditor from '@/components/contracts/parties/ContractPartiesEditor';
 import GuestProposedVersionsPanel from '@/components/contracts/GuestProposedVersionsPanel';
 import RedlinesTab from '@/components/contracts/RedlinesTab';
+import WhoHasAccessTab from '@/components/contracts/WhoHasAccessTab';
 import { documentProcessingService } from '@/services/api/documentProcessingService';
 import { useDocumentProcessing } from '@/hooks/useDocumentProcessing';
 import ProcessingStatusCard from '@/components/common/ProcessingStatusCard';
@@ -246,6 +247,10 @@ const tabConfig = [
   // Multi-tier T0c-2 — Parties Editor. NOT status-gated (parties exist from
   // DRAFT onward). Label localized via t('contract.tabs.parties').
   { key: 'parties' as const, label: 'Parties', icon: 'M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z' },
+  // #8c Part 4b — host guest-access management ("Who has access"). NOT
+  // status-gated (sharing exists from DRAFT onward, like Parties/Redlines).
+  // Label localized via t('contract.tabs.guests').
+  { key: 'guests' as const, label: 'Who has access', icon: 'M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z' },
   { key: 'comments' as const, label: 'Comments', icon: 'M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.129.166 2.27.293 3.423.379.35.026.67.21.865.501L12 21l2.755-4.133a1.14 1.14 0 01.865-.501 48.172 48.172 0 003.423-.379c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z' },
   // 7.19 Slice 3 — counterparty redlining + negotiation lane. NOT status-
   // gated (negotiation spans DRAFT onward). Label localized via
@@ -280,7 +285,7 @@ export default function ContractDetailPage() {
   const [risks, setRisks] = useState<RiskAnalysis[]>([]);
   const [availableClauses, setAvailableClauses] = useState<Clause[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'clauses' | 'parties' | 'comments' | 'redlines' | 'risks' | 'obligations' | 'claims' | 'notices' | 'subcontracts' | 'compliance' | 'history' | 'approvals'>('clauses');
+  const [activeTab, setActiveTab] = useState<'clauses' | 'parties' | 'guests' | 'comments' | 'redlines' | 'risks' | 'obligations' | 'claims' | 'notices' | 'subcontracts' | 'compliance' | 'history' | 'approvals'>('clauses');
   // Obligation count mirrored from ObligationsTab for the tab-label badge.
   const [obligationCount, setObligationCount] = useState<number>(0);
   const [diffPair, setDiffPair] = useState<{ a: string; b: string } | null>(null);
@@ -1476,7 +1481,9 @@ export default function ContractDetailPage() {
                     ? t('contract.tabs.parties')
                     : tab.key === 'redlines'
                       ? t('contract.tabs.redlines')
-                      : tab.label}
+                      : tab.key === 'guests'
+                        ? t('contract.tabs.guests')
+                        : tab.label}
                 {tab.key === 'clauses' && <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold text-gray-500">{clauses.length}</span>}
                 {tab.key === 'comments' && comments.length > 0 && <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold text-gray-500">{comments.length}</span>}
                 {tab.key === 'risks' && risks.length > 0 && (
@@ -1907,6 +1914,9 @@ export default function ContractDetailPage() {
           <ContractPartiesEditor contractId={contract.id} contract={contract} />
         </div>
       )}
+
+      {/* ── Who Has Access Tab (#8c Part 4b) ─────────────────────── */}
+      {activeTab === 'guests' && <WhoHasAccessTab contractId={contract.id} />}
 
       {/* ── Claims Tab ───────────────────────────────────────────── */}
       {activeTab === 'claims' && contract.status === 'ACTIVE' && (
