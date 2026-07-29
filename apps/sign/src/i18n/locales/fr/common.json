@@ -1387,6 +1387,7 @@
       "reuploadTip": "Supprimez ce document et importez une version de meilleure qualité pour de meilleurs résultats.",
       "continueAnyway": "Continuer quand même avec l'extraction partielle",
       "incompleteExtractionTitle": "L'extraction est peut-être incomplète — veuillez vérifier",
+      "needsReviewHeading": "Documents à revoir",
       "rerunExtraction": "Relancer l'extraction",
       "qualityWarning": {
         "blur": "Scan flou détecté (score de netteté : {{score}}). Le texte risque d'être mal lu.",
