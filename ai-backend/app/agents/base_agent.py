@@ -44,6 +44,10 @@ class ModelProvider(str, Enum):
     """
 
     ANTHROPIC = "anthropic"
+    # Clause-extraction cost-optimization option (Steps 1-2). Routes a call to
+    # Qwen3 via OpenRouter (OpenAI-compatible). Reached ONLY when the clause
+    # extractor is wired to it (Step 3) under CLAUSE_EXTRACTION_PROVIDER="qwen".
+    OPENROUTER = "openrouter"
 
 
 class BaseAgent:
@@ -164,6 +168,33 @@ class BaseAgent:
             if scrubber is not None and scrubber.has_pii:
                 self._restore_pii_in_response(response, scrubber)
             return response
+        if provider is ModelProvider.OPENROUTER:
+            # Clause-extraction cost-optimization path (Steps 1-2). Delegates to a
+            # small OpenAI-compatible client that returns an object QUACKING like the
+            # Anthropic RAW response, so ClauseExtractorAgent._call_api_with_retry
+            # (.headers / .parse().content[0].text / .parse().stop_reason) works
+            # UNCHANGED. scrub / cache_system are Anthropic-only concerns; extraction
+            # is unscrubbed by design (D1), so scrub=True is rejected here too.
+            if scrub:
+                raise ValueError(
+                    "scrub not supported on the OpenRouter path — extraction is "
+                    "unscrubbed by design"
+                )
+            from app.services.openrouter_client import call_openrouter
+
+            settings = get_settings()
+            return call_openrouter(
+                system=system,
+                messages=messages,
+                max_tokens=max_tokens,
+                # The extractor sends no temperature (None); OpenRouter runs at 0
+                # for reproducibility, mirroring the bake-off harness.
+                temperature=0 if temperature is None else temperature,
+                api_key=settings.OPENROUTER_API_KEY,
+                base_url=settings.OPENROUTER_BASE_URL,
+                model=settings.OPENROUTER_CLAUSE_MODEL,
+                provider_pin=settings.OPENROUTER_CLAUSE_PROVIDER_PIN,
+            )
         # Seam for the model migration: new providers add a branch above.
         raise NotImplementedError(f"model provider {provider!r} is not yet wired")
 
