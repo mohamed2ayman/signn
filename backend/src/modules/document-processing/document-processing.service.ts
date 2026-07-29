@@ -39,6 +39,7 @@ import {
   mapSeverityToLikelihoodImpact,
 } from '../risk-analysis/utils/severity-mapping';
 import { computeCoverTrim, computePreambleWindow } from './utils/cover-trim.util';
+import { detectTextCorruption } from './utils/text-corruption-detector.util';
 import { resolveParties, type ExtractedParties } from './utils/parties-extract.util';
 // Tenant-isolation Tier 1 — service-level wall on uploadAndProcess +
 // reprocess + finalizeReview. Same `findInOrg` shape as PR #45.
@@ -616,7 +617,14 @@ export class DocumentProcessingService {
       // is OBSERVABILITY only — it must NOT park the doc — so it is merged into
       // the STORED flags but excluded from the parking decision (which stays on
       // `qualityFlags`).
-      const storedFlags = [...qualityFlags, ...trim.flags];
+      // Fix #1 — post-extraction text-corruption detector. Runs on the FINAL
+      // trimmedText, so it covers EVERY route (docx / pdf-text-layer / ocr), not just
+      // the OCR path the Phase-7.25 image-quality gate sees. NON-PARKING: exactly like
+      // trim.flags, the flag is merged into the STORED flags (for the banner) but
+      // EXCLUDED from `qualityFlags`, so it NEVER triggers the HUMAN_REVIEW_RECOMMENDED
+      // parking below — clauses still extract normally (v1 = observability only).
+      const corruptionFlags = detectTextCorruption(trimmedText);
+      const storedFlags = [...qualityFlags, ...trim.flags, ...corruptionFlags];
       doc.quality_flags = storedFlags.length > 0 ? storedFlags : null;
       doc.extracted_text = trimmedText;
 
