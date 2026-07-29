@@ -35,6 +35,32 @@ class Settings(BaseSettings):
     COMPLIANCE_MODEL: str = ""
     OPENAI_API_KEY: str = ""
 
+    # ── OpenRouter clause-extraction provider (cost-optimization, Steps 1-2) ──
+    # Selectable clause-extraction backend. "claude" (default) keeps production
+    # BYTE-UNCHANGED; "qwen" routes clause extraction to Qwen3 via OpenRouter.
+    # The key is a DECLARED field (so pydantic reads it via get_settings() like
+    # ANTHROPIC_API_KEY — an undeclared key is silently ignored) and is NEVER
+    # logged. NOTE: the extractor wiring that READS these is Step 3 — until then
+    # nothing routes to OpenRouter regardless of CLAUSE_EXTRACTION_PROVIDER.
+    OPENROUTER_API_KEY: str = ""
+    OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
+    # "claude" (default) | "qwen". A future "auto" (corruption-routed) value is
+    # anticipated but not implemented here.
+    CLAUSE_EXTRACTION_PROVIDER: str = "claude"
+    OPENROUTER_CLAUSE_MODEL: str = "qwen/qwen3-235b-a22b-2507"
+    # Provider pin: force parasail/fp8 and forbid fallbacks so OpenRouter can NEVER
+    # silently serve a low-precision (int4/fp4) variant. Structured default; not
+    # normally overridden via env (dict fields would require JSON there).
+    OPENROUTER_CLAUSE_PROVIDER_PIN: dict = {
+        "order": ["parasail"],
+        "quantizations": ["fp8"],
+        "allow_fallbacks": False,
+    }
+    # Per-document cost ceiling (USD) for the Qwen path (billed per chunk). A large
+    # chunked contract is ~$0.10; 0.50 leaves generous headroom while capping a
+    # runaway. Enforced by the extractor wiring (Step 4), declared here.
+    OPENROUTER_CLAUSE_MAX_COST_USD: float = 0.50
+
     # Max number of chunk-extraction Anthropic calls issued CONCURRENTLY for a
     # single large document (the chunked clause-extraction path). Default 3 is a
     # safe floor that respects typical account rate limits. NOTE: the rate-limit
