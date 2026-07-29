@@ -1367,7 +1367,8 @@
         "blur": "Scan flou détecté (score de netteté : {{score}}). Le texte risque d'être mal lu.",
         "contrast": "Contraste faible détecté (score de contraste : {{score}}). Le texte peut être pâle ou délavé.",
         "rotation": "Inclinaison de page détectée ({{degrees}}°). Les clauses pourraient être extraites dans le mauvais ordre.",
-        "incompleteExtraction": "{{count}} section(s) trop volumineuse(s) n'ont pas pu être entièrement traitées et certaines clauses peuvent manquer. Veuillez vérifier les clauses extraites et relancer l'extraction si nécessaire."
+        "incompleteExtraction": "{{count}} section(s) trop volumineuse(s) n'ont pas pu être entièrement traitées et certaines clauses peuvent manquer. Veuillez vérifier les clauses extraites et relancer l'extraction si nécessaire.",
+        "textCorruption": "Texte source de faible qualité détecté — certains mots ont pu être reconstruits par l'IA. Vérifiez les clauses par rapport à votre document original, en particulier les chiffres, les dates et les pourcentages."
       }
     }
   },

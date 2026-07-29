@@ -442,6 +442,9 @@ export class RedlineService {
         const newClause = clauseRepo.create({
           organization_id: original.organization_id,
           title: finalTitle,
+          // Fix #3: original_ai_content intentionally left NULL — this is a negotiated
+          // COUNTERPARTY_REDLINE replacement, NOT an OCR extraction from source; the
+          // extraction snapshot lives on the retired parent (original) clause.
           content: finalContent,
           clause_type: original.clause_type,
           version: (original.version ?? 1) + 1,

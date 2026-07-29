@@ -9,6 +9,7 @@ import { CreateClauseDto, UpdateClauseDto } from './dto';
 import { escapeLikeParam } from '../../common/utils/escape-like';
 import { assertClauseMutable } from '../contracts/utils/contract-pin-guard.util';
 import { applyClauseTypeEdit } from '../clause-typing/clause-type-correction.util';
+import { applyClauseContentEdit } from '../clause-typing/clause-content-correction.util';
 
 @Injectable()
 export class ClausesService {
@@ -97,7 +98,9 @@ export class ClausesService {
     await assertClauseMutable(this.clauseRepository.manager, id);
 
     if (dto.title !== undefined) clause.title = dto.title;
-    if (dto.content !== undefined) clause.content = dto.content;
+    // Capture a human content correction (snapshot-once + edit flag; no-op on
+    // unchanged value) — Fix #3 provenance for silently OCR-reconstructed clauses.
+    if (dto.content !== undefined) applyClauseContentEdit(clause, dto.content);
     // Capture a human type correction (snapshot-once + edit flag; no-op on
     // unchanged value) for the future retrain corpus.
     if (dto.clause_type !== undefined) applyClauseTypeEdit(clause, dto.clause_type);

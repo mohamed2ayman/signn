@@ -399,6 +399,10 @@ export class RiskRephraseService {
     if (!content) {
       throw new BadRequestException('content is required');
     }
+    // Fix #3: bare assignment (no content-snapshot) — proposedCC is an AI-rephrased
+    // PROPOSED clause, not the OCR-extracted live clause; the content-provenance seam
+    // tracks live extraction + its review/library edits, not proposal refinements
+    // (mirrors the clause-type seam, which likewise does not track proposed-clause edits).
     proposedCC.clause.content = content;
     if (dto.title != null) proposedCC.clause.title = dto.title;
     await this.clauseRepo.save(proposedCC.clause);

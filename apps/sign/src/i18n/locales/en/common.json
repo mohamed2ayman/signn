@@ -1358,7 +1358,8 @@
         "blur": "Blurry scan detected (sharpness score: {{score}}). Text may be misread.",
         "contrast": "Low contrast detected (contrast score: {{score}}). Text may be faint or washed out.",
         "rotation": "Page skew detected ({{degrees}}°). Clauses may be extracted in the wrong order.",
-        "incompleteExtraction": "{{count}} section(s) were too large to fully process and some clauses may be missing. Please review the extracted clauses and re-run extraction if needed."
+        "incompleteExtraction": "{{count}} section(s) were too large to fully process and some clauses may be missing. Please review the extracted clauses and re-run extraction if needed.",
+        "textCorruption": "Low-quality source text detected — some words may have been AI-reconstructed. Verify clauses against your original, especially numbers, dates and percentages."
       }
     }
   },

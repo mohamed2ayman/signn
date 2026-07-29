@@ -69,6 +69,17 @@ export class Clause {
   @Column({ type: 'varchar', length: 50, nullable: true })
   clause_type_source: string | null;
 
+  // Clause-content provenance (scan-corruption guard — Fix #3). Additive; mirrors
+  // the clause-type seam above applied to CONTENT so a silently OCR-reconstructed
+  // clause (broken text-layer / scanned PDF) is auditable.
+  // original_ai_content: the text the AI first extracted (snapshot-once, never
+  // overwritten). is_content_edited_by_user: true once a human changes the content.
+  @Column({ type: 'text', nullable: true })
+  original_ai_content: string | null;
+
+  @Column({ type: 'boolean', default: false })
+  is_content_edited_by_user: boolean;
+
   @Column({ type: 'int', default: 1 })
   version: number;
 
