@@ -1378,6 +1378,7 @@
       "reuploadTip": "Remove this document and upload a higher-quality scan for best results.",
       "continueAnyway": "Continue anyway with partial extraction",
       "incompleteExtractionTitle": "Extraction may be incomplete — please review",
+      "needsReviewHeading": "Documents needing review",
       "rerunExtraction": "Re-run extraction",
       "qualityWarning": {
         "blur": "Blurry scan detected (sharpness score: {{score}}). Text may be misread.",

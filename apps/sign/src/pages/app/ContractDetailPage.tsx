@@ -13,7 +13,7 @@ import { projectService } from '@/services/api/projectService';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
 import ChatPanel from '@/components/chat/ChatPanel';
 import { useCollaboration } from '@/hooks/useCollaboration';
-import type { Contract, ContractClause, Clause, ContractComment, RiskAnalysis, ContractShare, SignatureSigner, ConflictDetail, ContractVersion, ContractApprover, ProjectMember } from '@/types';
+import type { Contract, ContractClause, Clause, ContractComment, RiskAnalysis, ContractShare, SignatureSigner, ConflictDetail, ContractVersion, ContractApprover, ProjectMember, DocumentUpload } from '@/types';
 import RiskAnalysisTab from '@/components/contracts/RiskAnalysisTab';
 import { clauseDisplayNumber, buildClauseNumberMap } from '@/components/contracts/clauseNumber';
 import { ApproverStatus } from '@/types';
@@ -32,6 +32,7 @@ import WhoHasAccessTab from '@/components/contracts/WhoHasAccessTab';
 import { documentProcessingService } from '@/services/api/documentProcessingService';
 import { useDocumentProcessing } from '@/hooks/useDocumentProcessing';
 import ProcessingStatusCard from '@/components/common/ProcessingStatusCard';
+import DocumentsNeedingReview, { docNeedsReview } from '@/components/contracts/DocumentsNeedingReview';
 import { DocumentProcessingStatus } from '@/types';
 import AIDisclaimer from '@/components/common/AIDisclaimer';
 
@@ -351,6 +352,9 @@ export default function ContractDetailPage() {
   // ── Document processing auto-resume ──────────────────────────────
   const [processingDocIds, setProcessingDocIds] = useState<string[]>([]);
   const [processingChecked, setProcessingChecked] = useState(false);
+  // FINISHED docs that still carry a quality flag (incomplete / corruption) and
+  // must keep their ProcessingStatusCard banner + reprocess button visible.
+  const [flaggedDocs, setFlaggedDocs] = useState<DocumentUpload[]>([]);
 
   const currentUser = useSelector((state: RootState) => state.auth.user);
 
@@ -376,24 +380,40 @@ export default function ContractDetailPage() {
     if (id) loadContract();
   }, [id]);
 
-  // Check on mount whether any documents are still being processed
-  useEffect(() => {
+  // Fetch the contract's documents and split them into (a) the in-progress set
+  // the poller tracks and (b) FINISHED docs that still carry a quality flag and
+  // need review (incomplete / corruption — see docNeedsReview). Reused on mount,
+  // when processing completes, and after a reprocess — NOT a continuous poll.
+  const refreshDocStatus = useCallback(async () => {
     if (!id) return;
     const terminalStatuses: DocumentProcessingStatus[] = [
       DocumentProcessingStatus.CLAUSES_EXTRACTED,
       DocumentProcessingStatus.FAILED,
     ];
-    documentProcessingService
-      .getDocuments(id)
-      .then((docs) => {
-        const inProgress = docs
-          .filter((d) => !terminalStatuses.includes(d.processing_status as DocumentProcessingStatus))
-          .map((d) => d.id);
-        setProcessingDocIds(inProgress);
-      })
-      .catch(() => {})
-      .finally(() => setProcessingChecked(true));
+    try {
+      const docs = await documentProcessingService.getDocuments(id);
+      setProcessingDocIds(
+        docs
+          .filter(
+            (d) =>
+              !terminalStatuses.includes(
+                d.processing_status as DocumentProcessingStatus,
+              ),
+          )
+          .map((d) => d.id),
+      );
+      setFlaggedDocs(docs.filter(docNeedsReview));
+    } catch {
+      // best-effort — leave prior state untouched
+    } finally {
+      setProcessingChecked(true);
+    }
   }, [id]);
+
+  // Check on mount whether any documents are still processing / need review.
+  useEffect(() => {
+    refreshDocStatus();
+  }, [refreshDocStatus]);
 
   const loadContract = async () => {
     if (!id) return;
@@ -467,8 +487,28 @@ export default function ContractDetailPage() {
     if (processingAllDone && processingChecked && processingDocIds.length > 0) {
       reloadClauses();
       reloadRisks();
+      // A doc that JUST finished may carry a quality flag — recompute the
+      // needs-review set so its banner + reprocess button appear on the
+      // finished contract (not only the transient in-progress card).
+      refreshDocStatus();
     }
   }, [processingAllDone]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Reprocess a FINISHED-but-flagged document — mirrors the upload wizard's
+  // handleRetryDocument (same reprocess endpoint + org guard). Optimistically
+  // moves the doc out of the review panel and into the in-progress poll set so
+  // the "Analyzing…" panel takes over and drives it back to done.
+  const handleReprocessDocument = useCallback(
+    async (docId: string) => {
+      if (!id) return;
+      await documentProcessingService.reprocess(id, docId);
+      setFlaggedDocs((prev) => prev.filter((d) => d.id !== docId));
+      setProcessingDocIds((prev) =>
+        prev.includes(docId) ? prev : [...prev, docId],
+      );
+    },
+    [id],
+  );
 
   const handleRealtimeStatusChange = useCallback(
     (_payload: { oldStatus: string; newStatus: string }) => {
@@ -1442,6 +1482,17 @@ export default function ContractDetailPage() {
           </div>
         </div>
       )}
+
+      {/* Needs-review panel — FINISHED documents that carry a quality flag
+          (incomplete extraction / text corruption). A parallel mount to the
+          transient "Analyzing Documents…" panel above (which only shows
+          in-progress docs), so ProcessingStatusCard's banners + reprocess button
+          stay reachable on a completed contract. Self-gating: renders nothing
+          when no document needs review. */}
+      <DocumentsNeedingReview
+        documents={flaggedDocs}
+        onReprocess={handleReprocessDocument}
+      />
 
       {/* Host-v1 (Slice 1) — guest-submitted new versions + their proposed
           clauses. Self-contained: renders nothing unless a bound guest has
