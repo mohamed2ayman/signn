@@ -87,6 +87,10 @@ function parseQualityFlag(
       return t('document.processing.qualityWarning.incompleteExtraction', {
         count: num !== null ? Math.round(num) : '?',
       });
+    case 'text_corruption_suspected':
+      // Fix #1/#2 — Arabic text-corruption flag ('text_corruption_suspected:<score>').
+      // Copy is score-independent; the split above keeps the score from breaking the lookup.
+      return t('document.processing.qualityWarning.textCorruption');
     default:
       return flag;
   }
@@ -129,6 +133,15 @@ export default function ProcessingStatusCard({
     f.startsWith('clause_extraction_incomplete'),
   );
   const showIncompleteBanner = !!incompleteFlag && !isHumanReview;
+
+  // (Fix #1/#2) NON-PARKING Arabic text-corruption flag. Like the incomplete flag it
+  // rides a completed extraction (CLAUSES_EXTRACTED, no parking) — surface an advisory
+  // so silently OCR-reconstructed text is never trusted blindly. Suppressed on the
+  // HUMAN_REVIEW banner (parked docs already show their own quality warning).
+  const corruptionFlag = document.quality_flags?.find((f) =>
+    f.startsWith('text_corruption_suspected'),
+  );
+  const showCorruptionBanner = !!corruptionFlag && !isHumanReview;
 
   // Compute which stage dot to highlight for HUMAN_REVIEW_RECOMMENDED.
   // It branches off during EXTRACTING_TEXT, so we show the second dot as current.
@@ -332,6 +345,19 @@ export default function ProcessingStatusCard({
               {t('document.processing.rerunExtraction')}
             </button>
           )}
+        </div>
+      )}
+
+      {/* Text-corruption advisory (Fix #1/#2) — an Arabic-dominant document whose
+          extracted text carried a high density of Latin-run garbage (silently
+          OCR-reconstructed / broken text-layer). NON-PARKING: clauses still extracted,
+          but the words may be reconstructed, so advise verifying against the original.
+          No re-run button — re-extracting the same corrupt source won't fix it. */}
+      {showCorruptionBanner && (
+        <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+          <p className="text-xs text-amber-800" dir="auto">
+            {parseQualityFlag(corruptionFlag as string, t)}
+          </p>
         </div>
       )}
 
