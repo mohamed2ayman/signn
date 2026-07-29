@@ -15,7 +15,7 @@ from typing import Any
 
 from anthropic import APIConnectionError, APIStatusError
 
-from app.agents.base_agent import BaseAgent
+from app.agents.base_agent import BaseAgent, ModelProvider
 from app.config.settings import get_settings
 from app.utils.json_salvage import salvage_json_array
 
@@ -367,6 +367,16 @@ class ClauseExtractorAgent(BaseAgent):
         settings = get_settings()
         # Max concurrent chunk calls for one document (parallel chunked path).
         self._concurrency = max(1, int(settings.CLAUSE_EXTRACT_CONCURRENCY or 1))
+        # Clause-extraction provider (cost-optimization flag). "qwen" routes the
+        # model call to OpenRouter; anything else (default "claude") stays on
+        # Anthropic. Read once here (get_settings() is cached; guard-safe — no
+        # model literal). Selection covers BOTH the single-call and chunked paths
+        # because both route through _call_api_with_retry.
+        self._clause_provider = (
+            ModelProvider.OPENROUTER
+            if settings.CLAUSE_EXTRACTION_PROVIDER == "qwen"
+            else ModelProvider.ANTHROPIC
+        )
         # Quality flags produced by the LAST extract() call (dedup-dropped /
         # combined-conditions). Read by the Celery task into the result so the
         # signals are visible downstream. Reset at the start of every extract().
@@ -1097,6 +1107,7 @@ class ClauseExtractorAgent(BaseAgent):
                 gate.wait_if_needed()
             try:
                 raw_response = self._call_model(
+                    provider=self._clause_provider,
                     max_tokens=max_tokens,
                     system=SYSTEM_PROMPT,
                     messages=[{"role": "user", "content": user_content}],
