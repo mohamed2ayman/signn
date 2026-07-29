@@ -1225,7 +1225,7 @@ swap) before adoption.
 | 3 | **Haiku for risk + compliance** — A/B vs Sonnet on the Arabic gold. **REJECTED** — Haiku under-rates severity (Arabic verified-High recall **57% vs Sonnet 91%**; English 75% vs 93%); Sonnet retained. Reusable model-comparison harness now at `ai-backend/tests/accuracy/model_compare/` (per-agent `RISK_ANALYSIS_MODEL` / `COMPLIANCE_MODEL` overrides → default Sonnet, production unchanged). | ✅ done (PR #180) |
 | 4 | **Chat router** — cheap model (Haiku) + prompt-cache the conversation/context prefix (the deferred Step-4 caching work on `conversational_agent`) | ⏳ pending |
 | 2 | **Clause-type classification** — benchmarked self-hosted + Haiku vs Claude on 214 human labels. **Decision: KEEP CLAUDE** (typing is FREE, inline in extraction). Correction-logging + provider seam shipped. See the "Step 2 — DONE" block below. | ✅ done (PR #193) |
-| 5 | **Extraction bake-off** — self-hosted OSS extractors (Qwen3 / Llama 4) vs Claude on the Arabic accuracy suite (reuse the Step-3 `model_compare/` harness — `run_stage("extraction", …)`) | ⏳ pending |
+| 5 | **Extraction bake-off** — Qwen3 / Llama 4 vs Claude on Arabic extraction | ✅ done — **Qwen/Llama REJECTED** (Qwen mis-handles clause hierarchy + inconsistent; Llama 3/15 on clean input). Claude stays. Provider flag merged dormant (PR #199) for future tests. |
 | 6 | **AWS + Bedrock** — host the winning OSS models in-VPC (data-locality per the 8.1 self-hosting rationale) | ⏳ pending |
 
 See lesson #268 (caching is billing-only) + the migration rule in 8.1.
@@ -1236,6 +1236,8 @@ See lesson #268 (caching is billing-only) + the migration rule in 8.1.
 - **`clause_type` confirmed NOT load-bearing downstream** — a safe display label; no stage gate / silent-skip keys off it (the real gates are `review_status` / `is_proposed` / `is_active`). Source: `docs/clause-type-downstream-consumers-investigation.md`.
 - **SHIPPED (PR #193): correction logging + provider seam.** `clauses.original_ai_clause_type` + `is_type_edited_by_user` + `clause_type_source` (mirrors the risk-annotation `is_edited_by_user` / `original_risk_category` pattern) now capture the **AI-label + human-correction pair** on every clause-type edit — the prerequisite for any future retrain (you must capture the correction signal FIRST; lesson #294). `ClauseTypeProvider` (`CLAUSE_TYPE_PROVIDER=inline` default = today's inline behavior, **production byte-unchanged**) is the swap-by-flag seam. Additive migration `1772000000001`. **Deferred:** the dedicated Haiku/self-hosted typer + backfill of the ~540 pre-existing clauses.
 - **Backlog:** revisit free/cheaper clause-typing once the logged correction dataset is large enough to train + evaluate properly (~3-month horizon) — CAMeL-BERT/ContractBERT re-benchmark or a Haiku dedicated call, decided on real data volume, not today's ~404-clause set.
+
+**Step 5 — DONE (Claude stays for extraction).** Bake-off + live app testing. On clean docx Qwen3 (parasail/fp8) tied Claude (Project8 15/15, stable across 2 runs, ~30× cheaper), but live uploads exposed the disqualifier: Qwen promotes sub-clauses to clauses (53 vs ~38 on a General Conditions doc, silently — clean JSON, no flag) and is inconsistent (2 of ~17 on another). The earlier "garbled Arabic" traced to corrupted *source* on the one scanned PDF (Project10), not the models — see lessons #295/#296. Scan-corruption guard shipped (PR #198). Qwen provider merged dormant behind `CLAUSE_EXTRACTION_PROVIDER` (PR #199); flip + set `OPENROUTER_API_KEY` to re-test any OpenRouter model. Total spend across Step 5 < $0.20.
 
 **Backlog / follow-ups (surfaced by Step 3):**
 - **Compliance-agent truncation — assigned to Youssef.** `compliance_checker.check()` hardcodes
@@ -1251,6 +1253,8 @@ See lesson #268 (caching is billing-only) + the migration rule in 8.1.
   each (the poller now REPLACEs non-human, non-merged AI rows) to collapse the stacks. This did NOT
   affect the Step-3 benchmark — that scored the clean EXPORTED gold + live generation, verified (lesson
   #273) — but the live DB rows remain dirty for any production / UI consumer.
+- **Scan-corruption guard follow-ups (from Step 5):** (1) tune the corruption detector threshold/allowlist on real reviewer data (Project14 annexes may false-fire, benign/non-parking); (2) extend content-provenance to promotion/redline paths (currently null there by design); (3) quality gate still can't catch a corrupt PDF *text layer* — it only OCRs empty-text PDFs and checks image blur, never whether extracted words are real (AWS Textract in production will reduce but not close this).
+- **🔴 SECURITY — rotate the GitHub PAT** embedded in the `origin` remote URL (exposed in a working session). Revoke in GitHub → Developer settings → Personal access tokens, issue a new one, move it out of the URL (SSH or credential helper). Also confirm the earlier OpenRouter-key rotation is done.
 
 ---
 

@@ -313,6 +313,8 @@ justify the recall drop on these safety-critical stages (Step 3, PR #180). The r
 model-comparison harness lives at `ai-backend/tests/accuracy/model_compare/` (`run_stage(stage, model,
 payload)` over risk/compliance/extraction; reusable for the Step 5 extraction bake-off). See lesson #272.
 
+**`CLAUSE_EXTRACTION_PROVIDER` (default `claude`).** Selects the clause-extraction provider at the `_call_model` chokepoint: `claude` (default) routes to Anthropic, byte-unchanged; `qwen` routes to Qwen3 via OpenRouter (`parasail`/`fp8` pinned, `allow_fallbacks=false`), reusing the same SYSTEM_PROMPT, chunking, `_parse_json`, merge/stitch, and quality-flag pipeline — only the model call differs. Dormant unless the flag is `qwen` AND `OPENROUTER_API_KEY` is set (declared in Settings). Includes bounded retry (3 attempts, hard stop) on transient 429/5xx and a per-document cost ceiling (`OPENROUTER_CLAUSE_MAX_COST_USD`, default $0.50); the OpenRouter `finish_reason="length"` → `stop_reason="max_tokens"` adapter preserves the existing truncation salvage + `clause_extraction_incomplete` guard. Merged (PR #199) as a ready path for future model tests (Step 6). NOT for production: live testing showed Qwen mis-handles clause hierarchy (promoted sub-clauses; 53 vs ~38 on a General Conditions doc) and was inconsistent (2 of ~17 on another). Claude remains the extraction provider.
+
 **Prompt caching is OPT-IN** (Anthropic ephemeral cache; PR #175). The single `_call_model`
 chokepoint in `ai-backend/app/agents/base_agent.py` takes a `cache_system` flag; when set it wraps
 the (POST-scrub) system prompt in a `cache_control` block so repeated calls with the same large
@@ -3607,6 +3609,13 @@ with per-flag explanations and a "Continue anyway" bypass.
 4. **OSD failures are silent** — `pytesseract.image_to_osd()` is wrapped in `try/except`; if the OSD language pack is absent or the page has no text, rotation check is skipped, never blocking extraction.
 5. **Partial text is preserved** — when quality flags fire, `extracted_text` is still saved to DB. `HUMAN_REVIEW_RECOMMENDED` only skips clause extraction, not text storage.
 6. **TypeORM enum type names use `_enum` suffix** — any `ALTER TYPE` migration on a TypeORM-managed enum must target `<snake_case_column_name>_enum`, not the TypeScript enum name. See lesson #143.
+
+### Scan-corruption guard (shipped, PR #198)
+Extends the Phase-7.25 quality plumbing to catch corrupted *text*, not just poor *images*. Three additive pieces, all dormant on clean docs:
+- **Content provenance** — `clauses.original_ai_content` (snapshot-once) + `is_content_edited_by_user`, mirroring the clause-type seam (#294). Records the raw AI-extracted clause text so "verbatim vs AI-reconstructed vs human-corrected" is answerable per clause. Migration 1773000000002; byte-unchanged behaviour.
+- **Corruption detector** — post-extraction `detectTextCorruption()` raises a NON-PARKING `text_corruption_suspected:<score>` quality_flag when Arabic-classified text carries heavy Latin-run density (fires ~61/10k on the Project10 scanned PDF; silent on clean docx). Reuses `quality_flags`; inert on existing docs.
+- **Banner** — a `text_corruption_suspected` variant on the existing ProcessingStatusCard (EN/AR/FR), shown only when flagged. No re-run button (re-extracting corrupt source won't fix it).
+The three quality-flag families now: scan-quality (image) → park (HUMAN_REVIEW_RECOMMENDED); truncation (`clause_extraction_incomplete`, PR #177) → banner; text-corruption (`text_corruption_suspected`) → banner. Known follow-up: the detector threshold (25/10k) + legit-English allowlist are corpus-calibrated; some Project14 technical annexes with heavy legit English may fire a benign banner — tune on real reviewer data.
 
 ---
 
