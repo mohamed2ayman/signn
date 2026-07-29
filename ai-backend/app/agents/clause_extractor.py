@@ -17,6 +17,7 @@ from anthropic import APIConnectionError, APIStatusError
 
 from app.agents.base_agent import BaseAgent, ModelProvider
 from app.config.settings import get_settings
+from app.services.openrouter_client import CostBudget
 from app.utils.json_salvage import salvage_json_array
 
 logger = logging.getLogger(__name__)
@@ -221,6 +222,10 @@ class _ApiResult:
 
     text: str
     truncated: bool
+    # Cumulative USD cost of the model call(s) behind this result (OpenRouter path;
+    # 0.0 on the Anthropic path, which does not meter cost here). Accumulated into
+    # the per-document CostBudget by _call_api_with_retry.
+    cost: float = 0.0
 
 
 def _group_by_boundaries(
@@ -387,6 +392,10 @@ class ClauseExtractorAgent(BaseAgent):
         # to raise the `clause_extraction_incomplete` flag. Reset per extract().
         self._truncated_chunks = 0
         self._truncation_lock = threading.Lock()
+        # Per-document OpenRouter cost budget — created fresh in extract() on the
+        # OpenRouter path (None on the Anthropic path → zero overhead). Declared
+        # here so _call_api_with_retry can read it defensively.
+        self._cost_budget: CostBudget | None = None
 
     def _note_truncation(self) -> None:
         """Thread-safe increment of the incomplete-chunk counter (FIX C).
@@ -439,12 +448,26 @@ class ClauseExtractorAgent(BaseAgent):
         """
         self.last_quality_flags = []
         self._truncated_chunks = 0
+        # Per-document OpenRouter cost budget (None on the Anthropic path → the cost
+        # gate/accumulation in _call_api_with_retry is a no-op → byte-unchanged).
+        self._cost_budget = (
+            CostBudget(get_settings().OPENROUTER_CLAUSE_MAX_COST_USD)
+            if self._clause_provider is ModelProvider.OPENROUTER
+            else None
+        )
         if len(full_text) <= 30_000:
             clauses = self._extract_single(full_text, contract_type, document_label)
         else:
             # _extract_chunked appends a dedup-dropped flag when the content-aware
             # merge removes duplicates.
             clauses = self._extract_chunked(full_text, contract_type, document_label)
+
+        # Cost ceiling (OpenRouter path only): a document whose cumulative spend blew
+        # the cap FAILS LOUDLY here rather than returning over-billed clauses. The
+        # per-chunk gate in _call_api_with_retry already stopped further dispatch, so
+        # the overrun is bounded to the in-flight concurrency.
+        if self._cost_budget is not None:
+            self._cost_budget.raise_if_exceeded()
 
         # (A) Stitch adjacent partials of ONE clause that was cut across a chunk
         # boundary (overshoot split OR a genuinely-huge single بند). Strict guards
@@ -1102,6 +1125,14 @@ class ClauseExtractorAgent(BaseAgent):
         max_tokens = self._calculate_max_tokens(len(user_content))
         logger.debug("API call: %d chars input → max_tokens=%d", len(user_content), max_tokens)
 
+        # Cost gate (OpenRouter path; None → no-op on Anthropic). A parallel peer
+        # may already have blown the per-document cap — skip this call rather than
+        # bill (keeps the overrun bounded to the in-flight concurrency).
+        budget = getattr(self, "_cost_budget", None)
+        if budget is not None:
+            budget.raise_if_exceeded()
+        cost_sum = 0.0
+
         for attempt in range(1, max_attempts + 1):
             if gate is not None:
                 gate.wait_if_needed()
@@ -1117,6 +1148,8 @@ class ClauseExtractorAgent(BaseAgent):
                     # seconds apart) — cache it so chunks 2..N read at 0.1x.
                     cache_system=True,
                 )
+                if budget is not None:
+                    cost_sum += float(getattr(raw_response, "usage_cost", 0.0) or 0.0)
                 # Feed the live rate-limit headers to the gate BEFORE parsing so
                 # peers see a low-window signal as early as possible.
                 if gate is not None:
@@ -1141,8 +1174,12 @@ class ClauseExtractorAgent(BaseAgent):
                         "flagging the document for review.",
                         max_tokens, attempt,
                     )
-                    return _ApiResult(text=text, truncated=True)
-                return _ApiResult(text=text, truncated=False)  # clean success
+                    if budget is not None:
+                        budget.add(cost_sum)
+                    return _ApiResult(text=text, truncated=True, cost=cost_sum)
+                if budget is not None:
+                    budget.add(cost_sum)
+                return _ApiResult(text=text, truncated=False, cost=cost_sum)  # clean success
             except APIStatusError as exc:
                 # 529 = overloaded, 500/502/503/504 = transient server errors
                 if exc.status_code in (429, 500, 502, 503, 504, 529):
