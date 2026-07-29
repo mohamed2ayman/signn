@@ -189,6 +189,10 @@ export class GuestImportService {
             clauseRepo.create({
               organization_id: importerOrgId,
               title: src.title,
+              // Fix #3: original_ai_content intentionally left NULL — an import is a
+              // fresh, independent copy (#8d: fresh DRAFT/v1, drops risk/comments/pin),
+              // so content provenance resets in the importer's org (they run their own
+              // extraction/review); the source's snapshot stays in the source org.
               content: src.content,
               clause_type: src.clause_type,
               version: 1,

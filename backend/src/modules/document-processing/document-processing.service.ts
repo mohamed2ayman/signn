@@ -12,6 +12,7 @@ import {
 } from '../clause-typing/interfaces/clause-type-provider.interface';
 import { InlineExtractionProvider } from '../clause-typing/providers/inline-extraction.provider';
 import { applyClauseTypeEdit } from '../clause-typing/clause-type-correction.util';
+import { applyClauseContentEdit } from '../clause-typing/clause-content-correction.util';
 import { EntityManager, ILike, In, IsNull, Repository } from 'typeorm';
 import { randomUUID } from 'crypto';
 import {
@@ -1033,6 +1034,10 @@ export class DocumentProcessingService {
         original_ai_clause_type: ec.clause_type,
         clause_type_source: typed[i].source,
         is_type_edited_by_user: false,
+        // original_ai_content snapshots the AI's raw extracted text (Fix #3) so a
+        // later human correction — or a silent OCR reconstruction — is auditable.
+        original_ai_content: ec.content,
+        is_content_edited_by_user: false,
         version: 1,
         is_active: true,
         source: ClauseSource.AI_EXTRACTED,
@@ -1351,7 +1356,9 @@ export class DocumentProcessingService {
     clause.reviewed_at = new Date();
 
     if (data.title !== undefined) clause.title = data.title;
-    if (data.content !== undefined) clause.content = data.content;
+    // Snapshot-once + edit flag (Fix #3) — this review flow is a primary place a
+    // human changes clause content (correcting an OCR-reconstructed clause).
+    if (data.content !== undefined) applyClauseContentEdit(clause, data.content);
     // Capture a reviewer's type correction (snapshot-once + edit flag) — this
     // review flow is a primary place a human changes the type.
     if (data.clause_type !== undefined) applyClauseTypeEdit(clause, data.clause_type);

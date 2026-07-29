@@ -1070,6 +1070,11 @@ export class ContractsService {
               ? ClauseReviewStatus.EDITED
               : ClauseReviewStatus.APPROVED;
           if (d.action === 'edit') {
+            // Fix #3: propClause already carries its own original_ai_content snapshot
+            // (set at guest extraction via writeClausesInTx). A merge-edit here is a
+            // promotion-path change signaled by review_status=EDITED (set above), so the
+            // content-provenance flag is deliberately NOT re-set — mirroring the
+            // clause-type seam, which also does not re-snapshot on proposed-version promotion.
             if (d.edited_title != null) propClause.title = d.edited_title;
             propClause.content = d.edited_content as string;
           }
