@@ -6,12 +6,13 @@ import { AccountType, User } from '../../../database/entities';
 import {
   ContractAccessService,
   GuestBindingRevocation,
+  HostGuestBindingRow,
 } from '../../contracts/services/contract-access.service';
 import { AuthService } from '../../auth/auth.service';
 
 /**
- * Guest Portal #8c Part 4a — HOST-side control over a shared contract's guest
- * bindings.
+ * Guest Portal #8c Part 4a/4b — HOST-side control over a shared contract's
+ * guest bindings (4a: revoke; 4b: list "who has access").
  *
  * This is a HOST surface, NOT a guest surface. The distinction is the whole
  * security posture of the file:
@@ -86,6 +87,35 @@ export class GuestAccessService {
     }
 
     return result;
+  }
+
+  /**
+   * #8c Part 4b — list one contract's guest bindings ("who has access to my
+   * contract"). The read half of `revoke` above: each row carries the
+   * `user_id` the revoke DTO takes, plus identity / provenance / revoked
+   * state for the UI.
+   *
+   * Authorization is EXACTLY revoke's, steps 1–2 (no-org 404, then the
+   * findInOrg org wall) — this is a HOST read via the org wall, NEVER the
+   * guest-surface binding path. Returns BOTH live and revoked bindings
+   * (revoked_at populated) — see listBindingsForContract's doc for why the
+   * historical rows are the host's to see. A contract with no guests is
+   * simply `[]` with 200 (the wall already resolved the contract, so there
+   * is no denied resource to hide).
+   */
+  async listGuests(
+    contractId: string,
+    actor: { id: string; organization_id: string | null },
+  ): Promise<HostGuestBindingRow[]> {
+    if (!actor.organization_id) {
+      throw new NotFoundException('Contract not found');
+    }
+
+    // ORG WALL — the ONLY authorization in this path. Throws the uniform 404
+    // for a contract outside the actor's org.
+    await this.contractAccess.findInOrg(contractId, actor.organization_id);
+
+    return this.contractAccess.listBindingsForContract(contractId);
   }
 
   /**

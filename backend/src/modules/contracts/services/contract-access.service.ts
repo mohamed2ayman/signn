@@ -52,7 +52,7 @@ import {
  *     Only the last of those takes a row lock; it is the TOCTOU guard run
  *     inside the pin's transaction (see its own doc).
  *   • HISTORICAL reads deliberately do NOT filter it, because the row is the
- *     durable record that the share once existed. There are exactly two:
+ *     durable record that the share once existed. There are exactly three:
  *       (1) the idempotency probe inside revokeGuestBinding below;
  *       (2) GuestInvitationService.establishIdentity's binding-existence
  *           probe (guest-invitation.service.ts). That one MUST stay
@@ -63,6 +63,15 @@ import {
  *           Leaving it inclusive is ALSO the correct authorization outcome:
  *           the probe finds the revoked row, skips re-granting, and the
  *           binding stays revoked — revoke wins over a re-establish.
+ *       (3) #8c Part 4b — listBindingsForContract below, the HOST's
+ *           "who has access to my contract" read. It is not an authorization
+ *           read: it grants nobody anything, and it runs only AFTER the
+ *           caller proved host authority over the contract via findInOrg.
+ *           It DESCRIBES bindings to the party that created them rather than
+ *           using one to admit a caller, so the revoked rows are history the
+ *           host is entitled to (who was revoked, when, by whom) — not an
+ *           existence oracle, which is a risk only for a caller who has NOT
+ *           already proven they own the contract.
  *
  * Adding a new binding read? It is an authorization read unless you can
  * state why it is not — filter `revoked_at IS NULL`.
@@ -131,6 +140,41 @@ export interface GuestBindingRevocation {
   revoked_by: string | null;
   /** true when this call was a no-op because the binding was already revoked. */
   already_revoked: boolean;
+}
+
+/**
+ * #8c Part 4b — one row of the HOST's "who has access to this contract" list
+ * (GET /guest-access/:contractId/guests). The inverse of GuestBindingListRow:
+ * there the GUEST reads which contracts were shared with them; here the HOST
+ * reads which guests hold bindings on their own contract.
+ *
+ * EXPLICIT SAFE PROJECTION — never the entity. What is exposed and why:
+ *   • user_id            — REQUIRED: it is the revoke DTO's only input
+ *                          (RevokeGuestAccessDto.user_id), so the list is what
+ *                          arms the revoke button.
+ *   • guest_email/name   — identity, so the host knows WHO each row is. The
+ *                          host invited this person; their email is not a
+ *                          secret from the inviter. account_type distinguishes
+ *                          a pure GUEST from a MANAGING-as-guest (revoke's
+ *                          session-teardown semantics differ — see
+ *                          GuestAccessService.tearDownGuestSessions).
+ *   • granted_at/by      — provenance ("invited by"), composed like
+ *                          GuestBindingListRow's shared_by_user: a display
+ *                          name or null, NEVER a bare UUID (lesson #260).
+ *   • revoked_at/by      — the active-vs-revoked state the UI renders.
+ * NOT exposed: the binding row's own id (the pair (contract_id, user_id)
+ * addresses it — the revoke endpoint takes exactly that), the guest's
+ * password/mfa/org fields, and the granter/revoker UUIDs (names only).
+ */
+export interface HostGuestBindingRow {
+  user_id: string;
+  guest_email: string;
+  guest_name: string | null;
+  guest_account_type: string;
+  granted_at: Date;
+  granted_by_name: string | null;
+  revoked_at: Date | null;
+  revoked_by_name: string | null;
 }
 
 @Injectable()
@@ -461,6 +505,79 @@ export class ContractAccessService {
       revoked_by: existing.revoked_by,
       already_revoked: true,
     };
+  }
+
+  /**
+   * #8c Part 4b — list a contract's guest bindings for the HOST ("who has
+   * access to my contract"). The read half of the 4a revoke: each row carries
+   * the user_id the revoke DTO needs plus the identity/provenance/state the
+   * UI renders.
+   *
+   * PURE DATA OPERATION — like revokeGuestBinding directly above, it performs
+   * NO authorization. The caller MUST have already proven host authority over
+   * `contractId` via findInOrg (GuestAccessService does). It lives here so
+   * every `guest_contract_access` statement in the backend stays in ONE file.
+   *
+   * DELIBERATELY REVOCATION-INCLUSIVE — historical read (3) in the class doc.
+   * Revoked rows are returned WITH their revoked_at/revoked_by_name so the
+   * host sees "revoked" state instead of rows silently vanishing (the row is
+   * retained on disk precisely as this historical record — see the entity
+   * doc). The existence-oracle concern behind the uniform-404 rule does not
+   * apply: this runs only AFTER the org wall proved the caller owns the
+   * contract, and it grants nothing to anyone.
+   *
+   * Ordering: live bindings first (newest-granted first), then revoked
+   * (newest-revoked first) — the actionable rows lead.
+   */
+  async listBindingsForContract(
+    contractId: string,
+  ): Promise<HostGuestBindingRow[]> {
+    const rows = await this.guestAccessRepository
+      .createQueryBuilder('gca')
+      .innerJoin('gca.user', 'guest')
+      .leftJoin('gca.granter', 'granter')
+      .leftJoin('gca.revoker', 'revoker')
+      .where('gca.contract_id = :contractId', { contractId })
+      .select([
+        'gca.user_id AS user_id',
+        'guest.email AS guest_email',
+        'guest.first_name AS guest_first_name',
+        'guest.last_name AS guest_last_name',
+        'guest.account_type AS guest_account_type',
+        'gca.granted_at AS granted_at',
+        'granter.first_name AS granter_first_name',
+        'granter.last_name AS granter_last_name',
+        'gca.revoked_at AS revoked_at',
+        'revoker.first_name AS revoker_first_name',
+        'revoker.last_name AS revoker_last_name',
+      ])
+      // NULLS FIRST puts live rows (revoked_at IS NULL) before revoked ones;
+      // within the revoked group DESC = newest-revoked first.
+      .orderBy('gca.revoked_at', 'DESC', 'NULLS FIRST')
+      .addOrderBy('gca.granted_at', 'DESC')
+      .getRawMany();
+
+    return rows.map((r): HostGuestBindingRow => {
+      const guestName = [r.guest_first_name, r.guest_last_name]
+        .filter(Boolean)
+        .join(' ');
+      const granterName = [r.granter_first_name, r.granter_last_name]
+        .filter(Boolean)
+        .join(' ');
+      const revokerName = [r.revoker_first_name, r.revoker_last_name]
+        .filter(Boolean)
+        .join(' ');
+      return {
+        user_id: r.user_id,
+        guest_email: r.guest_email,
+        guest_name: this.labelOrNull(guestName),
+        guest_account_type: r.guest_account_type,
+        granted_at: r.granted_at,
+        granted_by_name: this.labelOrNull(granterName),
+        revoked_at: r.revoked_at ?? null,
+        revoked_by_name: this.labelOrNull(revokerName),
+      };
+    });
   }
 
   /** Empty/whitespace labels become null — never emit a blank-looking label. */
