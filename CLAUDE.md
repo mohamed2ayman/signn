@@ -6195,3 +6195,102 @@ atomically WITH its own hardened gate), and the counterparty-side
 accept-of-a-counter signal path. Also NOT built: French notification copy,
 per-user notification preferences / unsubscribe for redline events, and
 deep-linkable contract tabs.
+
+---
+
+## 7.22 — Contract Playbook & Standard Positions, Slice 1 (data layer; built + verified, NOT merged)
+
+Slice 1 of the 7.22 Playbook: the DATA LAYER only. An org's standard positions
+("payment terms 28-45 days", "retention max 10%") are stored and CRUD-able;
+NOTHING consumes them yet — no compliance, AI, or frontend wiring exists by
+design. Branch `feat/7.22-playbook-slice1-data` off `39696ff`.
+
+### The module
+`backend/src/modules/playbook/` — `playbook.module.ts` · `playbook.controller.ts`
+(`/playbook/positions`, REST CRUD) · `playbook.service.ts` · `dto/` (create /
+update / `value-config.validator.ts` / barrel) · `tests/`. Entity
+`backend/src/database/entities/playbook-position.entity.ts`; migration
+`1775000000001-CreatePlaybookPositions.ts`.
+
+### ORG-SCOPED, not contract-scoped
+`playbook_positions.organization_id` is carried DIRECTLY and is the tenancy root
+of every read and write, so this sits OUTSIDE the Option B contract chokepoint —
+the same class as `ErpConnection`. The wall is `loadOwned(orgId, id)` →
+`findOne({ id, organization_id: orgId })` → **404, never 403** (no existence
+leak), mirroring `ErpConnectionService`. `project_id` / `contract_id` are
+NARROWING columns only — they scope a position DOWN inside an org that already
+owns the row, and are never consulted to establish tenancy. `lint:contract-repo`
+is clean with **zero exemptions**, which is the check that confirms the
+classification. See lesson #297.
+
+### OWNER_ADMIN only
+`@Roles(UserRole.OWNER_ADMIN)` per NEXT_PHASES 7.22 ("org-level, OWNER_ADMIN
+only"), which is also the ERP-connections precedent. `RolesGuard` is EXACT-match
+membership, not a hierarchy — SYSTEM_ADMIN is excluded.
+
+### The typed value_config
+A position is a `rule_type` + `value_config` jsonb PAIR — the jsonb is
+uninterpretable without the discriminator. Shapes:
+
+| rule_type | value_config |
+|---|---|
+| `RANGE` | `{ min: number, max: number, unit: string }` |
+| `THRESHOLD` | `{ direction: 'AT_MOST'\|'AT_LEAST', value: number, unit: string }` |
+| `ENUM` | `{ allowed: string[] }` |
+| `REQUIRED` | `{ required: true }` |
+| `TEXT` | `{ text: string }` |
+
+`dto/value-config.validator.ts` is the SINGLE authority, used from both sides:
+the class-validator constraint on CREATE (both halves always present) and
+`validateValueConfig()` called directly from the service on the MERGED pair on
+UPDATE. Unknown keys are REJECTED (jsonb would otherwise silently keep a typo'd
+`{ minimum: 28 }` forever) and string/array bounds are enforced there, because a
+jsonb blob bypasses the `@MaxLength` floor every free-text field must carry.
+
+### varchar + CHECK, never PG enums
+`scope` (`ORG`/`PROJECT`/`CONTRACT`) and `rule_type` are varchar constrained by
+`playbook_positions_scope_check` / `_rule_type_check` — the RedlineStatus /
+`relationship_type` / `role_code` soft-code convention. Widening either is a code
+change plus a one-line CHECK swap, **never an `ALTER TYPE`** (ARCHITECTURE RULE
+10). A third constraint, `playbook_positions_scope_coherence_check`, keeps
+`scope` and the narrowing columns in agreement.
+
+### FK on-delete follows ownership (lesson #233)
+`organization_id` / `project_id` / `contract_id` → **CASCADE** (the row exists
+only to narrow inside them; SET NULL would leave `scope='PROJECT'` with a NULL
+`project_id`, which the coherence CHECK forbids). `created_by` → **SET NULL** (an
+ACTOR reference — deleting the authoring admin must not delete the org's standard
+position; the `granted_by`/`revoked_by` precedent).
+
+### Hard rules — never violate
+1. **Scope coherence is validated in the SERVICE, not the DTO.** A PATCH changes
+   `scope` / `project_id` / `contract_id` independently, so only the service sees
+   the merged result; the DB CHECK is the backstop, not the user-facing check (it
+   would surface as a 500). Same reasoning makes the service — not the update DTO
+   — re-validate `value_config` against the STORED `rule_type`. See lesson #300.
+2. **Fields are mapped EXPLICITLY in the service, never spread from the DTO** — a
+   spread would admit a client-supplied `organization_id` / `created_by`, and a
+   field added to the DTO alone would silently never persist (lesson #231).
+3. **The org id comes from the JWT (`@OrganizationId()`), never the body.**
+
+### Slice status
+- **Slice 1 — data layer: BUILT + VERIFIED, not merged.** Entity, migration,
+  org-walled CRUD, 56 tests (in-container real-Postgres service spec + DTO spec
+  through the production ValidationPipe config). The org wall is
+  **neutralization-proven**: stripping the `organization_id` predicate turns the
+  four cross-org tests RED while the same-org control stays green.
+- **Slice 2 — PENDING:** the scope-precedence RESOLVER (CONTRACT beats PROJECT
+  beats ORG — what `idx_playbook_positions_org_scope` is shaped for), the
+  serializer into `playbook_knowledge`, and the compliance feed. `PlaybookService`
+  is already exported for it; nothing imports it yet.
+- **Slice 3 — PENDING:** frontend — KB authoring UI + the Compliance-tab
+  override.
+
+### Known gap, deliberately NOT built in Slice 1
+`project_id` / `contract_id` are NOT validated as belonging to the caller's org.
+An OWNER_ADMIN can store a position referencing another org's contract UUID.
+Traced and it is **data hygiene, not a leak**: reads stay org-walled, and the
+Slice-2 resolver will query `organization_id = caller AND contract_id = <contract
+being analyzed>`, so a foreign id can never match a contract the caller can
+reach. Closing it needs the Project/Contract repos in the module — a Slice-2
+decision, not a drive-by.
