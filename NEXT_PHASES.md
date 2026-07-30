@@ -653,7 +653,7 @@ block schema.
 **Owner:** Ayman (AI integration) + Youssef (UI)
 **Priority:** 🟠 HIGH
 **Competitors:** Luminance, Ironclad
-**Status:** ❌ Not started
+**Status:** 🟢 SHIPPED (Youssef: data layer + UI + compliance feed) — PR #207 squash-merged to `main` at `bbbd149` (docs PR #208 at `534e352`), 2026-07-30. **Ayman's AI-integration half remains OPEN** — see "Remaining" below.
 **Depends on:** 7.1 ✅ (obligation data) + 7.19 (redlining creates the negotiation data playbooks compare against)
 **Why valuable:** Creates switching costs — once a firm has built their playbook in SIGN, they won't leave.
 
@@ -671,6 +671,26 @@ block schema.
 - Flag deviations clearly: "Payment terms: 60 days — your standard is max 45 days. Recommend negotiating."
 - Distinguish between: Matches Standard / Minor Deviation / Major Deviation / Non-Standard (not in playbook)
 - Support Arabic and English playbook definitions
+
+**Shipped in PR #207 (`bbbd149`):** org-scoped `playbook_positions` (migration `1775000000001`) with typed
+positions — RANGE / THRESHOLD / ENUM / REQUIRED / TEXT — across the 17 standard clause types plus any
+custom type; OWNER_ADMIN-walled CRUD; the Settings Playbook section at `/app/settings/playbook`; the KB
+"house rules" card; a scope-aware resolver (CONTRACT > PROJECT > ORG) whose output is serialized
+ADDITIVELY into the existing compliance `playbook_knowledge` channel; per-contract / per-project
+overrides authored from the Compliance tab; Arabic + English definitions (i18n en/ar/fr).
+
+**Remaining — Ayman (AI integration), NOT built:**
+- **Structured `playbook_positions` field** so the AI can compare each clause against a position
+  deterministically. Today positions reach the model as PROMPT TEXT only, no ids round-trip, and
+  `compliance_findings` has no metadata column — so a finding cannot be linked back to the position that
+  provoked it (the override UI therefore asks the operator to pick the subject explicitly).
+- **The Matches Standard / Minor Deviation / Major Deviation / Non-Standard classification** — not built.
+  Deviations currently surface as ordinary PLAYBOOK-layer findings.
+- **Layer-aware `overall_status`** so a *preference* miss cannot read as legal non-compliance. The v1
+  mitigation is prompt-level only: every serialized block instructs the model to flag playbook
+  deviations as advisory (LOW/MEDIUM, never CRITICAL). A model can ignore it.
+- **Per-finding provenance** — positions are not knowledge assets, so `knowledge_assets_used` is
+  unchanged and nothing records which position drove a finding.
 
 **Success metric:** An org admin sets up their playbook once. Every contract reviewed after that gives personalised, organisation-specific risk flags instead of generic ones.
 
@@ -1485,7 +1505,7 @@ No new env vars required for existing local dev deployments.
 | 7.19 | Counterparty Redlining | ❌ Not started | Y | |
 | 7.20 | Project Enhancements | ❌ Not started | Y | |
 | 7.21 | RFP Analysis | ❌ Not started | A+Y | |
-| 7.22 | Contract Playbook | ❌ Not started | A+Y | |
+| 7.22 | Contract Playbook | 🟢 Shipped (Y: data + UI + feed, PR #207) — Ayman AI-integration pending | A+Y | 2026-07-30 |
 | 7.23 | Word Add-In | ❌ Not started | Y | |
 | 7.24 | Knowledge Base | ✅ Complete (PR #40) | A | 2026-06-01 |
 | 7.25 | Poor Scan Quality | ✅ Complete (PR #41) | A+Y | 2026-06-01 |
