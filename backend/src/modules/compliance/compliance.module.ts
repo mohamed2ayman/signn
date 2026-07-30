@@ -36,6 +36,7 @@ import { AiModule } from '../ai/ai.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { ContractsModule } from '../contracts/contracts.module';
 import { MeteringModule } from '../metering/metering.module';
+import { PlaybookModule } from '../playbook/playbook.module';
 // Option B — S2c-1: ObligationScopedRepository for the ical list read
 // (data-layer tenancy chokepoint under the #60 wall).
 import { ScopedRepositoryModule } from '../scoped-repository/scoped-repository.module';
@@ -75,6 +76,12 @@ import { ResolveObligationProjectMiddleware } from '../../common/middleware/reso
     // MeteringService (the engine authority). The compliance run is the
     // first surface to call reserve / commit / release.
     MeteringModule,
+    // 7.22 Slice 2 — PlaybookModule exports PlaybookResolverService, which
+    // ComplianceKnowledgeService uses to fold the org's structured standard
+    // positions into the playbook_knowledge channel. Same shape as the
+    // ContractsModule import above: we depend on one exported read service and
+    // nothing else from that module.
+    PlaybookModule,
     // Option B — S2c-1: scoped obligation loads (ical read; more in S2c-2).
     ScopedRepositoryModule,
   ],

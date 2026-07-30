@@ -56,6 +56,7 @@ import { ComplianceModule } from './modules/compliance/compliance.module';
 import { WaitlistModule } from './modules/waitlist/waitlist.module';
 import { LegalDocumentsModule } from './modules/legal-documents/legal-documents.module';
 import { IntegrationsModule } from './modules/integrations/integrations.module';
+import { PlaybookModule } from './modules/playbook/playbook.module';
 import { TokenBlacklistModule } from './common/services/token-blacklist.module';
 import { dataSourceOptions } from './config/data-source';
 
@@ -342,6 +343,7 @@ import { dataSourceOptions } from './config/data-source';
     WaitlistModule,
     LegalDocumentsModule,
     IntegrationsModule,
+    PlaybookModule,
   ],
   providers: [
     // Global response serializer. Triggers class-transformer `instanceToPlain`

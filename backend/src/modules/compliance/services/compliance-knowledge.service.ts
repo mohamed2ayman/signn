@@ -5,13 +5,22 @@ import {
   AssetReviewStatus,
   KnowledgeAsset,
 } from '../../../database/entities';
+import { PlaybookResolverService } from '../../playbook/playbook-resolver.service';
+import { serializePlaybookPositions } from '../../playbook/playbook-serializer.util';
 
 export interface KnowledgeContextResult {
   /** Concatenated text from STANDARD-tagged assets. */
   standard_knowledge: string | null;
   /** Concatenated text from MANDATORY_LAW + CONFLICT_GUIDE assets. */
   jurisdiction_knowledge: string | null;
-  /** Concatenated text from PLAYBOOK assets in the org. */
+  /**
+   * The org's playbook context.
+   *
+   * 7.22 Slice 2 — this channel now carries TWO bodies of text: the org's
+   * STRUCTURED standard positions (playbook_positions, resolved for this
+   * contract's scope) FIRST, then the free-text PLAYBOOK knowledge assets that
+   * have always fed it. Either half may be absent; null means neither exists.
+   */
   playbook_knowledge: string | null;
   /** All asset IDs that contributed text — stored on ComplianceCheck.knowledge_assets_used. */
   asset_ids: string[];
@@ -42,6 +51,9 @@ export class ComplianceKnowledgeService {
   constructor(
     @InjectRepository(KnowledgeAsset)
     private readonly assetRepo: Repository<KnowledgeAsset>,
+    // 7.22 Slice 2 — the org's structured playbook positions. READ-ONLY here;
+    // the CRUD surface (PlaybookService) is deliberately not injected.
+    private readonly playbookResolver: PlaybookResolverService,
   ) {}
 
   async buildContext(input: {
@@ -50,6 +62,14 @@ export class ComplianceKnowledgeService {
     contractType: string | null;
     /** Phase 7.24e — when supplied, project-scoped assets are included. */
     projectId?: string | null;
+    /**
+     * 7.22 Slice 2 — when supplied, CONTRACT-scoped playbook overrides for this
+     * contract win over the project/org positions. Optional: with it absent the
+     * playbook resolves at org+project scope, which is correct, just less
+     * specific. No CALLER passes it yet — threading it from
+     * ComplianceService.runCheck is a separate one-line change.
+     */
+    contractId?: string | null;
   }): Promise<KnowledgeContextResult> {
     const [standardAssets, jurisdictionAssets, playbookAssets] =
       await Promise.all([
@@ -84,9 +104,109 @@ export class ComplianceKnowledgeService {
     return {
       standard_knowledge: this.formatAssets(standardAssets),
       jurisdiction_knowledge: this.formatAssets(jurisdictionAssets),
-      playbook_knowledge: this.formatAssets(playbookAssets),
+      playbook_knowledge: await this.buildPlaybookSection(
+        input.orgId,
+        input.projectId ?? null,
+        input.contractId ?? null,
+        playbookAssets,
+      ),
       asset_ids: Array.from(ids),
     };
+  }
+
+  /**
+   * 7.22 Slice 2 — the playbook channel: STRUCTURED positions + PLAYBOOK assets.
+   *
+   * The two coexist by design. The `['type:PLAYBOOK', 'type:STANDARD']` asset
+   * query above is UNCHANGED and its text is still emitted — the structured
+   * positions are ADDED to it, never a replacement. An org that has authored
+   * neither still gets `null`, exactly as before.
+   *
+   * BUDGET: structured positions go FIRST and get the full section budget,
+   * because they are the org's authoritative, explicitly-authored standard
+   * positions; the asset text takes whatever remains. The combined text still
+   * respects MAX_SECTION_CHARS — the cap is not raised to make room.
+   *
+   * BEST-EFFORT: a failure resolving the playbook degrades to asset-only text
+   * and is logged. A compliance run must not fail because the playbook lookup
+   * did (the lesson #114 convention already used across this module).
+   */
+  private async buildPlaybookSection(
+    orgId: string | null,
+    projectId: string | null,
+    contractId: string | null,
+    playbookAssets: KnowledgeAsset[],
+  ): Promise<string | null> {
+    const cap = ComplianceKnowledgeService.MAX_SECTION_CHARS;
+
+    let structured: string | null = null;
+    if (orgId) {
+      try {
+        const positions =
+          await this.playbookResolver.resolveEffectivePositions(orgId, {
+            projectId,
+            contractId,
+          });
+        structured = serializePlaybookPositions(positions, { maxChars: cap });
+      } catch (err) {
+        this.logger.warn(
+          `[playbook] Failed to resolve structured positions for org ${orgId}: ${
+            (err as Error).message
+          } — falling back to playbook assets only.`,
+        );
+      }
+    }
+
+    // Two blank-line separator, matching how formatAssets joins its own blocks.
+    const remaining = structured ? cap - structured.length - 2 : cap;
+    let assetText =
+      remaining > 0 ? this.formatAssets(playbookAssets, remaining) : null;
+
+    // formatAssets budgets by BLOCK length alone — it counts neither the '\n\n'
+    // it joins blocks with nor the truncation marker it appends, so its output
+    // can legitimately run past the budget it was handed (invisible with one
+    // oversized asset, but compounding two chars at a time across many small
+    // ones). The section cap is a hard promise on this path, so clamp rather
+    // than trust the number we passed down.
+    if (assetText && assetText.length > remaining) {
+      assetText = this.clampToLength(assetText, remaining) || null;
+    }
+
+    // Ops signal: the org's playbook ASSETS were squeezed out of the prompt by
+    // the structured positions. That is the intended priority order, but it is
+    // silent from the model's side, so it should not be silent from ours.
+    if (structured && playbookAssets.length > 0 && !assetText) {
+      this.logger.warn(
+        `[playbook] Structured positions filled the ${cap}-char section budget; ` +
+          `${playbookAssets.length} playbook knowledge asset(s) were omitted from the prompt.`,
+      );
+    }
+
+    const combined =
+      structured && assetText
+        ? `${structured}\n\n${assetText}`
+        : (structured ?? assetText);
+    if (!combined) return null;
+
+    // ABSOLUTE BACKSTOP. Both halves budget themselves, but each does so with
+    // its own arithmetic; this is the one place the section cap is actually
+    // guaranteed rather than merely intended. Structured positions were placed
+    // first precisely so that what a clamp here removes is the lower-priority
+    // asset tail.
+    return combined.length > cap ? this.clampToLength(combined, cap) : combined;
+  }
+
+  /**
+   * Hard-truncate to `max` UTF-16 units without splitting a surrogate pair —
+   * cutting between the halves of an astral-plane character would emit a lone
+   * surrogate. (Arabic is BMP and unaffected; emoji in an asset title are not.)
+   */
+  private clampToLength(text: string, max: number): string {
+    if (max <= 0) return '';
+    if (text.length <= max) return text;
+    const lastUnit = text.charCodeAt(max - 1);
+    const splitsSurrogatePair = lastUnit >= 0xd800 && lastUnit <= 0xdbff;
+    return text.slice(0, splitsSurrogatePair ? max - 1 : max);
   }
 
   // ─── Helpers ──────────────────────────────────────────────
@@ -220,13 +340,22 @@ export class ComplianceKnowledgeService {
     return qb.getMany();
   }
 
-  private formatAssets(assets: KnowledgeAsset[]): string | null {
+  /**
+   * @param maxChars per-section budget. Defaults to the full MAX_SECTION_CHARS
+   *   — the standard and jurisdiction sections are unaffected by 7.22. Only the
+   *   playbook section passes a reduced budget, so the structured positions it
+   *   prepends and this asset text together stay inside one section cap.
+   */
+  private formatAssets(
+    assets: KnowledgeAsset[],
+    maxChars: number = ComplianceKnowledgeService.MAX_SECTION_CHARS,
+  ): string | null {
     if (assets.length === 0) return null;
     const parts: string[] = [];
     let charCount = 0;
     for (const asset of assets) {
       const block = this.renderAssetBlock(asset);
-      if (charCount + block.length > ComplianceKnowledgeService.MAX_SECTION_CHARS) {
+      if (charCount + block.length > maxChars) {
         parts.push(
           `\n[...truncated — ${assets.length - parts.length} more assets in this category]`,
         );

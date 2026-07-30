@@ -101,3 +101,18 @@ export {
   RedlineNotificationBatch,
   RedlineNotificationEventClass,
 } from './redline-notification-batch.entity';
+// ─── 7.22 Slice 1 — playbook standard positions (org-scoped data layer) ───
+export {
+  PlaybookPosition,
+  PlaybookScope,
+  PlaybookRuleType,
+  PlaybookThresholdDirection,
+} from './playbook-position.entity';
+export type {
+  PlaybookValueConfig,
+  PlaybookRangeConfig,
+  PlaybookThresholdConfig,
+  PlaybookEnumConfig,
+  PlaybookRequiredConfig,
+  PlaybookTextConfig,
+} from './playbook-position.entity';

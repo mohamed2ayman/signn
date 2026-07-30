@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { knowledgeAssetService } from '@/services/api/knowledgeAssetService';
 import { projectService } from '@/services/api/projectService';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
+import PlaybookHouseRulesCard from '@/components/playbook/PlaybookHouseRulesCard';
 import type { KnowledgeAsset, Project } from '@/types';
 
 const assetTypeLabels: Record<string, { label: string; color: string }> = {
@@ -306,6 +307,10 @@ export default function KnowledgeAssetsPage() {
           </div>
         ))}
       </div>
+
+      {/* 7.22 Slice 3 — the org's own standard positions, above the industry
+          assets below. Renders (and fetches) only for OWNER_ADMIN. */}
+      <PlaybookHouseRulesCard />
 
       {/* Filters */}
       <div className="space-y-2.5">
