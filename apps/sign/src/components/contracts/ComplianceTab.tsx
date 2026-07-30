@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { format, formatDistanceToNow } from 'date-fns';
@@ -11,6 +11,12 @@ import complianceService, {
 } from '@/services/api/complianceService';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
 import AIDisclaimer from '@/components/common/AIDisclaimer';
+// 7.22 Slice 3 — playbook override entry, additive to the PLAYBOOK layer only.
+import {
+  PlaybookOverrideBanner,
+  AdjustStandardButton,
+  PlaybookOverrideModal,
+} from '@/components/playbook/PlaybookOverridePanel';
 
 interface Props {
   contractId: string;
@@ -33,6 +39,8 @@ export default function ComplianceTab({ contractId, contractName, userEmail }: P
     'summary' | 'conflict' | 'obligations' | null
   >(null);
   const [toast, setToast] = useState<string | null>(null);
+  // 7.22 Slice 3 — the deviation an override is being authored from (null = closed).
+  const [overrideFor, setOverrideFor] = useState<ComplianceFinding | null>(null);
 
   const checks = useQuery({
     queryKey: ['compliance-checks', contractId],
@@ -267,10 +275,23 @@ export default function ComplianceTab({ contractId, contractName, userEmail }: P
               );
             })}
           </div>
+          {/* 7.22 Slice 3 — PLAYBOOK layer only. The other three layers render
+              exactly as before (no banner, and renderRowAction stays undefined). */}
+          {activeLayer === 'PLAYBOOK' && (
+            <PlaybookOverrideBanner
+              contractId={contractId}
+              projectId={check.project_id ?? null}
+            />
+          )}
           <FindingsTable
             findings={findings.filter((f) => f.layer === activeLayer)}
             onUpdate={(id, status) =>
               updateFinding.mutate({ findingId: id, status })
+            }
+            renderRowAction={
+              activeLayer === 'PLAYBOOK'
+                ? (f) => <AdjustStandardButton onClick={() => setOverrideFor(f)} />
+                : undefined
             }
           />
         </section>
@@ -312,6 +333,16 @@ export default function ComplianceTab({ contractId, contractName, userEmail }: P
           onConfirm={() => emailReport.mutate(confirmReport)}
           onCancel={() => setConfirmReport(null)}
           isPending={emailReport.isPending}
+        />
+      )}
+
+      {/* 7.22 Slice 3 — override authoring, opened from a PLAYBOOK deviation row. */}
+      {overrideFor && check && (
+        <PlaybookOverrideModal
+          contractId={contractId}
+          projectId={check.project_id ?? null}
+          finding={overrideFor}
+          onClose={() => setOverrideFor(null)}
         />
       )}
 
@@ -386,9 +417,17 @@ function ProgressBar({ check }: { check: ComplianceCheck }) {
 function FindingsTable({
   findings,
   onUpdate,
+  renderRowAction,
 }: {
   findings: ComplianceFinding[];
   onUpdate: (id: string, status: any) => void;
+  /**
+   * 7.22 Slice 3 — optional per-row action, supplied ONLY for the PLAYBOOK
+   * layer. When undefined (STANDARD / JURISDICTION / CONFLICT) neither the
+   * extra header cell nor the extra body cell is emitted, so those layers
+   * render exactly as they did before.
+   */
+  renderRowAction?: (f: ComplianceFinding) => ReactNode;
 }) {
   if (findings.length === 0) {
     return (
@@ -408,6 +447,7 @@ function FindingsTable({
           <th className="px-4 py-2">Requirement</th>
           <th className="px-4 py-2">Severity</th>
           <th className="px-4 py-2">Status</th>
+          {renderRowAction && <th className="px-4 py-2" />}
         </tr>
       </thead>
       <tbody className="divide-y divide-gray-100">
@@ -444,6 +484,9 @@ function FindingsTable({
                 <option value="WAIVED">Waived</option>
               </select>
             </td>
+            {renderRowAction && (
+              <td className="px-4 py-3 align-top">{renderRowAction(f)}</td>
+            )}
           </tr>
         ))}
       </tbody>

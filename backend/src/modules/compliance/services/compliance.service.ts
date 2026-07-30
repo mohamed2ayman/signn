@@ -177,11 +177,14 @@ export class ComplianceService {
 
       // Build knowledge context — Phase 7.24e: pass project_id so project-
       // scoped assets are visible to the AI compliance analysis.
+      // 7.22 Slice 3: pass contract_id so CONTRACT-scoped playbook overrides for
+      // this contract win over the project/org positions in the resolver.
       const ctx = await this.knowledge.buildContext({
         orgId: opts.orgId,
         jurisdiction,
         contractType: contract.contract_type,
         projectId: contract.project_id ?? null,
+        contractId: contract.id,
       });
 
       // Persist the check row first — carrying reservation_id so the lazy

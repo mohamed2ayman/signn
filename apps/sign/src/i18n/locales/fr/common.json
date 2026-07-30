@@ -234,6 +234,165 @@
     "proposed": "Proposé par l'invité",
     "rtlIndicator": "Arabe · se lit de droite à gauche"
   },
+  "playbook": {
+    "title": "Playbook contractuel",
+    "subtitle": "Les positions standard de votre organisation — la ligne que vous tenez dans chaque négociation.",
+    "addPosition": "Ajouter une position",
+    "edit": "Modifier",
+    "deleteAction": "Supprimer",
+    "deleting": "Suppression…",
+    "save": "Enregistrer",
+    "saving": "Enregistrement…",
+    "cancel": "Annuler",
+    "retry": "Réessayer",
+    "errorLoading": "Impossible de charger votre playbook.",
+    "customBadge": "Personnalisé",
+    "inactiveBadge": "Inactif",
+    "footerNote": "Ces positions sont transmises à l'IA lors de chaque contrôle de conformité, avec le formulaire standard du contrat et le droit applicable du projet.",
+    "coverage": {
+      "headline": "{{covered}} des {{total}} types de clauses couverts",
+      "hint": "Les types de clauses sans position restent vérifiés au regard du formulaire standard et du droit applicable."
+    },
+    "empty": {
+      "title": "Aucune position standard pour l'instant",
+      "body": "Ajoutez les positions standard de votre organisation — délais de paiement, plafonds de retenue, arbitrage préféré — et chaque contrôle de conformité signalera les écarts."
+    },
+    "family": {
+      "commercial": "Commercial",
+      "risk": "Risques et responsabilité",
+      "legal": "Juridique et gouvernance",
+      "scope": "Étendue et général",
+      "custom": "Positions personnalisées"
+    },
+    "scope": {
+      "ORG": "Organisation",
+      "PROJECT": "Projet",
+      "CONTRACT": "Contrat"
+    },
+    "ruleType": {
+      "RANGE": "Fourchette",
+      "THRESHOLD": "Seuil",
+      "ENUM": "Options préférées",
+      "REQUIRED": "Obligatoire",
+      "TEXT": "Texte libre"
+    },
+    "ruleTypeHint": {
+      "RANGE": "Une fourchette acceptable — p. ex. délais de paiement de 28 à 45 jours.",
+      "THRESHOLD": "Une limite unilatérale — p. ex. retenue d'au plus 10 pour cent.",
+      "ENUM": "Un ensemble fermé de valeurs acceptables — p. ex. règles d'arbitrage préférées.",
+      "REQUIRED": "La clause doit simplement être présente au contrat.",
+      "TEXT": "Une position standard formulée par vos soins."
+    },
+    "direction": {
+      "AT_MOST": "Au plus",
+      "AT_LEAST": "Au moins"
+    },
+    "value": {
+      "range": "de préférence {{min}}–{{max}} {{unit}}",
+      "atMost": "au plus {{value}} {{unit}}",
+      "atLeast": "au moins {{value}} {{unit}}",
+      "enum": "l'une des options [{{list}}]",
+      "required": "clause obligatoire",
+      "requiredHint": "Aucune valeur requise — cette position exige seulement la présence de la clause.",
+      "unrenderable": "(position non affichable)"
+    },
+    "modal": {
+      "addTitle": "Ajouter une position standard",
+      "editTitle": "Modifier la position standard",
+      "subtitle": "Ce que votre organisation accepte sur ce type de clause.",
+      "clauseTypeLabel": "Type de clause",
+      "clauseTypePlaceholder": "Sélectionnez un type de clause…",
+      "clauseTypeCustom": "Autre (personnalisé)…",
+      "customNameLabel": "Nom du type de clause personnalisé",
+      "customNamePlaceholder": "p. ex. Accès au site",
+      "customNameHint": "Utilisez votre propre formulation — elle est enregistrée telle quelle.",
+      "ruleTypeLabel": "Type de position",
+      "minLabel": "Minimum",
+      "maxLabel": "Maximum",
+      "unitLabel": "Unité",
+      "unitPlaceholderDays": "jours",
+      "unitPlaceholderPercent": "pour cent",
+      "directionLabel": "Sens",
+      "valueLabel": "Valeur",
+      "allowedLabel": "Valeurs acceptables",
+      "allowedPlaceholder": "Une par ligne, p. ex.\nArbitrage CCI\nArbitrage LCIA",
+      "allowedHint": "Une par ligne, jusqu'à {{max}}.",
+      "textLabel": "Position standard",
+      "textPlaceholder": "Décrivez votre position standard avec vos propres mots.",
+      "noteLabel": "Note (facultatif)",
+      "notePlaceholder": "Pourquoi c'est votre ligne — visible par les relecteurs."
+    },
+    "delete": {
+      "title": "Supprimer cette position ?",
+      "body": "Elle ne sera plus transmise à l'IA lors des prochains contrôles de conformité. Les constats existants restent inchangés.",
+      "confirm": "Supprimer la position"
+    },
+    "toast": {
+      "created": "Position standard ajoutée",
+      "updated": "Position standard mise à jour",
+      "deleted": "Position standard supprimée"
+    },
+    "errors": {
+      "clauseTypeRequired": "Choisissez un type de clause.",
+      "customNameRequired": "Saisissez un nom pour le type de clause personnalisé.",
+      "customNameTooLong": "Le nom personnalisé ne doit pas dépasser {{max}} caractères.",
+      "minRequired": "Saisissez un minimum.",
+      "maxRequired": "Saisissez un maximum.",
+      "minGreaterThanMax": "Le minimum ne peut pas être supérieur au maximum.",
+      "unitRequired": "Saisissez une unité.",
+      "unitTooLong": "L'unité est trop longue.",
+      "valueRequired": "Saisissez une valeur.",
+      "allowedRequired": "Saisissez au moins une valeur acceptable.",
+      "allowedTooMany": "Trop de valeurs.",
+      "allowedEntryTooLong": "L'une des valeurs est trop longue.",
+      "textRequired": "Saisissez votre position standard.",
+      "textTooLong": "Cette position est trop longue.",
+      "noteTooLong": "La note ne doit pas dépasser {{max}} caractères.",
+      "ruleTypeRequired": "Choisissez un type de position.",
+      "invalid": "Veuillez vérifier la position et réessayer.",
+      "forbidden": "Seul un propriétaire d'organisation peut modifier le playbook.",
+      "notFound": "Cette position n'existe plus.",
+      "generic": "Une erreur est survenue. Veuillez réessayer."
+    },
+    "kbCard": {
+      "eyebrow": "Vos règles internes",
+      "title": "Playbook contractuel — Vos positions standard",
+      "coverage": "{{covered}} des {{total}} types de clauses couverts",
+      "loading": "Chargement de vos positions standard…",
+      "error": "Impossible de charger votre playbook.",
+      "manage": "Gérer le playbook"
+    },
+    "override": {
+      "title": "Ajuster le standard pour ce contrat",
+      "subtitle": "Créez une position plus restreinte qui prime sur le standard de votre organisation.",
+      "adjust": "Ajuster le standard pour ce contrat",
+      "deviation": "Écart",
+      "subjectLabel": "Quel standard ajustez-vous ?",
+      "subjectPlaceholder": "Sélectionnez un type de clause…",
+      "chooseSubjectFirst": "Choisissez un type de clause pour voir le standard de votre organisation.",
+      "orgStandard": "Standard de votre organisation",
+      "noOrgStandard": "Aucune position standard n'est définie pour ce type de clause — l'enregistrement en créera une pour ce contrat.",
+      "overrideValue": "Dérogation pour ce contrat",
+      "scopeLabel": "Où cette dérogation s'applique-t-elle ?",
+      "scopeContract": "Ce contrat uniquement",
+      "scopeContractHint": "Les autres contrats conservent le standard de l'organisation.",
+      "scopeProject": "Tout ce projet",
+      "scopeProjectHint": "S'applique à tous les contrats de ce projet.",
+      "notePlaceholder": "Pourquoi ce contrat diffère — visible par les relecteurs.",
+      "noPermissionTitle": "Seul un propriétaire d'organisation peut ajuster le playbook.",
+      "banner": {
+        "using": "Utilisé : playbook de l'organisation",
+        "overrides": "Dérogations pour ce contrat ({{count}})",
+        "noPermission": "Les dérogations sont gérées par le propriétaire de votre organisation."
+      },
+      "errors": {
+        "noProject": "Ce contrat n'est rattaché à aucun projet ; une dérogation au niveau du projet est donc impossible."
+      },
+      "toast": {
+        "saved": "Dérogation enregistrée pour ce contrat"
+      }
+    }
+  },
   "redlines": {
     "title": "Révisions proposées",
     "loading": "Chargement des révisions…",
@@ -467,6 +626,7 @@
     "contracts": "Contrats",
     "clauses": "Bibliothèque de clauses",
     "knowledge": "Base de connaissances",
+    "playbook": "Playbook",
     "knowledgeAssets": "Ressources documentaires",
     "obligations": "Obligations",
     "contractors": "Entrepreneurs",
