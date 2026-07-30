@@ -6199,3 +6199,225 @@ atomically WITH its own hardened gate), and the counterparty-side
 accept-of-a-counter signal path. Also NOT built: French notification copy,
 per-user notification preferences / unsubscribe for redline events, and
 deep-linkable contract tabs.
+
+---
+
+## 7.22 — Contract Playbook & Standard Positions (built + verified, NOT merged)
+
+An org's **standard positions** ("payment terms 28–45 days", "retention max 10%",
+"liability at least 100% of contract value") become structured data that the
+compliance AI is told about, so a contract can be checked against **the org's own
+line**, not only against law and standard forms. The Knowledge Base holds what the
+INDUSTRY says; the playbook holds what THIS ORG says.
+
+Built in three slices, squashed to ONE branch `feat/7.22-playbook` for review:
+
+| Slice | Scope | Branch (pre-squash) |
+|---|---|---|
+| 1 | data layer — entity, migration, org-walled CRUD | `feat/7.22-playbook-slice1-data` `d184ea0` |
+| 2 | resolver + serializer + additive compliance feed | `feat/7.22-playbook-slice2-feed` `e189223` |
+| 3 | frontend (KB card, manager page, override entry) + the `contractId` thread | `feat/7.22-playbook-slice3-frontend` `15eee38` |
+
+Module `backend/src/modules/playbook/`; entity
+`backend/src/database/entities/playbook-position.entity.ts`; migration
+**`1775000000001-CreatePlaybookPositions.ts`**.
+
+### ORG-SCOPED, not contract-scoped — and OWNER_ADMIN only
+
+`playbook_positions.organization_id` is carried DIRECTLY and is the tenancy root
+of every read and write, so this sits **OUTSIDE the Option B contract chokepoint**
+— the same class as `ErpConnection`. The wall is `loadOwned(orgId, id)` →
+`findOne({ id, organization_id: orgId })` → **404, never 403** (no existence
+leak). `project_id` / `contract_id` are **NARROWING columns only** — they scope a
+position DOWN inside an org that already owns the row, and are never consulted to
+establish tenancy. `lint:contract-repo` is clean with **zero exemptions**, which
+is the check that confirms the classification (lesson #300).
+
+`@Roles(UserRole.OWNER_ADMIN)` on the whole controller, per NEXT_PHASES 7.22
+("org-level, OWNER_ADMIN only") and the ERP-connections precedent. `RolesGuard` is
+**EXACT-match membership, not a hierarchy** — SYSTEM_ADMIN is excluded too, which
+is why every frontend surface gates on `UserRole.OWNER_ADMIN` and the KB card also
+`enabled`-gates its query (an ungated fetch would 403 on every KB visit for most
+of the org).
+
+### The typed value_config
+
+A position is a `rule_type` + `value_config` jsonb **PAIR** — the jsonb is
+uninterpretable without the discriminator.
+
+| rule_type | value_config |
+|---|---|
+| `RANGE` | `{ min: number, max: number, unit: string }` |
+| `THRESHOLD` | `{ direction: 'AT_MOST'\|'AT_LEAST', value: number, unit: string }` |
+| `ENUM` | `{ allowed: string[] }` |
+| `REQUIRED` | `{ required: true }` |
+| `TEXT` | `{ text: string }` |
+
+`dto/value-config.validator.ts` is the SINGLE authority, used from both sides: the
+class-validator constraint on CREATE (both halves always present) and
+`validateValueConfig()` called directly from the service on the **MERGED** pair on
+UPDATE. Unknown keys are REJECTED (jsonb would otherwise silently keep a typo'd
+`{ minimum: 28 }` forever) and string/array bounds are enforced there, because a
+jsonb blob bypasses the `@MaxLength` floor every free-text field must carry.
+
+### varchar + CHECK, never PG enums · FK on-delete follows ownership
+
+`scope` (`ORG`/`PROJECT`/`CONTRACT`) and `rule_type` are varchar constrained by
+`playbook_positions_scope_check` / `_rule_type_check` — the RedlineStatus /
+`relationship_type` / `role_code` soft-code convention. Widening either is a code
+change plus a one-line CHECK swap, **never an `ALTER TYPE`** (ARCHITECTURE RULE
+10). `playbook_positions_scope_coherence_check` keeps `scope` and the narrowing
+columns in agreement.
+
+`organization_id` / `project_id` / `contract_id` → **CASCADE** (the row exists only
+to narrow inside them; SET NULL would leave `scope='PROJECT'` with a NULL
+`project_id`, which the coherence CHECK forbids). `created_by` → **SET NULL** (an
+ACTOR reference — deleting the authoring admin must not delete the org's standard
+position; the `granted_by`/`revoked_by` precedent). Lesson #233.
+
+### The resolver — CONTRACT > PROJECT > ORG, most-specific-wins per clause type
+
+`PlaybookResolverService.resolveEffectivePositions(orgId, {projectId?, contractId?})`.
+ORG positions are always the base set, so the result is the org's **full** position
+sheet with narrower overrides substituted in — never a partial sheet. Overrides are
+**whole-position, not field-merged** (an override may legitimately change
+`rule_type`; merging typed `value_config`s across rule types has no coherent
+meaning). `is_active = false` positions are excluded, so deactivating a CONTRACT
+override **UNCOVERS** the ORG default — the intended "revert to our default"
+behaviour.
+
+`organization_id = :orgId` is on the resolver query **unconditionally and first**.
+`projectId` / `contractId` are **narrowing predicates, never a tenancy root**: a
+foreign project/contract id simply matches no row of this org's and resolves to the
+ORG defaults, leaking nothing. An empty `orgId` returns `[]` rather than resolving
+unscoped.
+
+### The compliance feed — ADDITIVE, with two safeguards, both proven by test
+
+`serializePlaybookPositions` renders resolved positions to prompt text (one line per
+position, dispatched by `rule_type`, deterministic order by normalized clause-type
+key, Arabic/custom clause types verbatim), fed into
+`compliance-knowledge.service.ts` `buildContext`.
+
+1. **The `['type:PLAYBOOK', 'type:STANDARD']` dual-bucket asset query is
+   BYTE-UNTOUCHED.** Structured positions are **ADDED** to `playbook_knowledge`,
+   never a replacement — both bodies of text coexist, structured first. A test
+   asserts the tag array is still exactly `['type:PLAYBOOK','type:STANDARD']`, so a
+   future "we have structured positions now, narrow this query" edit fails loudly.
+   An org with neither positions nor assets still gets `null`, exactly as before.
+2. **`MAX_SECTION_CHARS` (30,000) is held**, structured positions taking priority
+   inside the budget and the asset tail being what gets trimmed. `formatAssets`
+   gained an optional `maxChars` that **defaults to the old constant**, so the
+   standard and jurisdiction sections are unaffected.
+
+**The cap needed an ABSOLUTE backstop, not just arithmetic.** Both halves budgeted
+themselves and the combined section still broke the cap (measured **31,166 vs
+30,000**) — `formatAssets` counts block lengths but not its `\n\n` joins or its
+truncation marker. The guarantee now lives in exactly one place: the final combined
+string is clamped (surrogate-pair-safe). Lessons #304–#306.
+
+**Failure posture:** resolver failure degrades to asset-only text and logs — a
+compliance run must never fail because the playbook lookup did (the lesson #114
+convention). Playbook **assets squeezed out** by structured positions emit a
+`logger.warn` — the intended priority order, but never silent.
+
+### The severity cap is PROMPT-LEVEL — persuasive, not enforced
+
+Every serialized block carries `PLAYBOOK_SEVERITY_CAP_INSTRUCTION`: "These are
+organisation preferences, not legal requirements. Flag any deviation from them as
+advisory (severity LOW or MEDIUM, never CRITICAL) — a deviation from a playbook
+position does NOT indicate legal non-compliance." This is the **v1 mitigation** so
+a preference miss cannot drive `overall_status` to NON_COMPLIANT. **A model can
+ignore it**; the real fix is the layer-aware status axis in Ayman's Option-2
+handoff below.
+
+### The frontend (Slice 3)
+
+- **KB "house rules" card** above the Knowledge Base assets table: "Contract
+  Playbook — Your Standard Positions", an "X of 17 clause types covered" line, and
+  "Manage playbook →". OWNER_ADMIN-gated AND `enabled`-gated (see above).
+- **Manager page** at `/app/settings/playbook` (`ProtectedRoute
+  allowedRoles={[OWNER_ADMIN]}` + a nav entry with `roles: [UserRole.OWNER_ADMIN]`).
+  Grouped list under family headers (Commercial / Risk & liability / Legal &
+  governance / Scope & general / Custom), each row = clause type · rule-type badge ·
+  human value · note · Edit/Delete. Add/edit modal on the shared `ModalShell`: the
+  **17 standard clause types** (localized through the EXISTING `clauseType.*` block
+  — no new clause-type vocabulary was introduced) with **"Other (custom)…" as the
+  last option** revealing a free-text name; all **5 rule types** with the value
+  inputs swapping per type; optional note.
+- **Compliance-tab override entry**, PLAYBOOK layer only: a banner ("Using: Org
+  playbook · Overrides for this contract (N)") plus a per-deviation "Adjust standard
+  for this contract" popover that shows the org standard read-only and creates a
+  PROJECT- or CONTRACT-scoped position.
+- **The `contractId` thread** — the single backend line in `compliance.service.ts`
+  `buildContext(...)`: `contractId: contract.id`. Slice 2 shipped the param inert
+  with no caller; this line makes the **CONTRACT tier live**. It deliberately landed
+  WITH the override UI that exposes it (lesson #307).
+
+### Hard rules — never violate
+
+1. **Scope coherence and the `rule_type ↔ value_config` pair are validated in the
+   SERVICE on the MERGED row, not in the update DTO.** A PATCH changes either half
+   independently, so only the service sees the result; the DB CHECK is the backstop,
+   not the user-facing check (it would surface as a 500). Lesson #303.
+2. **Fields are mapped EXPLICITLY in the service, never spread from the DTO** — a
+   spread would admit a client-supplied `organization_id` / `created_by`, and a field
+   added to the DTO alone would silently never persist (lesson #231).
+3. **The org id comes from the JWT (`@OrganizationId()`), never the body.**
+4. **The client must match the backend's scope-coherence rule exactly:** CONTRACT →
+   `contract_id` required (`project_id` may be denormalized in); PROJECT →
+   `project_id` required and **`contract_id` MUST NOT be sent**; ORG → neither. A
+   PATCH must never half-patch a coupled pair — `rule_type` and `value_config` are
+   always sent together, and the manager's edit path sends no scope fields at all.
+5. **Additive only on the compliance surfaces.** The ComplianceTab layer array
+   `['STANDARD','JURISDICTION','PLAYBOOK','CONFLICT']` predates this work (Phase 3.4,
+   `d38ecc3`) and is byte-untouched; `FindingsTable` takes an OPTIONAL
+   `renderRowAction` so the other three layers render exactly as before.
+6. **The override subject is picked EXPLICITLY by the operator** — a finding carries
+   no link back to the playbook row that provoked it (lesson #309). Never infer it
+   from `clause_ref` / `requirement` text.
+7. **The client-side value validator and precedence fold are MIRRORS, not
+   authorities.** The BACKEND re-validates and re-resolves every write.
+
+### Verification
+
+Backend: `nest build` 0 · `lint:contract-repo` 0 · **full suite 179 suites / 1731
+tests, zero skipped** · `app-boot.smoke` PASS (proves the new module import and
+constructor dependencies resolve through real DI) · **neutralization**: stripping
+BOTH org walls (`loadOwned`'s `organization_id` filter → 3 RED; the resolver's
+`.where('p.organization_id')` → 2 RED) turned exactly the wall tests RED and nothing
+else; restoring byte-identical returned **91/91 GREEN**.
+
+Frontend: `vite build` 0 · **vitest 60 files / 639 tests** (clean-main baseline
+56/523, i.e. exactly +4 files / +116 playbook tests) · tsc ZERO new errors vs the
+origin/main baseline (delta method) · i18n **124 keys at exact en/ar/fr parity**,
+used == defined, Arabic as direct UTF-8 (lesson #262).
+
+**Real-PG specs do NOT run in CI** — `ci.yml` declares no Postgres/Redis service and
+sets no `DATABASE_URL`, so the 91 playbook tests (incl. both real-PG suites) SKIP
+there. They must be run in-container with `DATABASE_URL` exported, and the skipped
+count checked (lesson #310). CI also does not run `nest build`, `vite build`, or
+`tsc` — local build proofs are the only coverage for those.
+
+**NOT verified: the authenticated visual pass.** Pages served and every module
+compiled with no console errors, but no signed-in walkthrough was done — that is the
+CEO visual gate, consistent with the 7.20 Slice 4a/4b/5 precedent.
+
+### KNOWN gaps + Ayman handoff (open, NOT built)
+
+1. **Option-2 structured field** — a way for a playbook position id to round-trip
+   through the AI response and be persisted on the finding. This is the prerequisite
+   for a true per-finding → position link: `compliance_findings` has no metadata
+   column and the playbook reaches the AI as **prompt text only**, so no ids
+   round-trip and `persistFindings` discards anything extra (lesson #309).
+2. **Layer-aware `overall_status`** — the check's overall status does not distinguish
+   a playbook *preference* deviation from a mandatory-law breach. This is the real
+   fix behind the prompt-level severity cap above.
+3. **Finding provenance** — structured positions are not knowledge assets, so
+   `knowledge_assets_used` is unchanged and there is no record of which positions
+   drove a finding. Pair this with Option-2.
+4. **`project_id` / `contract_id` are NOT validated as belonging to the caller's
+   org.** An OWNER_ADMIN can store a position referencing another org's contract
+   UUID. This is **data hygiene, not a leak**: reads stay org-walled and the resolver
+   queries `organization_id = caller AND contract_id = <contract being analyzed>`, so
+   a foreign id can never match a contract the caller can reach.
