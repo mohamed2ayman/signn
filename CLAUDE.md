@@ -3617,6 +3617,8 @@ Extends the Phase-7.25 quality plumbing to catch corrupted *text*, not just poor
 - **Banner** — a `text_corruption_suspected` variant on the existing ProcessingStatusCard (EN/AR/FR), shown only when flagged. No re-run button (re-extracting corrupt source won't fix it).
 The three quality-flag families now: scan-quality (image) → park (HUMAN_REVIEW_RECOMMENDED); truncation (`clause_extraction_incomplete`, PR #177) → banner; text-corruption (`text_corruption_suspected`) → banner. Known follow-up: the detector threshold (25/10k) + legit-English allowlist are corpus-calibrated; some Project14 technical annexes with heavy legit English may fire a benign banner — tune on real reviewer data.
 
+**Quality-flag delivery (PR #203).** `ProcessingStatusCard` is mounted on `ContractDetailPage` for in-progress docs only; a separate self-gating `DocumentsNeedingReview` panel mounts it for TERMINAL docs (`CLAUSES_EXTRACTED`) that still carry `clause_extraction_incomplete` or `text_corruption_suspected`, with `onRetry` wired to the existing reprocess endpoint. Clean completed docs render nothing. Before this, both banners AND the re-run button were unreachable once extraction finished — a flagged failure was effectively silent (see lesson #297). Any NEW quality flag intended to reach the user must be added to the `docNeedsReview` predicate, not just written to `quality_flags`.
+
 ---
 
 ## Phase 7.26 — i18n Completion — Track A (shipped — 2026-06-02)
@@ -5644,6 +5646,8 @@ are a **snapshot** (the corpus was annotated live during the export session):
 - **Provenance in the manifest:** parties source (extracted / manually-entered / swapped),
   extraction gaps, the (reconstructed) annotation ruleset, and honest caveats (clause_type
   has NO original-AI snapshot for EDITED rows; REJECTED per-clause reasons aren't stored).
+
+**The gold set is NOT in git.** `docs/phase-8.3-gold/` contains real clause text and is now explicitly gitignored (privacy rule: never commit contract text). It is therefore irreplaceable local state — 468 clauses / 1,246 risks, plus the `_raw_*.jsonl` feeds and `_build.js` that make it deterministically re-buildable. A backup copy is kept outside the repo at `D:\Sign\IMPPP\phase-8.3-gold\`. Every accuracy figure in Phase 8 / the bake-offs is scored against this set, so treat it as production data: back it up before any cleanup, and never rely on it being recoverable from git.
 
 ### Hard rules — never violate
 1. **The client top-2 rule and `risk-visibility.util.ts` are ONE rule** — never let them
