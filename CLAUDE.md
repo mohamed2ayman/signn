@@ -6202,7 +6202,7 @@ deep-linkable contract tabs.
 
 ---
 
-## 7.22 — Contract Playbook & Standard Positions (built + verified, NOT merged)
+## 7.22 — Contract Playbook & Standard Positions (shipped 2026-07-30, PR #207, merged `bbbd149`)
 
 An org's **standard positions** ("payment terms 28–45 days", "retention max 10%",
 "liability at least 100% of contract value") become structured data that the
@@ -6210,13 +6210,14 @@ compliance AI is told about, so a contract can be checked against **the org's ow
 line**, not only against law and standard forms. The Knowledge Base holds what the
 INDUSTRY says; the playbook holds what THIS ORG says.
 
-Built in three slices, squashed to ONE branch `feat/7.22-playbook` for review:
+Developed in three slices and **merged as ONE squashed commit — `bbbd149` (PR #207)**; the
+per-slice branches no longer exist. The three parts remain the useful way to read the code:
 
-| Slice | Scope | Branch (pre-squash) |
-|---|---|---|
-| 1 | data layer — entity, migration, org-walled CRUD | `feat/7.22-playbook-slice1-data` `d184ea0` |
-| 2 | resolver + serializer + additive compliance feed | `feat/7.22-playbook-slice2-feed` `e189223` |
-| 3 | frontend (KB card, manager page, override entry) + the `contractId` thread | `feat/7.22-playbook-slice3-frontend` `15eee38` |
+| Part | Scope |
+|---|---|
+| 1 | data layer — entity, migration, org-walled CRUD |
+| 2 | resolver + serializer + additive compliance feed |
+| 3 | frontend (KB card, manager page, override entry) + the `contractId` thread |
 
 Module `backend/src/modules/playbook/`; entity
 `backend/src/database/entities/playbook-position.entity.ts`; migration
