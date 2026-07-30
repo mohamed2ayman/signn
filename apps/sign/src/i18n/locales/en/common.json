@@ -232,6 +232,165 @@
     "proposed": "Guest proposed",
     "rtlIndicator": "Arabic · reads right-to-left"
   },
+  "playbook": {
+    "title": "Contract Playbook",
+    "subtitle": "Your organisation's standard positions — the line you hold in every negotiation.",
+    "addPosition": "Add position",
+    "edit": "Edit",
+    "deleteAction": "Delete",
+    "deleting": "Deleting…",
+    "save": "Save",
+    "saving": "Saving…",
+    "cancel": "Cancel",
+    "retry": "Try again",
+    "errorLoading": "Could not load your playbook.",
+    "customBadge": "Custom",
+    "inactiveBadge": "Inactive",
+    "footerNote": "These positions are sent to the AI with every compliance check, alongside the contract's standard form and the project's jurisdiction law.",
+    "coverage": {
+      "headline": "{{covered}} of {{total}} clause types covered",
+      "hint": "Clause types with no position are still checked against the standard form and jurisdiction law."
+    },
+    "empty": {
+      "title": "No standard positions yet",
+      "body": "Add your organisation's standard positions — payment terms, retention caps, preferred arbitration — and every compliance check will flag deviations from them."
+    },
+    "family": {
+      "commercial": "Commercial",
+      "risk": "Risk & liability",
+      "legal": "Legal & governance",
+      "scope": "Scope & general",
+      "custom": "Custom positions"
+    },
+    "scope": {
+      "ORG": "Organisation",
+      "PROJECT": "Project",
+      "CONTRACT": "Contract"
+    },
+    "ruleType": {
+      "RANGE": "Range",
+      "THRESHOLD": "Threshold",
+      "ENUM": "Preferred options",
+      "REQUIRED": "Required",
+      "TEXT": "Free text"
+    },
+    "ruleTypeHint": {
+      "RANGE": "An acceptable band — e.g. payment terms 28–45 days.",
+      "THRESHOLD": "A one-sided limit — e.g. retention at most 10 percent.",
+      "ENUM": "A closed set of acceptable values — e.g. preferred arbitration rules.",
+      "REQUIRED": "The clause must simply be present in the contract.",
+      "TEXT": "A standard position in your own words."
+    },
+    "direction": {
+      "AT_MOST": "At most",
+      "AT_LEAST": "At least"
+    },
+    "value": {
+      "range": "preferred {{min}}–{{max}} {{unit}}",
+      "atMost": "at most {{value}} {{unit}}",
+      "atLeast": "at least {{value}} {{unit}}",
+      "enum": "one of [{{list}}]",
+      "required": "clause required",
+      "requiredHint": "No value needed — this position simply requires the clause to be present.",
+      "unrenderable": "(position could not be rendered)"
+    },
+    "modal": {
+      "addTitle": "Add standard position",
+      "editTitle": "Edit standard position",
+      "subtitle": "What your organisation accepts on this clause type.",
+      "clauseTypeLabel": "Clause type",
+      "clauseTypePlaceholder": "Select a clause type…",
+      "clauseTypeCustom": "Other (custom)…",
+      "customNameLabel": "Custom clause type name",
+      "customNamePlaceholder": "e.g. Site access",
+      "customNameHint": "Use your own wording — it is stored exactly as typed.",
+      "ruleTypeLabel": "Position type",
+      "minLabel": "Minimum",
+      "maxLabel": "Maximum",
+      "unitLabel": "Unit",
+      "unitPlaceholderDays": "days",
+      "unitPlaceholderPercent": "percent",
+      "directionLabel": "Direction",
+      "valueLabel": "Value",
+      "allowedLabel": "Acceptable values",
+      "allowedPlaceholder": "One per line, e.g.\nICC Arbitration\nLCIA Arbitration",
+      "allowedHint": "One per line, up to {{max}}.",
+      "textLabel": "Standard position",
+      "textPlaceholder": "Describe your standard position in your own words.",
+      "noteLabel": "Note (optional)",
+      "notePlaceholder": "Why this is your line — shown to reviewers."
+    },
+    "delete": {
+      "title": "Delete this position?",
+      "body": "It will no longer be sent to the AI on future compliance checks. Existing findings are not changed.",
+      "confirm": "Delete position"
+    },
+    "toast": {
+      "created": "Standard position added",
+      "updated": "Standard position updated",
+      "deleted": "Standard position deleted"
+    },
+    "errors": {
+      "clauseTypeRequired": "Choose a clause type.",
+      "customNameRequired": "Enter a name for the custom clause type.",
+      "customNameTooLong": "The custom name must be {{max}} characters or fewer.",
+      "minRequired": "Enter a minimum.",
+      "maxRequired": "Enter a maximum.",
+      "minGreaterThanMax": "The minimum cannot be greater than the maximum.",
+      "unitRequired": "Enter a unit.",
+      "unitTooLong": "The unit is too long.",
+      "valueRequired": "Enter a value.",
+      "allowedRequired": "Enter at least one acceptable value.",
+      "allowedTooMany": "Too many values.",
+      "allowedEntryTooLong": "One of the values is too long.",
+      "textRequired": "Enter your standard position.",
+      "textTooLong": "This position is too long.",
+      "noteTooLong": "The note must be {{max}} characters or fewer.",
+      "ruleTypeRequired": "Choose a position type.",
+      "invalid": "Please check the position and try again.",
+      "forbidden": "Only an organisation owner can change the playbook.",
+      "notFound": "That position no longer exists.",
+      "generic": "Something went wrong. Please try again."
+    },
+    "kbCard": {
+      "eyebrow": "Your house rules",
+      "title": "Contract Playbook — Your Standard Positions",
+      "coverage": "{{covered}} of {{total}} clause types covered",
+      "loading": "Loading your standard positions…",
+      "error": "Could not load your playbook.",
+      "manage": "Manage playbook"
+    },
+    "override": {
+      "title": "Adjust standard for this contract",
+      "subtitle": "Create a narrower position that wins over your organisation default.",
+      "adjust": "Adjust standard for this contract",
+      "deviation": "Deviation",
+      "subjectLabel": "Which standard are you adjusting?",
+      "subjectPlaceholder": "Select a clause type…",
+      "chooseSubjectFirst": "Choose a clause type to see your organisation standard.",
+      "orgStandard": "Your organisation standard",
+      "noOrgStandard": "No standard position is set for this clause type yet — saving will create one for this contract.",
+      "overrideValue": "Override for this contract",
+      "scopeLabel": "Where does this override apply?",
+      "scopeContract": "This contract only",
+      "scopeContractHint": "Other contracts keep the organisation standard.",
+      "scopeProject": "This whole project",
+      "scopeProjectHint": "Applies to every contract in this project.",
+      "notePlaceholder": "Why this contract differs — shown to reviewers.",
+      "noPermissionTitle": "Only an organisation owner can adjust the playbook.",
+      "banner": {
+        "using": "Using: Org playbook",
+        "overrides": "Overrides for this contract ({{count}})",
+        "noPermission": "Overrides are managed by your organisation owner."
+      },
+      "errors": {
+        "noProject": "This contract is not attached to a project, so a project-wide override is not possible."
+      },
+      "toast": {
+        "saved": "Override saved for this contract"
+      }
+    }
+  },
   "redlines": {
     "title": "Redlines",
     "loading": "Loading redlines…",
@@ -465,6 +624,7 @@
     "contracts": "Contracts",
     "clauses": "Clause Library",
     "knowledge": "Knowledge Base",
+    "playbook": "Playbook",
     "knowledgeAssets": "Knowledge Assets",
     "obligations": "Obligations",
     "contractors": "Contractors",

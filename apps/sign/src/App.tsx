@@ -34,6 +34,7 @@ import OnboardingPage from '@/pages/app/OnboardingPage';
 import SupportPage from '@/pages/app/SupportPage';
 import BillingPage from '@/pages/app/BillingPage';
 import SubscriptionSettingsPage from '@/pages/app/SubscriptionSettingsPage';
+import PlaybookPage from '@/pages/app/PlaybookPage';
 import ApprovalsPage from '@/pages/app/ApprovalsPage';
 import TeamPage from '@/pages/app/TeamPage';
 import ProfilePage from '@/pages/app/ProfilePage';
@@ -136,6 +137,9 @@ const clientNavItems = [
   { label: 'nav.sharedWithMe', path: '/app/shared-with-me', icon: '🤝' },
   { label: 'nav.clauses', path: '/app/clauses', icon: '📝' },
   { label: 'nav.knowledge', path: '/app/knowledge-assets', icon: '📚' },
+  // OWNER_ADMIN-only — Sidebar filters by role (others never see the link).
+  // Mirrors the API's @Roles(OWNER_ADMIN) on /playbook/positions (7.22).
+  { label: 'nav.playbook', path: '/app/settings/playbook', icon: '📖', roles: [UserRole.OWNER_ADMIN] },
   { label: 'nav.obligations', path: '/app/obligations', icon: '📋' },
   { label: 'nav.notifications', path: '/app/notifications', icon: '🔔' },
   { label: 'nav.communications', path: '/app/settings/communications', icon: '📣' },
@@ -298,6 +302,15 @@ function App() {
         <Route path="settings/communications" element={<CommunicationPreferencesPage />} />
         <Route path="settings/billing" element={<BillingPage />} />
         <Route path="settings/subscription" element={<SubscriptionSettingsPage />} />
+        {/* OWNER_ADMIN-only — also enforced by RolesGuard on the API (7.22 Slice 1). */}
+        <Route
+          path="settings/playbook"
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.OWNER_ADMIN]}>
+              <PlaybookPage />
+            </ProtectedRoute>
+          }
+        />
         <Route path="approvals" element={<ApprovalsPage />} />
         {/* OWNER_ADMIN-only — also enforced by RolesGuard + feature gate on the API (7.28). */}
         <Route
