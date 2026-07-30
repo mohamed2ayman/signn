@@ -6199,3 +6199,124 @@ atomically WITH its own hardened gate), and the counterparty-side
 accept-of-a-counter signal path. Also NOT built: French notification copy,
 per-user notification preferences / unsubscribe for redline events, and
 deep-linkable contract tabs.
+
+---
+
+## 7.22 — Contract Playbook & Standard Positions, Slice 2 (resolver + serializer + compliance feed; built + verified, NOT merged)
+
+An org's **standard positions** ("payment terms 28–45 days", "retention max
+10%", "liability at least 100% of contract value") become structured data that
+the compliance AI is told about, so a contract can be checked against the
+ORG'S OWN LINE, not only against law and standard forms.
+
+> **NOTE on section provenance:** Slice 1 (the `playbook_positions` data layer +
+> org-walled CRUD) is documented on the **unmerged** `docs/7.22-playbook-slice1`
+> branch, which was cut from an older `main` and has not landed. This section is
+> written on a branch off current `main` (`1986f88`), where no 7.22 section
+> exists, so it stands alone and covers Slice 2. **When the two docs branches
+> merge, fold them into one 7.22 section** — do not leave two.
+
+### What Slice 2 built (branch `feat/7.22-playbook-slice2-feed`, commit `e189223`)
+
+- **`PlaybookResolverService.resolveEffectivePositions(orgId, {projectId?, contractId?})`**
+  (`backend/src/modules/playbook/playbook-resolver.service.ts`) — the
+  scope-precedence resolver. **CONTRACT > PROJECT > ORG, most-specific-wins PER
+  CLAUSE TYPE.** ORG positions are always the base set, so the result is the
+  org's full position sheet with narrower overrides substituted in — never a
+  partial sheet. Overrides are **whole-position, not field-merged** (an
+  override may legitimately change `rule_type`; merging typed `value_config`s
+  across rule types has no coherent meaning). `is_active = false` positions are
+  excluded, so deactivating a CONTRACT override **UNCOVERS** the ORG default —
+  the intended "revert to our default" behaviour.
+- **`serializePlaybookPositions`** (`playbook-serializer.util.ts`) — renders
+  resolved positions to prompt text, one line per position, dispatched by
+  `rule_type` (RANGE / THRESHOLD / ENUM / REQUIRED / TEXT). Deterministic order
+  (by normalized clause-type key), Arabic/custom clause types rendered verbatim.
+- **An ADDITIVE feed** into `compliance-knowledge.service.ts` `buildContext` —
+  the only existing file edited (+137/−8), plus two module wirings
+  (`ComplianceModule` imports `PlaybookModule`; `PlaybookModule` provides and
+  exports the resolver as its READ face, with `PlaybookService` staying the
+  WRITE face).
+
+### Tenancy
+
+`organization_id = :orgId` is on the resolver query **unconditionally and
+first** — the same wall as every Slice-1 read, and the only thing establishing
+tenancy. `projectId` / `contractId` are **narrowing predicates, never a tenancy
+root**: a foreign project/contract id simply matches no row of this org's and
+resolves to the ORG defaults, leaking nothing. An empty `orgId` returns `[]`
+rather than resolving unscoped. This is the org-scoped class (`ErpConnection`),
+NOT the Option B contract chokepoint — `lint:contract-repo` is clean with no
+exemption.
+
+### The two feed safeguards — both proven by test
+
+1. **The `['type:PLAYBOOK', 'type:STANDARD']` dual-bucket asset query is
+   BYTE-UNTOUCHED.** Structured positions are **ADDED** to `playbook_knowledge`,
+   never a replacement — both bodies of text coexist, structured first. A test
+   asserts the tag array is still exactly `['type:PLAYBOOK','type:STANDARD']`,
+   so a future "we have structured positions now, narrow this query" edit fails
+   loudly. An org with neither positions nor assets still gets `null`, exactly
+   as before.
+2. **`MAX_SECTION_CHARS` (30,000) is held**, with structured positions taking
+   priority inside the budget and the asset tail being what gets trimmed.
+   `formatAssets` gained an optional `maxChars` that **defaults to the old
+   constant**, so the standard and jurisdiction sections are unaffected.
+
+**The cap needed an ABSOLUTE backstop, not just arithmetic.** Both halves budget
+themselves and the combined section still broke the cap (measured **31,166 vs
+30,000**) — `formatAssets` counts block lengths but not its `\n\n` joins or its
+truncation marker. The guarantee now lives in exactly one place: the final
+combined string is clamped (surrogate-pair-safe). See lessons #300–#302.
+
+### Failure + observability posture
+
+- **Resolver failure degrades to asset-only text and logs** — a compliance run
+  must never fail because the playbook lookup did (the lesson #114 convention).
+  The other knowledge channels are unaffected.
+- Playbook **assets squeezed out** of the prompt by structured positions emit a
+  `logger.warn` — the intended priority order, but it must not be silent.
+
+### KNOWN — read before building Slice 3
+
+- **The CONTRACT tier is INERT in production.** `buildContext` accepts an
+  optional `contractId`, but the only caller
+  (`ComplianceService.runCheck`, `compliance.service.ts:180`) does not pass it,
+  so only PROJECT > ORG is live. An org authoring a contract-scoped override via
+  the Slice-1 CRUD gets the ORG default fed to the AI **as that contract's
+  standard position**, and nothing signals the drop. `contract.id` is already in
+  scope at the call site — it is a one-line change
+  (`contractId: contract.id`), deliberately deferred so it lands WITH the
+  Slice-3 override UI. **Do not ship the contract-scope override UI without it**
+  (lesson #303).
+- **The severity cap is PROMPT-LEVEL — persuasive, not enforced.** Every
+  serialized block carries `PLAYBOOK_SEVERITY_CAP_INSTRUCTION`: "These are
+  organisation preferences, not legal requirements. Flag any deviation from them
+  as advisory (severity LOW or MEDIUM, never CRITICAL) — a deviation from a
+  playbook position does NOT indicate legal non-compliance." This is the **v1
+  mitigation** so a preference miss cannot drive `overall_status` to
+  NON_COMPLIANT. A model can ignore it; the real fix is the layer-aware status
+  axis in **Ayman's Option-2 handoff**.
+- **Structured positions leave NO provenance on the compliance check.** They are
+  not knowledge assets, so `knowledge_assets_used` is unchanged and there is no
+  record of which positions drove a finding. **Pair this with Option-2.**
+- **The resolver's real-PG spec does not run in CI** (CI is unit-only) — same
+  posture as Slice 1's spec. It must be run in-container.
+
+### Verification (Slice 2)
+
+`nest build` exit 0 · `lint:contract-repo` exit 0 · **16 suites / 208 tests
+green** (playbook + compliance + `app-boot.smoke`) · boot smoke PASSES, proving
+the new module import and constructor dependency resolve through real DI ·
+**neutralization**: stripping BOTH org walls (Slice 1's `loadOwned` filter and
+the resolver's `where`) turned exactly 5 wall tests RED and nothing else;
+restoring returned them GREEN.
+
+### Slice status
+
+- **Slice 1 (data layer)** — built + verified. NOT merged (`d184ea0`).
+- **Slice 2 (resolver + serializer + feed)** — built + verified. NOT merged
+  (`e189223`).
+- **Slice 3 (pending)** — frontend KB authoring UI for org-level positions,
+  Compliance-tab entry points for project- and contract-scoped overrides, **and
+  the one-line `contractId` caller thread** that makes the CONTRACT tier live.
