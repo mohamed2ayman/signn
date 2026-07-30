@@ -6199,3 +6199,108 @@ atomically WITH its own hardened gate), and the counterparty-side
 accept-of-a-counter signal path. Also NOT built: French notification copy,
 per-user notification preferences / unsubscribe for redline events, and
 deep-linkable contract tabs.
+
+---
+
+## 7.22 — Contract Playbook (Slice 3: frontend + contractId thread) — PROVISIONAL
+
+> **Doc-reconciliation note.** Slices 1 (data layer) and 2 (resolver + serializer +
+> compliance feed) are built and verified on their own branches, but their doc
+> branches are UNMERGED at the time of writing — so this section covers SLICE 3
+> only and does not restate 1/2. All three are consolidated into one 7.22 section
+> at PR time; treat section placement and lesson numbers here as provisional.
+
+**Status: Slices 1 (data) + 2 (feed) + 3 (frontend) are ALL built and verified.
+The feature is complete pending doc reconciliation and a single PR.**
+
+### What Slice 3 shipped (frontend + exactly one backend line)
+
+- **KB "house rules" card** — `PlaybookHouseRulesCard` on the Knowledge Base page,
+  above the assets table: eyebrow "YOUR HOUSE RULES", "Contract Playbook — Your
+  Standard Positions", an "X of 17 clause types covered" line, and "Manage
+  playbook →". It is **OWNER_ADMIN-gated AND `enabled`-gated**: `GET
+  /playbook/positions` is `@Roles(OWNER_ADMIN)` exact-match, so for every other
+  role the card renders nothing AND never fires the request (an ungated fetch
+  would be a guaranteed 403 on every KB visit for most of the org).
+- **The manager page** — `/app/settings/playbook` (`ProtectedRoute
+  allowedRoles={[OWNER_ADMIN]}` + a nav entry with `roles: [UserRole.OWNER_ADMIN]`,
+  the ERP-connections precedent). Grouped list under family headers
+  (Commercial / Risk & liability / Legal & governance / Scope & general / Custom),
+  each row = clause type · rule-type badge · human value · note · Edit/Delete.
+  Add/edit modal on the shared `ModalShell`: the **17 standard clause types**
+  (localized through the EXISTING `clauseType.*` block — no new clause-type
+  vocabulary was introduced) with **"Other (custom)…" as the last option**
+  revealing a free-text name; all **5 rule types** (RANGE / THRESHOLD / ENUM /
+  REQUIRED / TEXT) with the value inputs swapping per type; optional note.
+- **Compliance-tab override entry** — on the PLAYBOOK layer only: a banner
+  ("Using: Org playbook · Overrides for this contract (N)") plus a per-deviation
+  "Adjust standard for this contract" popover that shows the org standard
+  read-only and creates a **PROJECT- or CONTRACT-scoped** position.
+- **The contractId thread** — the single backend change, in
+  `compliance.service.ts` `buildContext(...)`: `contractId: contract.id`. Slice 2
+  had already accepted the param and documented that no caller passed it; with
+  this line the **CONTRACT tier of the resolver is live**.
+
+### Hard rules — never violate
+
+1. **Additive only, and the ComplianceTab layer array is byte-untouched.** The
+   `['STANDARD','JURISDICTION','PLAYBOOK','CONFLICT']` literal predates Slice 2
+   (Phase 3.4, `d38ecc3`) — do not "add" PLAYBOOK to it. `FindingsTable` takes an
+   OPTIONAL `renderRowAction`; when it is `undefined` (STANDARD / JURISDICTION /
+   CONFLICT) neither the extra `<th>` nor the extra `<td>` is emitted, so those
+   three layers render exactly as before.
+2. **Scope coherence is the backend's rule and the client must match it
+   exactly.** CONTRACT → `contract_id` required (`project_id` may be denormalized
+   in); PROJECT → `project_id` required and **`contract_id` MUST NOT be sent**;
+   ORG → neither. The override modal sends exactly these shapes.
+3. **A PATCH must never half-patch the two coupled pairs.** The service
+   re-validates the MERGED row, so `rule_type` and `value_config` are ALWAYS sent
+   together, and the manager's edit path never sends `scope`/`project_id`/
+   `contract_id` at all (so a narrower position keeps its scope; `{scope:'ORG'}`
+   alone with `project_id` still set is a 400 that writes nothing).
+4. **The override subject is picked EXPLICITLY by the operator.** A finding
+   carries no link back to the playbook row that provoked it — see lesson #301.
+   Never infer the subject from `clause_ref` / `requirement` text.
+5. **The client-side value validator and precedence fold are MIRRORS, not
+   authorities.** `validateValueDraft` mirrors the backend
+   `value-config.validator.ts` and `effectivePositionFor` mirrors the resolver's
+   CONTRACT > PROJECT > ORG fold — both exist to avoid a raw 400 / to display the
+   governing standard. The BACKEND re-validates and re-resolves every write; a
+   drift here can never let an invalid position be stored.
+
+### Verified
+
+Frontend: `vite build` clean; **tsc ZERO new errors** vs the origin/main baseline
+(delta method — the baseline carries 1565 pre-existing vitest-globals errors plus
+5 pre-existing non-test errors, one class of which is the `currentUser?.role ===
+'STRING'` TS2367 trap — compare against `UserRole.X`, never a string literal);
+**vitest 59 files / 629 tests** (baseline 55/513, +4 files / +116 tests). The
+double-submit guard is mutation-tested on BOTH halves (remove the acquire ref →
+the double-click test goes RED; remove the `onSettled` release → the
+retry-after-failure test goes RED). i18n **124 keys at exact en/ar/fr parity**,
+with used == defined (no missing keys, no orphans); Arabic written as direct
+UTF-8 (lesson #262).
+
+Backend: `nest build` 0, `lint:contract-repo` 0, **full suite 179 suites / 1731
+tests with zero skipped**, boot-smoke green. Slice-1/2 org walls re-proven by
+NEUTRALIZATION — dropping `organization_id` from `PlaybookService.loadOwned` →
+3 tests RED; dropping the resolver's `.where('p.organization_id')` → 2 tests RED;
+both restored byte-identical → 91/91 green. Note the real-PG specs self-skip
+without `DATABASE_URL` in the process env (lesson #302).
+
+**NOT verified: the authenticated visual pass.** The pages were served and every
+module compiled cleanly with no console errors, but no signed-in walkthrough was
+done — that is the CEO visual gate, consistent with the 7.20 Slice 4a/4b/5
+precedent.
+
+### Ayman handoff (open, NOT built)
+
+1. **Option-2 structured field** — a way for a playbook position id to round-trip
+   through the AI response and be persisted on the finding, which is the
+   prerequisite for a true per-finding → position link (today the subject is
+   picked by hand; lesson #301).
+2. **Layer-aware `overall_status`** — the check's overall status does not
+   currently distinguish a playbook deviation from a mandatory-law breach.
+3. **Finding provenance** — which knowledge source (or playbook position) each
+   finding came from; `knowledge_asset_ref` is free text the AI supplies, with no
+   guarantee it is an id.
