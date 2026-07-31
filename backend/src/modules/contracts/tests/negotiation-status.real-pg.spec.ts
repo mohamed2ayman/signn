@@ -187,6 +187,7 @@ describeReal('NegotiationStatusService — 7.19 Slice 2 (real Postgres)', () => 
       dataSource.getRepository(Clause),
       {} as any, // relationshipTypes — not exercised
       negotiation, // 7.19 Slice 2 — the share auto-hook under test
+      {} as any, // 21 partyRoles (Slice 1a) — host_party_role_code never exercised here
     );
     redlines = new RedlineService(
       dataSource.getRepository(ClauseRedline),

@@ -53,6 +53,18 @@ export class PartyRole {
   @Column({ type: 'int', default: 0 })
   sort_order: number;
 
+  /**
+   * Party Foundation Slice 1a — GROUPING label for the picker
+   * (EMPLOYER_SIDE / CONTRACTOR_SIDE / CONSULTANTS / FINANCIAL / CONCESSION).
+   * Deliberately a plain nullable varchar, NOT a pg enum: the registry is the
+   * single source of truth, so a future group is a data change, never an
+   * ALTER TYPE (same convention as code / applies_to).
+   * NULL = ungrouped — currently only OTHER, the catch-all, which renders last.
+   * Consumers group by this and order WITHIN a group by sort_order.
+   */
+  @Column({ type: 'varchar', length: 40, nullable: true })
+  category: string | null;
+
   @CreateDateColumn({ type: 'timestamptz' })
   created_at: Date;
 }

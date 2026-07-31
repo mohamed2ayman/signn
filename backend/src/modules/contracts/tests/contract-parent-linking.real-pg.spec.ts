@@ -148,6 +148,7 @@ describeReal('Multi-tier T0b — contract parent linking (real Postgres)', () =>
       dataSource.getRepository(Clause), // 18 clause
       relationshipTypes, // 19 relationshipTypes (registry lookup)
       {} as any, // 20 negotiationStatus (7.19 S2) — share hook not exercised here
+      {} as any, // 21 partyRoles (Slice 1a) — host_party_role_code never exercised here
     );
 
     // The registry (MAIN / SUBCONTRACT / CONSULTANT …) is seeded by migration

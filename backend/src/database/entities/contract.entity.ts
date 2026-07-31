@@ -163,8 +163,36 @@ export class Contract {
   @Column({ type: 'varchar', length: 30, default: 'MANUAL' })
   creation_flow: string;
 
+  /**
+   * @deprecated Superseded by `host_party_role_code` (Party Foundation
+   * Slice 1a), which records the host's party role as a validated registry
+   * code instead of free text.
+   *
+   * NOT dormant — this column is STILL ACTIVELY WRITTEN today by the
+   * add-contract-to-an-existing-project path (ProjectDetailPage's create
+   * modal → CreateContractDto.party_type → ContractsService.create()). Slice
+   * 1a changes nothing about that path; it keeps working exactly as it does
+   * now. That writer is removed in Slice 1b.
+   *
+   * Do not read, migrate, or backfill this column against the registry.
+   */
   @Column({ type: 'varchar', length: 50, nullable: true })
   party_type: string;
+
+  /**
+   * Party Foundation Slice 1a — the AUTHORITATIVE record of which party the
+   * HOST organisation represents on this contract. Soft varchar CODE from the
+   * party_roles registry, validated against ACTIVE rows in ContractsService
+   * (create + update); deliberately no hard FK, matching the
+   * contract_parties.role_code / relationship_type / contract_type convention.
+   * NULL = not yet stated (no backfill — pre-1a contracts stay NULL).
+   *
+   * Divergence, known and accepted: contract_parties may separately carry a
+   * host-org-linked row with a DIFFERENT role_code. Nothing reconciles them in
+   * v1 and nothing should — this column wins.
+   */
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  host_party_role_code: string | null;
 
   @Column({ type: 'boolean', default: false })
   license_acknowledged: boolean;

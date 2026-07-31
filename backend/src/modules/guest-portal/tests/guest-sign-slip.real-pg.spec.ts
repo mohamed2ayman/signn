@@ -276,6 +276,7 @@ describeReal('⭐ Guest Signing v1 — slip door (real Postgres)', () => {
               ds.getRepository(Clause),
               {} as any, // relationshipTypes (T0a) — not exercised
               {} as any, // 20 negotiationStatus (7.19 S2) — share hook not exercised here
+      {} as any, // 21 partyRoles (Slice 1a) — host_party_role_code never exercised here
             );
             pinning = new ContractPinningService(
               ds,

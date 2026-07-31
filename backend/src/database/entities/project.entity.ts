@@ -41,6 +41,20 @@ export class Project {
   @Column({ type: 'date', nullable: true })
   end_date: Date;
 
+  /**
+   * Party Foundation Slice 1a — the project-level DEFAULT party role that a
+   * contract inherits for `contracts.host_party_role_code`. Soft varchar CODE
+   * from the party_roles registry, validated against ACTIVE rows in
+   * ProjectsService (create + update); no hard FK, matching the
+   * contract_parties.role_code convention. NULL = no default set.
+   *
+   * NOTE: this holds a CONTRACT-scoped role code, not a project-scoped one.
+   * Any future consumer must query the contract-scoped role list — filtering
+   * the registry by applies_to = 'project' returns nothing usable today.
+   */
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  default_party_role_code: string | null;
+
   @Column({ type: 'uuid' })
   created_by: string;
 

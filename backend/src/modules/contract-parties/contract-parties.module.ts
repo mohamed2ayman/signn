@@ -7,20 +7,22 @@ import {
   ContractPartyContact,
   Obligation,
   Organization,
-  PartyRole,
   PermissionDefault,
   ProjectMember,
 } from '../../database/entities';
 import { ContractsModule } from '../contracts/contracts.module';
 import { PermissionLevelGuard } from '../../common/guards/permission-level.guard';
 import { ResolveObligationProjectMiddleware } from '../../common/middleware/resolve-obligation-project.middleware';
-import { PartyRolesService } from './party-roles.service';
-import { PartyRolesController } from './party-roles.controller';
+import { PartyRolesModule } from './party-roles.module';
 import { ContractPartiesService } from './contract-parties.service';
 import { ContractPartiesController } from './contract-parties.controller';
 
 /**
- * Multi-tier trunk — Slice T0c-1. Contract parties + the party-role registry.
+ * Multi-tier trunk — Slice T0c-1. Contract parties CRUD.
+ *
+ * The party-role REGISTRY (PartyRolesService + GET /party-roles) moved out to
+ * the dependency-free PartyRolesModule in Party Foundation Slice 1a; this
+ * module imports and re-exports it, so existing importers are unaffected.
  *
  * Imports ContractsModule for ContractAccessService (the findInOrg tenancy
  * wall). One-directional — ContractsModule does not import this module
@@ -38,7 +40,6 @@ import { ContractPartiesController } from './contract-parties.controller';
 @Module({
   imports: [
     TypeOrmModule.forFeature([
-      PartyRole,
       ContractParty,
       ContractPartyContact,
       Organization,
@@ -50,15 +51,22 @@ import { ContractPartiesController } from './contract-parties.controller';
       Obligation,
     ]),
     ContractsModule,
+    // Party Foundation Slice 1a — the registry (service + GET /party-roles)
+    // moved to its own dependency-free module so ContractsModule and
+    // ProjectsModule can import it without a cycle through this module's
+    // ContractsModule import. ContractPartiesService still consumes
+    // PartyRolesService for role_code validation, now via this import.
+    PartyRolesModule,
   ],
-  controllers: [PartyRolesController, ContractPartiesController],
+  controllers: [ContractPartiesController],
   providers: [
-    PartyRolesService,
     ContractPartiesService,
     PermissionLevelGuard,
     ResolveObligationProjectMiddleware,
   ],
-  exports: [PartyRolesService, ContractPartiesService],
+  // PartyRolesModule is re-exported so existing importers that relied on this
+  // module for PartyRolesService keep resolving it unchanged.
+  exports: [PartyRolesModule, ContractPartiesService],
 })
 export class ContractPartiesModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {

@@ -22,6 +22,7 @@ import { ContractsService } from './contracts.service';
 import { PermissionLevelGuard } from '../../common/guards/permission-level.guard';
 import { ContractTemplatesModule } from '../contract-templates/contract-templates.module';
 import { ContractRelationshipTypesModule } from '../contract-relationship-types/contract-relationship-types.module';
+import { PartyRolesModule } from '../contract-parties/party-roles.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { ScopedRepositoryModule } from '../scoped-repository/scoped-repository.module';
 import { ContractAccessService } from './services/contract-access.service';
@@ -65,6 +66,11 @@ import { NegotiationStatusController } from './negotiation-status.controller';
     // Multi-tier trunk T0a — ContractsService.create() validates
     // dto.relationship_type against ACTIVE registry codes.
     ContractRelationshipTypesModule,
+    // Party Foundation Slice 1a — ContractsService create()/update() validate
+    // dto.host_party_role_code against ACTIVE party_roles registry codes.
+    // Dependency-free registry module (NOT ContractPartiesModule, which
+    // imports this module — that would be a cycle).
+    PartyRolesModule,
   ],
   controllers: [ContractsController, NegotiationStatusController],
   providers: [

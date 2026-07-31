@@ -8,6 +8,7 @@ import {
   ProjectParty,
   RiskAnalysis,
 } from '../../database/entities';
+import { PartyRolesModule } from '../contract-parties/party-roles.module';
 import { ProjectsController } from './projects.controller';
 import { ProjectsService } from './projects.service';
 
@@ -20,6 +21,9 @@ import { ProjectsService } from './projects.service';
       ProjectParty,
       RiskAnalysis,
     ]),
+    // Party Foundation Slice 1a — ProjectsService create()/update() validate
+    // dto.default_party_role_code against ACTIVE party_roles registry codes.
+    PartyRolesModule,
   ],
   controllers: [ProjectsController],
   providers: [ProjectsService],

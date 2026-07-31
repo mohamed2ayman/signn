@@ -23,4 +23,15 @@ export class UpdateProjectDto {
   @IsOptional()
   @IsDateString()
   end_date?: string;
+
+  /**
+   * Party Foundation Slice 1a — the project-level DEFAULT party role a
+   * contract inherits for contracts.host_party_role_code. Registry-validated
+   * in ProjectsService.update() against ACTIVE rows (unknown AND inactive
+   * codes both rejected). Send '' to clear it back to NULL.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  default_party_role_code?: string;
 }
