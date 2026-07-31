@@ -120,7 +120,7 @@ export class AddPartyRoleCategoryAndHostPartyRole1776000000001
     await queryRunner.query(`
       INSERT INTO party_roles (code, label_en, label_ar, label_fr, applies_to, is_active, sort_order, category)
       VALUES
-        ('DEVELOPER', 'Developer', 'المطوّر', 'Promoteur immobilier', 'contract', FALSE, 11, 'EMPLOYER_SIDE'),
+        ('DEVELOPER', 'Developer', 'المطور العقاري', 'Promoteur immobilier', 'contract', FALSE, 11, 'EMPLOYER_SIDE'),
         ('GOVERNMENT_AUTHORITY', 'Government Authority', 'الجهة الحكومية', 'Autorité publique', 'contract', FALSE, 12, 'EMPLOYER_SIDE'),
         ('EPC_CONTRACTOR', 'EPC Contractor', 'مقاول الهندسة والتوريد والإنشاء', 'Entrepreneur EPC', 'contract', FALSE, 21, 'CONTRACTOR_SIDE'),
         ('NOMINATED_SUBCONTRACTOR', 'Nominated Subcontractor', 'مقاول الباطن المسمّى', 'Sous-traitant désigné', 'contract', FALSE, 61, 'CONTRACTOR_SIDE'),
