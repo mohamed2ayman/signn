@@ -54,10 +54,30 @@ export class CreateContractDto {
   @IsUUID()
   parent_contract_id?: string;
 
+  /**
+   * @deprecated Superseded by `host_party_role_code`. Still accepted and still
+   * persisted unchanged — the add-contract-to-an-existing-project path sends
+   * it today. That writer is removed in Slice 1b.
+   */
   @IsOptional()
   @IsString()
   @MaxLength(50)
   party_type?: string;
+
+  /**
+   * Party Foundation Slice 1a — party-role CODE from the party_roles registry
+   * naming which party the HOST organisation represents on this contract.
+   * Optional; omitted = not stated (column stays NULL).
+   * DELIBERATELY not an @IsEnum/@IsIn — the registry (DB rows) is the single
+   * source of valid codes, mirroring relationship_type above.
+   * ContractsService normalizes first (''/whitespace-only = "no selection" →
+   * NULL, code trimmed) then validates the code exists AND is active,
+   * rejecting unknown/inactive codes with a clear 400.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  host_party_role_code?: string;
 
   @IsOptional()
   @IsBoolean()

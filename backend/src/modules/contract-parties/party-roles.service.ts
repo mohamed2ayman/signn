@@ -55,4 +55,21 @@ export class PartyRolesService {
   async findByCode(code: string): Promise<PartyRole | null> {
     return this.partyRoleRepository.findOne({ where: { code } });
   }
+
+  /**
+   * Party Foundation Slice 1a — resolve an ACTIVE registry row by code.
+   * Returns null for unknown codes AND for inactive rows; callers treat both
+   * as invalid with one message. Mirrors
+   * ContractRelationshipTypesService.findActiveByCode, which
+   * ContractsService.create() already uses for relationship_type.
+   *
+   * This is what keeps the 11 roles seeded INACTIVE by migration
+   * 1776000000001 unselectable on contracts.host_party_role_code and
+   * projects.default_party_role_code until Slice 1b activates them.
+   */
+  async findActiveByCode(code: string): Promise<PartyRole | null> {
+    return this.partyRoleRepository.findOne({
+      where: { code, is_active: true },
+    });
+  }
 }

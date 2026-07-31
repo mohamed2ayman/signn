@@ -43,6 +43,7 @@ import { assertContractMutable } from './utils/contract-pin-guard.util';
 import { CollaborationGateway } from '../collaboration/collaboration.gateway';
 import { ContractTemplatesService, isStandardForm, getLicenseOrg } from '../contract-templates/contract-templates.service';
 import { ContractRelationshipTypesService } from '../contract-relationship-types/contract-relationship-types.service';
+import { PartyRolesService } from '../contract-parties/party-roles.service';
 import { EmailService } from '../notifications/email.service';
 import { ContractAccessService } from './services/contract-access.service';
 import { NegotiationStatusService } from './services/negotiation-status.service';
@@ -113,6 +114,16 @@ export class ContractsService {
     // SENT_TO_CONTRACTOR branch no legacy spec exercises. DI always provides
     // it (ContractsModule); the boot smoke guards the wiring.
     private readonly negotiationStatus: NegotiationStatusService,
+    // Party Foundation Slice 1a — create()/update() validate
+    // dto.host_party_role_code against ACTIVE party_roles registry codes
+    // (mirrors relationshipTypes above; the registry is the single source of
+    // truth). LAST param; REQUIRED (not optional) so ts-jest forces every
+    // positional spec instantiation to state its 21st arg explicitly — the
+    // 17 pre-1a call sites pass `{} as any`, never dereferenced because the
+    // registry is only consulted when a host_party_role_code is actually
+    // supplied. DI always provides it (ContractsModule imports
+    // PartyRolesModule); the boot smoke guards the wiring.
+    private readonly partyRoles: PartyRolesService,
   ) {}
 
   // ─── Contract CRUD ─────────────────────────────────────────
@@ -220,6 +231,15 @@ export class ContractsService {
       }
     }
 
+    // Party Foundation Slice 1a — host_party_role_code must be a KNOWN +
+    // ACTIVE party_roles registry code (unknown AND seeded-inactive codes are
+    // both rejected — the 11 roles seeded inactive by 1776000000001 stay
+    // unselectable until Slice 1b). Same normalize-then-validate shape as
+    // relationship_type above.
+    const hostPartyRoleCode = await this.resolveHostPartyRoleCode(
+      dto.host_party_role_code,
+    );
+
     // Multi-tier T0b — parent-contract linking. The chosen relationship type's
     // registry row (parent_link_rule + allowed_parent_types) is the SINGLE
     // source that drives whether a parent is required / optional / forbidden and
@@ -284,6 +304,10 @@ export class ContractsService {
       // no parent (validated above against the type's parent_link_rule).
       parent_contract_id: parentContractId,
       party_type: dto.party_type,
+      // Party Foundation Slice 1a — explicit mapping (same never-spread rule).
+      // The NORMALIZED value: ''/whitespace became NULL above, and the
+      // persisted code is exactly the trimmed, registry-validated one.
+      host_party_role_code: hostPartyRoleCode,
       license_acknowledged: dto.license_acknowledged || false,
       license_organization: isStandardForm(dto.contract_type)
         ? getLicenseOrg(dto.contract_type)
@@ -342,6 +366,34 @@ export class ContractsService {
    * Level implemented: FULL chain walk (not just direct-self / immediate
    * reciprocal), depth-capped.
    */
+  /**
+   * Party Foundation Slice 1a — normalize + validate a host_party_role_code.
+   *
+   * Normalize FIRST: ''/whitespace-only means "no selection" — the same
+   * absence as an omitted field → NULL (never persist '' in the column).
+   * A present code must resolve to a KNOWN + ACTIVE party_roles registry row
+   * (findActiveByCode returns null for BOTH unknown and inactive codes — the
+   * inactive rejection is what keeps the 11 roles seeded inactive by
+   * migration 1776000000001 unselectable until Slice 1b). The registry is the
+   * single source of truth — no hardcoded code list here. Mirrors the
+   * relationship_type validation in create().
+   */
+  private async resolveHostPartyRoleCode(
+    rawCode: string | undefined | null,
+  ): Promise<string | null> {
+    const code = rawCode?.trim() || null;
+    if (!code) return null;
+    const role = await this.partyRoles.findActiveByCode(code);
+    if (!role) {
+      throw new BadRequestException(
+        `Unknown or inactive party role code: ${code}. ` +
+          'Valid codes are the active rows of the party_roles registry ' +
+          '(GET /party-roles?applies_to=contract).',
+      );
+    }
+    return code;
+  }
+
   private async assertParentLinkAcyclic(
     firstParent: Contract,
     orgId: string,
@@ -397,6 +449,13 @@ export class ContractsService {
 
     if (dto.name !== undefined) contract.name = dto.name;
     if (dto.party_type !== undefined) contract.party_type = dto.party_type;
+    // Party Foundation Slice 1a — registry-validated (KNOWN + ACTIVE codes
+    // only; '' clears back to NULL). Same helper as create().
+    if (dto.host_party_role_code !== undefined) {
+      contract.host_party_role_code = await this.resolveHostPartyRoleCode(
+        dto.host_party_role_code,
+      );
+    }
     if (dto.contract_value !== undefined) contract.contract_value = dto.contract_value;
     if (dto.currency !== undefined) contract.currency = dto.currency;
 

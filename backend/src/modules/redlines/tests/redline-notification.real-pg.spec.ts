@@ -205,6 +205,7 @@ describeReal('RedlineNotificationService — 7.19 Slice 4 (real Postgres)', () =
       dataSource.getRepository(Clause),
       {} as any,
       {} as any,
+      {} as any, // 21 partyRoles (Slice 1a) — host_party_role_code never exercised here
     );
     notifications = new RedlineNotificationService(
       dispatchStub as any,

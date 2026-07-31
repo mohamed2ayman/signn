@@ -18,10 +18,25 @@ export class UpdateContractDto {
   @MaxLength(500)
   name?: string;
 
+  /**
+   * @deprecated Superseded by `host_party_role_code`. Still accepted and still
+   * persisted unchanged — Slice 1a alters nothing about this field.
+   */
   @IsOptional()
   @IsString()
   @MaxLength(50)
   party_type?: string;
+
+  /**
+   * Party Foundation Slice 1a — party-role CODE from the party_roles registry
+   * naming which party the HOST organisation represents. Registry-validated in
+   * ContractsService.update() against ACTIVE rows (unknown AND inactive codes
+   * both rejected). Send '' to clear it back to NULL.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  host_party_role_code?: string;
 
   // ─── Phase 7.1 — Contract date fields ──────────────────────────────────
 

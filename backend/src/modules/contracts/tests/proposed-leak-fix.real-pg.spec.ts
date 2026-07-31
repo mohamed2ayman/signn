@@ -162,6 +162,7 @@ describeReal('Proposed-clause leak fix — Part A (real Postgres)', () => {
       dataSource.getRepository(Clause), // 18 clauseRepository (2a)
       {} as any, // 19 relationshipTypes (T0a) — not exercised: no fixture passes relationship_type
       {} as any, // 20 negotiationStatus (7.19 S2) — share hook not exercised here
+      {} as any, // 21 partyRoles (Slice 1a) — host_party_role_code never exercised here
     );
     compliance = new ComplianceService(
       {} as any, // 1 checkRepo

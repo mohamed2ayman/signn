@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Injectable,
   Logger,
   NotFoundException,
@@ -16,6 +17,7 @@ import {
   RiskAnalysis,
   User,
 } from '../../database/entities';
+import { PartyRolesService } from '../contract-parties/party-roles.service';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
 import { AddMemberDto } from './dto/add-member.dto';
@@ -36,7 +38,38 @@ export class ProjectsService {
     private readonly projectPartyRepository: Repository<ProjectParty>,
     @InjectRepository(RiskAnalysis) // lint-exempt: aggregation QB (Q3 — org-wide, not per-contract)
     private readonly riskAnalysisRepository: Repository<RiskAnalysis>,
+    // Party Foundation Slice 1a — create()/update() validate
+    // dto.default_party_role_code against ACTIVE party_roles registry codes.
+    // LAST param; the registry is only consulted when a
+    // default_party_role_code is actually supplied. DI always provides it
+    // (ProjectsModule imports PartyRolesModule).
+    private readonly partyRoles: PartyRolesService,
   ) {}
+
+  /**
+   * Party Foundation Slice 1a — normalize + validate a
+   * default_party_role_code. ''/whitespace-only = "no selection" → NULL;
+   * a present code must resolve to a KNOWN + ACTIVE party_roles registry row
+   * (findActiveByCode returns null for BOTH unknown and inactive codes, so
+   * the 11 roles seeded inactive by migration 1776000000001 are rejected
+   * here until Slice 1b activates them). Mirrors
+   * ContractsService.resolveHostPartyRoleCode.
+   */
+  private async resolveDefaultPartyRoleCode(
+    rawCode: string | undefined | null,
+  ): Promise<string | null> {
+    const code = rawCode?.trim() || null;
+    if (!code) return null;
+    const role = await this.partyRoles.findActiveByCode(code);
+    if (!role) {
+      throw new BadRequestException(
+        `Unknown or inactive party role code: ${code}. ` +
+          'Valid codes are the active rows of the party_roles registry ' +
+          '(GET /party-roles?applies_to=contract).',
+      );
+    }
+    return code;
+  }
 
   async findAll(orgId: string): Promise<any[]> {
     const projects = await this.projectRepository
@@ -85,6 +118,12 @@ export class ProjectsService {
     userId: string,
     dto: CreateProjectDto,
   ): Promise<Project> {
+    // Party Foundation Slice 1a — registry-validate BEFORE the insert
+    // (unknown/inactive codes 400; ''/omitted → NULL).
+    const defaultPartyRoleCode = await this.resolveDefaultPartyRoleCode(
+      dto.default_party_role_code,
+    );
+
     const project = this.projectRepository.create({
       organization_id: orgId,
       created_by: userId,
@@ -93,6 +132,9 @@ export class ProjectsService {
       country: dto.country,
       start_date: dto.start_date ? new Date(dto.start_date) : undefined,
       end_date: dto.end_date ? new Date(dto.end_date) : undefined,
+      // Slice 1a — explicit mapping (never spread the DTO; lesson #231). The
+      // NORMALIZED, registry-validated value.
+      default_party_role_code: defaultPartyRoleCode,
     });
 
     const savedProject = await this.projectRepository.save(project);
@@ -126,6 +168,13 @@ export class ProjectsService {
     if (dto.country !== undefined) project.country = dto.country;
     if (dto.start_date !== undefined) project.start_date = new Date(dto.start_date);
     if (dto.end_date !== undefined) project.end_date = new Date(dto.end_date);
+    // Party Foundation Slice 1a — registry-validated (KNOWN + ACTIVE codes
+    // only; '' clears back to NULL). Same helper as create().
+    if (dto.default_party_role_code !== undefined) {
+      project.default_party_role_code = await this.resolveDefaultPartyRoleCode(
+        dto.default_party_role_code,
+      );
+    }
 
     return this.projectRepository.save(project);
   }
