@@ -223,6 +223,20 @@ import { dataSourceOptions } from './config/data-source';
       useFactory: (configService: ConfigService) => ({
         ...dataSourceOptions,
         autoLoadEntities: true,
+        // Runtime connection-pool bounds (NestJS pool only — migrations use the
+        // standalone DataSource in config/data-source.ts and are unaffected).
+        // Headroom invariant as we scale instances:
+        //   (N app instances × max) + ai-backend psycopg2 + migration conn + admin
+        //   < Postgres max_connections (100). Today N=1, ~8 in use — ample room.
+        // Fixes pool-exhaustion permanent-hang (acceptAndExecute holds 2 conns
+        // per in-flight guest sign): connectionTimeoutMillis converts a hang into
+        // a fast acquire-timeout error. statement_timeout intentionally omitted
+        // (it's the only setting that can kill a legitimate long query).
+        extra: {
+          max: 20,
+          connectionTimeoutMillis: 10000,
+          idleTimeoutMillis: 30000,
+        },
       }),
     }),
     BullModule.forRootAsync({
