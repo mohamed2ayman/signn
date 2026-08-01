@@ -174,7 +174,8 @@ def test_recompute_summary_mirrors_prompt_rules():
     assert s["total"] == 3
     assert s["by_layer"] == {"STANDARD": 2, "PLAYBOOK": 1}
     assert s["by_severity"] == {"HIGH": 1, "LOW": 1, "MEDIUM": 1}
-    assert s["overall_status"] == "PARTIALLY_COMPLIANT"  # HIGH, no CRITICAL
+    assert s["overall_status"] == "PARTIALLY_COMPLIANT"  # legal HIGH, no CRITICAL
+    assert s["playbook_status"] == "MINOR_DEVIATIONS"  # 1 PLAYBOOK MEDIUM
 
 
 def test_recompute_summary_empty_is_compliant():
@@ -184,4 +185,5 @@ def test_recompute_summary_empty_is_compliant():
         "by_layer": {},
         "by_severity": {},
         "overall_status": "COMPLIANT",
+        "playbook_status": "ON_STANDARD",
     }
