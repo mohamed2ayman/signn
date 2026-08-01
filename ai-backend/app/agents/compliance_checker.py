@@ -104,14 +104,23 @@ Return a JSON object exactly matching:
                   "PLAYBOOK": <int>, "CONFLICT": <int> },
     "by_severity": { "CRITICAL": <int>, "HIGH": <int>, "MEDIUM": <int>,
                      "LOW": <int>, "INFO": <int> },
-    "overall_status": "COMPLIANT" | "PARTIALLY_COMPLIANT" | "NON_COMPLIANT"
+    "overall_status": "COMPLIANT" | "PARTIALLY_COMPLIANT" | "NON_COMPLIANT",
+    "playbook_status": "ON_STANDARD" | "MINOR_DEVIATIONS" | "MAJOR_DEVIATIONS"
   }
 }
 
-OVERALL STATUS RULES
-- COMPLIANT: 0 findings of severity CRITICAL or HIGH
-- PARTIALLY_COMPLIANT: at least 1 HIGH but no CRITICAL findings
-- NON_COMPLIANT: at least 1 CRITICAL finding
+OVERALL STATUS RULES (LEGAL compliance — consider ONLY layers STANDARD,
+JURISDICTION, CONFLICT; PLAYBOOK findings are EXCLUDED here)
+- COMPLIANT: 0 legal findings of severity CRITICAL or HIGH
+- PARTIALLY_COMPLIANT: at least 1 legal HIGH but no legal CRITICAL finding
+- NON_COMPLIANT: at least 1 legal CRITICAL finding
+A contract whose ONLY issues are PLAYBOOK deviations is legally COMPLIANT.
+
+PLAYBOOK STATUS RULES (organisation-preference axis — consider ONLY PLAYBOOK
+findings; this NEVER affects overall_status)
+- ON_STANDARD: 0 PLAYBOOK findings
+- MINOR_DEVIATIONS: at least 1 PLAYBOOK finding, none at HIGH or CRITICAL
+- MAJOR_DEVIATIONS: at least 1 PLAYBOOK finding at HIGH or CRITICAL
 
 SEVERITY GUIDANCE
 - CRITICAL: enforcement risk, financial exposure, mandatory law breach,
@@ -281,25 +290,45 @@ class ComplianceCheckerAgent(BaseAgent):
 def _recompute_summary(findings: list[dict[str, Any]]) -> dict[str, Any]:
     """Rebuild the summary block from a (possibly salvaged) findings list.
 
-    Mirrors the SYSTEM_PROMPT's OVERALL STATUS RULES: any CRITICAL →
-    NON_COMPLIANT; else any HIGH → PARTIALLY_COMPLIANT; else COMPLIANT.
+    overall_status is the LEGAL rollup — computed over non-PLAYBOOK layers
+    only (STANDARD / JURISDICTION / CONFLICT): any CRITICAL → NON_COMPLIANT;
+    else any HIGH → PARTIALLY_COMPLIANT; else COMPLIANT. PLAYBOOK deviations
+    NEVER affect it. playbook_status is a SEPARATE preference axis over
+    PLAYBOOK findings only: none → ON_STANDARD; any HIGH/CRITICAL →
+    MAJOR_DEVIATIONS; else → MINOR_DEVIATIONS.
     """
     by_layer: dict[str, int] = {}
     by_severity: dict[str, int] = {}
+    legal_severity: dict[str, int] = {}
+    playbook_severity: dict[str, int] = {}
     for f in findings:
         layer = str(f.get("layer") or "STANDARD")
         severity = str(f.get("severity") or "MEDIUM")
         by_layer[layer] = by_layer.get(layer, 0) + 1
         by_severity[severity] = by_severity.get(severity, 0) + 1
-    if by_severity.get("CRITICAL", 0) > 0:
+        if layer == "PLAYBOOK":
+            playbook_severity[severity] = playbook_severity.get(severity, 0) + 1
+        else:
+            legal_severity[severity] = legal_severity.get(severity, 0) + 1
+    if legal_severity.get("CRITICAL", 0) > 0:
         overall = "NON_COMPLIANT"
-    elif by_severity.get("HIGH", 0) > 0:
+    elif legal_severity.get("HIGH", 0) > 0:
         overall = "PARTIALLY_COMPLIANT"
     else:
         overall = "COMPLIANT"
+    if sum(playbook_severity.values()) == 0:
+        playbook_status = "ON_STANDARD"
+    elif (
+        playbook_severity.get("CRITICAL", 0) > 0
+        or playbook_severity.get("HIGH", 0) > 0
+    ):
+        playbook_status = "MAJOR_DEVIATIONS"
+    else:
+        playbook_status = "MINOR_DEVIATIONS"
     return {
         "total": len(findings),
         "by_layer": by_layer,
         "by_severity": by_severity,
         "overall_status": overall,
+        "playbook_status": playbook_status,
     }

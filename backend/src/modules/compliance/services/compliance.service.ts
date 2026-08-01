@@ -601,18 +601,43 @@ export class ComplianceService {
       total: findings.length,
       by_layer: byLayer,
       by_severity: bySeverity,
+      playbook_status: this.derivePlaybookStatus(findings),
     };
   }
 
   private deriveOverall(
     findings: Partial<ComplianceFinding>[],
   ): ComplianceOverallStatus {
-    const sev = findings.map((f) => f.severity);
+    // Legal rollup — PLAYBOOK deviations are a preference axis, NOT legal
+    // (non-)compliance. Excluded here; they surface via playbook_status.
+    const sev = findings
+      .filter((f) => f.layer !== ComplianceFindingLayer.PLAYBOOK)
+      .map((f) => f.severity);
     if (sev.includes(ComplianceFindingSeverity.CRITICAL))
       return ComplianceOverallStatus.NON_COMPLIANT;
     if (sev.includes(ComplianceFindingSeverity.HIGH))
       return ComplianceOverallStatus.PARTIALLY_COMPLIANT;
     return ComplianceOverallStatus.COMPLIANT;
+  }
+
+  /**
+   * Organisation-preference axis (rides findings_summary jsonb, no column).
+   * PLAYBOOK findings only; NEVER affects overall_status. Mirrors the agent's
+   * _recompute_summary rules exactly (kept in lock-step to avoid drift).
+   */
+  private derivePlaybookStatus(
+    findings: Partial<ComplianceFinding>[],
+  ): 'ON_STANDARD' | 'MINOR_DEVIATIONS' | 'MAJOR_DEVIATIONS' {
+    const playbook = findings.filter(
+      (f) => f.layer === ComplianceFindingLayer.PLAYBOOK,
+    );
+    if (playbook.length === 0) return 'ON_STANDARD';
+    const hasMajor = playbook.some(
+      (f) =>
+        f.severity === ComplianceFindingSeverity.CRITICAL ||
+        f.severity === ComplianceFindingSeverity.HIGH,
+    );
+    return hasMajor ? 'MAJOR_DEVIATIONS' : 'MINOR_DEVIATIONS';
   }
 
   private coerceEnum<T extends Record<string, string>>(
