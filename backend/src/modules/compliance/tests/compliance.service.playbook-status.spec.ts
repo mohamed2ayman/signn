@@ -17,6 +17,7 @@ import { ComplianceKnowledgeService } from '../services/compliance-knowledge.ser
 import { ComplianceObligationService } from '../services/compliance-obligation.service';
 import { ContractScopedRepository } from '../../scoped-repository/contract-scoped.repository';
 import { ComplianceCheckScopedRepository } from '../../scoped-repository/compliance-check-scoped.repository';
+import { PlaybookResolverService } from '../../playbook/playbook-resolver.service';
 
 /**
  * Item 3 — layer-aware overall_status + separate playbook_status axis, the
@@ -44,6 +45,7 @@ describe('ComplianceService — layer-aware overall_status + playbook_status (fa
         { provide: MeteringService, useValue: {} },
         { provide: ContractScopedRepository, useValue: {} },
         { provide: ComplianceCheckScopedRepository, useValue: {} },
+        { provide: PlaybookResolverService, useValue: {} },
       ],
     }).compile();
     service = module.get(ComplianceService);

@@ -16,6 +16,7 @@ import { ComplianceKnowledgeService } from '../services/compliance-knowledge.ser
 import { ComplianceObligationService } from '../services/compliance-obligation.service';
 import { ContractScopedRepository } from '../../scoped-repository/contract-scoped.repository';
 import { ComplianceCheckScopedRepository } from '../../scoped-repository/compliance-check-scoped.repository';
+import { PlaybookResolverService } from '../../playbook/playbook-resolver.service';
 
 /**
  * Option B — Chokepoint migration (compliance finale, 4 of 4): SERVICE-LAYER
@@ -63,6 +64,7 @@ describe('ComplianceService — Option B scoped wiring (finale)', () => {
         { provide: MeteringService, useValue: {} },
         { provide: ContractScopedRepository, useValue: contractScoped },
         { provide: ComplianceCheckScopedRepository, useValue: checkScoped },
+        { provide: PlaybookResolverService, useValue: {} },
       ],
     }).compile();
     service = module.get(ComplianceService);

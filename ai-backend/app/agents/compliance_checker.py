@@ -95,7 +95,10 @@ Return a JSON object exactly matching:
       "actual_text": "<excerpt of the contract clause if applicable>" | null,
       "recommendation": "<concrete action the user should take>",
       "knowledge_asset_ref": "<title/id of the knowledge asset that
-                              justified this finding>" | null
+                              justified this finding>" | null,
+      "playbook_position_id": "<the position_id you were given for this position,
+                              ONLY for a PLAYBOOK-layer finding derived from a
+                              listed position; otherwise null>" | null
     }
   ],
   "summary": {
@@ -155,6 +158,7 @@ class ComplianceCheckerAgent(BaseAgent):
         standard_knowledge: str | None = None,
         jurisdiction_knowledge: str | None = None,
         playbook_knowledge: str | None = None,
+        playbook_positions: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         """Run a multi-layer compliance check and return structured findings.
 
@@ -189,6 +193,18 @@ class ComplianceCheckerAgent(BaseAgent):
         if playbook_knowledge:
             sections.append("## PLAYBOOK knowledge")
             sections.append(playbook_knowledge.strip())
+            sections.append("")
+        if playbook_positions:
+            sections.append("## PLAYBOOK positions (STRUCTURED — exact rules)")
+            sections.append(
+                "Each line is an organisation standard for a clause type with an "
+                "EXACT rule. Judge the contract against these precise bounds. When "
+                "a PLAYBOOK finding comes from one of these positions, set its "
+                '"playbook_position_id" to that position\'s id (only an id listed '
+                "here)."
+            )
+            for position in playbook_positions:
+                sections.append(_render_position_rule(position))
             sections.append("")
 
         user_content = "\n".join(sections)
@@ -285,6 +301,28 @@ class ComplianceCheckerAgent(BaseAgent):
         """
         key = cleaned.find('"findings"')
         return salvage_json_array(cleaned[key:] if key != -1 else cleaned)
+
+
+def _render_position_rule(position: dict[str, Any]) -> str:
+    """One compact, model-readable rule line, carrying the position_id to echo."""
+    pid = position.get("position_id", "")
+    clause_type = position.get("clause_type", "")
+    rule_type = str(position.get("rule_type", ""))
+    vc = position.get("value_config") or {}
+    if rule_type == "RANGE":
+        rule = f"acceptable {vc.get('min')}–{vc.get('max')} {vc.get('unit', '')}".strip()
+    elif rule_type == "THRESHOLD":
+        op = "at most" if vc.get("direction") == "AT_MOST" else "at least"
+        rule = f"{op} {vc.get('value')} {vc.get('unit', '')}".strip()
+    elif rule_type == "ENUM":
+        rule = f"one of [{', '.join(map(str, vc.get('allowed') or []))}]"
+    elif rule_type == "REQUIRED":
+        rule = "clause must be present"
+    elif rule_type == "TEXT":
+        rule = str(vc.get("text", "")).strip()
+    else:
+        rule = "(unrecognized rule)"
+    return f"- [position_id={pid}] {clause_type}: {rule}"
 
 
 def _recompute_summary(findings: list[dict[str, Any]]) -> dict[str, Any]:

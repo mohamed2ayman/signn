@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Brackets, Repository } from 'typeorm';
+import { Brackets, In, Repository } from 'typeorm';
 
 import { PlaybookPosition, PlaybookScope } from '../../database/entities';
 
@@ -72,6 +72,20 @@ export class PlaybookResolverService {
 
     const candidates = await this.loadCandidates(orgId, target);
     return this.foldByPrecedence(candidates);
+  }
+
+  /**
+   * 7.22 Item 4 — which of these ids are real playbook positions. Used to guard
+   * the echoed playbook_position_id on a compliance finding (an invented id is
+   * dropped, so the FK never dangles).
+   */
+  async filterExistingIds(ids: string[]): Promise<Set<string>> {
+    if (ids.length === 0) return new Set();
+    const rows = await this.repo.find({
+      where: { id: In(ids) },
+      select: { id: true },
+    });
+    return new Set(rows.map((r) => r.id));
   }
 
   // ─── Internals ───────────────────────────────────────────────────────────

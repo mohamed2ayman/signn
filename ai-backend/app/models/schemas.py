@@ -452,6 +452,18 @@ class AsyncJobResponse(BaseModel):
 # Compliance Check (Phase 3.4)
 # ---------------------------------------------------------------------------
 
+class PlaybookPositionInput(BaseModel):
+    """One resolved org playbook position, sent so the model judges deviations
+    against EXACT rules (Item 1, Version A). value_config stays a loose dict —
+    the typed shape (keyed by rule_type) lives on the NestJS side; the agent
+    reads it as-is."""
+
+    position_id: str = Field(..., description="UUID of the playbook_positions row; echo it back on any finding derived from this position.")
+    clause_type: str = Field(..., description="The clause type this position governs.")
+    rule_type: str = Field(..., description="RANGE | THRESHOLD | ENUM | REQUIRED | TEXT")
+    value_config: dict[str, Any] = Field(..., description="Typed position value, interpreted through rule_type.")
+
+
 class ComplianceCheckRequest(BaseModel):
     """Request body for the compliance-check agent."""
 
@@ -473,6 +485,13 @@ class ComplianceCheckRequest(BaseModel):
     )
     playbook_knowledge: Optional[str] = Field(
         None, description="Concatenated text from organisation PLAYBOOK assets."
+    )
+    playbook_positions: Optional[list[PlaybookPositionInput]] = Field(
+        None,
+        description=(
+            "Resolved org playbook positions (structured rules). Absent/None = "
+            "today's prose-only behaviour."
+        ),
     )
 
 

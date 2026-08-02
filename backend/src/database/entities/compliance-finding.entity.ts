@@ -8,6 +8,7 @@ import {
 } from 'typeorm';
 import { ComplianceCheck } from './compliance-check.entity';
 import { User } from './user.entity';
+import { PlaybookPosition } from './playbook-position.entity';
 
 export enum ComplianceFindingLayer {
   STANDARD = 'STANDARD',
@@ -87,6 +88,19 @@ export class ComplianceFinding {
   /** ID or title of a knowledge asset that justified the finding. */
   @Column({ type: 'varchar', length: 255, nullable: true })
   knowledge_asset_ref: string | null;
+
+  /**
+   * 7.22 Item 4 — the playbook position this deviation is against. NULL for
+   * non-playbook findings, or when the model echoed no/invalid id. FK ->
+   * playbook_positions(id) ON DELETE SET NULL (deleting a position drops the
+   * link, never the finding).
+   */
+  @Column({ type: 'uuid', nullable: true })
+  playbook_position_id: string | null;
+
+  @ManyToOne(() => PlaybookPosition, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'playbook_position_id' })
+  playbook_position: PlaybookPosition | null;
 
   @Column({
     type: 'enum',
