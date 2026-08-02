@@ -176,6 +176,7 @@ describeReal('Proposed-clause leak fix — Part A (real Postgres)', () => {
       {} as any, // 9 knowledge
       {} as any, // 10 obligationsLayer
       {} as any, // 11 metering
+      {} as any, // 12 playbookResolver (7.22 Item 4; not exercised here)
     );
 
     await seed();
