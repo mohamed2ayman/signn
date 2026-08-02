@@ -4,9 +4,22 @@ import { Brackets, Repository } from 'typeorm';
 import {
   AssetReviewStatus,
   KnowledgeAsset,
+  PlaybookPosition,
 } from '../../../database/entities';
 import { PlaybookResolverService } from '../../playbook/playbook-resolver.service';
 import { serializePlaybookPositions } from '../../playbook/playbook-serializer.util';
+
+/**
+ * 7.22 Item 1 — a resolved playbook position in AI-ready shape (loose
+ * value_config; the typed shape lives on the entity). Sent to the compliance
+ * agent alongside the prose playbook_knowledge.
+ */
+export interface PlaybookPositionForAI {
+  position_id: string;
+  clause_type: string;
+  rule_type: string;
+  value_config: Record<string, unknown>;
+}
 
 export interface KnowledgeContextResult {
   /** Concatenated text from STANDARD-tagged assets. */
@@ -22,6 +35,8 @@ export interface KnowledgeContextResult {
    * have always fed it. Either half may be absent; null means neither exists.
    */
   playbook_knowledge: string | null;
+  /** 7.22 Item 1 — resolved positions in AI-ready shape (same resolve as the prose). */
+  playbook_positions: PlaybookPositionForAI[];
   /** All asset IDs that contributed text — stored on ComplianceCheck.knowledge_assets_used. */
   asset_ids: string[];
 }
@@ -101,15 +116,23 @@ export class ComplianceKnowledgeService {
       for (const asset of set) ids.add(asset.id);
     }
 
+    const playbook = await this.buildPlaybookSection(
+      input.orgId,
+      input.projectId ?? null,
+      input.contractId ?? null,
+      playbookAssets,
+    );
+
     return {
       standard_knowledge: this.formatAssets(standardAssets),
       jurisdiction_knowledge: this.formatAssets(jurisdictionAssets),
-      playbook_knowledge: await this.buildPlaybookSection(
-        input.orgId,
-        input.projectId ?? null,
-        input.contractId ?? null,
-        playbookAssets,
-      ),
+      playbook_knowledge: playbook.text,
+      playbook_positions: playbook.positions.map((p) => ({
+        position_id: p.id,
+        clause_type: p.clause_type,
+        rule_type: p.rule_type,
+        value_config: p.value_config as unknown as Record<string, unknown>,
+      })),
       asset_ids: Array.from(ids),
     };
   }
@@ -136,17 +159,17 @@ export class ComplianceKnowledgeService {
     projectId: string | null,
     contractId: string | null,
     playbookAssets: KnowledgeAsset[],
-  ): Promise<string | null> {
+  ): Promise<{ text: string | null; positions: PlaybookPosition[] }> {
     const cap = ComplianceKnowledgeService.MAX_SECTION_CHARS;
 
     let structured: string | null = null;
+    let positions: PlaybookPosition[] = [];
     if (orgId) {
       try {
-        const positions =
-          await this.playbookResolver.resolveEffectivePositions(orgId, {
-            projectId,
-            contractId,
-          });
+        positions = await this.playbookResolver.resolveEffectivePositions(
+          orgId,
+          { projectId, contractId },
+        );
         structured = serializePlaybookPositions(positions, { maxChars: cap });
       } catch (err) {
         this.logger.warn(
@@ -186,14 +209,16 @@ export class ComplianceKnowledgeService {
       structured && assetText
         ? `${structured}\n\n${assetText}`
         : (structured ?? assetText);
-    if (!combined) return null;
+    if (!combined) return { text: null, positions };
 
     // ABSOLUTE BACKSTOP. Both halves budget themselves, but each does so with
     // its own arithmetic; this is the one place the section cap is actually
     // guaranteed rather than merely intended. Structured positions were placed
     // first precisely so that what a clamp here removes is the lower-priority
     // asset tail.
-    return combined.length > cap ? this.clampToLength(combined, cap) : combined;
+    const text =
+      combined.length > cap ? this.clampToLength(combined, cap) : combined;
+    return { text, positions };
   }
 
   /**

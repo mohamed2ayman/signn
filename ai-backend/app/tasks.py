@@ -232,6 +232,7 @@ def run_compliance_check(self, request_data: dict[str, Any]) -> dict[str, Any]:
             standard_knowledge=request_data.get("standard_knowledge"),
             jurisdiction_knowledge=request_data.get("jurisdiction_knowledge"),
             playbook_knowledge=request_data.get("playbook_knowledge"),
+            playbook_positions=request_data.get("playbook_positions"),
         )
         return {"status": "completed", "result": result}
     except Exception as e:

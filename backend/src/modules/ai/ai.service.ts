@@ -221,6 +221,12 @@ export class AiService {
     standard_knowledge?: string | null;
     jurisdiction_knowledge?: string | null;
     playbook_knowledge?: string | null;
+    playbook_positions?: Array<{
+      position_id: string;
+      clause_type: string;
+      rule_type: string;
+      value_config: Record<string, unknown>;
+    }> | null;
   }): Promise<{ job_id: string; status: string }> {
     const response = await firstValueFrom(
       this.httpService.post(`${this.aiBackendUrl}/agents/compliance-check`, data),

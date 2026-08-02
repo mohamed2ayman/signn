@@ -25,6 +25,7 @@ import { MeteringService } from '../../metering/services/metering.service';
 import { MeterKey, MeterLedgerStatus } from '../../metering/enums/meter-key.enum';
 import { ComplianceKnowledgeService } from './compliance-knowledge.service';
 import { ComplianceObligationService } from './compliance-obligation.service';
+import { PlaybookResolverService } from '../../playbook/playbook-resolver.service';
 // Option B — chokepoint migration (compliance finale, 4 of 4): contract-scoped
 // reads route through the data-layer tenancy chokepoint (layer 2) UNDER the
 // existing controller findInOrg walls (layer 1) — two checks, two layers.
@@ -97,6 +98,9 @@ export class ComplianceService {
      * release. Engine code MUST NOT be modified — call only.
      */
     private readonly metering: MeteringService,
+    // 7.22 Item 4 — validates echoed playbook_position_id against real positions
+    // (FK-safe: an invented id is nulled, never a dangling reference).
+    private readonly playbookResolver: PlaybookResolverService,
   ) {}
 
   /**
@@ -243,6 +247,7 @@ export class ComplianceService {
           standard_knowledge: ctx.standard_knowledge,
           jurisdiction_knowledge: ctx.jurisdiction_knowledge,
           playbook_knowledge: ctx.playbook_knowledge,
+          playbook_positions: ctx.playbook_positions,
         });
         saved.ai_job_id = dispatch.job_id;
         await this.checkRepo.save(saved); // lint-exempt: write (persist check/finding state); the chokepoint is read-only
@@ -506,7 +511,21 @@ export class ComplianceService {
     check: ComplianceCheck,
     aiResult: { findings: any[]; summary?: any },
   ): Promise<void> {
-    const rows: Partial<ComplianceFinding>[] = (aiResult.findings ?? []).map(
+    const findings = aiResult.findings ?? [];
+    // 7.22 Item 4 — validate the echoed playbook_position_id against real
+    // positions. The model is only ever shown THIS org's positions, so an id it
+    // echoes is valid iff it exists; an invented UUID is nulled (never a
+    // dangling FK).
+    const echoedIds = findings
+      .map((f: any) => f.playbook_position_id)
+      .filter(
+        (v: unknown): v is string => typeof v === 'string' && v.length > 0,
+      );
+    const validPositionIds = echoedIds.length
+      ? await this.playbookResolver.filterExistingIds(echoedIds)
+      : new Set<string>();
+
+    const rows: Partial<ComplianceFinding>[] = findings.map(
       (f) => ({
         compliance_check_id: check.id,
         layer: this.coerceEnum(
@@ -529,6 +548,11 @@ export class ComplianceService {
         actual_text: f.actual_text ?? null,
         recommendation: f.recommendation ?? null,
         knowledge_asset_ref: f.knowledge_asset_ref ?? null,
+        playbook_position_id:
+          typeof f.playbook_position_id === 'string' &&
+          validPositionIds.has(f.playbook_position_id)
+            ? f.playbook_position_id
+            : null,
         status: ComplianceFindingStatus.OPEN,
       }),
     );
