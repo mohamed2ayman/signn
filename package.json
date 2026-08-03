@@ -26,6 +26,7 @@
   },
   "homepage": "https://github.com/mohamed2ayman/signn#readme",
   "devDependencies": {
+    "@testing-library/dom": "^9.3.4",
     "concurrently": "^9.2.1"
   }
 }
