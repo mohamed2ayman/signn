@@ -54,8 +54,14 @@ describeReal('KnowledgeAssetsService — org-scope leak fix (real Postgres)', ()
   const A1 = randomUUID(); // org A private
   const B1 = randomUUID(); // org B private
   const G = randomUUID(); // global (organization_id NULL)
+  const GX = randomUUID(); // global with a DIFFERENT asset_type (filter-escape probe)
 
-  const seedAsset = (id: string, orgId: string | null, label: string) =>
+  const seedAsset = (
+    id: string,
+    orgId: string | null,
+    label: string,
+    assetType: AssetType = AssetType.KNOWLEDGE,
+  ) =>
     assetRepo.save(
       assetRepo.create({
         id,
@@ -63,7 +69,7 @@ describeReal('KnowledgeAssetsService — org-scope leak fix (real Postgres)', ()
         organization_id: orgId ?? undefined,
         project_id: undefined,
         title: `orgscope-${label}-${id.slice(0, 8)}`,
-        asset_type: AssetType.KNOWLEDGE,
+        asset_type: assetType,
         review_status: AssetReviewStatus.APPROVED,
       }),
     );
@@ -94,10 +100,13 @@ describeReal('KnowledgeAssetsService — org-scope leak fix (real Postgres)', ()
     await seedAsset(A1, orgAId, 'A1');
     await seedAsset(B1, orgBId, 'B1');
     await seedAsset(G, null, 'G');
+    // Global asset with asset_type LAW — used to prove a filter binds to the
+    // GLOBAL scope branch too (the OR-grouping fix).
+    await seedAsset(GX, null, 'GX', AssetType.LAW);
   });
 
   afterAll(async () => {
-    await assetRepo.delete([A1, B1, G]);
+    await assetRepo.delete([A1, B1, G, GX]);
     await orgRepo.delete([orgAId, orgBId]);
     await moduleRef?.close();
   });
@@ -117,6 +126,18 @@ describeReal('KnowledgeAssetsService — org-scope leak fix (real Postgres)', ()
       expect(got).toContain(G); // global still returned
       expect(got).not.toContain(A1); // org A private not leaked
       expect(got).not.toContain(B1); // org B private not leaked
+    });
+
+    it('a filter binds across ALL scope branches: a GLOBAL asset with a non-matching asset_type is EXCLUDED (OR-grouping fix)', async () => {
+      // GX is a GLOBAL (platform) asset with asset_type LAW. Querying as org A
+      // with asset_type=KNOWLEDGE must EXCLUDE it. Before the OR-grouping fix the
+      // platform branch escaped the trailing andWhere filter, so GX leaked through.
+      const got = ids(
+        await service.findAll(orgAId, { asset_type: AssetType.KNOWLEDGE }),
+      );
+      expect(got).not.toContain(GX); // leaked past the filter before the fix
+      expect(got).toContain(G); // matching global still returned (filter not over-broad)
+      expect(got).toContain(A1); // matching org-private still returned
     });
   });
 
