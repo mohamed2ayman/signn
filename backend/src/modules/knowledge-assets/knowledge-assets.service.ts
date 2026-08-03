@@ -7,7 +7,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Brackets, Repository } from 'typeorm';
 import * as crypto from 'crypto';
 import {
   KnowledgeAsset,
@@ -97,16 +97,20 @@ export class KnowledgeAssetsService {
       if (filters?.project_id) {
         // Three-tier visibility: platform + org-wide + this project's assets.
         qb.where(
-          '(asset.organization_id IS NULL AND asset.project_id IS NULL)' +
-            ' OR (asset.organization_id = :orgId AND asset.project_id IS NULL)' +
-            ' OR (asset.organization_id = :orgId AND asset.project_id = :projectId)',
+          new Brackets((b) => {
+            b.where('asset.organization_id IS NULL AND asset.project_id IS NULL')
+              .orWhere('asset.organization_id = :orgId AND asset.project_id IS NULL')
+              .orWhere('asset.organization_id = :orgId AND asset.project_id = :projectId');
+          }),
           { orgId, projectId: filters.project_id },
         );
       } else {
         // Two-tier (backward compat): platform + org-wide only, no project assets.
         qb.where(
-          '(asset.organization_id IS NULL AND asset.project_id IS NULL)' +
-            ' OR (asset.organization_id = :orgId AND asset.project_id IS NULL)',
+          new Brackets((b) => {
+            b.where('asset.organization_id IS NULL AND asset.project_id IS NULL')
+              .orWhere('asset.organization_id = :orgId AND asset.project_id IS NULL');
+          }),
           { orgId },
         );
       }
