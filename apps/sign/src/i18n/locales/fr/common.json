@@ -3,6 +3,12 @@
     "incomplete": {
       "title": "Les résultats peuvent être incomplets.",
       "body": "La réponse de l'IA a été tronquée avant la fin — les constats ci-dessous proviennent d'un résultat partiel. Relancez la vérification ou examinez-les attentivement."
+    },
+    "playbookStatus": {
+      "label": "Playbook",
+      "ON_STANDARD": "Conforme au standard",
+      "MINOR_DEVIATIONS": "Écarts mineurs",
+      "MAJOR_DEVIATIONS": "Écarts majeurs"
     }
   },
   "riskTab": {
