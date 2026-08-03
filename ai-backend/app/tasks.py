@@ -39,6 +39,7 @@ def run_risk_analysis(self, request_data: dict[str, Any]) -> dict[str, Any]:
         risks = agent.analyze(
             clauses=request_data["clauses"],
             knowledge_context=request_data.get("knowledge_context"),
+            perspective=request_data.get("perspective"),
         )
         # Issue 5 — surface any batches that failed after retry (partial-result
         # semantics: the run still succeeds; the skipped clauses are reported).
@@ -233,6 +234,7 @@ def run_compliance_check(self, request_data: dict[str, Any]) -> dict[str, Any]:
             jurisdiction_knowledge=request_data.get("jurisdiction_knowledge"),
             playbook_knowledge=request_data.get("playbook_knowledge"),
             playbook_positions=request_data.get("playbook_positions"),
+            perspective=request_data.get("perspective"),
         )
         return {"status": "completed", "result": result}
     except Exception as e:

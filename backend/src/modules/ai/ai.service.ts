@@ -31,6 +31,7 @@ export class AiService {
     }>;
     org_id: string;
     knowledge_context?: string;
+    perspective?: string | null;
   }): Promise<{ job_id: string; status: string }> {
     const response = await firstValueFrom(
       this.httpService.post(`${this.aiBackendUrl}/agents/risk-analysis`, data),
@@ -227,6 +228,7 @@ export class AiService {
       rule_type: string;
       value_config: Record<string, unknown>;
     }> | null;
+    perspective?: string | null;
   }): Promise<{ job_id: string; status: string }> {
     const response = await firstValueFrom(
       this.httpService.post(`${this.aiBackendUrl}/agents/compliance-check`, data),
