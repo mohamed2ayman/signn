@@ -19,6 +19,7 @@ import logging
 from typing import Any
 
 from app.agents.base_agent import BaseAgent
+from app.utils.perspective import normalize_perspective
 from app.config.settings import get_settings
 from app.utils.json_salvage import salvage_json_array
 
@@ -159,17 +160,34 @@ class ComplianceCheckerAgent(BaseAgent):
         jurisdiction_knowledge: str | None = None,
         playbook_knowledge: str | None = None,
         playbook_positions: list[dict[str, Any]] | None = None,
+        perspective: str | None = None,
     ) -> dict[str, Any]:
         """Run a multi-layer compliance check and return structured findings.
 
         Returns a dict with keys ``findings`` and ``summary``.
         """
+        # Feature #7 — validate/normalize once at entry (IGNORE-invalid → None,
+        # so the prompt path stays byte-identical to neutral when unset/invalid).
+        perspective = normalize_perspective(perspective)
+
         sections: list[str] = []
 
         sections.append("## Contract metadata")
         sections.append(f"- contract_type: {contract_type or 'UNKNOWN'}")
         sections.append(f"- jurisdiction: {jurisdiction or 'UNSPECIFIED'}")
         sections.append("")
+
+        # Feature #7 — optional viewpoint framing. When perspective is None
+        # (unset, or an invalid code normalized away), NOTHING is appended here,
+        # so the joined sections are byte-identical to the neutral path.
+        if perspective:
+            sections.append("## Analysis perspective")
+            sections.append(
+                f"Evaluate compliance from the perspective of the {perspective} "
+                "party — prioritise the findings that most affect that party's "
+                "position. Do not omit findings relevant to other parties."
+            )
+            sections.append("")
 
         sections.append("## Contract clauses")
         for clause in clauses:

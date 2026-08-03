@@ -28,6 +28,13 @@ class RiskAnalysisRequest(BaseModel):
         None,
         description="Optional additional context retrieved from the knowledge base.",
     )
+    perspective: Optional[str] = Field(
+        None,
+        description=(
+            "Optional party-role CODE (e.g. CONTRACTOR) to frame the analysis "
+            "from that party's viewpoint. None = today's neutral analysis."
+        ),
+    )
 
 
 class RiskItem(BaseModel):
@@ -491,6 +498,13 @@ class ComplianceCheckRequest(BaseModel):
         description=(
             "Resolved org playbook positions (structured rules). Absent/None = "
             "today's prose-only behaviour."
+        ),
+    )
+    perspective: Optional[str] = Field(
+        None,
+        description=(
+            "Optional party-role CODE (e.g. CONTRACTOR) to frame the analysis "
+            "from that party's viewpoint. None = today's neutral analysis."
         ),
     )
 

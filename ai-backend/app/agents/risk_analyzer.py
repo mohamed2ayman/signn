@@ -9,6 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from app.agents.base_agent import BaseAgent
+from app.utils.perspective import normalize_perspective
 from app.config.settings import get_settings
 from app.utils.json_salvage import salvage_json_array
 
@@ -194,6 +195,7 @@ class RiskAnalyzerAgent(BaseAgent):
         self,
         clauses: list[dict[str, Any]],
         knowledge_context: str | None = None,
+        perspective: str | None = None,
     ) -> list[dict[str, Any]]:
         """Analyse *clauses* in small batches and return the aggregated risks.
 
@@ -215,6 +217,9 @@ class RiskAnalyzerAgent(BaseAgent):
             calibrate risk assessment.
         """
         self.failed_batches: list[dict[str, Any]] = []
+        # Feature #7 — validate/normalize once at entry (IGNORE-invalid → None,
+        # so the prompt path stays byte-identical to neutral when unset/invalid).
+        perspective = normalize_perspective(perspective)
         batches = [
             clauses[i : i + RISK_BATCH_SIZE]
             for i in range(0, len(clauses), RISK_BATCH_SIZE)
@@ -235,6 +240,7 @@ class RiskAnalyzerAgent(BaseAgent):
                     batch_index,
                     len(batches),
                     knowledge_context,
+                    perspective,
                 ): batch_index
                 for batch_index, batch in enumerate(batches)
             }
@@ -252,13 +258,14 @@ class RiskAnalyzerAgent(BaseAgent):
         batch_index: int,
         total_batches: int,
         knowledge_context: str | None,
+        perspective: str | None = None,
     ) -> list[dict[str, Any]]:
         """Analyse ONE batch; retry once on any failure, then log + skip it."""
         last_err: Exception | None = None
         for _attempt in (1, 2):  # original try + one retry
             try:
                 return self._analyze_batch(
-                    batch, batch_index, total_batches, knowledge_context
+                    batch, batch_index, total_batches, knowledge_context, perspective
                 )
             except Exception as err:  # noqa: BLE001 — one bad batch must not sink the run
                 last_err = err
@@ -285,10 +292,11 @@ class RiskAnalyzerAgent(BaseAgent):
         batch_index: int,
         total_batches: int,
         knowledge_context: str | None,
+        perspective: str | None = None,
     ) -> list[dict[str, Any]]:
         """One model call for one batch of clauses; parse + return its risks."""
         user_content = self._build_batch_prompt(
-            batch, batch_index, total_batches, knowledge_context
+            batch, batch_index, total_batches, knowledge_context, perspective
         )
         message = self._call_model(
             scrub=True,  # Camp-1: structured-PII scrubbed (Slice 1)
@@ -310,6 +318,7 @@ class RiskAnalyzerAgent(BaseAgent):
         batch_index: int,
         total_batches: int,
         knowledge_context: str | None,
+        perspective: str | None = None,
     ) -> str:
         """Build one batch's user prompt — same spirit as the original single
         call, plus an explicit "assess EVERY clause" instruction. The old
@@ -324,6 +333,16 @@ class RiskAnalyzerAgent(BaseAgent):
             f"risks ONLY if it is genuinely low-risk; do not force a finding, but "
             f"do not omit a clause that carries real risk.\n\n"
         )
+        # Feature #7 — optional viewpoint framing. When perspective is None
+        # (unset, or an invalid code normalized away), NOTHING is appended here,
+        # so user_content is byte-identical to the neutral path.
+        if perspective:
+            user_content += (
+                "### Analysis Perspective\n"
+                f"Assess these clauses from the perspective of the {perspective} "
+                "party — prioritise the risks that most affect that party's "
+                "position. Do not omit risks to other parties.\n\n"
+            )
         for clause in batch:
             header = f"### Clause {clause.get('id', 'unknown')}"
             doc_label = clause.get("document_label")
