@@ -9,7 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from app.agents.base_agent import BaseAgent
-from app.agents.perspective import normalize_perspective
+from app.utils.perspective import normalize_perspective
 from app.config.settings import get_settings
 from app.utils.json_salvage import salvage_json_array
 

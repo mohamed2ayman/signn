@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from app.agents.compliance_checker import SYSTEM_PROMPT as COMPLIANCE_SYSTEM_PROMPT
 from app.agents.compliance_checker import ComplianceCheckerAgent
-from app.agents.perspective import VALID_PERSPECTIVE_ROLES, normalize_perspective
+from app.utils.perspective import VALID_PERSPECTIVE_ROLES, normalize_perspective
 from app.agents.risk_analyzer import SYSTEM_PROMPT as RISK_SYSTEM_PROMPT
 from app.agents.risk_analyzer import RiskAnalyzerAgent
 
