@@ -62,6 +62,15 @@ export interface ComplianceFinding {
   created_at: string;
 }
 
+/**
+ * Organisation-preference axis over PLAYBOOK-layer findings only (PR #213).
+ * Rides `findings_summary` jsonb — no column, no migration.
+ */
+export type PlaybookStatus =
+  | 'ON_STANDARD'
+  | 'MINOR_DEVIATIONS'
+  | 'MAJOR_DEVIATIONS';
+
 export interface ComplianceCheck {
   id: string;
   contract_id: string;
@@ -75,6 +84,13 @@ export interface ComplianceCheck {
     by_layer?: Record<string, number>;
     by_severity?: Record<string, number>;
     overall_status?: string;
+    /**
+     * Organisation-preference axis over PLAYBOOK-layer findings only (PR #213).
+     * NEVER affects `overall_status`, which is the legal axis with PLAYBOOK
+     * excluded. Always present on a check completed after PR #213; absent on
+     * the FAILED branch (which writes only `error`) and on legacy rows.
+     */
+    playbook_status?: PlaybookStatus;
     /** True when the AI response was truncated and findings were salvaged from a partial result. */
     incomplete?: boolean;
     /** AI-side failure reason, stored on the FAILED branch. */

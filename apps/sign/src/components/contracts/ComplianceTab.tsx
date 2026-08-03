@@ -8,6 +8,7 @@ import complianceService, {
   type ComplianceFindingLayer,
   type ComplianceFindingSeverity,
   type ContractObligation,
+  type PlaybookStatus,
 } from '@/services/api/complianceService';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
 import AIDisclaimer from '@/components/common/AIDisclaimer';
@@ -148,6 +149,7 @@ export default function ComplianceTab({ contractId, contractName, userEmail }: P
                     Compliance Check
                   </h2>
                   <StatusBadge status={check.overall_status} />
+                  <PlaybookStatusPill status={summary?.playbook_status} />
                 </div>
                 <p className="mt-1 text-xs text-gray-500">
                   Checked against{' '}
@@ -372,6 +374,38 @@ function StatusBadge({ status }: { status: ComplianceCheck['overall_status'] }) 
   return (
     <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${c.bg} ${c.text}`}>
       {c.label}
+    </span>
+  );
+}
+
+/**
+ * Organisation-playbook deviation axis (PR #213 `findings_summary.playbook_status`).
+ * SEPARATE from the legal StatusBadge beside it: a playbook deviation is a
+ * preference miss, never legal non-compliance — the backend excludes PLAYBOOK
+ * findings from `overall_status` and surfaces them only here.
+ */
+export const PLAYBOOK_STATUS_BADGE: Record<PlaybookStatus, string> = {
+  ON_STANDARD: 'bg-emerald-100 text-emerald-700',
+  MINOR_DEVIATIONS: 'bg-amber-100 text-amber-700',
+  // Deeper amber/orange, deliberately NOT the red the legal badge uses for
+  // NON_COMPLIANT: the worst playbook outcome is still a preference miss, and
+  // must never read as legal non-compliance.
+  MAJOR_DEVIATIONS: 'bg-orange-200 text-orange-900',
+};
+
+function PlaybookStatusPill({ status }: { status?: PlaybookStatus }) {
+  const { t } = useTranslation();
+  // Render nothing when the axis is absent rather than guessing a value: a
+  // PENDING check has no summary yet, the FAILED branch writes only `error`,
+  // and rows checked before PR #213 predate the field entirely.
+  if (!status || !(status in PLAYBOOK_STATUS_BADGE)) return null;
+  return (
+    <span
+      dir="auto"
+      className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${PLAYBOOK_STATUS_BADGE[status]}`}
+    >
+      {t('complianceTab.playbookStatus.label')}:{' '}
+      {t(`complianceTab.playbookStatus.${status}`)}
     </span>
   );
 }

@@ -3,6 +3,12 @@
     "incomplete": {
       "title": "Results may be incomplete.",
       "body": "The AI response was cut off before it finished — the findings below were recovered from a partial result. Re-run the check or review them carefully."
+    },
+    "playbookStatus": {
+      "label": "Playbook",
+      "ON_STANDARD": "On standard",
+      "MINOR_DEVIATIONS": "Minor deviations",
+      "MAJOR_DEVIATIONS": "Major deviations"
     }
   },
   "riskTab": {
