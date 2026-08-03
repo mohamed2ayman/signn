@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import {
@@ -42,6 +42,16 @@ export class DashboardAnalyticsService {
    * Supports loss-aversion metrics and habit-forming insights.
    */
   async getDashboardAnalytics(orgId: string) {
+    // PRIMARY GUARD. A no-org principal (e.g. a SYSTEM_ADMIN — seeded with a
+    // NULL organization_id) has no org dashboard. Fail closed BEFORE any query,
+    // so a missing orgId can never fall through to a platform-wide aggregate:
+    // a find-options `where: { organization_id: undefined }` silently DROPS the
+    // key and counts every org. Mandatory + greppable; covers every widget
+    // below, including any future find-options query.
+    if (!orgId) {
+      throw new BadRequestException('Organization context is required');
+    }
+
     const safeQuery = async <T>(fn: () => Promise<T>, fallback: T, label: string): Promise<T> => {
       try {
         return await fn();
@@ -98,9 +108,13 @@ export class DashboardAnalyticsService {
   }
 
   private async getProjectStats(orgId: string) {
-    const total = await this.projectRepository.count({
-      where: { organization_id: orgId },
-    });
+    // Fail-closed QueryBuilder — matches the 7 sibling stat methods. A null/
+    // undefined orgId binds as `= NULL` (matches nothing → 0), instead of
+    // count()'s find-options DROPPING the key and counting every org.
+    const total = await this.projectRepository
+      .createQueryBuilder('project')
+      .where('project.organization_id = :orgId', { orgId })
+      .getCount();
 
     return { total };
   }
