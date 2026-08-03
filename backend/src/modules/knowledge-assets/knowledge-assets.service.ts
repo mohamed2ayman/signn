@@ -110,6 +110,13 @@ export class KnowledgeAssetsService {
           { orgId },
         );
       }
+    } else {
+      // No org context (org-less principal) — GLOBAL/platform assets ONLY.
+      // Fail closed: a missing orgId must NEVER fall through to an unscoped
+      // query that returns other orgs' private assets. Global inclusion here is
+      // INTENTIONAL (platform assets are shared), not a side-effect of the
+      // truthiness guard.
+      qb.where('asset.organization_id IS NULL AND asset.project_id IS NULL');
     }
 
     if (filters?.asset_type) {
@@ -160,6 +167,10 @@ export class KnowledgeAssetsService {
 
     if (orgId) {
       qb.andWhere('(asset.organization_id = :orgId OR asset.organization_id IS NULL)', { orgId });
+    } else {
+      // No org context — GLOBAL/platform assets ONLY. A by-id read must never
+      // return another org's private asset. Fail closed (intentional global).
+      qb.andWhere('asset.organization_id IS NULL');
     }
 
     const asset = await qb.getOne();
