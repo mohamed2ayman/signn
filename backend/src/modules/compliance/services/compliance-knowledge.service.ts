@@ -272,8 +272,8 @@ export class ComplianceKnowledgeService {
       // Org-wide + (optionally) project-scoped; no platform assets.
       if (opts.projectId) {
         qb.andWhere(
-          '(a.organization_id = :orgId AND a.project_id IS NULL)' +
-            ' OR (a.organization_id = :orgId AND a.project_id = :projectId)',
+          '((a.organization_id = :orgId AND a.project_id IS NULL)' +
+            ' OR (a.organization_id = :orgId AND a.project_id = :projectId))',
           { orgId, projectId: opts.projectId },
         );
       } else {
@@ -286,15 +286,15 @@ export class ComplianceKnowledgeService {
       // Three-tier (platform + org-wide + project) or two-tier (no projectId).
       if (opts.projectId) {
         qb.andWhere(
-          '(a.organization_id IS NULL AND a.project_id IS NULL)' +
+          '((a.organization_id IS NULL AND a.project_id IS NULL)' +
             ' OR (a.organization_id = :orgId AND a.project_id IS NULL)' +
-            ' OR (a.organization_id = :orgId AND a.project_id = :projectId)',
+            ' OR (a.organization_id = :orgId AND a.project_id = :projectId))',
           { orgId, projectId: opts.projectId },
         );
       } else {
         qb.andWhere(
-          '(a.organization_id IS NULL AND a.project_id IS NULL)' +
-            ' OR (a.organization_id = :orgId AND a.project_id IS NULL)',
+          '((a.organization_id IS NULL AND a.project_id IS NULL)' +
+            ' OR (a.organization_id = :orgId AND a.project_id IS NULL))',
           { orgId },
         );
       }
@@ -346,15 +346,15 @@ export class ComplianceKnowledgeService {
     if (orgId) {
       if (projectId) {
         qb.andWhere(
-          '(a.organization_id IS NULL AND a.project_id IS NULL)' +
+          '((a.organization_id IS NULL AND a.project_id IS NULL)' +
             ' OR (a.organization_id = :orgId AND a.project_id IS NULL)' +
-            ' OR (a.organization_id = :orgId AND a.project_id = :projectId)',
+            ' OR (a.organization_id = :orgId AND a.project_id = :projectId))',
           { orgId, projectId },
         );
       } else {
         qb.andWhere(
-          '(a.organization_id IS NULL AND a.project_id IS NULL)' +
-            ' OR (a.organization_id = :orgId AND a.project_id IS NULL)',
+          '((a.organization_id IS NULL AND a.project_id IS NULL)' +
+            ' OR (a.organization_id = :orgId AND a.project_id IS NULL))',
           { orgId },
         );
       }

@@ -81,7 +81,9 @@ export class AdminActivityLogService {
 
     // Restrict to admin-relevant prefixes
     qb.where(
-      ADMIN_ACTION_PREFIXES.map((_, i) => `a.action LIKE :p${i}`).join(' OR '),
+      '(' +
+        ADMIN_ACTION_PREFIXES.map((_, i) => `a.action LIKE :p${i}`).join(' OR ') +
+        ')',
       Object.fromEntries(ADMIN_ACTION_PREFIXES.map((p, i) => [`p${i}`, `${p}%`])),
     );
 
@@ -145,7 +147,11 @@ export class AdminActivityLogService {
       .createQueryBuilder('a')
       .select('DISTINCT a.action', 'action')
       .where(
-        ADMIN_ACTION_PREFIXES.map((_, i) => `a.action LIKE :p${i}`).join(' OR '),
+        '(' +
+          ADMIN_ACTION_PREFIXES.map((_, i) => `a.action LIKE :p${i}`).join(
+            ' OR ',
+          ) +
+          ')',
         Object.fromEntries(
           ADMIN_ACTION_PREFIXES.map((p, i) => [`p${i}`, `${p}%`]),
         ),
