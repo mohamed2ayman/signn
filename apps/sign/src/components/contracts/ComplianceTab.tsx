@@ -18,6 +18,12 @@ import {
   AdjustStandardButton,
   PlaybookOverrideModal,
 } from '@/components/playbook/PlaybookOverridePanel';
+// 7.22 Slice A — "N of M positions on standard"; pure logic, unit-tested apart
+// from this tab (playbookCoverage.test.ts).
+import {
+  resolvePlaybookCoverage,
+  playbookCoverageKey,
+} from './playbookCoverage';
 
 interface Props {
   contractId: string;
@@ -150,6 +156,10 @@ export default function ComplianceTab({ contractId, contractName, userEmail }: P
                   </h2>
                   <StatusBadge status={check.overall_status} />
                   <PlaybookStatusPill status={summary?.playbook_status} />
+                  <PlaybookCoverageStat
+                    relevantCount={summary?.playbook_relevant_count}
+                    onStandardCount={summary?.playbook_on_standard_count}
+                  />
                 </div>
                 <p className="mt-1 text-xs text-gray-500">
                   Checked against{' '}
@@ -406,6 +416,40 @@ function PlaybookStatusPill({ status }: { status?: PlaybookStatus }) {
     >
       {t('complianceTab.playbookStatus.label')}:{' '}
       {t(`complianceTab.playbookStatus.${status}`)}
+    </span>
+  );
+}
+
+/**
+ * 7.22 Slice A — "N of M positions on standard" (PR #225's M/N counts).
+ *
+ * The denominator behind the pill beside it: the pill says WHETHER the playbook
+ * was met, this says over HOW MANY positions. Deliberately plain muted text
+ * rather than a third chip — the two badges carry status, and a third pill
+ * would compete with them for the same glance.
+ *
+ * Every decision about WHAT (and whether) to render lives in the pure
+ * `resolvePlaybookCoverage`, so it is tested without mounting this tab.
+ */
+function PlaybookCoverageStat({
+  relevantCount,
+  onStandardCount,
+}: {
+  relevantCount?: number;
+  onStandardCount?: number;
+}) {
+  const { t } = useTranslation();
+  const coverage = resolvePlaybookCoverage(relevantCount, onStandardCount);
+  if (!coverage) return null;
+  const key = playbookCoverageKey(coverage);
+  return (
+    <span dir="auto" className="text-[11px] font-medium text-gray-500">
+      {coverage.kind === 'counts'
+        ? t(key, {
+            onStandard: coverage.onStandard,
+            relevant: coverage.relevant,
+          })
+        : t(key)}
     </span>
   );
 }

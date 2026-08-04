@@ -9,6 +9,10 @@
       "ON_STANDARD": "مطابق للمعيار",
       "MINOR_DEVIATIONS": "انحرافات طفيفة",
       "MAJOR_DEVIATIONS": "انحرافات جوهرية"
+    },
+    "playbookCoverage": {
+      "onStandard": "{{onStandard}} من {{relevant}} مواقف مطابقة للمعيار",
+      "noPositions": "لا تنطبق أي مواقف من دليل المواقف"
     }
   },
   "riskTab": {

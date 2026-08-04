@@ -9,6 +9,10 @@
       "ON_STANDARD": "Conforme au standard",
       "MINOR_DEVIATIONS": "Écarts mineurs",
       "MAJOR_DEVIATIONS": "Écarts majeurs"
+    },
+    "playbookCoverage": {
+      "onStandard": "{{onStandard}} des {{relevant}} positions conformes au standard",
+      "noPositions": "Aucune position du playbook applicable"
     }
   },
   "riskTab": {

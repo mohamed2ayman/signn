@@ -9,6 +9,10 @@
       "ON_STANDARD": "On standard",
       "MINOR_DEVIATIONS": "Minor deviations",
       "MAJOR_DEVIATIONS": "Major deviations"
+    },
+    "playbookCoverage": {
+      "onStandard": "{{onStandard}} of {{relevant}} positions on standard",
+      "noPositions": "No playbook positions apply"
     }
   },
   "riskTab": {

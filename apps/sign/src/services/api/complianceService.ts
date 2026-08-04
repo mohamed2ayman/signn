@@ -91,6 +91,20 @@ export interface ComplianceCheck {
      * the FAILED branch (which writes only `error`) and on legacy rows.
      */
     playbook_status?: PlaybookStatus;
+    /**
+     * "N of M on standard" denominator (7.22 Item 2, PR #225). M =
+     * `playbook_relevant_count`, the number of playbook positions fed to the
+     * check; N = `playbook_on_standard_count`, M minus the distinct positions
+     * deviated from. N is EMITTED by the agent, never derived here, so the
+     * model and the UI cannot silently disagree on a number a lawyer reads.
+     *
+     * BOTH are optional and must be treated as such: the agent writes them
+     * together on the normal path, but they are absent on the FAILED branch
+     * (which writes only `error`), on legacy rows predating PR #225, and on
+     * the backend's `summarize()` fallback, which emits neither.
+     */
+    playbook_relevant_count?: number;
+    playbook_on_standard_count?: number;
     /** True when the AI response was truncated and findings were salvaged from a partial result. */
     incomplete?: boolean;
     /** AI-side failure reason, stored on the FAILED branch. */
