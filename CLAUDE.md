@@ -4508,7 +4508,21 @@ additive to Portal Rules 5–6 and the prior guest features (#1 viewer/comments,
   via `guestHttp` with a per-request `multipart/form-data` override + Bearer
   guest JWT; `guest.upload.*` i18n keys in en/ar/fr (exact parity).
 
-### KNOWN ISSUE flagged at merge (NOT a #4 defect; owned by Ayman — ERP/crypto subsystem)
+### ✅ RESOLVED (commit `6611869`, PR #100) — KNOWN ISSUE flagged at merge (was NOT a #4 defect; owned by Ayman — ERP/crypto subsystem)
+> **RESOLVED 2026-06-27 by commit `6611869` ("test: fix erp-sync credential
+> round-trip to decrypt via the DI CryptoService", #100) — test-only, 7
+> insertions / 3 deletions.** The fix took the SECOND option below: the test now
+> decrypts through `moduleRef.get(CryptoService)` — the same DI singleton the
+> encrypt path uses — so encrypt and decrypt can never diverge on the key,
+> whatever `ERP_CREDENTIAL_ENC_KEY` is (or isn't) set in the env. Verified in the
+> current spec at `erp-sync.integration.spec.ts:276` (`const crypto =
+> moduleRef.get(CryptoService);`); the hand-rolled `new CryptoService` is gone.
+> Note this was never a race — it was a deterministic, env-dependent key
+> divergence, and the fix removes the divergence STRUCTURALLY rather than
+> retrying around it. **The history below is retained deliberately** — the
+> "passing for the wrong reason" failure mode it documents is the reusable
+> lesson (see also lesson #310, the same family).
+
 `erp-sync.integration.spec.ts › "credentials are encrypted at rest, decrypt
 back, and are never returned"` fails with `CryptoService.decrypt: authentication
 failed (payload tampered or wrong key)` **whenever `ERP_CREDENTIAL_ENC_KEY` is
