@@ -46,10 +46,13 @@ export class ProjectPartiesService {
   }
 
   async findById(id: string, orgId: string): Promise<ProjectParty> {
-    const party = await this.projectPartyRepository.findOne({
-      where: { id, owner_organization_id: orgId },
-      relations: ['project', 'responses'],
-    });
+    const party = await this.projectPartyRepository
+      .createQueryBuilder('party')
+      .leftJoinAndSelect('party.project', 'project')
+      .leftJoinAndSelect('party.responses', 'responses')
+      .where('party.id = :id', { id })
+      .andWhere('party.owner_organization_id = :orgId', { orgId })
+      .getOne();
 
     if (!party) {
       throw new NotFoundException('Project party not found');
@@ -60,9 +63,11 @@ export class ProjectPartiesService {
 
   async create(orgId: string, dto: CreatePartyDto): Promise<ProjectParty> {
     // Verify the project belongs to this organization
-    const project = await this.projectRepository.findOne({
-      where: { id: dto.project_id, organization_id: orgId },
-    });
+    const project = await this.projectRepository
+      .createQueryBuilder('project')
+      .where('project.id = :projectId', { projectId: dto.project_id })
+      .andWhere('project.organization_id = :orgId', { orgId })
+      .getOne();
 
     if (!project) {
       throw new NotFoundException('Project not found in your organization');
@@ -94,9 +99,11 @@ export class ProjectPartiesService {
     orgId: string,
     dto: UpdatePartyDto,
   ): Promise<ProjectParty> {
-    const party = await this.projectPartyRepository.findOne({
-      where: { id, owner_organization_id: orgId },
-    });
+    const party = await this.projectPartyRepository
+      .createQueryBuilder('party')
+      .where('party.id = :id', { id })
+      .andWhere('party.owner_organization_id = :orgId', { orgId })
+      .getOne();
 
     if (!party) {
       throw new NotFoundException('Project party not found');
