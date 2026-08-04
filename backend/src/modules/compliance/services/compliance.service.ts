@@ -12,6 +12,7 @@ import {
   ComplianceExtractionStatus,
   ComplianceFinding,
   ComplianceFindingLayer,
+  ComplianceFindingClassification,
   ComplianceFindingSeverity,
   ComplianceFindingStatus,
   ComplianceFindingType,
@@ -553,6 +554,19 @@ export class ComplianceService {
           validPositionIds.has(f.playbook_position_id)
             ? f.playbook_position_id
             : null,
+        // 7.22 Item 2 — set ONLY on PLAYBOOK-layer findings (defense-in-depth on
+        // top of the DB CHECK); coerceEnumOrNull → null on absent/invalid.
+        classification:
+          this.coerceEnum(
+            f.layer,
+            ComplianceFindingLayer,
+            ComplianceFindingLayer.STANDARD,
+          ) === ComplianceFindingLayer.PLAYBOOK
+            ? this.coerceEnumOrNull(
+                f.classification,
+                ComplianceFindingClassification,
+              )
+            : null,
         status: ComplianceFindingStatus.OPEN,
       }),
     );
@@ -676,6 +690,24 @@ export class ComplianceService {
       }
     }
     return fallback;
+  }
+
+  /**
+   * Null-capable enum coercion for OPTIONAL enum columns. Returns the matching
+   * member (case-insensitive) or null when raw isn't a valid member — unlike
+   * coerceEnum, it never substitutes a fallback.
+   */
+  private coerceEnumOrNull<T extends Record<string, string>>(
+    raw: unknown,
+    enumObj: T,
+  ): T[keyof T] | null {
+    if (typeof raw === 'string') {
+      const upper = raw.toUpperCase();
+      if (Object.values(enumObj).includes(upper as T[keyof T])) {
+        return upper as T[keyof T];
+      }
+    }
+    return null;
   }
 
   private normalizeJurisdiction(country: string | null): string | null {
