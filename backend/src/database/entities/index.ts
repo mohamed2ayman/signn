@@ -23,6 +23,7 @@ export {
   ComplianceFindingType,
   ComplianceFindingSeverity,
   ComplianceFindingStatus,
+  ComplianceFindingClassification,
 } from './compliance-finding.entity';
 export {
   ObligationReminderLog,

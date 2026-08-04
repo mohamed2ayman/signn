@@ -40,6 +40,12 @@ export enum ComplianceFindingStatus {
   WAIVED = 'WAIVED',
 }
 
+export enum ComplianceFindingClassification {
+  MINOR = 'MINOR',
+  MAJOR = 'MAJOR',
+  NON_STANDARD = 'NON_STANDARD',
+}
+
 @Entity('compliance_findings')
 export class ComplianceFinding {
   @PrimaryGeneratedColumn('uuid')
@@ -101,6 +107,21 @@ export class ComplianceFinding {
   @ManyToOne(() => PlaybookPosition, { nullable: true, onDelete: 'SET NULL' })
   @JoinColumn({ name: 'playbook_position_id' })
   playbook_position: PlaybookPosition | null;
+
+  /**
+   * 7.22 Item 2 — PLAYBOOK deviation magnitude. MINOR/MAJOR when the finding
+   * deviates from a referenced position (playbook_position_id set); NON_STANDARD
+   * when a PLAYBOOK finding has no covering position. NULL for non-PLAYBOOK
+   * findings — a DB CHECK (chk_classification_playbook_only) enforces
+   * `classification IS NULL OR layer='PLAYBOOK'`.
+   */
+  @Column({
+    type: 'enum',
+    enum: ComplianceFindingClassification,
+    enumName: 'compliance_finding_classification_enum',
+    nullable: true,
+  })
+  classification: ComplianceFindingClassification | null;
 
   @Column({
     type: 'enum',

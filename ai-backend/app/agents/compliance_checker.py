@@ -99,7 +99,8 @@ Return a JSON object exactly matching:
                               justified this finding>" | null,
       "playbook_position_id": "<the position_id you were given for this position,
                               ONLY for a PLAYBOOK-layer finding derived from a
-                              listed position; otherwise null>" | null
+                              listed position; otherwise null>" | null,
+      "classification": "MINOR" | "MAJOR" | "NON_STANDARD" | null
     }
   ],
   "summary": {
@@ -125,6 +126,17 @@ findings; this NEVER affects overall_status)
 - ON_STANDARD: 0 PLAYBOOK findings
 - MINOR_DEVIATIONS: at least 1 PLAYBOOK finding, none at HIGH or CRITICAL
 - MAJOR_DEVIATIONS: at least 1 PLAYBOOK finding at HIGH or CRITICAL
+
+PLAYBOOK CLASSIFICATION (per PLAYBOOK finding — set "classification"; it MUST be
+null for every non-PLAYBOOK finding). Emit ALL THREE tiers as applicable:
+- MINOR: the clause deviates from a LISTED structured position by a SMALL margin
+  (just outside the exact bound). Set "playbook_position_id" to that position.
+- MAJOR: the clause deviates from a LISTED structured position by a LARGE margin
+  (far outside the bound) or omits a required position entirely. Set
+  "playbook_position_id" to that position.
+- NON_STANDARD: a PLAYBOOK concern for a clause type that has NO listed structured
+  position (judged against PLAYBOOK knowledge, not a precise bound). Leave
+  "playbook_position_id" null.
 
 SEVERITY GUIDANCE
 - CRITICAL: enforcement risk, financial exposure, mandatory law breach,
@@ -260,7 +272,13 @@ class ComplianceCheckerAgent(BaseAgent):
                 )
 
         raw_text = message.content[0].text
-        return self._parse_result(raw_text, truncated=truncated)
+        result = self._parse_result(raw_text, truncated=truncated)
+        # 7.22 Item 2 — denominator counts for "N of M on standard". M = number of
+        # structured positions evaluated; N = M minus the DISTINCT positions a
+        # PLAYBOOK finding deviated from. Auditable (emitted, not FE-derived);
+        # both ride findings_summary verbatim through persistFindings.
+        self._add_playbook_counts(result, playbook_positions)
+        return result
 
     def _parse_result(
         self, raw_text: str, *, truncated: bool
@@ -319,6 +337,30 @@ class ComplianceCheckerAgent(BaseAgent):
         """
         key = cleaned.find('"findings"')
         return salvage_json_array(cleaned[key:] if key != -1 else cleaned)
+
+    @staticmethod
+    def _add_playbook_counts(
+        result: dict[str, Any],
+        playbook_positions: list[dict[str, Any]] | None,
+    ) -> None:
+        """Inject M (relevant) + N (on-standard) into result['summary'].
+
+        M=0/N=0 when no positions were sent. _parse_result guarantees
+        result['summary'] is a dict, so this only adds two integer keys.
+        """
+        positions = playbook_positions or []
+        m = len(positions)
+        deviated = {
+            f.get("playbook_position_id")
+            for f in result.get("findings", [])
+            if f.get("layer") == "PLAYBOOK" and f.get("playbook_position_id")
+        }
+        n = max(m - len(deviated), 0)
+        summary = result.get("summary")
+        if not isinstance(summary, dict):
+            summary = result["summary"] = {}
+        summary["playbook_relevant_count"] = m
+        summary["playbook_on_standard_count"] = n
 
 
 def _render_position_rule(position: dict[str, Any]) -> str:
