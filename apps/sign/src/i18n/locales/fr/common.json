@@ -13,6 +13,15 @@
     "playbookCoverage": {
       "onStandard": "{{onStandard}} des {{relevant}} positions conformes au standard",
       "noPositions": "Aucune position du playbook applicable"
+    },
+    "classification": {
+      "MINOR": "Écart mineur",
+      "MAJOR": "Écart majeur",
+      "NON_STANDARD": "Aucune position — en ajouter une",
+      "hint": {
+        "deviation": "S'écarte d'une position de votre playbook — négociez cette clause ou ajustez votre standard.",
+        "gap": "Votre playbook n'a aucune position couvrant ce type de clause. Ajoutez-en une pour définir votre standard."
+      }
     }
   },
   "riskTab": {

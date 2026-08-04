@@ -41,6 +41,26 @@ export type ComplianceFindingStatus =
   | 'RESOLVED'
   | 'WAIVED';
 
+/**
+ * Per-finding playbook verdict (7.22 Item 2, PR #225).
+ *
+ * DISTINCT from `PlaybookStatus` below — #225 states it outright: "Distinct
+ * enum from Item 3's playbook_status (per-clause verdict vs contract rollup) —
+ * no shared enum." This one grades ONE finding; `PlaybookStatus` rolls the
+ * whole contract up. Never map one onto the other.
+ *
+ * MINOR / MAJOR  — deviates from a position the org actually holds
+ *                  (`playbook_position_id` is set). The org has a standard and
+ *                  this contract misses it: the action is to negotiate.
+ * NON_STANDARD   — a PLAYBOOK finding with NO covering position. Not a
+ *                  deviation at all but a COVERAGE GAP: there is nothing to
+ *                  negotiate against, and the action is to add a position.
+ */
+export type ComplianceFindingClassification =
+  | 'MINOR'
+  | 'MAJOR'
+  | 'NON_STANDARD';
+
 export type ReportType =
   | 'COMPLIANCE_SUMMARY'
   | 'OBLIGATIONS_REPORT'
@@ -57,6 +77,18 @@ export interface ComplianceFinding {
   actual_text: string | null;
   recommendation: string | null;
   knowledge_asset_ref: string | null;
+  /**
+   * 7.22 Item 2 (PR #225). NON-NULL only on PLAYBOOK-layer findings — a DB
+   * CHECK (`chk_classification_playbook_only`) enforces
+   * `classification IS NULL OR layer = 'PLAYBOOK'`, so a non-PLAYBOOK finding
+   * can never carry one.
+   *
+   * Null is ALSO possible ON a PLAYBOOK finding: the backend coerces via
+   * `coerceEnumOrNull` (null when the model omits or invalidates the value),
+   * and rows predating #225 have none. Treat null as "no badge", never as a
+   * default classification.
+   */
+  classification: ComplianceFindingClassification | null;
   status: ComplianceFindingStatus;
   acknowledged_at: string | null;
   created_at: string;

@@ -13,6 +13,15 @@
     "playbookCoverage": {
       "onStandard": "{{onStandard}} of {{relevant}} positions on standard",
       "noPositions": "No playbook positions apply"
+    },
+    "classification": {
+      "MINOR": "Minor deviation",
+      "MAJOR": "Major deviation",
+      "NON_STANDARD": "No position — add one",
+      "hint": {
+        "deviation": "Deviates from a position in your playbook — negotiate this clause or adjust your standard.",
+        "gap": "Your playbook has no position covering this clause type. Add one to set your standard."
+      }
     }
   },
   "riskTab": {

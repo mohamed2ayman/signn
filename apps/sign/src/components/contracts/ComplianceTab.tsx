@@ -24,6 +24,12 @@ import {
   resolvePlaybookCoverage,
   playbookCoverageKey,
 } from './playbookCoverage';
+// 7.22 Slice B — per-finding classification badge; pure logic + visual contract
+// live in playbookClassification.ts (unit-tested apart from this tab).
+import {
+  resolveClassificationBadge,
+  type ClassificationIcon,
+} from './playbookClassification';
 
 interface Props {
   contractId: string;
@@ -535,6 +541,11 @@ function FindingsTable({
               {f.clause_ref ?? '—'}
             </td>
             <td className="px-4 py-3 align-top">
+              {/* 7.22 Slice B — PLAYBOOK findings only. Non-PLAYBOOK rows are
+                  untouched: their `classification` is null (the DB CHECK
+                  chk_classification_playbook_only guarantees it), so the badge
+                  resolves to null and nothing is emitted. */}
+              <FindingClassificationBadge classification={f.classification} />
               <p className="text-sm text-gray-900">{f.requirement}</p>
               {f.recommendation && (
                 <p className="mt-1 text-xs italic text-indigo-700">
@@ -570,6 +581,60 @@ function FindingsTable({
       </tbody>
     </table>
     </div>
+  );
+}
+
+/** Glyph for a classification badge. Warning = deviation, plus = add a position. */
+function ClassificationGlyph({ icon }: { icon: ClassificationIcon }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className="h-2.5 w-2.5 shrink-0"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {icon === 'add' ? (
+        <path d="M12 5v14M5 12h14" />
+      ) : (
+        <path d="M12 9v4m0 4h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" />
+      )}
+    </svg>
+  );
+}
+
+/**
+ * 7.22 Slice B — the per-finding playbook verdict (PR #225).
+ *
+ * MINOR / MAJOR read as deviations to NEGOTIATE; NON_STANDARD reads as a
+ * coverage gap to fill by ADDING a position — a different kind of thing, given
+ * a structurally different chip rather than a third colour. The full rationale
+ * and the visual contract live in `playbookClassification.ts`; this component
+ * only draws what the resolver returns.
+ *
+ * Renders nothing when there is no classification, so non-PLAYBOOK layers are
+ * byte-unchanged.
+ */
+function FindingClassificationBadge({
+  classification,
+}: {
+  classification: ComplianceFinding['classification'];
+}) {
+  const { t } = useTranslation();
+  const badge = resolveClassificationBadge(classification);
+  if (!badge) return null;
+  return (
+    <span
+      dir="auto"
+      className={`mb-1 ${badge.className}`}
+      title={t(badge.hintKey)}
+    >
+      <ClassificationGlyph icon={badge.icon} />
+      {t(badge.labelKey)}
+    </span>
   );
 }
 
