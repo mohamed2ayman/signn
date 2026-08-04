@@ -84,23 +84,33 @@ export class ProjectsService {
   }
 
   async findById(id: string, orgId: string): Promise<Project> {
-    // Try loading with full relations first; fall back to basic query
-    // if a relation fails (e.g. missing FK reference)
+    // Fail-closed org scoping: bind organization_id as a QueryBuilder PARAM so a
+    // null/undefined orgId compiles to `= NULL` and matches NOTHING. The old
+    // find-options `where: { organization_id: orgId }` DROPPED a null value and
+    // returned the row cross-org (confirmed leak). Mirrors the sibling findAll().
+    // Full relations first; fall back to a basic (still org-scoped) query if a
+    // relation load fails (e.g. a missing FK reference).
     let project: Project | null = null;
     try {
-      project = await this.projectRepository.findOne({
-        where: { id, organization_id: orgId },
-        relations: ['members', 'members.user', 'creator'],
-      });
+      project = await this.projectRepository
+        .createQueryBuilder('project')
+        .leftJoinAndSelect('project.members', 'members')
+        .leftJoinAndSelect('members.user', 'memberUser')
+        .leftJoinAndSelect('project.creator', 'creator')
+        .where('project.id = :id', { id })
+        .andWhere('project.organization_id = :orgId', { orgId })
+        .getOne();
     } catch (error) {
       this.logger.warn(
         `[findOne] Primary query with relations failed for project ${id}, retrying without nested relations. Original error: ${(error as Error).message}`,
         (error as Error).stack,
       );
-      // Relation loading failed — retry without nested relations
-      project = await this.projectRepository.findOne({
-        where: { id, organization_id: orgId },
-      });
+      // Relation loading failed — retry without relations (still org-scoped).
+      project = await this.projectRepository
+        .createQueryBuilder('project')
+        .where('project.id = :id', { id })
+        .andWhere('project.organization_id = :orgId', { orgId })
+        .getOne();
       if (project) {
         project.members = [];
       }
