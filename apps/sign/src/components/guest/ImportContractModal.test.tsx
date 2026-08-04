@@ -61,6 +61,33 @@ function axiosError(status: number, data?: Record<string, unknown>): Error {
   });
 }
 
+/**
+ * Await the state a confirm-click actually needs — NOT merely the arrival of
+ * the projects data.
+ *
+ * The <select> (ImportContractModal.tsx:293) renders as soon as the projects
+ * query returns rows, but in that same commit `selectedProjectId` is still its
+ * initial '' (:60), so the confirm button is disabled (:144). The value is
+ * seeded one step later by a PASSIVE effect (:74-78) — work React schedules
+ * after the commit that wrote the DOM.
+ *
+ * `findBy*` cannot bridge that gap: RTL's asyncWrapper disables the act
+ * environment for the whole poll (pure.js:86) and allows a single macrotask of
+ * grace (pure.js:93), while waitFor resolves off a MutationObserver
+ * (wait-for.js:95) that fires on the commit's DOM mutation — strictly before
+ * the Scheduler task that flushes the passive effect. So awaiting the <select>
+ * can hand back a render in which the button is still disabled.
+ *
+ * A click that lands there is swallowed twice over — React suppresses onClick
+ * on a disabled button, and confirmImport early-returns on !selectedProjectId
+ * (:101) — so the request is never made and the modal sits in CONFIRM until
+ * the assertion times out. That is the CI flake this helper removes.
+ */
+async function readyConfirmButton(): Promise<HTMLElement> {
+  await waitFor(() => expect(screen.getByTestId('import-confirm')).toBeEnabled());
+  return screen.getByTestId('import-confirm');
+}
+
 describe('ImportContractModal (#8d)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -95,7 +122,7 @@ describe('ImportContractModal (#8d)', () => {
       'import-project-select',
     )) as HTMLSelectElement;
     fireEvent.change(select, { target: { value: 'p-2' } });
-    fireEvent.click(screen.getByTestId('import-confirm'));
+    fireEvent.click(await readyConfirmButton());
     await waitFor(() =>
       expect(importSharedContract).toHaveBeenCalledWith('c-1', 'managing-token', 'p-2'),
     );
@@ -109,7 +136,7 @@ describe('ImportContractModal (#8d)', () => {
     });
     renderModal();
     await screen.findByTestId('import-project-select');
-    fireEvent.click(screen.getByTestId('import-confirm'));
+    fireEvent.click(await readyConfirmButton());
     await screen.findByTestId('import-success');
     expect(screen.getByText('sharedWithMe.import.successTitle')).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('import-open-copy'));
@@ -120,7 +147,7 @@ describe('ImportContractModal (#8d)', () => {
     vi.mocked(importSharedContract).mockRejectedValue(axiosError(404));
     renderModal();
     await screen.findByTestId('import-project-select');
-    fireEvent.click(screen.getByTestId('import-confirm'));
+    fireEvent.click(await readyConfirmButton());
     await screen.findByTestId('import-error');
     // The design's unified failure: one "Import failed" title, the cause in
     // the body (the shipped revoked sentences), Try again + the filled
@@ -141,7 +168,7 @@ describe('ImportContractModal (#8d)', () => {
     );
     renderModal();
     await screen.findByTestId('import-project-select');
-    fireEvent.click(screen.getByTestId('import-confirm'));
+    fireEvent.click(await readyConfirmButton());
     await screen.findByTestId('import-error');
     expect(screen.getByText('sharedWithMe.import.failTitle')).toBeInTheDocument();
     expect(screen.getByText('sharedWithMe.import.planLimitBody')).toBeInTheDocument();
@@ -155,11 +182,11 @@ describe('ImportContractModal (#8d)', () => {
       .mockResolvedValueOnce({ id: 'new-2', name: 'X', project_id: 'p-1' });
     renderModal();
     await screen.findByTestId('import-project-select');
-    fireEvent.click(screen.getByTestId('import-confirm'));
+    fireEvent.click(await readyConfirmButton());
     await screen.findByTestId('import-error');
     expect(screen.getByText('sharedWithMe.import.failTitle')).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('import-retry'));
-    fireEvent.click(await screen.findByTestId('import-confirm'));
+    fireEvent.click(await readyConfirmButton());
     await screen.findByTestId('import-success');
     expect(importSharedContract).toHaveBeenCalledTimes(2);
   });
@@ -171,7 +198,7 @@ describe('ImportContractModal (#8d)', () => {
     );
     renderModal();
     await screen.findByTestId('import-project-select');
-    const btn = screen.getByTestId('import-confirm');
+    const btn = await readyConfirmButton();
     fireEvent.click(btn);
     fireEvent.click(btn); // second click before React commits any state
     resolveImport({ id: 'new-3', name: 'X', project_id: 'p-1' });
@@ -186,7 +213,7 @@ describe('ImportContractModal (#8d)', () => {
     );
     const { onClose } = renderModal();
     await screen.findByTestId('import-project-select');
-    fireEvent.click(screen.getByTestId('import-confirm'));
+    fireEvent.click(await readyConfirmButton());
     await screen.findByTestId('import-importing');
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(onClose).not.toHaveBeenCalled();
