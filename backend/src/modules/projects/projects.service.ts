@@ -165,9 +165,14 @@ export class ProjectsService {
     orgId: string,
     dto: UpdateProjectDto,
   ): Promise<Project> {
-    const project = await this.projectRepository.findOne({
-      where: { id, organization_id: orgId },
-    });
+    // Fail-closed org scoping (bound QueryBuilder param) — a null/cross-org load
+    // returns null → NotFound BEFORE any mutation, so the save below cannot
+    // overwrite a foreign project. See the projects.findById fix (#228).
+    const project = await this.projectRepository
+      .createQueryBuilder('project')
+      .where('project.id = :id', { id })
+      .andWhere('project.organization_id = :orgId', { orgId })
+      .getOne();
 
     if (!project) {
       throw new NotFoundException('Project not found');
@@ -190,9 +195,13 @@ export class ProjectsService {
   }
 
   async getDashboard(id: string, orgId: string): Promise<Record<string, any>> {
-    const project = await this.projectRepository.findOne({
-      where: { id, organization_id: orgId },
-    });
+    // Fail-closed org scoping (bound QueryBuilder param) — a null/cross-org load
+    // returns null → NotFound, so the aggregates below never run cross-org.
+    const project = await this.projectRepository
+      .createQueryBuilder('project')
+      .where('project.id = :id', { id })
+      .andWhere('project.organization_id = :orgId', { orgId })
+      .getOne();
 
     if (!project) {
       throw new NotFoundException('Project not found');
@@ -345,9 +354,14 @@ export class ProjectsService {
   }
 
   async deleteProject(id: string, orgId: string): Promise<void> {
-    const project = await this.projectRepository.findOne({
-      where: { id, organization_id: orgId },
-    });
+    // Fail-closed org scoping (bound QueryBuilder param) — a null/cross-org load
+    // returns null → NotFound BEFORE remove(), so a foreign project can never be
+    // deleted. Load-then-remove (NOT delete-by-criteria, which would drop null).
+    const project = await this.projectRepository
+      .createQueryBuilder('project')
+      .where('project.id = :id', { id })
+      .andWhere('project.organization_id = :orgId', { orgId })
+      .getOne();
 
     if (!project) {
       throw new NotFoundException('Project not found');
@@ -362,9 +376,14 @@ export class ProjectsService {
     projectId: string,
     orgId: string,
   ): Promise<ProjectMember[]> {
-    const project = await this.projectRepository.findOne({
-      where: { id: projectId, organization_id: orgId },
-    });
+    // Fail-closed org scoping (bound QueryBuilder param) — a null/cross-org load
+    // returns null → NotFound, so the member list below is only reachable once
+    // the project is confirmed in-org.
+    const project = await this.projectRepository
+      .createQueryBuilder('project')
+      .where('project.id = :projectId', { projectId })
+      .andWhere('project.organization_id = :orgId', { orgId })
+      .getOne();
 
     if (!project) {
       throw new NotFoundException('Project not found');
