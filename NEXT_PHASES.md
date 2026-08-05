@@ -1,5 +1,5 @@
 # SIGN Platform — Development Roadmap
-> Last updated: 2026-06-24 (7.42 — Arabic PDF rendering Acrobat-strict fix shipped, PR #97 squash-merged at `f3f1c5f`; 7.43 added — Compliance PDF Rebuild + Arabic Support (PR-A) as the consolidated follow-on. Prior 2026-06-21: Phase 7.35 — mfa_totp_secret encrypted at rest via CryptoService, PR #88. Prior same day: Phase 7.28 ERP Integration shipped end-to-end — v1 + v1.1; follow-on tasks 7.37–7.41 added)
+> Last updated: 2026-08-05 (**7.22 Contract Playbook — COMPLETE**: Ayman’s AI-integration Items 1–4 shipped via PR #213 `f4cb4ec` / #214 `e539b04` / #225 `3a3d6ac`; Youssef’s frontend batch via PR #216 `af4c52c` / #231 `ecaaf42` / #233 `81d8572`. **This file was RECONCILED from two diverged copies** — the tracked `main` lineage (7.42, 7.43, the Phase-8 step results) and Youssef’s local working copy (Signing Track, Option α, Unified-Membership Arc, 7.20 add-party, production email delivery) — and is TRACKED again: the `.gitignore` entry that had made it local-only is removed, so BOTH owners edit one file via git. Prior 2026-06-24: 7.42 — Arabic PDF rendering Acrobat-strict fix shipped, PR #97 squash-merged at `f3f1c5f`; 7.43 added — Compliance PDF Rebuild + Arabic Support (PR-A) as the consolidated follow-on. Prior 2026-06-21: Phase 7.35 — mfa_totp_secret encrypted at rest via CryptoService, PR #88. Prior same day: Phase 7.28 ERP Integration shipped end-to-end — v1 + v1.1; follow-on tasks 7.37–7.41 added)
 > Next review: When 7.5-7.8 are cleared; 9.2 AWS setup planning starts
 > Maintained by: Ayman & Youssef
 > Market: Arabic, English, French (Middle East + Global)
@@ -581,6 +581,20 @@ block schema.
 - Scope: view assigned contract, respond to clauses, submit claims/notices, sign. Nothing more.
 - Invitation-based access (secure link, no SIGN account required)
 - Build guest dashboard — minimal, mobile-first
+- ⚠️ The "sign" capability in the scope line above is **GATED** — guest signing is BLOCKED behind a platform-signing design session (no signed-state pinning + no guest sign-capability model). See "⚠️ Signing Track — Deferred & Blocked Items" after 7.19.
+
+**Guest feature track — incremental build status (updated 2026-06-26).** The Guest Portal is being delivered as a numbered feature track on the shared external-access foundation (progressive-identity + restricted-user-row + hard-wall + Ops-configurable allowances), NOT one big-bang phase. Current state:
+- ✅ **#1 — read-only guest viewer + guest-visible comments** — shipped (guest viewer v1 + comments list).
+- ✅ **#3 — guest watermarked PDF download** — **DONE (PR #94, merged `99f431d`).** A Path-B guest (established identity, `account_type=GUEST`) downloads its bound contract, stamped server-side `CONFIDENTIAL — <guest email> — <timestamp>`; binding-gated (404 cross-contract, no existence leak); managing export path unchanged / un-watermarked. **Shipped WITH the Arabic-PDF-content dependency (Signing Track item 5 below — Ayman's fix) as a documented, owned limitation, NOT a defect.**
+- ✅ **#4 — guest upload of a new contract version (+ metering)** — **DONE (PR #96, merged `42127a1`, shipped 2026-06-26).** A Path-B guest (`account_type=GUEST`) uploads a revised contract file at `POST /guest/contracts/:id/documents` → lands as a `document_uploads` row → re-runs the existing AI extraction pipeline (`uploadAndProcess`). Binding-gated (404 cross-contract, no existence leak); magic-bytes content validation (PDF/DOCX/DOC); **race-safe 5/day-per-contract cap** via an atomic conditional-upsert counter (`guest_upload_daily_counts`, migration `1761000000002` — the Rule 9 Invariant 2 idiom, adopted after an advisory-lock first cut was found pool-starvation-deadlock-prone in adversarial self-review, fixed `6083b4b`, lesson #177); **separate `guest_upload` billing meter** (`window_type=per_contract`, **subject = host org**), distinct from the managing `upload_extraction` meter; host OWNER_ADMIN notified at the daily cap (429 `GUEST_UPLOAD_DAILY_LIMIT`, not silent) + managing party (`contract.creator`) notified on success; **managing upload path byte-identical** (own meter, still silent). **DEFERRED follow-ups (tracked):** (a) AV / content scanning of guest uploads; (b) OOXML structural / zip-bomb validation for the DOCX magic-bytes (currently accepts any `PK..` ZIP as DOCX; 50MB multer cap bounds it). **Known unrelated red at merge:** `erp-sync.integration.spec.ts` "credentials are encrypted at rest…" — an ERP/CryptoService `@nestjs/config` env-precedence test bug (filed for Ayman; NOT a #4 regression, not a merge blocker). See CLAUDE.md "Guest Upload a New Contract Version — Feature #4" + lessons #177–#178.
+- ⛔ **#2 — guest signing** — still DESIGN-BLOCKED, but ONE of its two structural blockers is now CLEARED: **signed-state pinning SHIPPED (PRs #141–#144)**. Remaining blockers: the **guest sign-capability model** (`guest_contract_access`/`guest_invitations` carry no can-sign column — a bare binding must NOT imply sign, or any bound guest could sign = privilege escalation) + the **DocuSign live-verify deployment gate** + DocuSign↔guest identity mapping. See Signing Track item 2 after 7.19.
+- ✅ **#5 — AI extraction on guest uploads — DONE (Slice 1, PR #99, merged `77ba6c4`, shipped 2026-06-27).** Closes the **dispatch ≠ completion** gap (lesson #180): #4 only *dispatched* the async extraction; nothing DROVE the poll-driven pipeline to terminal for a guest (the managing status route is `findInOrg`-walled, which a guest's null org can't pass), so **5/5 guest uploads sat stuck** at EXTRACTING_TEXT/EXTRACTING_CLAUSES, 0 clauses, reservations refunded. **Slice 1 ships:** a **server-side SYSTEM driver** (`DocumentExtractionScheduler`, Bull) that drives any in-progress doc to terminal **independent of the browser** (the prior browser-only 120s poll finished ~2.5 min BEFORE the ~256s AI job → permanent stuck; lesson #182); a **race-safe atomic conditional advance** so the clause-write + reservation `commit()` are **exactly-once** across concurrent driver/poll callers (the Rule 9 Invariant 2 / #177 idiom); a **staleness backstop** that FAILs + refunds any doc stuck beyond the window (guards the Celery expired-result→PENDING-forever gotcha; lesson #183); **Option C** proposed-clause write-back (`contract_clauses.is_proposed`, scoped by `source_document_id`, excluded from host-canonical + guest-viewer + managing-review reads — never collides with the host's live clauses / `order_index`); a guest status surface (poll-until-terminal + `localStorage` refresh-resume, now display-only) + a host-v1 read-only view of proposed clauses; **doc-derived proposed-vs-live** (decided by the uploader's `account_type` / `isGuestUploadedDoc`, NOT the endpoint — do not regress). See CLAUDE.md "Guest AI Extraction Completion — Feature #5, Slice 1" + lessons #182–#183. **Slice 2 — ✅ COMPLETE (Option γ — reusing `is_proposed` + `createVersionSnapshot` + the `Clause.parent_clause_id` chain; NOT the deferred Option α `version_id`-on-clauses).** **2a DONE** (PR #106, merged `ca53e4b`, 2026-06-28) — `applyProposedVersion` (host accept/reject/edit/add/remove-accept; **snapshot-before-promote, parent-chain lineage, atomic**) + the `is_proposed` leak fix across 5 host reads. **2b DONE** (PR #107, merged `4018311`, 2026-06-28) — proposed-vs-current **diff** endpoint reusing the extracted **`computeClauseDiff`** helper (matched by **`section_number`**, not `clause_id`), shared **`DiffView` with the RTL bidi fix**, `ProposedVersionDiffModal` + "View changes", plus the **backend-boot smoke test** (`app-boot.smoke.spec.ts`). NOTE: a 2a boot defect (`ContractsModule` missing `Clause` in `forFeature` → un-bootable `main`) was hotfixed via **PR #108** (`affe59f`). **2c DONE** (PR #110, merged `5275bc2`, 2026-06-29) — the full host **review/merge UI** (`HostReviewMergeScreen` matching the design: changed-clauses list [N of M, modified/added/removed, Changed/All toggle, show-unchanged], per-clause cards [side-by-side RTL diff reusing `DiffView`, Accept/Reject/**Merge-edit**, status states + Undo + confidence], Merge & edit editor [RTL Arabic, start-from-proposed/original → `EDITED`], two-step Apply [review-complete summary → apply-confirmation with Version-History reassurance → `applyProposedVersion`], accept-all/reject-version, keyboard shortcuts) + **word-diff granularity** (frontend coalesce → whole-word Arabic highlights; backend `computeClauseDiff` UNTOUCHED → `compareVersions` byte-identical) + a **2a backend fix shipped with it** (the apply **ADD branch now honors `edited_content`/`edited_title`** on a merge-edited ADDED clause → `EDITED`; was silently dropping the host's wording + promoting the guest original; **RED→GREEN real-PG test**; lesson #189). **SLICE 2 COMPLETE end-to-end** (2a apply + 2b diff + 2c UI) — backend-verified (**1184/1184**, boot-smoke GREEN, `compareVersions` byte-identical) + human-browser-verified (review→merge-edit→apply; the edit SURVIVED on an added clause; original recoverable in Version History). See CLAUDE.md "Slice 2 COMPLETE — Guest Proposed-Version Review: 2c" + lessons #186–#191. **STILL OPEN carry-overs from #4 (NOT closed by Slice 2):** (a) AV / content scanning of guest uploads; (b) OOXML structural / zip-bomb validation for the DOCX magic-bytes (currently accepts any `PK..` ZIP as DOCX; 50MB multer cap bounds it). **Option α** (true `version_id`-on-clauses full-versioning) remains FILED below as the deferred future model — Slice 2 shipped γ, not α.
+- ✅ **#6 groundwork — PII-scrubbing foundation — DONE (shipped 2026-07-02, PRs #118 chokepoint `148dbb3` + #122 scrubbing `0349fc5`, both Ayman-approved).** Two stacked ai-backend PRs: **(#118)** `BaseAgent._call_model(provider=…)` — the single chokepoint for all 9 agents' Anthropic calls, zero behavior change proven (per-agent exact-kwargs tests; `temperature=None` omitted from wire; clause_extractor's `with_raw_response` + header-gate + `max_retries=0` preserved via `raw=True`); generalized provider seam (`NotImplementedError`) = Ayman's SageMaker migration plug-in point; model-guard test strengthened. **(#122)** structured-PII scrub/restore at the chokepoint, opt-in per agent (`scrub=True`): emails, EG/SA/UAE/QA phones + national IDs, IBANs — **validation-gated** (Luhn / MOD-97 / structural; lesson #195), **length-preserving Arabic-Indic digit normalization** (lesson #196); 8 analysis agents scrub, **extraction NEVER scrubs (D1** — canonical record not gambled on restore fidelity; `scrub+raw` raises); PII map in-process only, never logged/persisted. See CLAUDE.md "PII-Scrubbing Foundation — Feature #6 groundwork" + lessons #195–#198. **#6 remaining = the guest-chat slices (Slices 1–2), design ready (Claude Design export is the visual target).** **DEFERRED (filed):** Arabic name/address NER (Tier B, ~87% ceiling, torch cost); extraction scrubbing (behind a round-trip validation gate); OpenAI embeddings scrubbing (handled when guest chat is built); admin allowance-CRUD surface.
+- ✅ **#6 — guest AI assistant — FULLY COMPLETE (Slices 1 + 2 + 3: #124 `3a1658c` · #128 `798d6b4` · #133 `5939a19`).** **Slice 1 (backend) DONE** (PR #124, merged `3a1658c`, 2026-07-04): guest-walled multi-turn chat routes (`/guest/contracts/:id/chat/*`), STRICT context = active clauses + metadata ONLY (comments = Slice 3; risk/compliance/obligations/proposed/version-history NEVER), `GUEST_AI_QUERY` meter (subject = host org), race-safe 20/day-per-contract atomic counter (`guest_ai_query_daily_counts`, migrations `1763000000001-3`), `guest_ai_query` burst throttler (10/min/IP), scrubbing INHERITED via the conversational agent's `scrub=True` (#122); + the minimal additive `ChatRequest.contract_context` field (Ayman-acked; NOTE: the sibling `knowledge_context` silent-drop at the same pydantic boundary is now ✅ FIXED by Ayman (commit `31474c9`) — `ChatRequest` declares BOTH `contract_context` AND `knowledge_context`, so host-chat legal-corpus grounding flows again). Wall/purity/caps proven by 13 real-PG tests (404-not-403 walls; context-purity sentinels; 21-concurrent → exactly 20). **Slice 2 (frontend) DONE** (PR #128, merged `798d6b4`, 2026-07-05): `GuestChatPanel` forked from host ChatPanel (host untouched — 0-line diff), all 10 states, EN + Arabic RTL (drawer pins LEFT; RTL/i18n net-new vs the LTR-only host), citation chips for real §refs only (Latin + Arabic-Indic + البند/المادة) with tap→scroll+pulse, quota pill from real `{remaining, cap}` only, Path-B gated on `guestHttp`; vitest 156/156; human visual gate PASSED (EN E2E + Arabic RTL). See CLAUDE.md "Guest Chat Slice 2" + lessons #201–#204. **Slice 3 DONE** (PR #133, merged `5939a19`, 2026-07-05): guest-VISIBLE comments in the AI context via the SINGLE filtered path (`readGuestVisibleComments` — wall + `is_internal_note=false` DB-layer whitelist + author-scrub projection); assembler stays PURE over filtered rows; ⭐ leak battery proves internal notes ABSENT across 3 question shapes incl. an explicitly-tempting one, filter-at-source returns 0 internal rows, threading-UUID scrubbed (guest reply threaded under an internal note leaks nothing), host PII structurally absent; §clause citation reused. The dangerous path (`findForGuest` → `contract.comments` unfiltered relation) NAMED + untouched. INVARIANT: any future guest-AI context source needs a filtered path proven at source + output. See CLAUDE.md "Guest Chat Slice 3" + lessons #206–#209. Deferred (unchanged): Arabic name/address NER, extraction-scrub round-trip gate, embeddings scrubbing, admin allowance-CRUD.
+- ✅ **#8a — the guest-bindings LIST endpoint — DONE (PR #169, merged `3ed9e63`, shipped 2026-07-16).** `GET /guest/my-contracts` — the FIRST endpoint enumerating a caller's `guest_contract_access` bindings, closing the discovery gap Slice 1 left (bound contracts previously appeared in NO list anywhere). `ContractAccessService.listGuestBindings` (the lint-allowlisted wall; explicit raw SELECT, never the entity); caller key = `user.id` ONLY (no account_type gate — GUEST and MANAGING JWTs alike; a managing user's own-org contracts have no binding rows → naturally external-only); self-scoping → `[]` with 200, no 404 semantics; caller's `organization_id` never read. 11-field projection deliberately TIGHTER than the detail read (drops org/project/granted_by/binding UUIDs; no clauses/risk/compliance/comments); TWO un-composed nullable shared-by fields (`shared_by_org` + `shared_by_user` — frontend composes; empty→NULL, never a UUID/blank). ⭐ Recorded limitation: the data cannot distinguish company vs individual (`organizations.name` is user-typed; no `workspace_mode`) — no heuristic attempted. Proven by 10 real-PG tests (cross-user isolation, tight projection with leak sentinels, both JWT types + external-only, the 4 shared-by cases, 401). Suite 157/1397 0-new. No migration. See CLAUDE.md "Guest Portal #8a" + lessons #259–#260.
+- ✅ **#8b — "Shared with me" in `/app` — DONE (PR #171, merged `8677a03`, shipped 2026-07-18).** Frontend only (ZERO backend change). New `/app/shared-with-me` page consuming `GET /guest/my-contracts` (#8a); nav item after Projects (always visible; count pill + dot only when >0; query shares the `['guest-my-contracts']` cache with the page, enabled-gated so non-client rails never fetch). The four shared-by cases composed FRONTEND-side from the two atoms (both → "{org} · shared by {person}" / org / person / null → "Shared with you"; never blank/null/UUID). NEW managing-JWT viewer entry via a thin sibling `SharedContractViewerPage` at `/guest/shared/:contractId` (ProtectedRoute) — READ via the normal `api` (`GET /contracts/:id` → org-first/binding-fallback, so a bound managing user reads with ZERO backend change; 404 = revoked → the in-page revoked block); ACTIONS via UNCHANGED guest components with the managing token on interceptor-free `guestHttp` (the lying `guestJwt` prop documented at the call site). `GuestViewerPage` at ZERO diff (token/invitation flow provably untouched). Guest-context banner (managing arrival only). `ContractStatusDot` promoted to shared (ProjectDetailPage: import-only). **Import button OMITTED — deferred to #8d.** Human visual gate PASSED (EN + Arabic RTL). Vitest 44 files/396 (28 new), CI 3/3, zero-diffs (GuestViewerPage/chat/backend/ai-backend). See CLAUDE.md "Guest Portal #8b" + lessons #261–#263.
+- ✅ **#8d — "Import to my workspace" — DONE (PR #174, merged `23554e5`, shipped 2026-07-19).** The FIRST WRITE on the guest track: a bound MANAGING customer copies a shared contract into a project in THEIR OWN org (fresh DRAFT/v1/unsigned/unpinned, `creation_flow='IMPORT'`) so they can run their own risk/comments/obligations. `POST /guest/contracts/:id/import` — binding-alone authz (`assertGuestContractAccess` FIRST, then the guest-scoped `findAccessibleContract` read — uniform 404); destination-project org-ownership check; ONE transaction (new contract + fresh clause rows + junctions + V1 snapshot); DROPS source comments/risk/obligations/bindings/pin; `source_document_id` NULL on copied clauses (cross-tenant-pointer avoidance). Source UNTOUCHED, no source-org notification. Copy = only guest-visible content (proven: seeded source notes/risk absent). Frontend: Import button shared-viewer-only (GuestViewerPage ZERO diff; token guests never see it), confirm/importing/success/failure modal RECONCILED to the design export (9 drifts). Plan-limit branch DORMANT (no quota model). ⭐ Leak battery 9/9 real-PG; human visual gate PASSED (EN + Arabic RTL); CI 3/3; suite +1 suite/+9 tests 0-new. See CLAUDE.md "Guest Portal #8d" + lessons #264–#267.
+- 🟢 **Feature #8 track: #8a ✅ / #8b ✅ / #8d ✅ (above) / #8c deferred.** **#8c — guest sign-in + guest dashboard — DEFERRED**: carries a guest-SESSION-POSTURE decision (how a guest signs in outside an invitation link) needing Ayman. **Guest Portal remaining scope: #8c (guest sign-in+dashboard, deferred — Ayman), #2 (guest signing — design-blocked on the sign-capability model + DocuSign live-verify), #7 (UNDEFINED — candidate to drop).** All compose on the same foundation. **Also deferred (out of #8d, background chip): the pre-existing `ContractDetailPage` tab-bar overflow (History/Approvals off-screen on narrow widths — #8d is 0-diff on that file).**
 
 ---
 
@@ -605,6 +619,74 @@ block schema.
 - All of the above must work in Arabic and English including RTL-correct tracked changes display
 
 **Success metric:** A construction subcontract can go from first draft to fully agreed without leaving SIGN once.
+
+---
+
+### ⚠️ Signing Track — Deferred & Blocked Items (platform-wide)
+**Owner:** Youssef + Ayman | **Priority:** 🟠 HIGH | **Status:** ⏳ BLOCKED — platform-signing design session required
+**Surfaced by:** Guest feature #2 (guest signing) recon, 2026-06-22 — reached a "design session required" verdict and exposed platform-level signing gaps that affect **managing-user signing too**, not only guests. Recorded here so they are NOT re-discovered. Items 2 + 3 are NOT frontend buckets — they are gated behind a platform-signing design session.
+
+**1. DocuSign live-verification — DEPLOYMENT-TIME GATE (blocks ALL signing).**
+The managing-user DocuSign signing flow (Phase 1.3 — HMAC-SHA256 verify + contract state transitions) is **code-complete but has NEVER been exercised against a live DocuSign account**: every `DOCUSIGN_*` env var is `.optional().allow('')` and Phase 1.3 live-testing was skipped pending sandbox creds. Before ANY signing feature (managing OR guest) can be trusted, the full initiate → sign → webhook → execution path must be end-to-end verified against a real DocuSign sandbox/prod account **post-deploy**. This is a Phase 9 release-gate (attaches to the production cut alongside 9.2 DocuSign secrets / 9.6 Paymob webhook), **NOT a merge-gate**. **Blocks guest signing (item 2).**
+
+**2. Guest signing (guest feature #2) — BLOCKED, design session required.**
+Two hard blockers, verified in code 2026-06-22, recorded so they are not re-discovered:
+- **(a) No signed-state pinning at execution.** The DocuSign webhook executes a contract via a **direct `contractRepo.save()`** (`docusign.service.ts` `completed` branch sets `signature_status = FULLY_EXECUTED`, `executed_at`, `status = ACTIVE`) — it does **not** route through `updateStatus()`, so **no version snapshot is created**. Clauses stay mutable post-execution and the signed document lives **only in DocuSign**, referenced by `docusign_envelope_id` with no immutable/hash-pinned copy in SIGN. (This is the platform-wide gap — see item 3.)
+- **(b) No capability distinction on guest access.** Neither `guest_contract_access` (cols: id, user_id, contract_id, granted_at, granted_by) nor `guest_invitations` carries any capability / permission / can-sign column — binding is pure. A gate that checks only "is this guest bound to this contract" would let **any bound guest sign → privilege escalation**. A sign capability must be modeled before a guest may sign.
+- Also unresolved: DocuSign ↔ guest identity mapping, and external-signer (counterparty) DocuSign licensing.
+Mark guest feature #2 as gated behind a **platform-signing design session**, NOT a frontend bucket.
+
+**3. Platform signed-state pinning — its own platform-wide design item (NOT guest-specific).**
+SIGN captures **no immutable, hash-referenced record of "the document as signed"** at execution, for ANY signer (managing OR guest) — mechanism in item 2(a). This is a **legal-integrity gap on FIDIC/NEC contracts** (the as-signed text must be provable and frozen). Design a signed-state snapshot/hash pin taken at execution that freezes the clause set and references (or stores) the signed artifact. **Consumers: guest signing (item 2) AND managing-user signing.**
+
+**4. `export.service.ts` pdfmake fix — ✅ DONE (PR #92, `46eb075`).**
+Tracked in CLAUDE.md "Critical Known Bugs #6" / Outstanding Issues / lesson #142. Fixed by mirroring the 2c renderer fix `d4dc54a`: `export.service.ts`'s render method is now the async `createPdfBuffer()` on the pdfmake 0.3.x pattern (`Printer.default` + `URLResolver` + `await createPdfKitDocument`), with a no-mock `%PDF` test. **This unblocks the PDF-artifact path in the signing flow** (any pdfmake-rendered PDF that path produces). **Scope caveats — what this does NOT do:** it does NOT itself deliver guest feature #3 (watermarked download) — that **subsequently SHIPPED as PR #94 (`99f431d`)**, built directly on this fix via pdfmake 0.3.x's native top-level `watermark` property — and it does NOT resolve the signing track's other blockers (DocuSign live-verify gate, guest signing, signed-state pinning). The compliance `pdf-report.service.ts` carries the same broken pattern and remains its OWN separate small PR.
+
+**5. Arabic clause-content rendering in `generateContractPdf` — BLOCKED on Ayman; platform-wide (NOT a guest-only defect).**
+`ExportService.generateContractPdf` renders **Arabic clause content as mojibake** — the pdfmake default font (Helvetica) carries no Arabic glyphs and pdfmake applies no RTL/bidi shaping, so Arabic text comes out as disconnected/garbled glyphs. This affects **BOTH the managing-user contract export AND the new guest watermarked download (feature #3)** — they share the same render path. Owned by a **SEPARATE fix (Ayman):** an embedded Arabic-capable font registered with pdfmake + a bidi/shaping pass before Arabic PDFs are correct. Guest feature #3 (PR #94, `99f431d`) **shipped WITH this as a documented, owned limitation, not a defect** — the watermark/download mechanism itself is correct (English content + the ASCII `CONFIDENTIAL — <email> — <time>` watermark render correctly); only Arabic clause glyphs await Ayman's font/shaping fix. Surfaced during PR #94.
+
+**➜ UPDATE — item 3 (signed-state pinning) is now SHIPPED.** The signed-state
+pinning arc landed on main across PRs **#141 CAPTURE (`5479204`)** · **#142
+ENFORCEMENT (`a0b98db`)** · **#143 mark-signed UI (`bf2d945`)** · **#144 RTL
+cold-load (`886ef69`)** (2026-07-08 → 2026-07-09). On execution the clause set +
+substantive metadata are frozen with a SHA-256 canonical-serializer pin (per
+version), via BOTH doors (DocuSign `completed` webhook + manual
+`POST /contracts/:id/mark-signed`); mutations on a pinned contract reject with
+`409 CONTRACT_PINNED`; `verifyContractPin` detects tamper/drift. See the CLAUDE.md
+"Signed-State Pinning" section + lessons #223–#228. **Item 2(a) is resolved by the
+same arc.** Item 1 (DocuSign live-verify) + item 2(b) (guest sign-capability
+model) remain OPEN.
+
+**6. ContractStatus status-model cleanup — 🔵 DEFERRED BY DESIGN (post-launch refactor, NOT a merge candidate).**
+Surfaced by the signed-state pinning arc (items 2(a)/3 above), which had to work
+AROUND the current status model rather than fix it. `ContractStatus` (in
+`backend/src/database/entities/contract.entity.ts`) is a flat **12-value** enum
+(`DRAFT, PENDING_APPROVAL, APPROVED, PENDING_TENDERING, SENT_TO_CONTRACTOR,
+CONTRACTOR_REVIEWING, PENDING_FINAL_APPROVAL, CHANGES_REQUESTED,
+RISK_ESCALATION_PENDING, ACTIVE, COMPLETED, TERMINATED`) in which **`ACTIVE` is
+triple-overloaded**: it means (a) **executed/signed** (the DocuSign `completed`
+branch sets `status = ACTIVE` at execution), (b) **live / in-force**, AND (c)
+**feature-gate-open** (ARCHITECTURE RULE 4 — Claims / Notices / Sub-Contracts
+tabs + endpoints unlock ONLY when `status = ACTIVE`). Three orthogonal facts
+collapsed onto one value means no state can distinguish "signed but not yet
+live", "live but features locked", or "amended/re-executed". The cleaner model
+splits these — e.g. a dedicated lifecycle state + a separate execution signal
+(`signature_status` already exists as that dedicated field, which is exactly why
+the pinning arc keys off `signature_status = FULLY_EXECUTED`, NOT `ACTIVE`, and
+does not depend on this cleanup) + an explicit feature-gate predicate.
+- **Why it's a large refactor, not a quick edit:** ~**180 backend** +
+  **29 frontend** `ContractStatus` references (roughly ~100 distinct
+  decision/read sites — status gates, role/redirect guards, the contract status
+  machine, the portfolio **analytics bucket fold** `CONTRACT_STATUS_BUCKETS`
+  which folds the 12 values → 6 display buckets, and the mirrored frontend fold
+  `PROJECT_CONTRACT_STATUS_BUCKETS`), PLUS the **implicit DocuSign transition**
+  (the webhook writing `status = ACTIVE`) and a data migration for existing rows.
+  Splitting the enum touches all of them at once and risks silently re-opening a
+  status-gate (ARCHITECTURE RULE 4) or an analytics bucket if any site is missed.
+- **Status:** explicitly **post-launch**. Do NOT attempt as an incidental change
+  inside a feature PR — it needs its own plan-mode session, a value-by-value
+  migration map, and a full sweep of all ~100 read-sites + the two bucket folds.
+  Nothing is broken today; this is a clarity/maintainability refactor, not a bug.
 
 ---
 
@@ -653,7 +735,7 @@ block schema.
 **Owner:** Ayman (AI integration) + Youssef (UI)
 **Priority:** 🟠 HIGH
 **Competitors:** Luminance, Ironclad
-**Status:** 🟢 SHIPPED (Youssef: data layer + UI + compliance feed) — PR #207 squash-merged to `main` at `bbbd149` (docs PR #208 at `534e352`), 2026-07-30. **Ayman's AI-integration half remains OPEN** — see "Remaining" below.
+**Status:** 🟢 **COMPLETE — both halves shipped (2026-08-05).** Youssef's data layer + UI + compliance feed: PR #207 (`bbbd149`; docs PR #208 `534e352`), 2026-07-30. Ayman's AI-integration half: **Items 1–4 all shipped** — see "Shipped — Ayman" below. Youssef's frontend batch on top: **#216** playbook_status pill (`af4c52c`), **#231** pill-colour lock (`ecaaf42`), **#233** coverage stat + classification badges + override auto-link (`81d8572`).
 **Depends on:** 7.1 ✅ (obligation data) + 7.19 (redlining creates the negotiation data playbooks compare against)
 **Why valuable:** Creates switching costs — once a firm has built their playbook in SIGN, they won't leave.
 
@@ -679,18 +761,29 @@ custom type; OWNER_ADMIN-walled CRUD; the Settings Playbook section at `/app/set
 ADDITIVELY into the existing compliance `playbook_knowledge` channel; per-contract / per-project
 overrides authored from the Compliance tab; Arabic + English definitions (i18n en/ar/fr).
 
-**Remaining — Ayman (AI integration), NOT built:**
-- **Structured `playbook_positions` field** so the AI can compare each clause against a position
-  deterministically. Today positions reach the model as PROMPT TEXT only, no ids round-trip, and
-  `compliance_findings` has no metadata column — so a finding cannot be linked back to the position that
-  provoked it (the override UI therefore asks the operator to pick the subject explicitly).
-- **The Matches Standard / Minor Deviation / Major Deviation / Non-Standard classification** — not built.
-  Deviations currently surface as ordinary PLAYBOOK-layer findings.
-- **Layer-aware `overall_status`** so a *preference* miss cannot read as legal non-compliance. The v1
-  mitigation is prompt-level only: every serialized block instructs the model to flag playbook
-  deviations as advisory (LOW/MEDIUM, never CRITICAL). A model can ignore it.
-- **Per-finding provenance** — positions are not knowledge assets, so `knowledge_assets_used` is
-  unchanged and nothing records which position drove a finding.
+**Shipped — Ayman (AI integration).** All four items that were open at PR #207 have landed:
+- ✅ **Structured `playbook_positions` field** — **PR #214** (`e539b04`). Positions now reach the model
+  as structured input carrying ids, and the echoed id is validated server-side against the org's real
+  positions (an invented id is nulled, never a dangling FK).
+- ✅ **Per-finding provenance** — **PR #214**. `compliance_findings.playbook_position_id` (FK →
+  `playbook_positions`, `ON DELETE SET NULL`) records which position drove a finding. This is what let
+  the override panel stop asking the operator to name the subject (see #233 below).
+- ✅ **Minor / Major / Non-Standard classification** — **PR #225** (`3a3d6ac`).
+  `compliance_findings.classification` (DB CHECK `chk_classification_playbook_only`), plus the
+  `playbook_relevant_count` / `playbook_on_standard_count` (M/N) denominator emitted by the agent.
+- ✅ **Layer-aware `overall_status`** — **PR #213** (`f4cb4ec`). PLAYBOOK findings are excluded from the
+  legal `overall_status` and surfaced on their own `findings_summary.playbook_status` axis, so a
+  preference miss can no longer read as legal non-compliance. No longer prompt-level only.
+
+**Shipped — Youssef (frontend, PR #233 `81d8572`, 2026-08-05).** Three slices wiring the above:
+- **"N of M on standard" coverage stat** from the #225 M/N counts (pure `resolvePlaybookCoverage`).
+- **Per-finding classification badges** — MINOR/MAJOR on an amber ramp; **NON_STANDARD given a
+  structurally distinct coverage-gap treatment** (unfilled, dashed, add-icon → "add a position", not
+  "negotiate"), deliberately off the legal red.
+- **Override-panel auto-link** via the #214 provenance — 4-case branch (auto-fill the linked position /
+  gap "add a position" framing / deleted-position manual fallback / non-PLAYBOOK no link), resolved from
+  the cached `PLAYBOOK_QUERY_KEY` list with no extra fetch.
+These are also the **first unit tests** for the ComplianceTab / override logic (pure exported helpers).
 
 **Success metric:** An org admin sets up their playbook once. Every contract reviewed after that gives personalised, organisation-specific risk flags instead of generic ones.
 
@@ -1018,6 +1111,35 @@ No ContractClauseScopedRepository exists yet — that subclass is the unit that 
 
 ---
 
+### Option α — True Contract Clause Versioning (`version_id` on `contract_clauses`)
+**Owner:** Youssef | **Priority:** 🔮 DEFERRED / FUTURE OPTION — NOT being built now
+**Status:** ❌ Filed for the future only — do NOT start without an explicit product requirement (see "WHEN to pick α" below)
+**Related:** 7.36 (ContractClause Chokepoint Migration — the missing `ContractClauseScopedRepository` is the crux of α's risk) · 7.18 #5 Slice 2 (guest AI-extraction review/merge) · 7.19 (Counterparty Redlining)
+
+**What this is — and is NOT.** This is the **deferred, full multi-version data model** for contract clauses. It is **NOT** what is being built for guest proposal review. The guest review story (7.18 #5 **Slice 2**) is being delivered as **Option γ** — review/merge of guest-proposed clauses by **reusing the existing primitives**: the `contract_clauses.is_proposed` flag (already shipped in Slice 1, Option C), `createVersionSnapshot`, and the `Clause` `parent_clause_id` chain. **γ delivers the guest review/accept/reject/merge + diff story WITHOUT touching the clause read chokepoint.** Option α is filed here purely as a **future option** to revisit IF full multi-version contract authoring ever becomes a product requirement. γ does **not** preclude α later — but **α is a one-way data-model door**; γ is not.
+
+**What α entails (from the Slice 2 design recon):**
+- Add a `version_id` FK to `contract_clauses`.
+- Give a contract an `active_version_id` pointer.
+- Backfill ALL existing clauses into a synthetic **"v1 / active"** version (so every legacy contract keeps rendering).
+- Migrate **ALL ~12 `contract_id`-keyed clause read sites** + the **2 contract-access ON-clause joins** + the **frontend** to be version-aware. **There is NO `ContractClauseScopedRepository`** (see 7.36 — it would create exactly this subclass), so the change **cannot be localized to one chokepoint** — this is the high-risk part. (If 7.36 ships first and routes ContractClause reads through a scoped repo, α's read-path migration becomes meaningfully more localizable — a reason to sequence 7.36 before α.)
+
+**⚠️ BLAST RADIUS / RISK — read before ever scheduling this.**
+- A mistake here corrupts **EVERY contract's clause display platform-wide**, not just guest flows. This is the highest-blast-radius data-model change on the board.
+- Estimated **3–5+ weeks**. MUST be sub-sliced:
+  - **2a** — schema + backfill, behind a feature flag (no read-path change yet).
+  - **2b** — read-path migration (make all read sites + access joins version-aware). **← highest-risk slice.**
+  - **2c** — version-aware UI.
+
+**WHEN to pick α over γ (the decision gate):**
+- Choose α **only** if there is a **concrete need** for one of: multiple **concurrent LIVE** versions of a contract, **branch/merge** semantics, or **arbitrary live version-to-version editing**.
+- The guest-proposal-review case does **NOT** need any of those — that is γ.
+- Default is γ. Escalate to α only when a real requirement forces the multi-live-version data model.
+
+**Diff UI note (applies to both paths):** the existing `DiffViewer` / `compareVersions` is reused either way — under **α** verbatim (snapshot a version → compare); under **γ** with a thin backend adapter. Either way the diff UI itself is not net-new work.
+
+---
+
 ### 7.37 — ERP Feature Entitlement (per-package + per-org on/off)
 **Owner:** Ayman | **Priority:** 🟡 MEDIUM | **Status:** ❌ Not started
 **Depends on:** 7.28 ✅ (ERP Integration v1 + v1.1)
@@ -1340,6 +1462,7 @@ No new env vars required for existing local dev deployments.
 - Replace `JWT_REFRESH_SECRET` placeholder with cryptographically random value
 - **DocuSign RSA private key (`DOCUSIGN_RSA_PRIVATE_KEY`)** — deferred here from Phase 7.35: it is an env secret (not DB-at-rest), so it belongs in the secrets manager, not `CryptoService`. Store it in AWS Secrets Manager with PEM newlines preserved.
 - Ensure `ERP_CREDENTIAL_ENC_KEY` (encrypts ERP credentials AND MFA TOTP secrets — Phase 7.28 / 7.35) is set in the secrets manager as a high-entropy random value; a re-encryption migration is required before any rotation.
+- **DocuSign live-verification — DEPLOYMENT-TIME GATE:** the signing flow (Phase 1.3) is code-complete but has never been exercised against a live DocuSign account. End-to-end verify initiate → sign → webhook → execution against a real sandbox/prod account before any signing feature (managing OR guest) is trusted. Full detail in "⚠️ Signing Track — Deferred & Blocked Items" (after 7.19); blocks guest signing.
 
 ---
 
@@ -1503,9 +1626,10 @@ No new env vars required for existing local dev deployments.
 | 7.17 | Portfolio Dashboard | ❌ Not started | Y | |
 | 7.18 | Guest Portal | ❌ Not started | Y | |
 | 7.19 | Counterparty Redlining | ❌ Not started | Y | |
+| — | Signing Track (DocuSign live-verify gate · guest signing · signed-state pinning · ~~export pdfmake~~ ✅ done PR #92) | ⏳ BLOCKED — design session + deploy gate (export pdfmake sub-item done PR #92; rest still blocked) | Y+A | 2026-06-22 |
 | 7.20 | Project Enhancements | ❌ Not started | Y | |
 | 7.21 | RFP Analysis | ❌ Not started | A+Y | |
-| 7.22 | Contract Playbook | 🟢 Shipped (Y: data + UI + feed, PR #207) — Ayman AI-integration pending | A+Y | 2026-07-30 |
+| 7.22 | Contract Playbook | 🟢 Complete — backend Items 1–4 (#213/#214/#225) + frontend (#216/#233) | A+Y | 2026-08-05 |
 | 7.23 | Word Add-In | ❌ Not started | Y | |
 | 7.24 | Knowledge Base | ✅ Complete (PR #40) | A | 2026-06-01 |
 | 7.25 | Poor Scan Quality | ✅ Complete (PR #41) | A+Y | 2026-06-01 |
@@ -1549,6 +1673,45 @@ No new env vars required for existing local dev deployments.
 | Month 3 | Feature development (Tier 1) | ✅ 7.1-7.4 done. 7.5-7.19 next |
 | Month 4 | Features (Tier 2-3) + deployment prep (9.1) | ⏳ Phase 7 continued + 9.1 starts |
 | Month 5+ | Deployment, 6B, SOC, advanced features | ⏳ Phase 9, 6B, 10, 7.32-7.34 |
+
+---
+
+## 🪪 Unified-Membership Arc — real-customer-as-guest (Feature #8 prerequisite) — SLICE 1 DONE
+
+**Industry decision (locked):** unified membership — ONE identity, binding-scoped
+access (Microsoft Entra B2B / WorkOS / Auth0 pattern). NOT dual user rows per
+email, NOT a separate external-identity mechanism.
+
+- ✅ **Slice 0 — graceful real-account collision at establish-identity** — DONE,
+  PR #139, squash-merged `d4ead7b` (2026-07-08). Detect invited-email ∈ existing
+  non-GUEST account BEFORE the guest-create → clean 409 `EXISTING_ACCOUNT_EMAIL`
+  + honest en/ar/fr copy (replaces the permanent unhandled UQ-violation 500).
+  Detect-and-respond only — no authz change, no binding, Path-A unaffected.
+  Real-PG no-side-effects spec shipped. Lessons #219–#221.
+- ✅ **Slice 1 — a real account can hold guest bindings (the binding is the SOLE
+  cross-org grant)** — DONE, **PR #164, squash-merged `6dda600` (2026-07-15),
+  Ayman-approved.** The dispatch is **ORG-FIRST, BINDING-FALLBACK**
+  (`findAccessibleContract`: own-org runs the identical `findInOrg` query first,
+  byte-identical; the `guest_contract_access` binding fallback fires only where
+  the old path already 404'd). **Model A** — the manager's NORMAL JWT reaches a
+  bound contract (no guest JWT minted); **uniform-404 guards** via one shared
+  `assertGuestSurfaceCaller` (the old 403 was an existence oracle). Establish-identity
+  attaches a binding to the **EXISTING** account row (Slice-0's
+  `EXISTING_ACCOUNT_EMAIL` 409 dead-end removed; MFA → `requires_login`, no bypass).
+  Ayman's two hold-conditions CLOSED: a shared **`AccountLockoutService` (5/30)**
+  used by BOTH `login()` and `establishIdentity()` + a **real-HTTP anti-impersonation**
+  test (401×5 → locked → correct-pw still 403). Metering subject derives from the
+  CONTRACT's org, never `user.organization_id`; the MANAGING-shape tripwire is
+  intact. **Pin wins over the binding** (rebase-integration test: bound
+  managing-as-guest → PINNED contract → 409 `CONTRACT_PINNED`). Full cross-org
+  leak battery GREEN; full backend suite green. Doc-sync PR #168. See CLAUDE.md
+  "Unified Membership Slice 1" + lessons #254–#258.
+  ⭐ Battery invariant (holds): metering subject + audit org derive from the
+  CONTRACT's org via the binding — NEVER `user.organization_id`.
+- 🟢 **Slice 2+ — the accessing-as-real-account UX beyond the authz spine**
+  (the actual guest-dashboard experience for a real account holding multiple
+  bindings) — buildable now that Slice 1 landed. Each further slice stays gated
+  by the cross-org leak battery.
 
 ---
 
@@ -1598,3 +1761,42 @@ No new env vars required for existing local dev deployments.
 
 *Last updated: 2026-06-04*
 *Next review: When 7.5-7.8 are cleared; 9.2 AWS setup planning starts*
+
+---
+
+## 🧩 7.20 Deferred — Project-scoped Add-Party endpoint (backend — Ayman)
+**Owner:** Ayman (backend) | **Priority:** 🟡 MEDIUM | **Status:** ❌ Not started
+**Deferred from:** 7.20 Slice 4a — Parties & Team directory (DISPLAY, merged)
+
+**Context:** The 7.20 Parties & Team directory (Slice 4a, merged) is **project-scoped**. Its "Add party" action is currently **blocked**: the only existing create path, `POST /project-parties`, requires a **CONTRACT-scoped** permission (`canManageContractParties` on a specific `contractId`), but the directory operates at the **PROJECT** level (a project has many contracts). There is no project-level "add a party to this project" create path.
+
+**Needed:** a **project-scoped add-party endpoint** (or a project-level authorization path for party creation) so a party can be added to a project directly, without first pre-selecting a contract.
+
+**Unblocks:** the "Add party" button in the 7.20 directory empty state (currently rendered disabled-with-a-note).
+
+**Related deferred backend items to Ayman (same 7.20 cluster):**
+- Guest session model
+- Org-portfolio endpoint — widen `portfolio-analytics` past OWNER_ADMIN
+- Portal Guests — project-scoped aggregation
+- Project phases ↔ contract-milestones model
+
+*Appended 2026-07-14.*
+
+---
+
+## 📧 Production email delivery (backend/infra — pre-launch, Ayman + Youssef)
+**Owner:** Ayman (infra) + Youssef (template/domain) | **Priority:** 🟠 HIGH — pre-launch | **Status:** ❌ Not started
+**Surfaced by:** 7.20 invite flow (Slice 4b, merged) — works app-side but has never delivered a real email.
+
+**Context:** The Slice 4b invite action works end-to-end in the app (confirm dialog → POST → status flips PENDING→INVITED → success toast), but **no invite email has ever actually been delivered.** ⚠️ **Framing correction (verified repo-wide 2026-07-14):** there is **no `EMAIL_ENABLED` flag** in the codebase and **no "would send" short-circuit** — email is driven by `EMAIL_DRIVER` (default `smtp`) + `SMTP_*` (or `ses`). In dev there is simply **no real transport**: `SMTP_HOST` defaults to `localhost:1025` with **nothing listening** (no Mailpit/catcher running), and `EmailService.sendInvitation` **swallows the send failure best-effort** (a failed attempt logs an ERROR, never a "would send" line, and is never surfaced to the user). So the only thing preventing a real send today is the **dead transport, not an app-layer kill-switch** — meaning the moment a real `SMTP_HOST`/provider is configured, invites WILL send. Production email must be configured and verified end-to-end before launch.
+
+**Required before launch:**
+1. **Configure a real transport in production** — set `EMAIL_DRIVER` + real `SMTP_HOST/PORT/USER/PASS` (or `EMAIL_DRIVER=ses` + AWS creds). NOTE: "enabling" email means **pointing the driver at a live provider**, not flipping an `EMAIL_ENABLED` flag (there isn't one). Decide whether the current swallow-on-failure behaviour is acceptable, or whether failed sends should be surfaced/retried.
+2. **Pick + configure a transactional email provider** with credentials (SendGrid / AWS SES / Postmark / Mailgun — provider decision needed). Dev has **no catcher running today**; if one is wanted for local testing, run Mailpit and point `SMTP_HOST` at it (the backend container's `localhost` won't reach a host/sibling catcher — use the compose service name).
+3. **Domain authentication (SPF, DKIM, DMARC)** on the sending domain, so invites land in-inbox not spam — critical, since inviting external parties is a core feature.
+4. **Review the invite email template** — correct content/branding, and the invite link built from the **production `FRONTEND_URL`** (link shape `${FRONTEND_URL}/auth/accept-invitation?token=…`), not localhost. ⚠️ Also verify that link routes to the **correct accept flow** end-to-end — the project-party invite currently builds a `/auth/accept-invitation` (user/team) URL; confirm the token resolves the intended party-acceptance path during the deliverability test.
+5. **End-to-end deliverability test** — send a real invite to a controlled inbox; confirm it arrives **in-inbox (not spam)** with a working link.
+
+**Applies to ALL platform emails, not just invites** (MFA, password reset, obligation reminders, approval requests, waitlist launch, compliance reports, etc.). Sits alongside the other backend-gated / pre-launch items above (project-scoped add-party endpoint, guest session model, org-portfolio endpoint, Portal Guests aggregation, phases↔milestones).
+
+*Appended 2026-07-14.*
