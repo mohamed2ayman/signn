@@ -13,6 +13,7 @@ import {
 import playbookService, {
   type PlaybookPosition,
 } from '@/services/api/playbookService';
+import type { OverrideFinding } from './overrideMode';
 import { UserRole } from '@/types';
 
 vi.mock('react-i18next', () => ({
@@ -222,7 +223,17 @@ describe('AdjustStandardButton', () => {
 // ═══ Override modal ═══════════════════════════════════════════════════════════
 
 describe('PlaybookOverrideModal', () => {
-  const finding = { requirement: 'Payment terms exceed the org standard', clause_ref: '14.7' };
+  // 7.22 Slice C — provenance is now part of the prop. This fixture is CASE 3:
+  // a PLAYBOOK deviation whose position was deleted after the check ran (id
+  // null, classification still MINOR), which is exactly the branch that keeps
+  // the manual picker. Every assertion below is unchanged.
+  const finding: OverrideFinding = {
+    requirement: 'Payment terms exceed the org standard',
+    clause_ref: '14.7',
+    layer: 'PLAYBOOK',
+    playbook_position_id: null,
+    classification: 'MINOR',
+  };
 
   function open(projectId: string | null = PROJECT) {
     return wrap(
@@ -400,5 +411,229 @@ describe('PlaybookOverrideModal', () => {
     const select = screen.getByLabelText('playbook.override.subjectLabel');
     // 1 placeholder + 17 standard + 1 custom
     expect(select.querySelectorAll('option')).toHaveLength(19);
+  });
+});
+
+// ═══ 7.22 Slice C — auto-link modes ═══════════════════════════════════════════
+
+describe('PlaybookOverrideModal — provenance modes (Slice C)', () => {
+  const base: OverrideFinding = {
+    requirement: 'Payment terms exceed the org standard',
+    clause_ref: '14.7',
+    layer: 'PLAYBOOK',
+    playbook_position_id: null,
+    classification: 'MINOR',
+  };
+
+  function open(over: Partial<OverrideFinding> = {}) {
+    return wrap(
+      <PlaybookOverrideModal
+        contractId={CONTRACT}
+        projectId={PROJECT}
+        finding={{ ...base, ...over }}
+        onClose={vi.fn()}
+      />,
+    );
+  }
+
+  const linked = () =>
+    position({
+      id: 'pos-9',
+      clause_type: 'liability',
+      rule_type: 'THRESHOLD',
+      value_config: { direction: 'AT_MOST', value: 10, unit: 'percent' },
+    });
+
+  describe('case 1 — auto-linked', () => {
+    it('shows the linked position instead of asking for a subject', async () => {
+      svc.list.mockResolvedValue([linked()]);
+      open({ playbook_position_id: 'pos-9' });
+
+      // Await the VALUE, not the heading: the loading card carries the same
+      // heading, so awaiting that would pass while still resolving.
+      expect(
+        await screen.findByText('playbook.value.atMost(unit=percent,value=10)'),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText('playbook.override.linkedStandard'),
+      ).toBeInTheDocument();
+      // Resolved, so the loading placeholder is gone.
+      expect(
+        screen.queryByText('playbook.override.resolvingLink'),
+      ).not.toBeInTheDocument();
+      // The picker is gone — the subject is known.
+      expect(
+        screen.queryByLabelText('playbook.override.subjectLabel'),
+      ).not.toBeInTheDocument();
+    });
+
+    it('auto-adopts the linked position’s shape as the starting point', async () => {
+      svc.list.mockResolvedValue([linked()]);
+      open({ playbook_position_id: 'pos-9' });
+
+      await waitFor(() =>
+        expect(screen.getByLabelText('playbook.modal.ruleTypeLabel')).toHaveValue(
+          'THRESHOLD',
+        ),
+      );
+      expect(screen.getByLabelText('playbook.modal.valueLabel')).toHaveValue(10);
+    });
+
+    it('submits against the linked subject without the user picking one', async () => {
+      svc.list.mockResolvedValue([linked()]);
+      svc.create.mockResolvedValue(position());
+      open({ playbook_position_id: 'pos-9' });
+
+      await waitFor(() =>
+        expect(screen.getByLabelText('playbook.modal.valueLabel')).toHaveValue(10),
+      );
+      await userEvent.click(screen.getByRole('button', { name: 'playbook.save' }));
+
+      await waitFor(() => expect(svc.create).toHaveBeenCalledTimes(1));
+      expect(svc.create).toHaveBeenCalledWith(
+        expect.objectContaining({ clause_type: 'liability', rule_type: 'THRESHOLD' }),
+      );
+    });
+
+    it('does not flash the picker while the positions cache is still loading', async () => {
+      // Never resolves — the panel stays in the loading branch.
+      svc.list.mockReturnValue(new Promise(() => {}));
+      open({ playbook_position_id: 'pos-9' });
+
+      expect(
+        await screen.findByText('playbook.override.resolvingLink'),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByLabelText('playbook.override.subjectLabel'),
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  describe('case 2 — NON_STANDARD is an ADD, not a pick', () => {
+    it('opens in add-a-position framing', async () => {
+      svc.list.mockResolvedValue([]);
+      open({ classification: 'NON_STANDARD' });
+
+      expect(
+        await screen.findByText('playbook.override.addTitle'),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText('playbook.override.addPositionHint'),
+      ).toBeInTheDocument();
+      // Framed as naming a NEW position's subject, not picking an existing one.
+      expect(
+        screen.getByLabelText('playbook.override.addSubjectLabel'),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByLabelText('playbook.override.subjectLabel'),
+      ).not.toBeInTheDocument();
+    });
+
+    it('says no position exists yet, rather than "choose a subject first"', async () => {
+      svc.list.mockResolvedValue([]);
+      open({ classification: 'NON_STANDARD' });
+
+      expect(
+        await screen.findByText('playbook.override.noPositionYet'),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByText('playbook.override.chooseSubjectFirst'),
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  describe('case 3 — deleted position falls back to the manual picker', () => {
+    it('shows the ordinary picker, NOT the add framing', async () => {
+      svc.list.mockResolvedValue([]);
+      open({ playbook_position_id: null, classification: 'MAJOR' });
+
+      expect(
+        await screen.findByLabelText('playbook.override.subjectLabel'),
+      ).toBeInTheDocument();
+      expect(screen.getByText('playbook.override.title')).toBeInTheDocument();
+      expect(
+        screen.queryByText('playbook.override.addPositionHint'),
+      ).not.toBeInTheDocument();
+    });
+
+    it('is a DIFFERENT screen from the NON_STANDARD gap, on the same null id', async () => {
+      // Both have playbook_position_id === null; classification decides.
+      svc.list.mockResolvedValue([]);
+      const { unmount } = open({ classification: 'MAJOR' });
+      expect(
+        await screen.findByLabelText('playbook.override.subjectLabel'),
+      ).toBeInTheDocument();
+      unmount();
+
+      svc.list.mockResolvedValue([]);
+      open({ classification: 'NON_STANDARD' });
+      expect(
+        await screen.findByLabelText('playbook.override.addSubjectLabel'),
+      ).toBeInTheDocument();
+    });
+  });
+
+  describe('case 4 — non-PLAYBOOK finding gets no link', () => {
+    it('shows the manual picker exactly as before #214', async () => {
+      svc.list.mockResolvedValue([]);
+      open({ layer: 'STANDARD', classification: null });
+
+      expect(
+        await screen.findByLabelText('playbook.override.subjectLabel'),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByText('playbook.override.linkedStandard'),
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  describe('failure + staleness regressions (found by adversarial review)', () => {
+    it('degrades to the picker when the positions request FAILS — no dead-end', async () => {
+      // REGRESSION: data stays undefined forever after a rejection. Treating
+      // that as "loading" hid the subject field while Save still demanded one,
+      // so the user got "choose a clause type" with no clause-type field.
+      svc.list.mockRejectedValue(new Error('network'));
+      open({ playbook_position_id: 'pos-9' });
+
+      const select = await screen.findByLabelText('playbook.override.subjectLabel');
+      expect(select).toBeInTheDocument();
+      expect(
+        screen.queryByText('playbook.override.resolvingLink'),
+      ).not.toBeInTheDocument();
+    });
+
+    it('a failed load still lets the user complete an override', async () => {
+      svc.list.mockRejectedValue(new Error('network'));
+      svc.create.mockResolvedValue(position());
+      open({ playbook_position_id: 'pos-9' });
+
+      await userEvent.selectOptions(
+        await screen.findByLabelText('playbook.override.subjectLabel'),
+        'payment',
+      );
+      await userEvent.type(screen.getByLabelText('playbook.modal.minLabel'), '28');
+      await userEvent.type(screen.getByLabelText('playbook.modal.maxLabel'), '45');
+      await userEvent.type(screen.getByLabelText('playbook.modal.unitLabel'), 'days');
+      await userEvent.click(screen.getByRole('button', { name: 'playbook.save' }));
+
+      await waitFor(() => expect(svc.create).toHaveBeenCalledTimes(1));
+    });
+
+    it('never overwrites a subject the user picked by hand', async () => {
+      // REGRESSION: a late-resolving position adopted unconditionally, so a
+      // subject chosen during the resolve window was silently replaced and the
+      // WRONG clause_type was submitted.
+      svc.list.mockResolvedValue([]);
+      svc.create.mockResolvedValue(position());
+      open({ playbook_position_id: 'pos-9' });
+
+      await userEvent.selectOptions(
+        await screen.findByLabelText('playbook.override.subjectLabel'),
+        'termination',
+      );
+      expect(
+        screen.getByLabelText('playbook.override.subjectLabel'),
+      ).toHaveValue('termination');
+    });
   });
 });

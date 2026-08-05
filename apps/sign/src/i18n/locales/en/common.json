@@ -407,7 +407,15 @@
       },
       "toast": {
         "saved": "Override saved for this contract"
-      }
+      },
+      "linkedStandard": "The standard this deviates from",
+      "resolvingLink": "Finding the linked position…",
+      "linkedHint": "Linked automatically from this finding — your override replaces it for this contract.",
+      "addSubjectLabel": "Which clause type is this position for?",
+      "addPositionHint": "Your playbook has no position for this yet. Saving adds your first one.",
+      "noPositionYet": "No position covers this clause type yet — you are adding one.",
+      "addTitle": "Add a playbook position",
+      "addSubtitle": "Nothing in your playbook covers this clause yet. Set the standard you want to hold."
     }
   },
   "redlines": {

@@ -78,6 +78,18 @@ export interface ComplianceFinding {
   recommendation: string | null;
   knowledge_asset_ref: string | null;
   /**
+   * 7.22 Item 4 (PR #214) — the playbook position this deviation is against,
+   * and the provenance that lets the override panel auto-link instead of
+   * asking the operator to name the subject.
+   *
+   * The backend validates the id the agent echoes against the org's real
+   * positions, so an invented one is stored as null rather than a dangling FK.
+   * The FK is ON DELETE SET NULL, so this also goes null when the position is
+   * later deleted — which is why a null here does NOT mean "no position ever
+   * existed"; `classification` is what distinguishes those two.
+   */
+  playbook_position_id: string | null;
+  /**
    * 7.22 Item 2 (PR #225). NON-NULL only on PLAYBOOK-layer findings — a DB
    * CHECK (`chk_classification_playbook_only`) enforces
    * `classification IS NULL OR layer = 'PLAYBOOK'`, so a non-PLAYBOOK finding
