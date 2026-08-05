@@ -9,6 +9,19 @@
       "ON_STANDARD": "Conforme au standard",
       "MINOR_DEVIATIONS": "Écarts mineurs",
       "MAJOR_DEVIATIONS": "Écarts majeurs"
+    },
+    "playbookCoverage": {
+      "onStandard": "{{onStandard}} des {{relevant}} positions conformes au standard",
+      "noPositions": "Aucune position du playbook applicable"
+    },
+    "classification": {
+      "MINOR": "Écart mineur",
+      "MAJOR": "Écart majeur",
+      "NON_STANDARD": "Aucune position — en ajouter une",
+      "hint": {
+        "deviation": "S'écarte d'une position de votre playbook — négociez cette clause ou ajustez votre standard.",
+        "gap": "Votre playbook n'a aucune position couvrant ce type de clause. Ajoutez-en une pour définir votre standard."
+      }
     }
   },
   "riskTab": {
@@ -396,7 +409,15 @@
       },
       "toast": {
         "saved": "Dérogation enregistrée pour ce contrat"
-      }
+      },
+      "linkedStandard": "Le standard dont cette clause s’écarte",
+      "resolvingLink": "Recherche de la position liée…",
+      "linkedHint": "Lié automatiquement à partir de ce constat — votre dérogation le remplace pour ce contrat.",
+      "addSubjectLabel": "Pour quel type de clause cette position ?",
+      "addPositionHint": "Votre playbook n’a pas encore de position pour cela. L’enregistrement ajoutera la première.",
+      "noPositionYet": "Aucune position ne couvre encore ce type de clause — vous en ajoutez une.",
+      "addTitle": "Ajouter une position au playbook",
+      "addSubtitle": "Votre playbook ne couvre pas encore cette clause. Définissez le standard que vous voulez tenir."
     }
   },
   "redlines": {

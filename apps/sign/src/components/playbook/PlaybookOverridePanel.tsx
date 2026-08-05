@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
@@ -27,6 +27,13 @@ import {
   validateValueDraft,
   type ValueDraft,
 } from './playbookModel';
+// 7.22 Slice C — which mode the panel opens in (auto-linked / add-a-position /
+// manual fallback). Pure decision logic, unit-tested in overrideMode.test.ts.
+import {
+  resolveOverrideMode,
+  showsSubjectSelect,
+  type OverrideFinding,
+} from './overrideMode';
 
 const bidiPlain = { unicodeBidi: 'plaintext' as const };
 const inputClass =
@@ -162,12 +169,22 @@ export function AdjustStandardButton({ onClick }: { onClick: () => void }) {
 /**
  * 7.22 Slice 3 — author a narrower playbook position from a compliance finding.
  *
- * WHY THE OPERATOR PICKS THE CLAUSE TYPE: a compliance finding carries NO link
- * back to the playbook row that provoked it. `compliance_findings` has no
- * metadata column, and Slice 2 feeds the playbook to the AI as PROMPT TEXT
- * only — no ids round-trip. Guessing the subject from `clause_ref` /
- * `requirement` text would be a fragile invented link, so the subject is
- * chosen explicitly and the org standard for it is then shown read-only.
+ * THE SUBJECT IS NOW DERIVED, NOT ASKED FOR (7.22 Slice C). This panel used to
+ * open with an empty picker because a finding carried no link back to the
+ * playbook row that provoked it. PR #214 changed that: the agent echoes the
+ * position id, the backend validates it against the org's real positions
+ * (inventing one is nulled, never a dangling FK) and stores it on
+ * `compliance_findings.playbook_position_id`; PR #225 added `classification`.
+ * So the panel resolves the position itself and shows it read-only.
+ *
+ * The resolution is a CACHE LOOKUP, not a fetch: the positions query below is
+ * the SHARED `PLAYBOOK_QUERY_KEY` the banner and manager page already populate,
+ * so auto-link costs no extra request.
+ *
+ * Four modes, decided by `resolveOverrideMode` (unit-tested in
+ * `overrideMode.test.ts`) — the case-2-vs-3 split is the subtle one: both have
+ * a null position id, and only `classification` says whether a position never
+ * existed (add one) or existed and was deleted (pick one).
  *
  * SCOPE, exactly as the backend's coherence rule requires:
  *   CONTRACT → contract_id required (project_id may be denormalized in)
@@ -181,8 +198,12 @@ export function PlaybookOverrideModal({
 }: {
   contractId: string;
   projectId: string | null;
-  /** The deviation that prompted this, shown for context only. */
-  finding: { requirement: string; clause_ref: string | null } | null;
+  /**
+   * The deviation that prompted this. Beyond the display text it carries the
+   * PROVENANCE (`layer`, `playbook_position_id`, `classification`) that decides
+   * the mode — ComplianceTab already holds the full finding at the call site.
+   */
+  finding: OverrideFinding | null;
   onClose: () => void;
 }) {
   const { t } = useTranslation();
@@ -193,6 +214,17 @@ export function PlaybookOverrideModal({
     queryFn: () => playbookService.list(),
   });
   const positions = positionsQuery.data ?? [];
+
+  // `positionsQuery.data` (NOT the ?? [] fallback) plus the query's liveness —
+  // the resolver needs to tell "still loading" from "loaded and empty" from
+  // "the request failed". Passing data alone conflates all three: an auto-link
+  // would flash the picker on a stale refetch, and a FAILED load would strand
+  // the panel on a spinner forever with no usable control.
+  const mode = resolveOverrideMode(finding, positionsQuery.data, {
+    isFetching: positionsQuery.isFetching,
+    isError: positionsQuery.isError,
+  });
+  const linkedPosition = mode.kind === 'linked' ? mode.position : null;
 
   const [clauseTypeKey, setClauseTypeKey] = useState('');
   const [scope, setScope] = useState<'CONTRACT' | 'PROJECT'>('CONTRACT');
@@ -232,8 +264,17 @@ export function PlaybookOverrideModal({
     ? effectivePositionFor(positions, clauseTypeKey, contractId, projectId)
     : null;
 
+  /**
+   * Set once the user picks a subject by hand. Auto-adoption must never
+   * overwrite an explicit choice: if a late-arriving position resolved after
+   * the user had already chosen, adoption would silently swap the subject (and
+   * the value shape) out from under them and submit the wrong clause type.
+   */
+  const subjectPickedByUser = useRef(false);
+
   /** Adopt the org standard's shape as the starting point for the override. */
   const pickClauseType = (key: string) => {
+    subjectPickedByUser.current = true;
     setClauseTypeKey(key);
     setError(null);
     if (touchedShape) return;
@@ -245,6 +286,32 @@ export function PlaybookOverrideModal({
       setDraft(draftFromPosition(current));
     }
   };
+
+  /**
+   * 7.22 Slice C — adopt the auto-linked position as the starting point.
+   *
+   * This is an effect rather than lazy state because the positions cache can
+   * land AFTER mount: a `useState` initialiser would run once against an empty
+   * list and never catch up. Keyed on the resolved position's id via a ref so
+   * it adopts exactly once per position, not on every render.
+   *
+   * It defers to the user twice over: `subjectPickedByUser` protects an
+   * explicit subject choice, and `touchedShape` protects an edited value —
+   * because an edit or a pick made while the cache was still resolving must
+   * never be silently overwritten when the position finally lands.
+   */
+  const adoptedPositionId = useRef<string | null>(null);
+  useEffect(() => {
+    if (!linkedPosition) return;
+    if (adoptedPositionId.current === linkedPosition.id) return;
+    adoptedPositionId.current = linkedPosition.id;
+    if (!subjectPickedByUser.current) {
+      setClauseTypeKey(normalizeClauseTypeKey(linkedPosition.clause_type));
+    }
+    if (touchedShape) return;
+    setRuleType(linkedPosition.rule_type);
+    setDraft(draftFromPosition(linkedPosition));
+  }, [linkedPosition, touchedShape]);
 
   const selectedOption = options.find((o) => o.key === clauseTypeKey);
 
@@ -304,8 +371,16 @@ export function PlaybookOverrideModal({
     <ModalShell
       isOpen
       onClose={mutation.isPending ? () => {} : onClose}
-      title={t('playbook.override.title')}
-      subtitle={t('playbook.override.subtitle')}
+      title={t(
+        mode.kind === 'addPosition'
+          ? 'playbook.override.addTitle'
+          : 'playbook.override.title',
+      )}
+      subtitle={t(
+        mode.kind === 'addPosition'
+          ? 'playbook.override.addSubtitle'
+          : 'playbook.override.subtitle',
+      )}
       size="lg"
       footer={
         <div className="flex justify-end gap-2">
@@ -346,34 +421,93 @@ export function PlaybookOverrideModal({
           </div>
         )}
 
-        {/* Subject */}
-        <div>
-          <label className={labelClass} htmlFor="pb-ov-clause-type">
-            {t('playbook.override.subjectLabel')}
-          </label>
-          <select
-            id="pb-ov-clause-type"
-            value={clauseTypeKey}
-            onChange={(e) => pickClauseType(e.target.value)}
-            className={inputClass}
-          >
-            <option value="">{t('playbook.override.subjectPlaceholder')}</option>
-            {options.map((o) => (
-              <option key={o.key} value={o.key}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        </div>
+        {/* 7.22 Slice C — the position this deviation was raised against is
+            still resolving from the shared cache. Shown rather than falling
+            through to the picker, which would flash and then vanish. */}
+        {mode.kind === 'loading' && (
+          <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+              {t('playbook.override.linkedStandard')}
+            </p>
+            <p className="mt-1 text-xs text-gray-400">
+              {t('playbook.override.resolvingLink')}
+            </p>
+          </div>
+        )}
 
-        {/* The org standard, read-only */}
+        {/* 7.22 Slice C — auto-linked (case 1). The subject is known, so the
+            picker is replaced by the linked position, read-only. */}
+        {linkedPosition && (
+          <div className="rounded-lg border border-primary/30 bg-primary/[0.03] px-3 py-2.5">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-primary">
+              {t('playbook.override.linkedStandard')}
+            </p>
+            <div className="mt-1.5 flex flex-wrap items-center gap-2">
+              <span className="text-xs font-semibold text-gray-900" dir="auto" style={bidiPlain}>
+                {positionClauseTypeLabel(linkedPosition, t)}
+              </span>
+              <span
+                className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${RULE_TYPE_BADGE[linkedPosition.rule_type] ?? 'bg-gray-100 text-gray-600'}`}
+              >
+                {t(`playbook.ruleType.${linkedPosition.rule_type}`)}
+              </span>
+              <span className="text-xs text-gray-700" dir="auto" style={bidiPlain}>
+                {renderPositionValue(linkedPosition, t)}
+              </span>
+              <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-gray-500">
+                {t(`playbook.scope.${linkedPosition.scope}`)}
+              </span>
+            </div>
+            <p className="mt-1.5 text-[11px] text-gray-500">
+              {t('playbook.override.linkedHint')}
+            </p>
+          </div>
+        )}
+
+        {/* Subject — hand-picked in the manual fallback, and in add-a-position
+            mode where a new position still needs a clause type named. */}
+        {showsSubjectSelect(mode) && (
+          <div>
+            <label className={labelClass} htmlFor="pb-ov-clause-type">
+              {mode.kind === 'addPosition'
+                ? t('playbook.override.addSubjectLabel')
+                : t('playbook.override.subjectLabel')}
+            </label>
+            <select
+              id="pb-ov-clause-type"
+              value={clauseTypeKey}
+              onChange={(e) => pickClauseType(e.target.value)}
+              className={inputClass}
+            >
+              <option value="">{t('playbook.override.subjectPlaceholder')}</option>
+              {options.map((o) => (
+                <option key={o.key} value={o.key}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+            {mode.kind === 'addPosition' && (
+              <p className="mt-1 text-[11px] text-gray-500">
+                {t('playbook.override.addPositionHint')}
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* The org standard, read-only. Suppressed when auto-linked — the
+            linked card above already IS the standard in play. */}
+        {showsSubjectSelect(mode) && (
         <div className="rounded-lg border border-gray-200 bg-white px-3 py-2.5">
           <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
             {t('playbook.override.orgStandard')}
           </p>
           {!clauseTypeKey ? (
             <p className="mt-1 text-xs text-gray-400">
-              {t('playbook.override.chooseSubjectFirst')}
+              {t(
+                mode.kind === 'addPosition'
+                  ? 'playbook.override.noPositionYet'
+                  : 'playbook.override.chooseSubjectFirst',
+              )}
             </p>
           ) : effective ? (
             <div className="mt-1.5 flex flex-wrap items-center gap-2">
@@ -398,6 +532,7 @@ export function PlaybookOverrideModal({
             </p>
           )}
         </div>
+        )}
 
         {/* The override */}
         <div className="rounded-lg border border-primary/20 bg-primary/[0.03] px-3 py-3">

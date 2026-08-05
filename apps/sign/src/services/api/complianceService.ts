@@ -41,6 +41,26 @@ export type ComplianceFindingStatus =
   | 'RESOLVED'
   | 'WAIVED';
 
+/**
+ * Per-finding playbook verdict (7.22 Item 2, PR #225).
+ *
+ * DISTINCT from `PlaybookStatus` below — #225 states it outright: "Distinct
+ * enum from Item 3's playbook_status (per-clause verdict vs contract rollup) —
+ * no shared enum." This one grades ONE finding; `PlaybookStatus` rolls the
+ * whole contract up. Never map one onto the other.
+ *
+ * MINOR / MAJOR  — deviates from a position the org actually holds
+ *                  (`playbook_position_id` is set). The org has a standard and
+ *                  this contract misses it: the action is to negotiate.
+ * NON_STANDARD   — a PLAYBOOK finding with NO covering position. Not a
+ *                  deviation at all but a COVERAGE GAP: there is nothing to
+ *                  negotiate against, and the action is to add a position.
+ */
+export type ComplianceFindingClassification =
+  | 'MINOR'
+  | 'MAJOR'
+  | 'NON_STANDARD';
+
 export type ReportType =
   | 'COMPLIANCE_SUMMARY'
   | 'OBLIGATIONS_REPORT'
@@ -57,6 +77,30 @@ export interface ComplianceFinding {
   actual_text: string | null;
   recommendation: string | null;
   knowledge_asset_ref: string | null;
+  /**
+   * 7.22 Item 4 (PR #214) — the playbook position this deviation is against,
+   * and the provenance that lets the override panel auto-link instead of
+   * asking the operator to name the subject.
+   *
+   * The backend validates the id the agent echoes against the org's real
+   * positions, so an invented one is stored as null rather than a dangling FK.
+   * The FK is ON DELETE SET NULL, so this also goes null when the position is
+   * later deleted — which is why a null here does NOT mean "no position ever
+   * existed"; `classification` is what distinguishes those two.
+   */
+  playbook_position_id: string | null;
+  /**
+   * 7.22 Item 2 (PR #225). NON-NULL only on PLAYBOOK-layer findings — a DB
+   * CHECK (`chk_classification_playbook_only`) enforces
+   * `classification IS NULL OR layer = 'PLAYBOOK'`, so a non-PLAYBOOK finding
+   * can never carry one.
+   *
+   * Null is ALSO possible ON a PLAYBOOK finding: the backend coerces via
+   * `coerceEnumOrNull` (null when the model omits or invalidates the value),
+   * and rows predating #225 have none. Treat null as "no badge", never as a
+   * default classification.
+   */
+  classification: ComplianceFindingClassification | null;
   status: ComplianceFindingStatus;
   acknowledged_at: string | null;
   created_at: string;
@@ -91,6 +135,20 @@ export interface ComplianceCheck {
      * the FAILED branch (which writes only `error`) and on legacy rows.
      */
     playbook_status?: PlaybookStatus;
+    /**
+     * "N of M on standard" denominator (7.22 Item 2, PR #225). M =
+     * `playbook_relevant_count`, the number of playbook positions fed to the
+     * check; N = `playbook_on_standard_count`, M minus the distinct positions
+     * deviated from. N is EMITTED by the agent, never derived here, so the
+     * model and the UI cannot silently disagree on a number a lawyer reads.
+     *
+     * BOTH are optional and must be treated as such: the agent writes them
+     * together on the normal path, but they are absent on the FAILED branch
+     * (which writes only `error`), on legacy rows predating PR #225, and on
+     * the backend's `summarize()` fallback, which emits neither.
+     */
+    playbook_relevant_count?: number;
+    playbook_on_standard_count?: number;
     /** True when the AI response was truncated and findings were salvaged from a partial result. */
     incomplete?: boolean;
     /** AI-side failure reason, stored on the FAILED branch. */
