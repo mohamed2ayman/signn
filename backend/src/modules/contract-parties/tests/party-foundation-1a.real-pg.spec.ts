@@ -87,6 +87,43 @@ const NEW_1A_CODES = [
 
 const ALL_22 = [...Object.keys(EXISTING_SORT), ...NEW_1A_CODES];
 
+/**
+ * Slice 1b-pre — the 2 codes seeded ACTIVE by 1779000000001, with their
+ * locked sort_orders. UNLIKE the 1a eleven these ship is_active = TRUE:
+ * they replace "JV Contractor (Joint Venture)" / "Consortium Member",
+ * options ProjectCreationPage's legacy free-text PARTY_OPTIONS list lets
+ * users pick TODAY, so they must be selectable the moment Slice 1b swaps
+ * that list for the registry-backed picker.
+ */
+const NEW_1B_PRE_SORT: Record<string, number> = {
+  JV_CONTRACTOR: 22,
+  CONSORTIUM_MEMBER: 23,
+};
+const NEW_1B_PRE_CODES = Object.keys(NEW_1B_PRE_SORT);
+
+/**
+ * The product-owner-final labels, asserted VERBATIM. These are the exact
+ * strings the migration inserts — a test that only checked "non-empty" would
+ * not catch a well-meaning translation/normalisation edit to the migration.
+ */
+const NEW_1B_PRE_LABELS: Record<
+  string,
+  { en: string; ar: string; fr: string }
+> = {
+  JV_CONTRACTOR: {
+    en: 'JV Contractor',
+    ar: 'مقاول تحالف',
+    fr: 'Entrepreneur groupé',
+  },
+  CONSORTIUM_MEMBER: {
+    en: 'Consortium Member',
+    ar: 'عضو تحالف',
+    fr: 'Membre du groupement',
+  },
+};
+
+const ALL_24 = [...ALL_22, ...NEW_1B_PRE_CODES];
+
 describeReal('Party Foundation — Slice 1a (real Postgres)', () => {
   let moduleRef: TestingModule;
   let dataSource: DataSource;
@@ -544,5 +581,191 @@ describeReal('Party Foundation — Slice 1a (real Postgres)', () => {
       } as any),
     ).rejects.toBeInstanceOf(NotFoundException);
     expect(await readDefaultRole(projectAId)).toBeNull();
+  });
+
+  // ── (v) Slice 1b-pre — migration 1779000000001 ────────────────────────────
+  // JV_CONTRACTOR + CONSORTIUM_MEMBER, seeded ACTIVE (the 1a eleven stay
+  // inactive). As with 1a, the migration up/down ROUND-TRIP is exercised
+  // OUTSIDE jest via the typeorm CLI (revert + re-run, with before/after
+  // dumps proving down() restores the prior 26-row state byte-identically);
+  // these assert the applied end state.
+
+  it('1b-pre precondition: migration 1779000000001 is applied on this DB', async () => {
+    const rows: Array<{ n: number }> = await dataSource.query(
+      `SELECT COUNT(*)::int AS n FROM party_roles WHERE code = ANY($1)`,
+      [NEW_1B_PRE_CODES],
+    );
+    if (Number(rows[0].n) !== 2) {
+      throw new Error(
+        'Slice 1b-pre precondition failed: migration 1779000000001 not ' +
+          'applied (JV_CONTRACTOR / CONSORTIUM_MEMBER missing).',
+      );
+    }
+  });
+
+  it('the registry now holds 24 non-TEST codes (was 22)', async () => {
+    const rows: Array<{ code: string }> = await dataSource.query(
+      `SELECT code FROM party_roles WHERE code NOT LIKE 'TEST\\_%' ORDER BY code`,
+    );
+    expect(rows.map((r) => r.code).sort()).toEqual([...ALL_24].sort());
+    expect(rows).toHaveLength(24);
+  });
+
+  it('JV_CONTRACTOR + CONSORTIUM_MEMBER are is_active = TRUE, while the 11 1a roles are STILL FALSE', async () => {
+    const rows: Array<{ code: string; is_active: boolean }> =
+      await dataSource.query(
+        `SELECT code, is_active FROM party_roles WHERE code = ANY($1)`,
+        [ALL_24],
+      );
+    const byCode = Object.fromEntries(rows.map((r) => [r.code, r.is_active]));
+    // The new pair ships ACTIVE — this is the whole point of 1b-pre.
+    for (const code of NEW_1B_PRE_CODES) expect(byCode[code]).toBe(true);
+    // ...and it must NOT have flipped the 1a eleven on as a side effect.
+    for (const code of NEW_1A_CODES) expect(byCode[code]).toBe(false);
+    for (const code of Object.keys(EXISTING_SORT)) {
+      expect(byCode[code]).toBe(true);
+    }
+  });
+
+  it('both new codes are category = CONTRACTOR_SIDE, applies_to = contract, at sort_order 22/23', async () => {
+    const rows: Array<{
+      code: string;
+      category: string | null;
+      applies_to: string;
+      sort_order: number;
+    }> = await dataSource.query(
+      `SELECT code, category, applies_to, sort_order FROM party_roles
+        WHERE code = ANY($1)`,
+      [NEW_1B_PRE_CODES],
+    );
+    expect(rows).toHaveLength(2);
+    for (const r of rows) {
+      expect(r.category).toBe('CONTRACTOR_SIDE');
+      // 'contract' matches every role added by 1776000000001.
+      expect(r.applies_to).toBe('contract');
+      expect(Number(r.sort_order)).toBe(NEW_1B_PRE_SORT[r.code]);
+    }
+  });
+
+  it('CONTRACTOR_SIDE now has 7 members (was 5)', async () => {
+    const rows: Array<{ n: number }> = await dataSource.query(
+      `SELECT COUNT(*)::int AS n FROM party_roles
+        WHERE code = ANY($1) AND category = 'CONTRACTOR_SIDE'`,
+      [ALL_24],
+    );
+    expect(Number(rows[0].n)).toBe(7);
+  });
+
+  it('both new codes carry the product-owner-final label_en/label_ar/label_fr VERBATIM', async () => {
+    const rows: Array<{
+      code: string;
+      label_en: string;
+      label_ar: string;
+      label_fr: string;
+    }> = await dataSource.query(
+      `SELECT code, label_en, label_ar, label_fr FROM party_roles
+        WHERE code = ANY($1)`,
+      [NEW_1B_PRE_CODES],
+    );
+    expect(rows).toHaveLength(2);
+    for (const r of rows) {
+      const want = NEW_1B_PRE_LABELS[r.code];
+      expect(r.label_en?.trim()).toBeTruthy();
+      expect(r.label_ar?.trim()).toBeTruthy();
+      expect(r.label_fr?.trim()).toBeTruthy();
+      // Verbatim — these strings are human-reviewed and must not be
+      // translated, transliterated, or "improved" by a later edit.
+      expect(r.label_en).toBe(want.en);
+      expect(r.label_ar).toBe(want.ar);
+      expect(r.label_fr).toBe(want.fr);
+    }
+  });
+
+  it('every label in the registry is NFC-normalised — 1b-pre introduces no non-NFC row', async () => {
+    // The repo has no normalisation layer, so the registry stays NFC-clean
+    // only if every seeding migration inserts NFC. Asserted table-wide (not
+    // just the new pair) so ANY future non-NFC insert trips this.
+    const rows: Array<{ code: string; col: string }> = await dataSource.query(
+      `SELECT code, 'label_en' AS col FROM party_roles
+         WHERE label_en <> normalize(label_en, NFC)
+       UNION ALL
+       SELECT code, 'label_ar' FROM party_roles
+         WHERE label_ar <> normalize(label_ar, NFC)
+       UNION ALL
+       SELECT code, 'label_fr' FROM party_roles
+         WHERE label_fr <> normalize(label_fr, NFC)`,
+    );
+    expect(rows).toEqual([]);
+  });
+
+  it("the existing 22 rows are UNCHANGED: sort_order map intact and no sort_order collision at 22/23", async () => {
+    // The pre-1a eleven keep their exact 10..110 mapping...
+    const existing: Array<{ code: string; sort_order: number }> =
+      await dataSource.query(
+        `SELECT code, sort_order FROM party_roles WHERE code = ANY($1)`,
+        [Object.keys(EXISTING_SORT)],
+      );
+    expect(
+      Object.fromEntries(existing.map((r) => [r.code, Number(r.sort_order)])),
+    ).toEqual(EXISTING_SORT);
+
+    // ...and 22/23 interleaved without renumbering anything: all 24 distinct.
+    const all: Array<{ sort_order: number }> = await dataSource.query(
+      `SELECT sort_order FROM party_roles WHERE code = ANY($1)`,
+      [ALL_24],
+    );
+    const values = all.map((r) => Number(r.sort_order));
+    expect(values).toHaveLength(24);
+    expect(new Set(values).size).toBe(24);
+  });
+
+  it('TEST_ rows are untouched by 1779000000001 (no category, no label rewrite)', async () => {
+    const rows: Array<{ code: string; category: string | null }> =
+      await dataSource.query(
+        `SELECT code, category FROM party_roles WHERE code LIKE 'TEST\\_%'`,
+      );
+    for (const r of rows) expect(r.category).toBeNull();
+  });
+
+  it('findAll (GET /party-roles, active-only default) NOW EXPOSES both new codes', async () => {
+    const activeOnly = await partyRoles.findAll();
+    for (const code of NEW_1B_PRE_CODES) {
+      expect(activeOnly.some((r) => r.code === code)).toBe(true);
+    }
+    // applies_to=contract is the picker set Slice 1b reads.
+    const contractScope = await partyRoles.findAll(false, 'contract');
+    for (const code of NEW_1B_PRE_CODES) {
+      expect(contractScope.some((r) => r.code === code)).toBe(true);
+    }
+  });
+
+  it('create: host_party_role_code = JV_CONTRACTOR now SUCCEEDS (was rejected as unknown before 1779000000001)', async () => {
+    const c = await contractsService.create(
+      {
+        project_id: projectAId,
+        name: `S1b-pre JV ${randomUUID().slice(0, 6)}`,
+        contract_type: 'ADHOC' as any,
+        host_party_role_code: 'JV_CONTRACTOR',
+      } as any,
+      userAId,
+      orgAId,
+    );
+    contractIds.push(c.id);
+    expect(await readHostRole(c.id)).toBe('JV_CONTRACTOR');
+  });
+
+  it('create: host_party_role_code = CONSORTIUM_MEMBER now SUCCEEDS', async () => {
+    const c = await contractsService.create(
+      {
+        project_id: projectAId,
+        name: `S1b-pre consortium ${randomUUID().slice(0, 6)}`,
+        contract_type: 'ADHOC' as any,
+        host_party_role_code: 'CONSORTIUM_MEMBER',
+      } as any,
+      userAId,
+      orgAId,
+    );
+    contractIds.push(c.id);
+    expect(await readHostRole(c.id)).toBe('CONSORTIUM_MEMBER');
   });
 });
