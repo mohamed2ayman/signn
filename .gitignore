@@ -52,8 +52,5 @@ Thumbs.db
 .claude/settings.local.json
 .claude/worktrees/
 
-# Local planning docs — never commit
-NEXT_PHASES.md
-
 # Phase 8.3 gold set — real contract text; local-only artifact. NEVER commit.
 docs/phase-8.3-gold/
