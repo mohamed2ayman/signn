@@ -372,6 +372,7 @@ export default function ContractDetailPage() {
   // the list empty, and PartyRoleLabel then falls back to the raw code.
   const [partyRoles, setPartyRoles] = useState<PartyRole[]>([]);
   const [partyRolesLoading, setPartyRolesLoading] = useState(true);
+  const [partyRolesError, setPartyRolesError] = useState(false);
   useEffect(() => {
     let cancelled = false;
     partyService
@@ -380,6 +381,7 @@ export default function ContractDetailPage() {
         if (!cancelled) setPartyRoles(rows);
       })
       .catch((err: unknown) => {
+        if (!cancelled) setPartyRolesError(true);
         // Terse on purpose: this is a best-effort reference-data load that
         // degrades gracefully (PartyRoleLabel falls back to the raw code), so
         // it does not deserve a full axios error dump in the console.
@@ -1505,7 +1507,7 @@ export default function ContractDetailPage() {
             <span className="text-xs font-medium text-gray-500">
               {t('contractCreate.partyType')}
             </span>
-            {!editingHostRole && (
+            {!editingHostRole && !isContractLocked && (
               <button
                 onClick={() => {
                   setHostRoleDraft(hostPartyRoleCode ?? '');
@@ -1525,6 +1527,7 @@ export default function ContractDetailPage() {
                 id="contract-host-party-role-edit"
                 roles={partyRoles}
                 isLoading={partyRolesLoading}
+                isError={partyRolesError}
                 value={hostRoleDraft}
                 onChange={setHostRoleDraft}
                 disabled={savingHostRole}
@@ -1546,7 +1549,7 @@ export default function ContractDetailPage() {
                   {t('common.cancel')}
                 </button>
                 <button
-                  disabled={savingHostRole}
+                  disabled={savingHostRole || partyRolesError}
                   onClick={async () => {
                     if (!id) return;
                     setSavingHostRole(true);
