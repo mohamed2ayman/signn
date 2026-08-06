@@ -835,6 +835,8 @@
   },
   "common": {
     "save": "Save",
+    "set": "Set",
+    "saving": "Saving...",
     "cancel": "Cancel",
     "delete": "Delete",
     "edit": "Edit",

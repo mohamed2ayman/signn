@@ -1514,7 +1514,7 @@ export default function ContractDetailPage() {
                 }}
                 className="text-xs font-medium text-primary hover:text-primary/80"
               >
-                {hostPartyRoleCode ? 'Edit' : 'Set'}
+                {hostPartyRoleCode ? t('common.edit') : t('common.set')}
               </button>
             )}
           </div>
@@ -1543,7 +1543,7 @@ export default function ContractDetailPage() {
                   }}
                   className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
                 >
-                  Cancel
+                  {t('common.cancel')}
                 </button>
                 <button
                   disabled={savingHostRole}
@@ -1571,7 +1571,7 @@ export default function ContractDetailPage() {
                   }}
                   className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-white hover:bg-primary/90 disabled:opacity-50"
                 >
-                  {savingHostRole ? 'Saving...' : 'Save'}
+                  {savingHostRole ? t('common.saving') : t('common.save')}
                 </button>
               </div>
             </div>

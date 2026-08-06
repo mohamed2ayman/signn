@@ -325,6 +325,9 @@ export default function ProjectCreationPage() {
                 rows={3}
               />
             </div>
+            {/* The chevron below is physically pinned to the trailing edge, so
+                both it and the input's padding mirror under RTL — otherwise
+                Arabic text runs underneath it (TopBar.tsx is the precedent). */}
             <div ref={countryRef} className="relative">
               <label className="mb-1.5 block text-sm font-medium text-gray-700">
                 {t('projectCreate.details.countryLabel')}
@@ -343,9 +346,10 @@ export default function ProjectCreationPage() {
                   setCountrySearch('');
                 }}
                 placeholder={t('projectCreate.details.countryPlaceholder')}
-                className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                dir="auto"
+                className="w-full rounded-lg border border-gray-300 py-2.5 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary ltr:pl-4 ltr:pr-10 rtl:pr-4 rtl:pl-10"
               />
-              <svg className="pointer-events-none absolute right-3 top-[38px] h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="pointer-events-none absolute top-[38px] h-4 w-4 text-gray-400 ltr:right-3 rtl:left-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
               </svg>
               {countryDropdownOpen && (
@@ -441,7 +445,7 @@ export default function ProjectCreationPage() {
             <button
               type="button"
               onClick={handleSelectUploadAnalyze}
-              className="group rounded-2xl border-2 border-gray-200 bg-white p-8 text-left transition-all hover:border-primary hover:shadow-lg"
+              className="group rounded-2xl border-2 border-gray-200 bg-white p-8 ltr:text-left rtl:text-right transition-all hover:border-primary hover:shadow-lg"
             >
               <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-primary/10 transition-colors group-hover:bg-primary/20">
                 <svg
@@ -483,8 +487,8 @@ export default function ProjectCreationPage() {
             </button>
 
             {/* Draft from Requirements Card */}
-            <div className="relative rounded-2xl border-2 border-gray-100 bg-gray-50 p-8 text-left opacity-70">
-              <div className="absolute right-4 top-4 rounded-full bg-gray-200 px-3 py-1 text-xs font-medium text-gray-600">
+            <div className="relative rounded-2xl border-2 border-gray-100 bg-gray-50 p-8 ltr:text-left rtl:text-right opacity-70">
+              <div className="absolute top-4 rounded-full bg-gray-200 px-3 py-1 text-xs font-medium text-gray-600 ltr:right-4 rtl:left-4">
                 {t('projectCreate.path.comingSoon')}
               </div>
               <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-gray-200">
