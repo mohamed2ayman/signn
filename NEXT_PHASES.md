@@ -961,6 +961,7 @@ These are also the **first unit tests** for the ComplianceTab / override logic (
 ### ✅ 7.31 — Frontend Test Coverage — CLOSED (2026-08-06)
 **Owner:** Youssef | **Priority:** 🟡 MEDIUM | **Status:** ✅ Closed — 2026-08-06
 **Suite:** 67 test files / 772 tests, measured at `694ac8d`. (Was 61 files / 641 tests at `e3892f5` when the task opened.)
+**Reconciliation:** Lesson #328 records 66/760 at `d3797a1`; the difference is PR #236 (`PartyRoleSelect.test.tsx` — +1 file, +12 tests: 66+1=67, 760+12=772). Both figures are correct at their own ref. #328 is a dated measurement and is deliberately NOT amended — rewriting it would erase the evidence for its own lesson.
 **Lessons:** #311–#328 recorded in `lessons.md`.
 
 **`ContractDetailPage.tsx`:** 0% → **45 of 94 functions (47.87%)** — signing, mark-signed, share, approval request/review, comments, clause add/remove.
@@ -1660,7 +1661,7 @@ No new env vars required for existing local dev deployments.
 | 7.28 | ERP Integration (per-org connector registry, import-only; + v1.1 operator control) | ✅ Complete (v1 + v1.1, PRs #79–#83) | A+Y | 2026-06-21 |
 | 7.29 | Settlement Checkbox | ❌ Not started | Y | |
 | 7.30 | Clause Library | ✅ Complete | A | |
-| 7.31 | Frontend Tests | ✅ Closed — 67 files / 772 tests | Y | 2026-08-06 |
+| 7.31 | Frontend Tests | ✅ Closed — 67 / 772 @ 694ac8d | Y | 2026-08-06 |
 | 7.32 | Negotiation History | ❌ Not started | A+Y | |
 | 7.33 | Self-Service Generation | ❌ Not started | Y | |
 | 7.34 | Owner/Insurer Portal | ❌ Not started | Y+A | |
