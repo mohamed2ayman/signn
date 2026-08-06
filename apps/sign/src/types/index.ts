@@ -200,6 +200,16 @@ export interface PartyRole {
   applies_to: 'project' | 'contract' | 'both';
   is_active: boolean;
   sort_order: number;
+  /**
+   * Grouping label for the role picker (EMPLOYER_SIDE / CONTRACTOR_SIDE /
+   * CONSULTANTS / FINANCIAL / CONCESSION).
+   *
+   * NULLABLE by design — the COLUMN is nullable and OTHER is deliberately
+   * uncategorised, so it renders ungrouped and last. See migration
+   * 1776000000001 line 112 ("OTHER is intentionally left with category NULL").
+   * Consumers group by this and order WITHIN a group by sort_order.
+   */
+  category?: string | null;
   created_at: string;
 }
 

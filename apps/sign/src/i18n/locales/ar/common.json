@@ -175,6 +175,97 @@
       "multipleDesignated": "يُسمح بموقّع معيَّن واحد فقط لكل طرف."
     }
   },
+  "partyRole": {
+    "group": {
+      "EMPLOYER_SIDE": "جهة صاحب العمل",
+      "CONTRACTOR_SIDE": "جهة المقاول",
+      "CONSULTANTS": "الاستشاريون",
+      "FINANCIAL": "الجهات المالية",
+      "CONCESSION": "الامتياز"
+    }
+  },
+  "projectCreate": {
+    "steps": {
+      "details": "بيانات المشروع",
+      "choosePath": "اختيار المسار",
+      "upload": "رفع المستندات",
+      "processing": "المعالجة"
+    },
+    "errors": {
+      "nameRequired": "اسم المشروع مطلوب",
+      "countryRequired": "الدولة / الاختصاص القضائي مطلوب",
+      "partyRequired": "يرجى اختيار الطرف الذي تمثّله",
+      "uploadAtLeastOne": "يرجى رفع مستند واحد على الأقل",
+      "createFailed": "تعذّر إنشاء المشروع. يرجى المحاولة مرة أخرى."
+    },
+    "details": {
+      "title": "إنشاء مشروع جديد",
+      "subtitle": "قم بإعداد مشروع الإنشاءات الخاص بك لبدء إدارة العقود.",
+      "nameLabel": "اسم المشروع *",
+      "namePlaceholder": "مثال: توسعة مترو دبي — المرحلة الثالثة",
+      "objectiveLabel": "هدف المشروع",
+      "objectivePlaceholder": "صف ما يهدف هذا المشروع إلى تحقيقه...",
+      "countryLabel": "الدولة / الاختصاص القضائي *",
+      "countryPlaceholder": "ابحث عن دولة أو اخترها...",
+      "countryNone": "لا توجد دول مطابقة",
+      "countryGroup": {
+        "mena": "الشرق الأوسط وشمال إفريقيا",
+        "africa": "إفريقيا"
+      },
+      "partyLabel": "أي طرف تمثّل في هذا العقد؟ *",
+      "partyHint": "اختر الطرف الذي تتصرف نيابةً عنه في هذا المشروع.",
+      "continue": "متابعة"
+    },
+    "path": {
+      "title": "كيف تريد أن تبدأ؟",
+      "subtitle": "اختر طريقة إعداد مستندات عقدك.",
+      "uploadTitle": "رفع وتحليل",
+      "uploadBody": "ارفع مستندات العقد الحالية. سيقوم الذكاء الاصطناعي تلقائياً باستخراج البنود وتحديد المخاطر وتتبّع الالتزامات — دون أي عمل يدوي.",
+      "uploadCta": "رفع المستندات",
+      "comingSoon": "قريباً",
+      "draftTitle": "الصياغة من المتطلبات",
+      "draftBody": "صف متطلبات مشروعك وسيقوم الذكاء الاصطناعي بصياغة شروط عقد مخصّصة لك.",
+      "draftCta": "بدء الصياغة",
+      "back": "العودة إلى بيانات المشروع"
+    },
+    "upload": {
+      "title": "رفع مستندات العقد",
+      "subtitle": "ارفع مستندات عقدك. سيقوم الذكاء الاصطناعي بقراءتها واستخراج البنود وتحليلها تلقائياً.",
+      "contractNameLabel": "اسم العقد",
+      "contractNamePlaceholder": "مثال: عقد الإنشاءات الرئيسي",
+      "hierarchyTitle": "تسلسل المستندات (اختياري)",
+      "hierarchyHint": "صنّف مستنداتك لتحديد الأولوية. التعديلات والملاحق تَعلو على الشروط العامة، وهكذا.",
+      "priority": "الأولوية:",
+      "back": "رجوع",
+      "start": "بدء التحليل"
+    },
+    "docLabel": {
+      "_TODO": "DRAFT — construction document-type terms pending legal-terminology review (clauseType._TODO posture). schedule / billOfQuantities / addendum are the least certain.",
+      "none": "بدون تصنيف",
+      "contractAgreement": "اتفاقية العقد",
+      "generalConditions": "الشروط العامة",
+      "particularConditions": "الشروط الخاصة",
+      "appendix": "ملحق",
+      "amendment": "تعديل",
+      "addendum": "ملحق إضافي",
+      "schedule": "جدول",
+      "billOfQuantities": "جدول الكميات",
+      "specifications": "المواصفات",
+      "other": "أخرى"
+    },
+    "processing": {
+      "completeTitle": "اكتمل التحليل!",
+      "failedTitle": "تعذّرت معالجة بعض المستندات",
+      "runningTitle": "جارٍ تحليل مستنداتك...",
+      "completeBody": "تمت معالجة جميع المستندات. راجع البنود المستخرجة للمتابعة.",
+      "failedBody": "يمكنك إعادة محاولة المستندات التي فشلت أو المتابعة بالمستندات التي نجحت.",
+      "runningBody": "يقوم الذكاء الاصطناعي بقراءة مستنداتك واستخراج البنود منها. عادةً ما يستغرق ذلك دقيقة إلى دقيقتين.",
+      "overallProgress": "التقدّم الإجمالي",
+      "reviewCta": "مراجعة البنود المستخرجة",
+      "reviewHint": "راجع البنود ووافق عليها قبل الانتقال إلى تحليل المخاطر",
+      "continuePartial": "المتابعة بالمستندات التي تمت معالجتها"
+    }
+  },
   "contractCreate": {
     "addContract": "إضافة عقد",
     "newContract": "عقد جديد",

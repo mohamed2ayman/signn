@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { projectService } from '@/services/api/projectService';
 import { contractService } from '@/services/api/contractService';
 import { documentProcessingService } from '@/services/api/documentProcessingService';
@@ -7,21 +8,27 @@ import { useDocumentProcessing } from '@/hooks/useDocumentProcessing';
 import StepIndicator from '@/components/common/StepIndicator';
 import FileDropZone from '@/components/common/FileDropZone';
 import ProcessingStatusCard from '@/components/common/ProcessingStatusCard';
+import PartyRoleSelect from '@/components/contracts/parties/PartyRoleSelect';
 import Button from '@/components/common/Button';
 import type { DocumentUpload } from '@/types';
 
+/**
+ * `value` is the API payload (`document_label`) and drives backend cover-page
+ * trimming — it MUST stay English and is never translated. `labelKey` is the
+ * display string only.
+ */
 const DOCUMENT_LABELS = [
-  { value: '', label: 'No label' },
-  { value: 'Contract Agreement', label: 'Contract Agreement' },
-  { value: 'General Conditions', label: 'General Conditions' },
-  { value: 'Particular Conditions', label: 'Particular Conditions' },
-  { value: 'Appendix', label: 'Appendix' },
-  { value: 'Amendment', label: 'Amendment' },
-  { value: 'Addendum', label: 'Addendum' },
-  { value: 'Schedule', label: 'Schedule' },
-  { value: 'Bill of Quantities', label: 'Bill of Quantities' },
-  { value: 'Specifications', label: 'Specifications' },
-  { value: 'Other', label: 'Other' },
+  { value: '', labelKey: 'projectCreate.docLabel.none' },
+  { value: 'Contract Agreement', labelKey: 'projectCreate.docLabel.contractAgreement' },
+  { value: 'General Conditions', labelKey: 'projectCreate.docLabel.generalConditions' },
+  { value: 'Particular Conditions', labelKey: 'projectCreate.docLabel.particularConditions' },
+  { value: 'Appendix', labelKey: 'projectCreate.docLabel.appendix' },
+  { value: 'Amendment', labelKey: 'projectCreate.docLabel.amendment' },
+  { value: 'Addendum', labelKey: 'projectCreate.docLabel.addendum' },
+  { value: 'Schedule', labelKey: 'projectCreate.docLabel.schedule' },
+  { value: 'Bill of Quantities', labelKey: 'projectCreate.docLabel.billOfQuantities' },
+  { value: 'Specifications', labelKey: 'projectCreate.docLabel.specifications' },
+  { value: 'Other', labelKey: 'projectCreate.docLabel.other' },
 ];
 
 const MENA_COUNTRIES = [
@@ -44,17 +51,15 @@ const AFRICA_COUNTRIES = [
 const MENA_SET = new Set(MENA_COUNTRIES);
 const ALL_COUNTRIES = [...MENA_COUNTRIES, ...AFRICA_COUNTRIES].sort((a, b) => a.localeCompare(b));
 
-const PARTY_OPTIONS = [
-  'Main Contractor',
-  'JV Contractor (Joint Venture)',
-  'Consortium Member',
-  'Employer / Client',
-  'Engineer / Consultant',
-  'Subcontractor',
-  'Supplier',
-  'Project Manager',
-  'Other',
-];
+// Party Foundation Slice 1b — the hardcoded free-text PARTY_OPTIONS list that
+// used to live here is GONE. The party question is now answered against the
+// party_roles registry via <PartyRoleSelect>, and the chosen CODE is persisted
+// (projects.default_party_role_code + contracts.host_party_role_code) instead
+// of being collected and silently discarded.
+//
+// The old list's "Other" free-text follow-up went with it: it had no backend
+// column and was never persisted, and the registry's own OTHER code is the
+// canonical way to say "none of these".
 
 interface FileWithMeta {
   file: File;
@@ -62,28 +67,32 @@ interface FileWithMeta {
   priority: number;
 }
 
-const WIZARD_STEPS = [
-  { label: 'Project Details' },
-  { label: 'Choose Path' },
-  { label: 'Upload Documents' },
-  { label: 'Processing' },
+const WIZARD_STEP_KEYS = [
+  'projectCreate.steps.details',
+  'projectCreate.steps.choosePath',
+  'projectCreate.steps.upload',
+  'projectCreate.steps.processing',
 ];
 
 export default function ProjectCreationPage() {
   const navigate = useNavigate();
+  const { t } = useTranslation();
 
   const [currentStep, setCurrentStep] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
 
-  // Step 1: Project details
+  // Step 1: Project details.
+  // `party` now holds a party_roles registry CODE (e.g. 'EPC_CONTRACTOR'),
+  // not a free-text label — see the PARTY_OPTIONS note above.
   const [projectData, setProjectData] = useState({
     name: '',
     objective: '',
     country: '',
     party: '',
-    partyOther: '',
   });
+
+  const wizardSteps = WIZARD_STEP_KEYS.map((k) => ({ label: t(k) }));
 
   // Country dropdown state
   const [countrySearch, setCountrySearch] = useState('');
@@ -95,17 +104,20 @@ export default function ProjectCreationPage() {
     ? ALL_COUNTRIES.filter((c) => c.toLowerCase().includes(countrySearch.toLowerCase()))
     : ALL_COUNTRIES;
 
-  // Build grouped list: MENA header, MENA matches, Africa header, Africa matches
+  // Build grouped list: MENA header, MENA matches, Africa header, Africa matches.
+  // Country NAMES are reference data, not UI copy — the selected name is the
+  // value POSTed as `country`, and the search filter matches on it — so they
+  // are deliberately NOT translated. Only the two group HEADERS are chrome.
   const groupedCountryItems = (() => {
     const mena = filteredCountries.filter((c) => MENA_SET.has(c));
     const africa = filteredCountries.filter((c) => !MENA_SET.has(c));
-    const items: { type: 'header' | 'country'; value: string }[] = [];
+    const items: { type: 'header' | 'country'; value: string; labelKey?: string }[] = [];
     if (mena.length > 0) {
-      items.push({ type: 'header', value: 'MENA' });
+      items.push({ type: 'header', value: 'MENA', labelKey: 'projectCreate.details.countryGroup.mena' });
       mena.forEach((c) => items.push({ type: 'country', value: c }));
     }
     if (africa.length > 0) {
-      items.push({ type: 'header', value: 'Africa' });
+      items.push({ type: 'header', value: 'Africa', labelKey: 'projectCreate.details.countryGroup.africa' });
       africa.forEach((c) => items.push({ type: 'country', value: c }));
     }
     return items;
@@ -144,19 +156,15 @@ export default function ProjectCreationPage() {
 
   const handleProjectDetailsNext = () => {
     if (!projectData.name.trim()) {
-      setError('Project name is required');
+      setError(t('projectCreate.errors.nameRequired'));
       return;
     }
     if (!projectData.country) {
-      setError('Country / Jurisdiction is required');
+      setError(t('projectCreate.errors.countryRequired'));
       return;
     }
     if (!projectData.party) {
-      setError('Please select which party you represent');
-      return;
-    }
-    if (projectData.party === 'Other' && !projectData.partyOther.trim()) {
-      setError('Please specify your role');
+      setError(t('projectCreate.errors.partyRequired'));
       return;
     }
     setError('');
@@ -193,7 +201,7 @@ export default function ProjectCreationPage() {
 
   const handleStartAnalysis = async () => {
     if (filesWithMeta.length === 0) {
-      setError('Please upload at least one document');
+      setError(t('projectCreate.errors.uploadAtLeastOne'));
       return;
     }
 
@@ -201,18 +209,25 @@ export default function ProjectCreationPage() {
     setIsSubmitting(true);
 
     try {
-      // 1. Create project
+      // 1. Create project.
+      // Party Foundation Slice 1b — the party answer PERSISTS. It used to be
+      // collected + validated on step 1 and then dropped on the floor here.
       const project = await projectService.create({
         name: projectData.name,
         objective: projectData.objective || undefined,
         country: projectData.country || undefined,
+        default_party_role_code: projectData.party || undefined,
       });
 
-      // 2. Create contract
+      // 2. Create contract.
+      // The contract created in this same submit carries the SAME code as its
+      // host party role. The backend does NOT inherit the project default
+      // automatically (that is Slice 1c), so it is passed explicitly.
       const contract = await contractService.create({
         project_id: project.id,
         name: contractName || projectData.name,
         contract_type: 'UPLOADED',
+        host_party_role_code: projectData.party || undefined,
       });
 
       setContractId(contract.id);
@@ -240,7 +255,7 @@ export default function ProjectCreationPage() {
       const error = err as { response?: { data?: { message?: string } } };
       setError(
         error.response?.data?.message ||
-          'Failed to create project. Please try again.',
+          t('projectCreate.errors.createFailed'),
       );
     } finally {
       setIsSubmitting(false);
@@ -266,23 +281,23 @@ export default function ProjectCreationPage() {
     <div className="mx-auto max-w-3xl px-4 py-8">
       {/* Step Indicator */}
       <div className="mb-10">
-        <StepIndicator steps={WIZARD_STEPS} currentStep={currentStep} />
+        <StepIndicator steps={wizardSteps} currentStep={currentStep} />
       </div>
 
       {/* Step 1: Project Details */}
       {currentStep === 0 && (
         <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-sm">
           <h2 className="text-xl font-semibold text-gray-900">
-            Create a New Project
+            {t('projectCreate.details.title')}
           </h2>
           <p className="mt-1 text-sm text-gray-500">
-            Set up your construction project to start managing contracts.
+            {t('projectCreate.details.subtitle')}
           </p>
 
           <div className="mt-6 space-y-5">
             <div>
               <label className="mb-1.5 block text-sm font-medium text-gray-700">
-                Project Name *
+                {t('projectCreate.details.nameLabel')}
               </label>
               <input
                 type="text"
@@ -290,27 +305,29 @@ export default function ProjectCreationPage() {
                 onChange={(e) =>
                   setProjectData({ ...projectData, name: e.target.value })
                 }
-                placeholder="e.g., Dubai Metro Extension Phase 3"
+                placeholder={t('projectCreate.details.namePlaceholder')}
+                dir="auto"
                 className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
               />
             </div>
             <div>
               <label className="mb-1.5 block text-sm font-medium text-gray-700">
-                Project Objective
+                {t('projectCreate.details.objectiveLabel')}
               </label>
               <textarea
                 value={projectData.objective}
                 onChange={(e) =>
                   setProjectData({ ...projectData, objective: e.target.value })
                 }
-                placeholder="Describe what this project aims to achieve..."
+                placeholder={t('projectCreate.details.objectivePlaceholder')}
+                dir="auto"
                 className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                 rows={3}
               />
             </div>
             <div ref={countryRef} className="relative">
               <label className="mb-1.5 block text-sm font-medium text-gray-700">
-                Country / Jurisdiction *
+                {t('projectCreate.details.countryLabel')}
               </label>
               <input
                 ref={countryInputRef}
@@ -325,7 +342,7 @@ export default function ProjectCreationPage() {
                   setCountryDropdownOpen(true);
                   setCountrySearch('');
                 }}
-                placeholder="Search or select a country..."
+                placeholder={t('projectCreate.details.countryPlaceholder')}
                 className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
               />
               <svg className="pointer-events-none absolute right-3 top-[38px] h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -334,7 +351,7 @@ export default function ProjectCreationPage() {
               {countryDropdownOpen && (
                 <ul className="absolute z-10 mt-1 max-h-60 w-full overflow-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
                   {groupedCountryItems.length === 0 ? (
-                    <li className="px-4 py-2 text-sm text-gray-400">No countries found</li>
+                    <li className="px-4 py-2 text-sm text-gray-400">{t('projectCreate.details.countryNone')}</li>
                   ) : (
                     groupedCountryItems.map((item) =>
                       item.type === 'header' ? (
@@ -342,7 +359,7 @@ export default function ProjectCreationPage() {
                           key={`header-${item.value}`}
                           className="sticky top-0 bg-gray-50 px-4 py-1.5 text-xs font-semibold uppercase tracking-wider text-gray-500"
                         >
-                          {item.value}
+                          {item.labelKey ? t(item.labelKey) : item.value}
                         </li>
                       ) : (
                         <li
@@ -366,50 +383,43 @@ export default function ProjectCreationPage() {
             </div>
 
             <div>
-              <label className="mb-1.5 block text-sm font-medium text-gray-700">
-                Which party do you represent in this contract? *
+              <label
+                htmlFor="project-party-role"
+                className="mb-1.5 block text-sm font-medium text-gray-700"
+              >
+                {t('projectCreate.details.partyLabel')}
               </label>
               <p className="mb-1.5 text-xs text-gray-400">
-                Select the party you are acting on behalf of in this project.
+                {t('projectCreate.details.partyHint')}
               </p>
-              <select
+              {/*
+                Party Foundation Slice 1b — the registry-backed, grouped picker.
+                It queries the CONTRACT-scoped role list, which is correct here
+                even though the answer is stored on the PROJECT:
+                projects.default_party_role_code holds a contract-scoped code by
+                design (migration 1776000000001 lines 50-54). Asking for
+                applies_to=project would return a different, unusable set.
+              */}
+              <PartyRoleSelect
+                id="project-party-role"
                 value={projectData.party}
-                onChange={(e) =>
-                  setProjectData({
-                    ...projectData,
-                    party: e.target.value,
-                    partyOther: e.target.value === 'Other' ? projectData.partyOther : '',
-                  })
+                onChange={(code) =>
+                  setProjectData({ ...projectData, party: code })
                 }
-                className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-              >
-                <option value="" disabled>Select your party...</option>
-                {PARTY_OPTIONS.map((opt) => (
-                  <option key={opt} value={opt}>{opt}</option>
-                ))}
-              </select>
-              {projectData.party === 'Other' && (
-                <input
-                  type="text"
-                  value={projectData.partyOther}
-                  onChange={(e) =>
-                    setProjectData({ ...projectData, partyOther: e.target.value })
-                  }
-                  placeholder="Please specify your role..."
-                  className="mt-2 w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                />
-              )}
+              />
             </div>
           </div>
 
           {error && (
-            <div className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-600">
+            <div className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-600" dir="auto">
               {error}
             </div>
           )}
 
           <div className="mt-8 flex justify-end">
-            <Button onClick={handleProjectDetailsNext}>Continue</Button>
+            <Button onClick={handleProjectDetailsNext}>
+              {t('projectCreate.details.continue')}
+            </Button>
           </div>
         </div>
       )}
@@ -419,10 +429,10 @@ export default function ProjectCreationPage() {
         <div>
           <div className="mb-6 text-center">
             <h2 className="text-xl font-semibold text-gray-900">
-              How would you like to start?
+              {t('projectCreate.path.title')}
             </h2>
             <p className="mt-1 text-sm text-gray-500">
-              Choose how you want to set up your contract documents.
+              {t('projectCreate.path.subtitle')}
             </p>
           </div>
 
@@ -449,15 +459,13 @@ export default function ProjectCreationPage() {
                 </svg>
               </div>
               <h3 className="mt-5 text-lg font-semibold text-gray-900">
-                Upload & Analyze
+                {t('projectCreate.path.uploadTitle')}
               </h3>
               <p className="mt-2 text-sm text-gray-500">
-                Upload existing contract documents. Our AI will automatically
-                extract clauses, identify risks, and track obligations — no
-                manual work required.
+                {t('projectCreate.path.uploadBody')}
               </p>
               <div className="mt-6 flex items-center text-sm font-medium text-primary">
-                Upload Documents
+                {t('projectCreate.path.uploadCta')}
                 <svg
                   className="ml-1 h-4 w-4 transition-transform group-hover:translate-x-1"
                   fill="none"
@@ -477,7 +485,7 @@ export default function ProjectCreationPage() {
             {/* Draft from Requirements Card */}
             <div className="relative rounded-2xl border-2 border-gray-100 bg-gray-50 p-8 text-left opacity-70">
               <div className="absolute right-4 top-4 rounded-full bg-gray-200 px-3 py-1 text-xs font-medium text-gray-600">
-                Coming Soon
+                {t('projectCreate.path.comingSoon')}
               </div>
               <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-gray-200">
                 <svg
@@ -495,14 +503,13 @@ export default function ProjectCreationPage() {
                 </svg>
               </div>
               <h3 className="mt-5 text-lg font-semibold text-gray-500">
-                Draft from Requirements
+                {t('projectCreate.path.draftTitle')}
               </h3>
               <p className="mt-2 text-sm text-gray-400">
-                Describe your project requirements and our AI will draft
-                tailored contract conditions for you.
+                {t('projectCreate.path.draftBody')}
               </p>
               <div className="mt-6 text-sm font-medium text-gray-400">
-                Start Drafting
+                {t('projectCreate.path.draftCta')}
               </div>
             </div>
           </div>
@@ -513,7 +520,10 @@ export default function ProjectCreationPage() {
               onClick={() => setCurrentStep(0)}
               className="text-sm text-gray-500 hover:text-gray-700"
             >
-              &larr; Back to project details
+              {/* The arrow is a direction glyph, not copy — it must mirror
+                  under RTL, so it is rendered outside the translated string. */}
+              <span className="inline-block rtl:rotate-180">&larr;</span>{' '}
+              {t('projectCreate.path.back')}
             </button>
           </div>
         </div>
@@ -523,23 +533,23 @@ export default function ProjectCreationPage() {
       {currentStep === 2 && (
         <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-sm">
           <h2 className="text-xl font-semibold text-gray-900">
-            Upload Contract Documents
+            {t('projectCreate.upload.title')}
           </h2>
           <p className="mt-1 text-sm text-gray-500">
-            Upload your contract documents. Our AI will read, extract clauses,
-            and analyze them automatically.
+            {t('projectCreate.upload.subtitle')}
           </p>
 
           {/* Contract Name */}
           <div className="mt-6">
             <label className="mb-1.5 block text-sm font-medium text-gray-700">
-              Contract Name
+              {t('projectCreate.upload.contractNameLabel')}
             </label>
             <input
               type="text"
               value={contractName}
               onChange={(e) => setContractName(e.target.value)}
-              placeholder="e.g., Main Construction Contract"
+              placeholder={t('projectCreate.upload.contractNamePlaceholder')}
+              dir="auto"
               className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
             />
           </div>
@@ -559,11 +569,10 @@ export default function ProjectCreationPage() {
           {filesWithMeta.length > 0 && (
             <div className="mt-6">
               <h3 className="text-sm font-medium text-gray-700">
-                Document Hierarchy (Optional)
+                {t('projectCreate.upload.hierarchyTitle')}
               </h3>
               <p className="mt-0.5 text-xs text-gray-400">
-                Label your documents to define priority. Amendments and
-                addenda override general conditions, etc.
+                {t('projectCreate.upload.hierarchyHint')}
               </p>
               <div className="mt-3 space-y-3">
                 {filesWithMeta.map((fm, index) => (
@@ -595,12 +604,12 @@ export default function ProjectCreationPage() {
                     >
                       {DOCUMENT_LABELS.map((opt) => (
                         <option key={opt.value} value={opt.value}>
-                          {opt.label}
+                          {t(opt.labelKey)}
                         </option>
                       ))}
                     </select>
                     <div className="flex items-center gap-1">
-                      <span className="text-xs text-gray-400">Priority:</span>
+                      <span className="text-xs text-gray-400">{t('projectCreate.upload.priority')}</span>
                       <input
                         type="number"
                         value={fm.priority}
@@ -623,7 +632,7 @@ export default function ProjectCreationPage() {
           )}
 
           {error && (
-            <div className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-600">
+            <div className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-600" dir="auto">
               {error}
             </div>
           )}
@@ -634,14 +643,15 @@ export default function ProjectCreationPage() {
               onClick={() => setCurrentStep(1)}
               className="text-sm text-gray-500 hover:text-gray-700"
             >
-              &larr; Back
+              <span className="inline-block rtl:rotate-180">&larr;</span>{' '}
+              {t('projectCreate.upload.back')}
             </button>
             <Button
               onClick={handleStartAnalysis}
               isLoading={isSubmitting}
               disabled={filesWithMeta.length === 0}
             >
-              Start Analysis
+              {t('projectCreate.upload.start')}
             </Button>
           </div>
         </div>
@@ -653,17 +663,17 @@ export default function ProjectCreationPage() {
           <div className="text-center">
             <h2 className="text-xl font-semibold text-gray-900">
               {allComplete
-                ? 'Analysis Complete!'
+                ? t('projectCreate.processing.completeTitle')
                 : anyFailed
-                  ? 'Some documents failed to process'
-                  : 'Analyzing Your Documents...'}
+                  ? t('projectCreate.processing.failedTitle')
+                  : t('projectCreate.processing.runningTitle')}
             </h2>
             <p className="mt-1 text-sm text-gray-500">
               {allComplete
-                ? 'All documents have been processed. Review the extracted clauses to continue.'
+                ? t('projectCreate.processing.completeBody')
                 : anyFailed
-                  ? 'You can retry failed documents or continue with the ones that succeeded.'
-                  : 'Our AI is reading and extracting clauses from your documents. This usually takes 1-2 minutes.'}
+                  ? t('projectCreate.processing.failedBody')
+                  : t('projectCreate.processing.runningBody')}
             </p>
           </div>
 
@@ -671,7 +681,7 @@ export default function ProjectCreationPage() {
           {!allComplete && !anyFailed && (
             <div className="mx-auto mt-6 max-w-md">
               <div className="flex items-center justify-between text-sm">
-                <span className="text-gray-500">Overall Progress</span>
+                <span className="text-gray-500">{t('projectCreate.processing.overallProgress')}</span>
                 <span className="font-medium text-primary">
                   {overallProgress}%
                 </span>
@@ -700,11 +710,10 @@ export default function ProjectCreationPage() {
           {allComplete && (
             <div className="mt-8 text-center">
               <Button onClick={handleReviewClauses} className="px-8 py-3">
-                Review Extracted Clauses
+                {t('projectCreate.processing.reviewCta')}
               </Button>
               <p className="mt-2 text-xs text-gray-400">
-                Review and approve the clauses before proceeding to risk
-                analysis
+                {t('projectCreate.processing.reviewHint')}
               </p>
             </div>
           )}
@@ -716,7 +725,7 @@ export default function ProjectCreationPage() {
                 variant="outline"
                 onClick={handleReviewClauses}
               >
-                Continue with Processed Documents
+                {t('projectCreate.processing.continuePartial')}
               </Button>
             </div>
           )}

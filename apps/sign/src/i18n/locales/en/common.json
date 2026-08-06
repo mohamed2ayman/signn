@@ -174,6 +174,96 @@
       "multipleDesignated": "Only one designated signatory is allowed per party."
     }
   },
+  "partyRole": {
+    "group": {
+      "EMPLOYER_SIDE": "Employer side",
+      "CONTRACTOR_SIDE": "Contractor side",
+      "CONSULTANTS": "Consultants",
+      "FINANCIAL": "Financial parties",
+      "CONCESSION": "Concession"
+    }
+  },
+  "projectCreate": {
+    "steps": {
+      "details": "Project Details",
+      "choosePath": "Choose Path",
+      "upload": "Upload Documents",
+      "processing": "Processing"
+    },
+    "errors": {
+      "nameRequired": "Project name is required",
+      "countryRequired": "Country / Jurisdiction is required",
+      "partyRequired": "Please select which party you represent",
+      "uploadAtLeastOne": "Please upload at least one document",
+      "createFailed": "Failed to create project. Please try again."
+    },
+    "details": {
+      "title": "Create a New Project",
+      "subtitle": "Set up your construction project to start managing contracts.",
+      "nameLabel": "Project Name *",
+      "namePlaceholder": "e.g., Dubai Metro Extension Phase 3",
+      "objectiveLabel": "Project Objective",
+      "objectivePlaceholder": "Describe what this project aims to achieve...",
+      "countryLabel": "Country / Jurisdiction *",
+      "countryPlaceholder": "Search or select a country...",
+      "countryNone": "No countries found",
+      "countryGroup": {
+        "mena": "MENA",
+        "africa": "Africa"
+      },
+      "partyLabel": "Which party do you represent in this contract? *",
+      "partyHint": "Select the party you are acting on behalf of in this project.",
+      "continue": "Continue"
+    },
+    "path": {
+      "title": "How would you like to start?",
+      "subtitle": "Choose how you want to set up your contract documents.",
+      "uploadTitle": "Upload & Analyze",
+      "uploadBody": "Upload existing contract documents. Our AI will automatically extract clauses, identify risks, and track obligations — no manual work required.",
+      "uploadCta": "Upload Documents",
+      "comingSoon": "Coming Soon",
+      "draftTitle": "Draft from Requirements",
+      "draftBody": "Describe your project requirements and our AI will draft tailored contract conditions for you.",
+      "draftCta": "Start Drafting",
+      "back": "Back to project details"
+    },
+    "upload": {
+      "title": "Upload Contract Documents",
+      "subtitle": "Upload your contract documents. Our AI will read, extract clauses, and analyze them automatically.",
+      "contractNameLabel": "Contract Name",
+      "contractNamePlaceholder": "e.g., Main Construction Contract",
+      "hierarchyTitle": "Document Hierarchy (Optional)",
+      "hierarchyHint": "Label your documents to define priority. Amendments and addenda override general conditions, etc.",
+      "priority": "Priority:",
+      "back": "Back",
+      "start": "Start Analysis"
+    },
+    "docLabel": {
+      "none": "No label",
+      "contractAgreement": "Contract Agreement",
+      "generalConditions": "General Conditions",
+      "particularConditions": "Particular Conditions",
+      "appendix": "Appendix",
+      "amendment": "Amendment",
+      "addendum": "Addendum",
+      "schedule": "Schedule",
+      "billOfQuantities": "Bill of Quantities",
+      "specifications": "Specifications",
+      "other": "Other"
+    },
+    "processing": {
+      "completeTitle": "Analysis Complete!",
+      "failedTitle": "Some documents failed to process",
+      "runningTitle": "Analyzing Your Documents...",
+      "completeBody": "All documents have been processed. Review the extracted clauses to continue.",
+      "failedBody": "You can retry failed documents or continue with the ones that succeeded.",
+      "runningBody": "Our AI is reading and extracting clauses from your documents. This usually takes 1-2 minutes.",
+      "overallProgress": "Overall Progress",
+      "reviewCta": "Review Extracted Clauses",
+      "reviewHint": "Review and approve the clauses before proceeding to risk analysis",
+      "continuePartial": "Continue with Processed Documents"
+    }
+  },
   "contractCreate": {
     "addContract": "Add Contract",
     "newContract": "New Contract",
