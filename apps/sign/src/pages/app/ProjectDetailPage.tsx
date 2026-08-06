@@ -10,6 +10,7 @@ import ContractStatusDot from '@/components/contracts/ContractStatusDot';
 import ContractTypeSelector from '@/components/contracts/ContractTypeSelector';
 import RelationshipTypeSelector from '@/components/contracts/RelationshipTypeSelector';
 import ParentContractPicker from '@/components/contracts/ParentContractPicker';
+import PartyRoleSelect from '@/components/contracts/parties/PartyRoleSelect';
 import ProjectHealthBar from '@/components/project/ProjectHealthBar';
 import ProjectAttentionZone from '@/components/project/ProjectAttentionZone';
 import ProjectAnalyticsRow from '@/components/project/ProjectAnalyticsRow';
@@ -43,7 +44,11 @@ export default function ProjectDetailPage() {
   // Multi-tier T0b — parent-contract link (null = no parent). Captured only
   // when the chosen type's parent_link_rule is 'required' or 'optional'.
   const [parentContractId, setParentContractId] = useState<string | null>(null);
-  const [contractForm, setContractForm] = useState({ name: '', party_type: '' });
+  // Party Foundation Slice 1b — the free-text `party_type` field is replaced by
+  // `host_party_role_code`, a party_roles registry CODE chosen via the grouped
+  // <PartyRoleSelect>. contracts.party_type itself is NOT removed from the
+  // backend (legacy column, separate slice) — this page just stops writing it.
+  const [contractForm, setContractForm] = useState({ name: '', host_party_role_code: '' });
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [chatOpen, setChatOpen] = useState(false);
@@ -94,6 +99,33 @@ export default function ProjectDetailPage() {
       !!c.relationship_type && allowedParentTypes.includes(c.relationship_type),
   );
 
+  /**
+   * Party Foundation Slice 1b — the project's default host party role.
+   *
+   * The wire carries projects.default_party_role_code (backend entity +
+   * Create/UpdateProjectDto, Slice 1a) but the shared `Project` type does not
+   * declare it — widening types/index.ts is its own deliberate change, so it
+   * is bound locally (the 7.20 memberCount / contractCount / expiry_date
+   * convention).
+   *
+   * The BACKEND does NOT inherit this default onto a new contract — that is
+   * Slice 1c. So the frontend reads it and PRE-FILLS the picker; the user can
+   * change it before submitting.
+   */
+  const defaultPartyRoleCode =
+    (project as (Project & { default_party_role_code?: string | null }) | null)
+      ?.default_party_role_code ?? '';
+
+  const blankContractForm = () => ({
+    name: '',
+    host_party_role_code: defaultPartyRoleCode,
+  });
+
+  const openCreateContract = () => {
+    setContractForm(blankContractForm());
+    setShowCreateContract(true);
+  };
+
   const isStandardForm = (ct: ContractType) => ct !== ContractType.ADHOC && ct !== ContractType.UPLOADED;
 
   // Localized label for the chosen FORM in the "… selected" subtitle. Standard
@@ -136,7 +168,7 @@ export default function ProjectDetailPage() {
         // Multi-tier T0b — only send a parent when one is chosen. 'none' types
         // never show the picker (parentContractId stays null → omitted).
         parent_contract_id: parentContractId ?? undefined,
-        party_type: contractForm.party_type || undefined,
+        host_party_role_code: contractForm.host_party_role_code || undefined,
         license_acknowledged: isStandardForm(selectedType) ? true : undefined,
         license_organization: isStandardForm(selectedType) ? getLicenseOrg(selectedType) : undefined,
       });
@@ -146,7 +178,7 @@ export default function ProjectDetailPage() {
       setSelectedType(null);
       setRelationshipType(null);
       setParentContractId(null);
-      setContractForm({ name: '', party_type: '' });
+      setContractForm(blankContractForm());
       navigate(`/app/contracts/${contract.id}`);
     } catch (err) {
       // Surface a clean message (e.g. an unknown/inactive relationship code
@@ -262,7 +294,7 @@ export default function ProjectDetailPage() {
               Permissions
             </button>
             <button
-              onClick={() => setShowCreateContract(true)}
+              onClick={openCreateContract}
               className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-primary-600"
             >
               <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
@@ -398,7 +430,7 @@ export default function ProjectDetailPage() {
             <p className="mt-3 text-sm font-medium text-gray-500">No contracts yet</p>
             <p className="mt-1 text-xs text-gray-400">Add your first contract to get started</p>
             <button
-              onClick={() => setShowCreateContract(true)}
+              onClick={openCreateContract}
               className="mt-4 inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3.5 py-2 text-sm font-medium text-gray-700 transition hover:border-gray-300 hover:bg-gray-50"
             >
               <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
@@ -427,7 +459,7 @@ export default function ProjectDetailPage() {
                 </p>
               </div>
               <button
-                onClick={() => { setShowCreateContract(false); setCreateStep('type'); setSelectedType(null); setRelationshipType(null); setParentContractId(null); setCreateError(null); setContractForm({ name: '', party_type: '' }); }}
+                onClick={() => { setShowCreateContract(false); setCreateStep('type'); setSelectedType(null); setRelationshipType(null); setParentContractId(null); setCreateError(null); setContractForm(blankContractForm()); }}
                 className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
               >
                 <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
@@ -514,14 +546,17 @@ export default function ProjectDetailPage() {
                   />
                 </div>
                 <div>
-                  <label className="mb-1.5 block text-sm font-medium text-gray-700">{t('contractCreate.partyType')} <span className="text-gray-400 font-normal">{t('contractCreate.optional')}</span></label>
-                  <input
-                    type="text"
-                    value={contractForm.party_type}
-                    onChange={(e) => setContractForm({ ...contractForm, party_type: e.target.value })}
-                    className="w-full rounded-lg border border-gray-200 bg-white px-3.5 py-2.5 text-sm transition-colors placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                    placeholder={t('contractCreate.partyTypePlaceholder')}
-                    dir="auto"
+                  <label htmlFor="contract-host-party-role" className="mb-1.5 block text-sm font-medium text-gray-700">{t('contractCreate.partyType')} <span className="text-gray-400 font-normal">{t('contractCreate.optional')}</span></label>
+                  {/*
+                    Party Foundation Slice 1b — registry-backed grouped picker,
+                    pre-filled from the project's default_party_role_code by
+                    blankContractForm(). Still OPTIONAL: '' is a valid answer
+                    and is sent as undefined.
+                  */}
+                  <PartyRoleSelect
+                    id="contract-host-party-role"
+                    value={contractForm.host_party_role_code}
+                    onChange={(code) => setContractForm({ ...contractForm, host_party_role_code: code })}
                   />
                 </div>
                 {createError && (

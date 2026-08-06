@@ -175,6 +175,97 @@
       "multipleDesignated": "Un seul signataire désigné est autorisé par partie."
     }
   },
+  "partyRole": {
+    "group": {
+      "EMPLOYER_SIDE": "Côté maître d'ouvrage",
+      "CONTRACTOR_SIDE": "Côté entrepreneur",
+      "CONSULTANTS": "Consultants",
+      "FINANCIAL": "Parties financières",
+      "CONCESSION": "Concession"
+    }
+  },
+  "projectCreate": {
+    "steps": {
+      "details": "Détails du projet",
+      "choosePath": "Choisir la voie",
+      "upload": "Téléverser les documents",
+      "processing": "Traitement"
+    },
+    "errors": {
+      "nameRequired": "Le nom du projet est obligatoire",
+      "countryRequired": "Le pays / la juridiction est obligatoire",
+      "partyRequired": "Veuillez sélectionner la partie que vous représentez",
+      "uploadAtLeastOne": "Veuillez téléverser au moins un document",
+      "createFailed": "Impossible de créer le projet. Veuillez réessayer."
+    },
+    "details": {
+      "title": "Créer un nouveau projet",
+      "subtitle": "Configurez votre projet de construction pour commencer à gérer les contrats.",
+      "nameLabel": "Nom du projet *",
+      "namePlaceholder": "ex. : Extension du métro de Dubaï — phase 3",
+      "objectiveLabel": "Objectif du projet",
+      "objectivePlaceholder": "Décrivez ce que ce projet vise à accomplir...",
+      "countryLabel": "Pays / Juridiction *",
+      "countryPlaceholder": "Rechercher ou sélectionner un pays...",
+      "countryNone": "Aucun pays trouvé",
+      "countryGroup": {
+        "mena": "Moyen-Orient et Afrique du Nord",
+        "africa": "Afrique"
+      },
+      "partyLabel": "Quelle partie représentez-vous dans ce contrat ? *",
+      "partyHint": "Sélectionnez la partie pour le compte de laquelle vous agissez dans ce projet.",
+      "continue": "Continuer"
+    },
+    "path": {
+      "title": "Comment souhaitez-vous commencer ?",
+      "subtitle": "Choisissez comment configurer les documents de votre contrat.",
+      "uploadTitle": "Téléverser et analyser",
+      "uploadBody": "Téléversez des documents contractuels existants. Notre IA extraira automatiquement les clauses, identifiera les risques et suivra les obligations — aucun travail manuel requis.",
+      "uploadCta": "Téléverser les documents",
+      "comingSoon": "Bientôt disponible",
+      "draftTitle": "Rédiger à partir des exigences",
+      "draftBody": "Décrivez les exigences de votre projet et notre IA rédigera des conditions contractuelles sur mesure.",
+      "draftCta": "Commencer la rédaction",
+      "back": "Retour aux détails du projet"
+    },
+    "upload": {
+      "title": "Téléverser les documents contractuels",
+      "subtitle": "Téléversez vos documents contractuels. Notre IA les lira, en extraira les clauses et les analysera automatiquement.",
+      "contractNameLabel": "Nom du contrat",
+      "contractNamePlaceholder": "ex. : Contrat de construction principal",
+      "hierarchyTitle": "Hiérarchie des documents (facultatif)",
+      "hierarchyHint": "Étiquetez vos documents pour définir la priorité. Les avenants et addenda priment sur les conditions générales, etc.",
+      "priority": "Priorité :",
+      "back": "Retour",
+      "start": "Lancer l'analyse"
+    },
+    "docLabel": {
+      "_TODO": "DRAFT — construction document-type terms pending legal-terminology review (clauseType._TODO posture). schedule / billOfQuantities / contractAgreement are the least certain.",
+      "none": "Aucune étiquette",
+      "contractAgreement": "Convention de contrat",
+      "generalConditions": "Conditions générales",
+      "particularConditions": "Conditions particulières",
+      "appendix": "Appendice",
+      "amendment": "Avenant",
+      "addendum": "Addenda",
+      "schedule": "Annexe",
+      "billOfQuantities": "Devis quantitatif",
+      "specifications": "Cahier des charges",
+      "other": "Autre"
+    },
+    "processing": {
+      "completeTitle": "Analyse terminée !",
+      "failedTitle": "Le traitement de certains documents a échoué",
+      "runningTitle": "Analyse de vos documents en cours...",
+      "completeBody": "Tous les documents ont été traités. Consultez les clauses extraites pour continuer.",
+      "failedBody": "Vous pouvez réessayer les documents en échec ou continuer avec ceux qui ont réussi.",
+      "runningBody": "Notre IA lit vos documents et en extrait les clauses. Cela prend généralement 1 à 2 minutes.",
+      "overallProgress": "Progression globale",
+      "reviewCta": "Consulter les clauses extraites",
+      "reviewHint": "Consultez et approuvez les clauses avant de passer à l'analyse des risques",
+      "continuePartial": "Continuer avec les documents traités"
+    }
+  },
   "contractCreate": {
     "addContract": "Ajouter un contrat",
     "newContract": "Nouveau contrat",
@@ -747,6 +838,8 @@
   },
   "common": {
     "save": "Enregistrer",
+    "set": "Définir",
+    "saving": "Enregistrement...",
     "cancel": "Annuler",
     "delete": "Supprimer",
     "edit": "Modifier",

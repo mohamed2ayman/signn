@@ -34,7 +34,11 @@ export const contractService = {
   getById: (id: string) =>
     api.get<Contract>(`/contracts/${id}`).then(r => r.data),
 
-  create: (data: { project_id: string; name: string; contract_type: string; relationship_type?: string; parent_contract_id?: string; party_type?: string; license_acknowledged?: boolean; license_organization?: string }) =>
+  // Party Foundation Slice 1b — host_party_role_code is the AUTHORITATIVE
+  // record of which party the host org represents. A party_roles registry
+  // CODE, validated server-side against ACTIVE rows. Supersedes the legacy
+  // free-text party_type, which stays on the wire (still written elsewhere).
+  create: (data: { project_id: string; name: string; contract_type: string; relationship_type?: string; parent_contract_id?: string; party_type?: string; host_party_role_code?: string; license_acknowledged?: boolean; license_organization?: string }) =>
     api.post<Contract>('/contracts', data).then(r => r.data),
 
   // Multi-tier T0a — relationship-type registry (create-flow picker source).
@@ -47,7 +51,10 @@ export const contractService = {
       })
       .then(r => r.data),
 
-  update: (id: string, data: { name?: string; party_type?: string }) =>
+  // Party Foundation Slice 1b — host_party_role_code is editable post-create
+  // (UpdateContractDto accepts it); relationship_type deliberately is NOT
+  // (T0b: parent/relationship is fixed at creation).
+  update: (id: string, data: { name?: string; party_type?: string; host_party_role_code?: string }) =>
     api.put<Contract>(`/contracts/${id}`, data).then(r => r.data),
 
   updateStatus: (id: string, status: string) =>

@@ -1,12 +1,22 @@
 import api from '@/services/api/axios';
 import type { Project, ProjectMember, PermissionLevel } from '@/types';
 
+/**
+ * Party Foundation Slice 1b — `default_party_role_code` is the project-level
+ * default a new contract inherits for `contracts.host_party_role_code`.
+ *
+ * NOTE: it holds a CONTRACT-scoped registry code, not a project-scoped one
+ * (migration 1776000000001 lines 50-54). Any picker feeding it MUST query the
+ * contract-scoped role list — filtering by applies_to=project returns a
+ * different, unusable set.
+ */
 export interface CreateProjectRequest {
   name: string;
   objective?: string;
   country?: string;
   start_date?: string;
   end_date?: string;
+  default_party_role_code?: string;
 }
 
 export interface UpdateProjectRequest {
@@ -15,6 +25,7 @@ export interface UpdateProjectRequest {
   country?: string;
   start_date?: string;
   end_date?: string;
+  default_party_role_code?: string;
 }
 
 export interface AddMemberRequest {

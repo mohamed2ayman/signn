@@ -29,14 +29,27 @@ import { PartyRolesService } from '../party-roles.service';
  * docker sign-postgres; host 5432 is a stale shadow — never use it).
  *
  * Proves migration 1776000000001's END STATE (the 22-code registry with
- * categories, the untouched existing sort_orders, the inactive-until-1b gate)
- * and the two new soft-reference columns' service-layer validation:
+ * categories, the untouched existing sort_orders) and the two new
+ * soft-reference columns' service-layer validation:
  *  - contracts.host_party_role_code  (ContractsService create + update)
  *  - projects.default_party_role_code (ProjectsService create + update)
- * Unknown codes 400, INACTIVE codes 400 (what keeps the 11 new roles
- * unselectable until Slice 1b), valid ACTIVE codes persist + read back, and
- * cross-org attempts 404 exactly like every other contract/project mutation
- * (findInOrg wall / org-scoped findOne — no existence leak) with ZERO writes.
+ * Unknown codes 400, valid ACTIVE codes persist + read back, and cross-org
+ * attempts 404 exactly like every other contract/project mutation (findInOrg
+ * wall / org-scoped findOne — no existence leak) with ZERO writes.
+ *
+ * ── UPDATED BY SLICE 1b (migration 1780000000001) ────────────────────────
+ * 1776000000001 seeded its 11 new roles is_active = FALSE and said so
+ * explicitly: they stay inactive "until Slice 1b activates them". That
+ * activation has now SHIPPED (1780000000001 flips exactly those 11 to TRUE),
+ * so the inactive-until-1b gate this spec used to assert is a state that has
+ * deliberately ENDED. Every assertion that depended on it has been INVERTED —
+ * none removed, none weakened. Each carries an inline note saying why.
+ *
+ * The inactive-rejection BRANCH of the validators is still real and still
+ * covered — by contract-parties.real-pg.spec.ts, which seeds its OWN synthetic
+ * TEST_INACTIVE_* row instead of leaning on the 11. That is exactly why that
+ * spec needed no change when 1b landed, and it is the pattern any future
+ * inactive-code test should follow.
  *
  * Migration up/down round-trip is exercised OUTSIDE jest via the typeorm CLI
  * (revert + re-run with before/after dumps); this spec asserts the applied end
@@ -70,7 +83,11 @@ const EXISTING_SORT: Record<string, number> = {
   OTHER: 110,
 };
 
-/** The 11 codes seeded INACTIVE by 1776000000001. */
+/**
+ * The 11 codes ADDED by 1776000000001 — seeded is_active = FALSE there, and
+ * flipped is_active = TRUE by Slice 1b's migration 1780000000001. The list is
+ * byte-identical to that migration's SLICE_1B_ACTIVATED_CODES.
+ */
 const NEW_1A_CODES = [
   'DEVELOPER',
   'GOVERNMENT_AUTHORITY',
@@ -316,14 +333,18 @@ describeReal('Party Foundation — Slice 1a (real Postgres)', () => {
     }
   });
 
-  it('the 11 new codes are is_active = FALSE; the existing 11 are TRUE', async () => {
+  it('all 22 codes are is_active = TRUE — the 11 1a roles activated by Slice 1b, the existing 11 unchanged', async () => {
     const rows: Array<{ code: string; is_active: boolean }> =
       await dataSource.query(
         `SELECT code, is_active FROM party_roles WHERE code = ANY($1)`,
         [ALL_22],
       );
     const byCode = Object.fromEntries(rows.map((r) => [r.code, r.is_active]));
-    for (const code of NEW_1A_CODES) expect(byCode[code]).toBe(false);
+    // Inverted by Slice 1b (migration 1780000000001): these 11 were seeded
+    // inactive by 1776000000001 "until Slice 1b activates them". That
+    // activation has now shipped, so the correct assertion is the opposite of
+    // the original (`.toBe(false)`).
+    for (const code of NEW_1A_CODES) expect(byCode[code]).toBe(true);
     for (const code of Object.keys(EXISTING_SORT)) {
       expect(byCode[code]).toBe(true);
     }
@@ -405,11 +426,20 @@ describeReal('Party Foundation — Slice 1a (real Postgres)', () => {
     expect(Number(employer!.sort_order)).toBe(10);
   });
 
-  it('findAll default (active-only) HIDES the 11 new inactive roles; include_inactive reveals them', async () => {
+  it('findAll default (active-only) NOW EXPOSES the 11 roles activated by Slice 1b; include_inactive still lists them', async () => {
+    // Inverted by Slice 1b (migration 1780000000001): these 11 were seeded
+    // inactive by 1776000000001 "until Slice 1b activates them". That
+    // activation has now shipped, so the active-only list — which is the set
+    // the Slice 1b picker renders — must now CONTAIN them (was `.toBe(false)`).
     const activeOnly = await partyRoles.findAll();
     for (const code of NEW_1A_CODES) {
-      expect(activeOnly.some((r) => r.code === code)).toBe(false);
+      expect(activeOnly.some((r) => r.code === code)).toBe(true);
     }
+    // Retained deliberately. Post-1b both views contain these codes, so this
+    // branch no longer DISCRIMINATES on them — it now asserts the weaker but
+    // still-true property that include_inactive is a superset. The real
+    // active-vs-inactive discrimination lives in contract-parties.real-pg.spec.ts,
+    // which seeds its own synthetic TEST_INACTIVE_* row for exactly this reason.
     const withInactive = await partyRoles.findAll(true);
     for (const code of NEW_1A_CODES) {
       expect(withInactive.some((r) => r.code === code)).toBe(true);
@@ -450,22 +480,28 @@ describeReal('Party Foundation — Slice 1a (real Postgres)', () => {
     expect(contractIds.length).toBe(before);
   });
 
-  it('create: an INACTIVE code (a 1a-seeded role, pre-1b) is rejected 400', async () => {
-    await expect(
-      contractsService.create(
-        {
-          project_id: projectAId,
-          name: 's1a inactive code',
-          contract_type: 'ADHOC' as any,
-          host_party_role_code: 'DEVELOPER',
-        } as any,
-        userAId,
-        orgAId,
-      ),
-    ).rejects.toBeInstanceOf(BadRequestException);
+  it('create: a 1a-seeded role (DEVELOPER) NOW SUCCEEDS and persists — activated by Slice 1b', async () => {
+    // Inverted by Slice 1b (migration 1780000000001): DEVELOPER was seeded
+    // inactive by 1776000000001 "until Slice 1b activates them", so this call
+    // used to reject with BadRequestException. That activation has now
+    // shipped, so the correct assertion is that it succeeds AND persists.
+    const c = await contractsService.create(
+      {
+        project_id: projectAId,
+        name: 's1a inactive code',
+        contract_type: 'ADHOC' as any,
+        host_party_role_code: 'DEVELOPER',
+      } as any,
+      userAId,
+      orgAId,
+    );
+    // The original never reached this line (the call threw), so the contract
+    // was never registered for cleanup. It persists now — track it.
+    contractIds.push(c.id);
+    expect(await readHostRole(c.id)).toBe('DEVELOPER');
   });
 
-  it('update: valid code persists; unknown 400; inactive 400; "" clears to NULL', async () => {
+  it('update: valid code persists; unknown 400; a 1a-seeded role (LENDER) NOW persists; "" clears to NULL', async () => {
     const id = await mkContract();
 
     const updated = await contractsService.update(
@@ -476,6 +512,7 @@ describeReal('Party Foundation — Slice 1a (real Postgres)', () => {
     expect(updated.host_party_role_code).toBe('CONTRACTOR');
     expect(await readHostRole(id)).toBe('CONTRACTOR');
 
+    // UNCHANGED — an unknown code is still rejected, and still writes nothing.
     await expect(
       contractsService.update(
         id,
@@ -485,14 +522,17 @@ describeReal('Party Foundation — Slice 1a (real Postgres)', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(await readHostRole(id)).toBe('CONTRACTOR'); // unchanged
 
-    await expect(
-      contractsService.update(
-        id,
-        { host_party_role_code: 'LENDER' } as any, // seeded inactive
-        orgAId,
-      ),
-    ).rejects.toBeInstanceOf(BadRequestException);
-    expect(await readHostRole(id)).toBe('CONTRACTOR'); // unchanged
+    // Inverted by Slice 1b (migration 1780000000001): LENDER was seeded
+    // inactive by 1776000000001 "until Slice 1b activates them", so this used
+    // to reject 400 and leave the value at CONTRACTOR. That activation has now
+    // shipped, so the correct assertion is that the update takes effect.
+    const relanded = await contractsService.update(
+      id,
+      { host_party_role_code: 'LENDER' } as any, // 1a-seeded, active since 1b
+      orgAId,
+    );
+    expect(relanded.host_party_role_code).toBe('LENDER');
+    expect(await readHostRole(id)).toBe('LENDER');
 
     await contractsService.update(
       id,
@@ -525,7 +565,8 @@ describeReal('Party Foundation — Slice 1a (real Postgres)', () => {
     expect(await readDefaultRole(p.id)).toBe('ENGINEER');
   });
 
-  it('create: unknown code 400; INACTIVE code 400 (nothing persists)', async () => {
+  it('create: unknown code 400 (nothing persists); a 1a-seeded role (OPERATOR) NOW SUCCEEDS and persists', async () => {
+    // UNCHANGED — an unknown code is still rejected, and still writes nothing.
     await expect(
       projectsService.create(orgAId, userAId, {
         name: 's1a bad default',
@@ -533,27 +574,35 @@ describeReal('Party Foundation — Slice 1a (real Postgres)', () => {
       } as any),
     ).rejects.toBeInstanceOf(BadRequestException);
 
-    await expect(
-      projectsService.create(orgAId, userAId, {
-        name: 's1a inactive default',
-        default_party_role_code: 'OPERATOR', // seeded inactive
-      } as any),
-    ).rejects.toBeInstanceOf(BadRequestException);
+    // Inverted by Slice 1b (migration 1780000000001): OPERATOR was seeded
+    // inactive by 1776000000001 "until Slice 1b activates them", so this used
+    // to reject 400. That activation has now shipped, so it succeeds and the
+    // project persists — which is why it is registered for cleanup below.
+    const p = await projectsService.create(orgAId, userAId, {
+      name: 's1a inactive default',
+      default_party_role_code: 'OPERATOR', // 1a-seeded, active since 1b
+    } as any);
+    projectIds.push(p.id);
+    expect(await readDefaultRole(p.id)).toBe('OPERATOR');
 
+    // Narrowed to the UNKNOWN-code name only. 's1a inactive default' is now a
+    // legitimate row, not an orphan, so asserting 0 for it would be asserting
+    // the pre-1b behaviour. The unknown-code path must still write nothing.
     const orphans = await dataSource.query(
       `SELECT COUNT(*)::int AS n FROM projects
-        WHERE name IN ('s1a bad default','s1a inactive default')`,
+        WHERE name = 's1a bad default'`,
     );
     expect(Number(orphans[0].n)).toBe(0);
   });
 
-  it('update: valid code persists; unknown 400; inactive 400; "" clears to NULL', async () => {
+  it('update: valid code persists; unknown 400; a 1a-seeded role (GUARANTOR) NOW persists; "" clears to NULL', async () => {
     const updated = await projectsService.update(projectAId, orgAId, {
       default_party_role_code: 'SUPPLIER',
     } as any);
     expect(updated.default_party_role_code).toBe('SUPPLIER');
     expect(await readDefaultRole(projectAId)).toBe('SUPPLIER');
 
+    // UNCHANGED — an unknown code is still rejected, and still writes nothing.
     await expect(
       projectsService.update(projectAId, orgAId, {
         default_party_role_code: 'NOT_A_ROLE',
@@ -561,12 +610,15 @@ describeReal('Party Foundation — Slice 1a (real Postgres)', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(await readDefaultRole(projectAId)).toBe('SUPPLIER'); // unchanged
 
-    await expect(
-      projectsService.update(projectAId, orgAId, {
-        default_party_role_code: 'GUARANTOR', // seeded inactive
-      } as any),
-    ).rejects.toBeInstanceOf(BadRequestException);
-    expect(await readDefaultRole(projectAId)).toBe('SUPPLIER'); // unchanged
+    // Inverted by Slice 1b (migration 1780000000001): GUARANTOR was seeded
+    // inactive by 1776000000001 "until Slice 1b activates them", so this used
+    // to reject 400 and leave the value at SUPPLIER. That activation has now
+    // shipped, so the correct assertion is that the update takes effect.
+    const relanded = await projectsService.update(projectAId, orgAId, {
+      default_party_role_code: 'GUARANTOR', // 1a-seeded, active since 1b
+    } as any);
+    expect(relanded.default_party_role_code).toBe('GUARANTOR');
+    expect(await readDefaultRole(projectAId)).toBe('GUARANTOR');
 
     await projectsService.update(projectAId, orgAId, {
       default_party_role_code: '',
@@ -584,8 +636,10 @@ describeReal('Party Foundation — Slice 1a (real Postgres)', () => {
   });
 
   // ── (v) Slice 1b-pre — migration 1779000000001 ────────────────────────────
-  // JV_CONTRACTOR + CONSORTIUM_MEMBER, seeded ACTIVE (the 1a eleven stay
-  // inactive). As with 1a, the migration up/down ROUND-TRIP is exercised
+  // JV_CONTRACTOR + CONSORTIUM_MEMBER, seeded ACTIVE. (When 1b-pre shipped the
+  // 1a eleven were still inactive; Slice 1b's 1780000000001 has since activated
+  // them, so the assertions below now expect all 24 active.) As with 1a, the
+  // migration up/down ROUND-TRIP is exercised
   // OUTSIDE jest via the typeorm CLI (revert + re-run, with before/after
   // dumps proving down() restores the prior 26-row state byte-identically);
   // these assert the applied end state.
@@ -611,7 +665,7 @@ describeReal('Party Foundation — Slice 1a (real Postgres)', () => {
     expect(rows).toHaveLength(24);
   });
 
-  it('JV_CONTRACTOR + CONSORTIUM_MEMBER are is_active = TRUE, while the 11 1a roles are STILL FALSE', async () => {
+  it('all 24 codes are is_active = TRUE — the 1b-pre pair, the 11 1a roles activated by Slice 1b, and the existing 11', async () => {
     const rows: Array<{ code: string; is_active: boolean }> =
       await dataSource.query(
         `SELECT code, is_active FROM party_roles WHERE code = ANY($1)`,
@@ -620,8 +674,15 @@ describeReal('Party Foundation — Slice 1a (real Postgres)', () => {
     const byCode = Object.fromEntries(rows.map((r) => [r.code, r.is_active]));
     // The new pair ships ACTIVE — this is the whole point of 1b-pre.
     for (const code of NEW_1B_PRE_CODES) expect(byCode[code]).toBe(true);
-    // ...and it must NOT have flipped the 1a eleven on as a side effect.
-    for (const code of NEW_1A_CODES) expect(byCode[code]).toBe(false);
+    // Inverted by Slice 1b (migration 1780000000001). This originally asserted
+    // the 1a eleven were STILL FALSE — i.e. that 1779000000001 had not flipped
+    // them on as a side effect. 1780000000001 now flips them on DELIBERATELY,
+    // so the correct assertion is the opposite. The side-effect property this
+    // used to guard is still covered: 1780000000001 names exactly these 11 in
+    // its WHERE clause, and the surrounding tests assert that the 1b-pre pair,
+    // the existing 11, the sort_orders, the categories and the TEST_ rows are
+    // all unchanged — so a stray write beyond the 11 would still fail here.
+    for (const code of NEW_1A_CODES) expect(byCode[code]).toBe(true);
     for (const code of Object.keys(EXISTING_SORT)) {
       expect(byCode[code]).toBe(true);
     }

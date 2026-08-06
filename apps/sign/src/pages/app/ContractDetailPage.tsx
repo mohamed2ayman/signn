@@ -15,6 +15,10 @@ import ChatPanel from '@/components/chat/ChatPanel';
 import { useCollaboration } from '@/hooks/useCollaboration';
 import type { Contract, ContractClause, Clause, ContractComment, RiskAnalysis, ContractShare, SignatureSigner, ConflictDetail, ContractVersion, ContractApprover, ProjectMember, DocumentUpload } from '@/types';
 import RiskAnalysisTab from '@/components/contracts/RiskAnalysisTab';
+import { PartyRoleSelectView } from '@/components/contracts/parties/PartyRoleSelect';
+import PartyRoleLabel from '@/components/contracts/parties/PartyRoleLabel';
+import { partyService } from '@/services/api/partyService';
+import type { PartyRole } from '@/types';
 import { clauseDisplayNumber, buildClauseNumberMap } from '@/components/contracts/clauseNumber';
 import { ApproverStatus } from '@/types';
 import VersionTimeline from '@/components/versions/VersionTimeline';
@@ -337,6 +341,62 @@ export default function ContractDetailPage() {
   const [partyFirstDraft, setPartyFirstDraft] = useState('');
   const [partySecondDraft, setPartySecondDraft] = useState('');
   const [savingParties, setSavingParties] = useState(false);
+
+  // ── Party Foundation Slice 1b — host party ROLE editing state ────────────
+  // DISTINCT from the three party concepts already on this page — keep them
+  // straight:
+  //   • contracts.host_party_role_code  — ONE registry code: which party the
+  //     HOST organisation represents. THIS is what the block below edits.
+  //   • contract_parties rows           — the LIST of every party on the
+  //     contract, managed by the Parties tab. NOT this.
+  //   • contracts.party_first_name /
+  //     party_second_name               — legacy free-text NAMES, what the
+  //     editingParties block above edits. NOT this.
+  const [editingHostRole, setEditingHostRole] = useState(false);
+  const [hostRoleDraft, setHostRoleDraft] = useState('');
+  const [savingHostRole, setSavingHostRole] = useState(false);
+  const [hostRoleError, setHostRoleError] = useState(false);
+
+  // The wire carries contracts.host_party_role_code (backend entity +
+  // Create/UpdateContractDto, Slice 1a) but the shared `Contract` type does
+  // not declare it — bound locally rather than widening types/index.ts, which
+  // is its own deliberate change (the 7.20 expiry_date convention).
+  const hostPartyRoleCode =
+    (contract as (Contract & { host_party_role_code?: string | null }) | null)
+      ?.host_party_role_code ?? '';
+
+  // The party_roles registry, fetched with THIS FILE's existing
+  // useState/useEffect pattern rather than React Query — ContractDetailPage
+  // uses no React Query anywhere, and introducing it here would be a new
+  // data-fetching pattern in a 2700-line page. Best-effort: a failure leaves
+  // the list empty, and PartyRoleLabel then falls back to the raw code.
+  const [partyRoles, setPartyRoles] = useState<PartyRole[]>([]);
+  const [partyRolesLoading, setPartyRolesLoading] = useState(true);
+  const [partyRolesError, setPartyRolesError] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    partyService
+      .getRoles('contract')
+      .then((rows) => {
+        if (!cancelled) setPartyRoles(rows);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setPartyRolesError(true);
+        // Terse on purpose: this is a best-effort reference-data load that
+        // degrades gracefully (PartyRoleLabel falls back to the raw code), so
+        // it does not deserve a full axios error dump in the console.
+        console.warn(
+          'Party roles unavailable; showing raw role code:',
+          (err as { message?: string })?.message ?? err,
+        );
+      })
+      .finally(() => {
+        if (!cancelled) setPartyRolesLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Approval workflow state
   const [approvers, setApprovers] = useState<ContractApprover[]>([]);
@@ -1437,6 +1497,97 @@ export default function ContractDetailPage() {
             No parties extracted yet. Click "Add Parties" to enter manually, or upload a contract agreement document.
           </p>
         )}
+
+        {/* ── Party Foundation Slice 1b — host party ROLE ──────────────────
+            Which party THIS organisation represents (contracts.host_party_role_code,
+            a party_roles registry code). Follows the same inline-edit pattern as
+            the party-NAMES block above: Edit → inline control → Cancel / Save. */}
+        <div className="mt-4 border-t border-gray-100 pt-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-gray-500">
+              {t('contractCreate.partyType')}
+            </span>
+            {!editingHostRole && !isContractLocked && (
+              <button
+                onClick={() => {
+                  setHostRoleDraft(hostPartyRoleCode ?? '');
+                  setHostRoleError(false);
+                  setEditingHostRole(true);
+                }}
+                className="text-xs font-medium text-primary hover:text-primary/80"
+              >
+                {hostPartyRoleCode ? t('common.edit') : t('common.set')}
+              </button>
+            )}
+          </div>
+
+          {editingHostRole ? (
+            <div className="mt-2 space-y-2">
+              <PartyRoleSelectView
+                id="contract-host-party-role-edit"
+                roles={partyRoles}
+                isLoading={partyRolesLoading}
+                isError={partyRolesError}
+                value={hostRoleDraft}
+                onChange={setHostRoleDraft}
+                disabled={savingHostRole}
+              />
+              {hostRoleError && (
+                <p className="text-xs text-red-600" role="alert" dir="auto">
+                  {t('partiesEditor.saveError')}
+                </p>
+              )}
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  disabled={savingHostRole}
+                  onClick={() => {
+                    setEditingHostRole(false);
+                    setHostRoleError(false);
+                  }}
+                  className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  {t('common.cancel')}
+                </button>
+                <button
+                  disabled={savingHostRole || partyRolesError}
+                  onClick={async () => {
+                    if (!id) return;
+                    setSavingHostRole(true);
+                    setHostRoleError(false);
+                    try {
+                      // '' means "no selection" — the backend normalizes an
+                      // empty string to NULL, so clearing the role works.
+                      const updated = await contractService.update(id, {
+                        host_party_role_code: hostRoleDraft,
+                      });
+                      setContract(updated);
+                      setEditingHostRole(false);
+                    } catch (err) {
+                      // A pinned (signed) contract 409s here, and an unknown or
+                      // inactive code 400s — surface it instead of silently
+                      // leaving the user thinking it saved.
+                      console.error('Failed to save host party role:', err);
+                      setHostRoleError(true);
+                    } finally {
+                      setSavingHostRole(false);
+                    }
+                  }}
+                  className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-white hover:bg-primary/90 disabled:opacity-50"
+                >
+                  {savingHostRole ? t('common.saving') : t('common.save')}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <p className="mt-1 text-sm text-gray-700" dir="auto">
+              <PartyRoleLabel
+                roles={partyRoles}
+                code={hostPartyRoleCode}
+                emptyText={t('partiesEditor.role.placeholder')}
+              />
+            </p>
+          )}
+        </div>
       </div>
 
       {/* ── Document Processing Banner ───────────────────────────── */}
