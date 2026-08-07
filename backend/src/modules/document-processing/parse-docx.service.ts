@@ -84,10 +84,12 @@ export class ParseDocxService {
       input.file as unknown as UploadedFile,
       'parse-docx',
     );
-    const localPath = this.urlToLocalPath(uploaded.file_url);
 
+    // Send the stored storage reference (file_url) — the AI worker resolves it to
+    // a local path (local /uploads/ re-root, or S3 download in production) via the
+    // ai-backend storage_resolver. S3 worker read-path Step 3.
     const extractJob = await this.aiService.triggerExtractText({
-      file_path: localPath,
+      file_url: uploaded.file_url,
       mime_type: input.file.mimetype || 'application/octet-stream',
     });
     const extractResult = await this.pollUntilComplete(extractJob.job_id);
@@ -217,11 +219,6 @@ export class ParseDocxService {
       else hi = mid - 1;
     }
     return lo;
-  }
-
-  private urlToLocalPath(fileUrl: string): string {
-    const idx = fileUrl.indexOf('/uploads/');
-    return idx >= 0 ? '.' + fileUrl.substring(idx) : fileUrl;
   }
 
   private sleep(ms: number): Promise<void> {
