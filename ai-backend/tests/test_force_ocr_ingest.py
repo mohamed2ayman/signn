@@ -9,9 +9,16 @@ mocked (no real Postgres, no real OCR).
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from unittest.mock import MagicMock
 
 import app.tasks as tasks
+
+
+@contextmanager
+def _fake_resolve(_file_url):
+    """Stand-in for storage_resolver.resolve_to_local_path (yields a fixed path)."""
+    yield "/tmp/x.pdf"
 
 
 def _patch_common(mocker, extractor_text="مادة 1 نص نظيف"):
@@ -30,7 +37,7 @@ def _patch_common(mocker, extractor_text="مادة 1 نص نظيف"):
     conn.cursor.return_value.__enter__.return_value = cur
     mocker.patch("psycopg2.connect", return_value=conn)
 
-    mocker.patch("app.tasks._resolve_local_path", return_value="/tmp/x.pdf")
+    mocker.patch("app.tasks.resolve_to_local_path", _fake_resolve)
     mocker.patch("app.tasks._mark_document_status")
 
     # Extractor + chunker are imported inside the task body — patch at source.

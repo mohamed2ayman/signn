@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 from celery import Celery
 
 from app.config.settings import get_settings
+from app.services.storage_resolver import resolve_to_local_path
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
 
 celery_app = Celery(
     "sign_ai",
@@ -166,6 +169,13 @@ def run_research(self, request_data: dict[str, Any]) -> dict[str, Any]:
 def run_extract_text(self, request_data: dict[str, Any]) -> dict[str, Any]:
     """Extract text content from an uploaded document file.
 
+    Transition contract (S3 worker read-path, Step 2): accepts EITHER
+    ``file_url`` (new — resolved to a local path via storage_resolver, which
+    re-roots a local /uploads/ URL or downloads an S3 object to a temp file)
+    OR ``file_path`` (legacy — a path on the shared uploads volume, used
+    UNCHANGED). ``file_url`` wins when both are present; neither present fails
+    loudly. The backend still sends ``file_path`` today; Step 3 flips it.
+
     The result dict always contains:
       - ``text`` (str) — extracted text (may be partial on poor scans)
       - ``page_count`` (int)
@@ -176,15 +186,35 @@ def run_extract_text(self, request_data: dict[str, Any]) -> dict[str, Any]:
     from app.services.text_extractor_factory import get_text_extractor
 
     service = get_text_extractor()
-    try:
-        result = service.extract(
-            file_path=request_data["file_path"],
-            mime_type=request_data["mime_type"],
-        )
+    mime_type = request_data["mime_type"]
+    file_url = request_data.get("file_url")
+    file_path = request_data.get("file_path")
+
+    def _finish(local_path: str) -> dict[str, Any]:
+        result = service.extract(file_path=local_path, mime_type=mime_type)
         # Guarantee quality_flags is always present in the result shape so
         # the NestJS consumer never needs to guard against a missing key.
         result.setdefault("quality_flags", [])
         return {"status": "completed", "result": result}
+
+    try:
+        if file_url:
+            if file_path:
+                logger.info(
+                    "run_extract_text: both file_url and file_path provided; "
+                    "preferring file_url (Step-2 transition)"
+                )
+            # The resolver context manager wraps the WHOLE extraction so an S3
+            # temp file is never deleted while the extractor is still reading it.
+            with resolve_to_local_path(file_url) as local_path:
+                return _finish(local_path)
+        if file_path:
+            # Legacy path — behaviour is IDENTICAL to before Step 2 (no resolver).
+            return _finish(file_path)
+        raise ValueError(
+            "run_extract_text requires either 'file_url' (preferred) or "
+            "'file_path' (legacy); neither was provided"
+        )
     except Exception as e:
         return {"status": "failed", "error": str(e)}
 
@@ -441,23 +471,6 @@ def run_embed_legal_chunks(self, request_data: dict[str, Any]) -> dict[str, Any]
         return {"status": "failed", "error": str(exc)}
 
 
-def _resolve_local_path(file_url: str) -> str:
-    """Convert a stored file_url to the local path inside the worker container.
-
-    The backend stores files at /app/uploads/<folder>/<file> and serves them at
-    <base_url>/uploads/<folder>/<file>.  The celery-worker shares the same
-    ``uploads_data`` volume mounted at /app/uploads, so we strip everything up
-    to and including '/uploads/' and re-root under /app/uploads.  This is
-    base-URL agnostic (works regardless of host/port in the stored URL).
-    """
-    marker = "/uploads/"
-    idx = file_url.find(marker)
-    if idx == -1:
-        raise ValueError(f"file_url does not contain '{marker}': {file_url}")
-    relative = file_url[idx + len(marker):]
-    return "/app/uploads/" + relative
-
-
 class _IngestLegalDocumentTask(celery_app.Task):
     """Custom base task providing an on_failure BACKSTOP for legal ingestion.
 
@@ -580,17 +593,19 @@ def run_ingest_legal_document(self, request_data: dict[str, Any]) -> dict[str, A
             _mark_document_status(_s.DATABASE_URL, document_id, "FAILED", error_msg)
             return {"status": "failed", "error": error_msg}
 
-        # ── 3. Resolve local path ─────────────────────────────────────────────
-        local_path = _resolve_local_path(file_url)
-
-        # ── 4. Extract text ───────────────────────────────────────────────────
+        # ── 3-4. Resolve + extract (S3-aware; local /uploads/ re-root unchanged) ─
+        # storage_resolver replaces the old _resolve_local_path: a local /uploads/
+        # URL re-roots to /app/uploads/... exactly as before; an S3 URL downloads
+        # to a temp file that is deleted when the `with` block exits. The context
+        # manager wraps the extract call so the temp file lives for the whole read.
         # force_ocr (from the document's legal_source flag) selects the OCR path
         # for sources with a broken text-layer font encoding (e.g. ETA kaf→آ).
         force_ocr: bool = bool(request_data.get("force_ocr", False))
         extractor = get_text_extractor()
-        extraction = extractor.extract(
-            local_path, "application/pdf", force_ocr=force_ocr
-        )
+        with resolve_to_local_path(file_url) as local_path:
+            extraction = extractor.extract(
+                local_path, "application/pdf", force_ocr=force_ocr
+            )
         raw_text: str = extraction.get("text", "") or ""
         if not raw_text.strip():
             error_msg = "Text extraction returned empty text"

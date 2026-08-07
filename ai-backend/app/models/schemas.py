@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 # ---------------------------------------------------------------------------
@@ -401,10 +401,35 @@ class EmbeddingSearchResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 class TextExtractionRequest(BaseModel):
-    """Request body for text extraction from a file."""
+    """Request body for text extraction from a file.
 
-    file_path: str = Field(..., description="Path to the file to extract text from.")
+    Transition contract (S3 worker read-path, Step 2): the worker accepts EITHER
+    ``file_url`` (new — a stored storage reference resolved to a local path by the
+    worker) OR ``file_path`` (legacy — a local path on the shared uploads volume).
+    At least one is required; ``file_url`` is preferred when both are given. The
+    backend still sends ``file_path`` today (Step 3 flips the contract).
+    """
+
+    file_path: Optional[str] = Field(
+        None, description="Legacy: local path on the shared uploads volume."
+    )
+    file_url: Optional[str] = Field(
+        None,
+        description=(
+            "Preferred: stored storage reference (a local /uploads/ URL or an S3 "
+            "URL); resolved to a local path by the worker."
+        ),
+    )
     mime_type: str = Field(..., description="MIME type of the file.")
+
+    @model_validator(mode="after")
+    def _require_one_source(self) -> "TextExtractionRequest":
+        if not self.file_url and not self.file_path:
+            raise ValueError(
+                "TextExtractionRequest requires either 'file_url' (preferred) or "
+                "'file_path' (legacy); neither was provided"
+            )
+        return self
 
 
 class TextExtractionResponse(BaseModel):
