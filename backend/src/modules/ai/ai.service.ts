@@ -158,7 +158,7 @@ export class AiService {
   // ─── Text Extraction ──────────────────────────────────────
 
   async triggerExtractText(data: {
-    file_path: string;
+    file_url: string;
     mime_type: string;
   }): Promise<{ job_id: string; status: string }> {
     const response = await firstValueFrom(

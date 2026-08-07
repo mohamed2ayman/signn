@@ -352,11 +352,11 @@ export class DocumentProcessingService {
    */
   private async startTextExtraction(doc: DocumentUpload): Promise<void> {
     try {
-      // Get the local file path from the URL
-      const filePath = this.getLocalFilePath(doc.file_url);
-
+      // Send the stored storage reference (file_url) — the AI worker resolves it
+      // to a local path (local /uploads/ re-root, or S3 download in production)
+      // via the ai-backend storage_resolver. S3 worker read-path Step 3.
       const result = await this.aiService.triggerExtractText({
-        file_path: filePath,
+        file_url: doc.file_url,
         mime_type: doc.mime_type || 'application/octet-stream',
       });
 
@@ -2024,19 +2024,6 @@ export class DocumentProcessingService {
           `contract=${contractId}: ${(err as Error).message}`,
       );
     }
-  }
-
-  /**
-   * Convert a file_url to a local file path.
-   */
-  private getLocalFilePath(fileUrl: string): string {
-    // fileUrl format: http://localhost:3000/uploads/contracts/uuid.ext
-    // Extract the relative path after /uploads/
-    const uploadsIndex = fileUrl.indexOf('/uploads/');
-    if (uploadsIndex !== -1) {
-      return '.' + fileUrl.substring(uploadsIndex);
-    }
-    return fileUrl;
   }
 
   // ─── Metering reconcile helpers (Phase 7.18 Part 3) ──────────────────
