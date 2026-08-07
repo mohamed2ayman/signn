@@ -56,7 +56,7 @@ export class OperationsReviewController {
 
   /**
    * GET /admin/operations-review/confidence-threshold
-   * Reads the single global threshold from the on-disk config.
+   * Reads the single global threshold from the operations_settings singleton.
    */
   @Get('confidence-threshold')
   @Roles(UserRole.SYSTEM_ADMIN)
@@ -66,7 +66,7 @@ export class OperationsReviewController {
 
   /**
    * PUT /admin/operations-review/confidence-threshold
-   * Persists the threshold to operations-config.json.
+   * Persists the threshold to the operations_settings singleton row.
    */
   @Put('confidence-threshold')
   @Roles(UserRole.SYSTEM_ADMIN)
