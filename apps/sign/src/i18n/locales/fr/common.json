@@ -775,6 +775,49 @@
     "erpHealth": "État ERP",
     "system": "Système"
   },
+  "settings": {
+    "title": "Paramètres",
+    "subtitle": "Gérez votre espace de travail et vos préférences personnelles.",
+    "groups": {
+      "workspace": "Espace de travail",
+      "personal": "Personnel"
+    },
+    "adminOnly": "Administrateur uniquement",
+    "items": {
+      "playbook": {
+        "title": "Playbook",
+        "description": "Les positions contractuelles standard de votre organisation."
+      },
+      "team": {
+        "title": "Équipe",
+        "description": "Membres, rôles et invitations."
+      },
+      "subscription": {
+        "title": "Abonnement",
+        "description": "Forfait, utilisation et limites."
+      },
+      "erpConnections": {
+        "title": "Connexions ERP",
+        "description": "Synchronisez vos contrats avec votre système ERP."
+      },
+      "profile": {
+        "title": "Profil",
+        "description": "Votre nom, votre fonction et vos coordonnées."
+      },
+      "communications": {
+        "title": "Communications",
+        "description": "Préférences d'e-mail et de notifications."
+      },
+      "security": {
+        "title": "Sécurité",
+        "description": "Mot de passe, sessions et appareils actifs."
+      },
+      "billing": {
+        "title": "Facturation",
+        "description": "Moyen de paiement et factures."
+      }
+    }
+  },
   "portal": {
     "client": "Portail client",
     "guest": "Portail invité",
