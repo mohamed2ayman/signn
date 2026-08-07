@@ -35,6 +35,7 @@ import SupportPage from '@/pages/app/SupportPage';
 import BillingPage from '@/pages/app/BillingPage';
 import SubscriptionSettingsPage from '@/pages/app/SubscriptionSettingsPage';
 import PlaybookPage from '@/pages/app/PlaybookPage';
+import SettingsPage from '@/pages/app/settings/SettingsPage';
 import ApprovalsPage from '@/pages/app/ApprovalsPage';
 import TeamPage from '@/pages/app/TeamPage';
 import ProfilePage from '@/pages/app/ProfilePage';
@@ -129,7 +130,10 @@ const CONTRACTOR_ROLES: UserRole[] = [
 const APP_ACCESS_ROLES: UserRole[] = [...CLIENT_ROLES, ...ADMIN_ROLES];
 
 // ─── Navigation items ────────────────────────────────────────
-const clientNavItems = [
+// Exported so the sidebar's contents are assertable in a pure test
+// (App.navItems.test.ts) — the removal of the four settings-hub entries is
+// otherwise unguarded.
+export const clientNavItems = [
   { label: 'nav.dashboard', path: '/app/dashboard', icon: '📊' },
   // OWNER_ADMIN-only — Sidebar filters by role (others never see the link).
   { label: 'nav.portfolio', path: '/app/portfolio', icon: '📈', roles: [UserRole.OWNER_ADMIN] },
@@ -142,14 +146,9 @@ const clientNavItems = [
   { label: 'nav.playbook', path: '/app/settings/playbook', icon: '📖', roles: [UserRole.OWNER_ADMIN] },
   { label: 'nav.obligations', path: '/app/obligations', icon: '📋' },
   { label: 'nav.notifications', path: '/app/notifications', icon: '🔔' },
-  { label: 'nav.communications', path: '/app/settings/communications', icon: '📣' },
   { label: 'nav.approvals', path: '/app/approvals', icon: '✅' },
   { label: 'nav.team', path: '/app/team', icon: '👥' },
   { label: 'nav.store', path: '/app/store', icon: '🛒' },
-  { label: 'nav.subscription', path: '/app/settings/subscription', icon: '💳' },
-  // OWNER_ADMIN-only — Sidebar filters by role (others never see the link).
-  { label: 'nav.erpConnections', path: '/app/erp-connections', icon: '🔌', roles: [UserRole.OWNER_ADMIN] },
-  { label: 'nav.profile', path: '/app/profile', icon: '👤' },
   { label: 'nav.support', path: '/app/support', icon: '💬' },
 ];
 
@@ -298,6 +297,9 @@ function App() {
         <Route path="store" element={<ContractStorePage />} />
         <Route path="store/contract/:id" element={<ContractStoreDetailPage />} />
         <Route path="profile" element={<ProfilePage />} />
+        {/* Settings hub — visible to ALL roles; per-entry gating (not a route
+            guard) is what hides the admin-only destinations. */}
+        <Route path="settings" element={<SettingsPage />} />
         <Route path="settings/security" element={<MySecurityPage />} />
         <Route path="settings/communications" element={<CommunicationPreferencesPage />} />
         <Route path="settings/billing" element={<BillingPage />} />

@@ -772,6 +772,49 @@
     "erpHealth": "ERP Health",
     "system": "System"
   },
+  "settings": {
+    "title": "Settings",
+    "subtitle": "Manage your workspace and personal preferences.",
+    "groups": {
+      "workspace": "Workspace",
+      "personal": "Personal"
+    },
+    "adminOnly": "Admin only",
+    "items": {
+      "playbook": {
+        "title": "Playbook",
+        "description": "Your organisation's standard contract positions."
+      },
+      "team": {
+        "title": "Team",
+        "description": "Members, roles, and invitations."
+      },
+      "subscription": {
+        "title": "Subscription",
+        "description": "Plan, usage, and limits."
+      },
+      "erpConnections": {
+        "title": "ERP Connections",
+        "description": "Sync contracts with your ERP system."
+      },
+      "profile": {
+        "title": "Profile",
+        "description": "Your name, title, and contact details."
+      },
+      "communications": {
+        "title": "Communications",
+        "description": "Email and notification preferences."
+      },
+      "security": {
+        "title": "Security",
+        "description": "Password, sessions, and active devices."
+      },
+      "billing": {
+        "title": "Billing",
+        "description": "Payment method and invoices."
+      }
+    }
+  },
   "portal": {
     "client": "Client Portal",
     "guest": "Guest Portal",

@@ -774,6 +774,49 @@
     "erpConnections": "اتصالات ERP",
     "erpHealth": "صحة ERP"
   },
+  "settings": {
+    "title": "الإعدادات",
+    "subtitle": "إدارة مساحة عملك وتفضيلاتك الشخصية.",
+    "groups": {
+      "workspace": "مساحة العمل",
+      "personal": "الإعدادات الشخصية"
+    },
+    "adminOnly": "للمسؤول فقط",
+    "items": {
+      "playbook": {
+        "title": "دليل المواقف",
+        "description": "مواقف مؤسستك التعاقدية المعتمدة."
+      },
+      "team": {
+        "title": "الفريق",
+        "description": "الأعضاء والأدوار والدعوات."
+      },
+      "subscription": {
+        "title": "الاشتراك",
+        "description": "الباقة والاستخدام والحدود."
+      },
+      "erpConnections": {
+        "title": "اتصالات ERP",
+        "description": "مزامنة العقود مع نظام ERP لديك."
+      },
+      "profile": {
+        "title": "الملف الشخصي",
+        "description": "اسمك ومسماك الوظيفي وبيانات التواصل."
+      },
+      "communications": {
+        "title": "التواصل",
+        "description": "تفضيلات البريد الإلكتروني والإشعارات."
+      },
+      "security": {
+        "title": "الأمان",
+        "description": "كلمة المرور والجلسات والأجهزة النشطة."
+      },
+      "billing": {
+        "title": "الفواتير",
+        "description": "طريقة الدفع وسجل الفواتير."
+      }
+    }
+  },
   "portal": {
     "client": "بوابة العميل",
     "guest": "بوابة الضيف",
