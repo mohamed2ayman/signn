@@ -1222,6 +1222,21 @@
         "noPermission": "Vous n'avez pas la permission de marquer ce contrat comme signé.",
         "generic": "Impossible de marquer le contrat comme signé. Veuillez réessayer."
       }
+    },
+    "errors": {
+      "generic": "Une erreur s'est produite. Veuillez réessayer.",
+      "permission": "Vous n'avez pas la permission de faire cela.",
+      "locked": "Ce contrat a été signé et son contenu est verrouillé.",
+      "network": "Impossible de joindre le serveur. Vérifiez votre connexion et réessayez.",
+      "shareFailed": "Impossible d'accorder l'accès. Personne n'a été ajouté — veuillez réessayer.",
+      "revokeFailed": "Impossible de révoquer l'accès. Il reste actif. Seule la personne qui a partagé le contrat peut le révoquer.",
+      "signatureFailed": "Impossible d'envoyer le contrat pour signature. Rien n'a été envoyé.",
+      "exportFailed": "Impossible de produire l'export. Aucun fichier n'a été téléchargé."
+    },
+    "removeClauseConfirm": {
+      "title": "Supprimer cette clause ?",
+      "body": "Ceci retire la clause de ce contrat. La clause reste dans votre bibliothèque, mais sa position ici et toute personnalisation seront perdues. Cette action est irréversible.",
+      "cta": "Supprimer la clause"
     }
   },
   "clause": {

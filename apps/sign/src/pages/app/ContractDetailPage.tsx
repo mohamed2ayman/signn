@@ -2,7 +2,9 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
+import toast from 'react-hot-toast';
 import type { RootState } from '@/store';
+import { contractErrorKey, CONTRACT_ERROR_KEYS } from './contractErrorMessage';
 import { contractService } from '@/services/api/contractService';
 import { clauseService } from '@/services/api/clauseService';
 import { riskAnalysisService } from '@/services/api/riskAnalysisService';
@@ -39,6 +41,8 @@ import ProcessingStatusCard from '@/components/common/ProcessingStatusCard';
 import DocumentsNeedingReview, { docNeedsReview } from '@/components/contracts/DocumentsNeedingReview';
 import { DocumentProcessingStatus } from '@/types';
 import AIDisclaimer from '@/components/common/AIDisclaimer';
+import ModalShell from '@/components/obligations/ModalShell';
+import Button from '@/components/common/Button';
 
 /* ── Status Badge ─────────────────────────────────────────────── */
 const statusStyles: Record<string, { bg: string; text: string; dot: string }> = {
@@ -307,6 +311,9 @@ export default function ContractDetailPage() {
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
   const [editingContent, setEditingContent] = useState('');
   const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null);
+  // Which contract_clause the remove-confirm modal is open for (null = closed).
+  const [removingClauseId, setRemovingClauseId] = useState<string | null>(null);
+  const [removingClause, setRemovingClause] = useState(false);
 
   // Export & Share state
   const [showExportMenu, setShowExportMenu] = useState(false);
@@ -318,6 +325,9 @@ export default function ContractDetailPage() {
   const [loadingShares, setLoadingShares] = useState(false);
   const [exporting, setExporting] = useState<string | null>(null);
   const [shareSuccess, setShareSuccess] = useState('');
+  // Visible half of the share in-flight guard (the ref below is the real one).
+  const [sharing, setSharing] = useState(false);
+  const [revokingShareId, setRevokingShareId] = useState<string | null>(null);
   const [shareIsInternal, setShareIsInternal] = useState<boolean | null>(null);
   const [shareSuggestions, setShareSuggestions] = useState<OrgMemberSuggestion[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -592,6 +602,7 @@ export default function ContractDetailPage() {
       setRisks((prev) => prev.map((r) => (r.id === riskId ? { ...r, status: updated.status, handled_at: updated.handled_at } : r)));
     } catch (err) {
       console.error('Failed to accept governing value:', err);
+      toast.error(t(contractErrorKey(err)));
     }
   };
 
@@ -601,6 +612,7 @@ export default function ContractDetailPage() {
       setRisks((prev) => prev.map((r) => (r.id === riskId ? { ...r, status: updated.status, handled_at: updated.handled_at } : r)));
     } catch (err) {
       console.error('Failed to override decision:', err);
+      toast.error(t(contractErrorKey(err)));
     }
   };
 
@@ -613,16 +625,41 @@ export default function ContractDetailPage() {
       setShowAddClause(false);
     } catch (err) {
       console.error('Failed to add clause:', err);
+      toast.error(t(contractErrorKey(err)));
     }
   };
 
-  const handleRemoveClause = async (contractClauseId: string) => {
-    if (!id) return;
+  /**
+   * Clause removal is destructive and irreversible from the UI: the backend
+   * HARD-deletes the junction row (contracts.service.ts removeClause →
+   * contractClauseRepository.remove) and only snapshots AFTER the delete, so
+   * there is no pre-removal state to restore. It was a one-click action on
+   * legal content, while deleting a *comment* on this same page has always
+   * been gated by a confirm dialog. This gates it the same way, using the
+   * shared ModalShell (Phase 7.1 Step 3 hard rule #1) exactly as
+   * WhoHasAccessTab's revoke does.
+   *
+   * Synchronous re-entry guard (lesson #238, copied from WhoHasAccessTab):
+   * acquire BEFORE the await, release in `finally` so a deliberate retry
+   * after a failure genuinely re-fires.
+   */
+  const removeClauseInFlight = useRef(false);
+
+  const confirmRemoveClause = async () => {
+    if (!id || !removingClauseId || removeClauseInFlight.current) return;
+    removeClauseInFlight.current = true;
+    setRemovingClause(true);
+    const contractClauseId = removingClauseId;
     try {
       await contractService.removeClause(id, contractClauseId);
-      setClauses(clauses.filter((c) => c.id !== contractClauseId));
+      setClauses((prev) => prev.filter((c) => c.id !== contractClauseId));
+      setRemovingClauseId(null);
     } catch (err) {
       console.error('Failed to remove clause:', err);
+      toast.error(t(contractErrorKey(err)));
+    } finally {
+      removeClauseInFlight.current = false;
+      setRemovingClause(false);
     }
   };
 
@@ -640,6 +677,7 @@ export default function ContractDetailPage() {
       setCommentVisibleToGuest(false);
     } catch (err) {
       console.error('Failed to add comment:', err);
+      toast.error(t(contractErrorKey(err)));
     }
   };
 
@@ -659,6 +697,7 @@ export default function ContractDetailPage() {
       setEditingContent('');
     } catch (err) {
       console.error('Failed to update comment:', err);
+      toast.error(t(contractErrorKey(err)));
     }
   };
 
@@ -670,6 +709,7 @@ export default function ContractDetailPage() {
       setDeletingCommentId(null);
     } catch (err) {
       console.error('Failed to delete comment:', err);
+      toast.error(t(contractErrorKey(err)));
     }
   };
 
@@ -697,6 +737,7 @@ export default function ContractDetailPage() {
       setShowRequestApprovalModal(false);
     } catch (err) {
       console.error('Failed to request approval:', err);
+      toast.error(t(contractErrorKey(err)));
     } finally {
       setRequestingApproval(false);
     }
@@ -716,6 +757,7 @@ export default function ContractDetailPage() {
       setReviewComment('');
     } catch (err) {
       console.error('Failed to submit review:', err);
+      toast.error(t(contractErrorKey(err)));
     } finally {
       setSubmittingReview(false);
     }
@@ -740,11 +782,18 @@ export default function ContractDetailPage() {
       if (type === 'pdf') await exportService.downloadContractPdf(id);
       else if (type === 'risk') await exportService.downloadRiskReport(id);
       else await exportService.downloadSummary(id, 'pdf');
+      // Close ONLY on success. This used to sit in `finally`, which made a
+      // failed export visually identical to a successful one — the menu
+      // closed either way and the sole cue was that no file ever arrived.
+      // That was the one true false-success on this page.
+      setShowExportMenu(false);
     } catch (err) {
       console.error('Export failed:', err);
+      // Keep the menu OPEN so the failed action stays on screen next to the
+      // toast, and the user can retry without re-opening it.
+      toast.error(t(contractErrorKey(err, CONTRACT_ERROR_KEYS.exportFailed)));
     } finally {
       setExporting(null);
-      setShowExportMenu(false);
     }
   };
 
@@ -797,8 +846,21 @@ export default function ContractDetailPage() {
     setShareSuggestions([]);
   };
 
+  /**
+   * Synchronous re-entry guard (lesson #238, the WhoHasAccessTab shape).
+   * A useState flag is NOT sufficient here: `shareEmail` is only cleared
+   * AFTER the await, so the button provably cannot disable itself in the
+   * meantime, and a state update would not have committed before a same-tick
+   * second click. The ref is read and written synchronously, so two clicks in
+   * one tick produce exactly ONE POST. Released in `finally` so a deliberate
+   * retry after a failure genuinely re-fires.
+   */
+  const shareInFlight = useRef(false);
+
   const handleShareContract = async () => {
-    if (!id || !shareEmail.trim()) return;
+    if (!id || !shareEmail.trim() || shareInFlight.current) return;
+    shareInFlight.current = true;
+    setSharing(true);
     try {
       const result = await contractSharingService.createShare({
         contract_id: id,
@@ -817,15 +879,36 @@ export default function ContractDetailPage() {
       loadShares();
     } catch (err) {
       console.error('Failed to share:', err);
+      toast.error(t(contractErrorKey(err, CONTRACT_ERROR_KEYS.shareFailed)));
+    } finally {
+      shareInFlight.current = false;
+      setSharing(false);
     }
   };
 
+  /**
+   * Revoke is the sharpest case on this page. The backend scopes the lookup to
+   * `{ id: shareId, shared_by: userId }` (contract-sharing.service.ts:180-182),
+   * so ANY org member other than the original sharer gets a 404 — while the
+   * list they are looking at is only ORG-scoped, so everyone sees every ✕.
+   * Silently swallowing that meant a user could believe they had cut off
+   * access that is in fact still live. The message names the reason.
+   */
+  const revokeInFlight = useRef(false);
+
   const handleRevokeShare = async (shareId: string) => {
+    if (revokeInFlight.current) return;
+    revokeInFlight.current = true;
+    setRevokingShareId(shareId);
     try {
       await contractSharingService.revokeShare(shareId);
-      setShares(shares.filter(s => s.id !== shareId));
+      setShares((prev) => prev.filter((s) => s.id !== shareId));
     } catch (err) {
       console.error('Failed to revoke share:', err);
+      toast.error(t(contractErrorKey(err, CONTRACT_ERROR_KEYS.revokeFailed)));
+    } finally {
+      revokeInFlight.current = false;
+      setRevokingShareId(null);
     }
   };
 
@@ -869,6 +952,7 @@ export default function ContractDetailPage() {
       }
     } catch (err) {
       console.error('Failed to initiate signature:', err);
+      toast.error(t(contractErrorKey(err, CONTRACT_ERROR_KEYS.signatureFailed)));
     } finally {
       setSigningLoading(false);
     }
@@ -1469,6 +1553,7 @@ export default function ContractDetailPage() {
                     setEditingParties(false);
                   } catch (err) {
                     console.error('Failed to save parties:', err);
+                    toast.error(t(contractErrorKey(err)));
                   } finally {
                     setSavingParties(false);
                   }
@@ -1790,7 +1875,7 @@ export default function ContractDetailPage() {
                   <div className="flex items-center gap-2">
                     {contract.status === 'DRAFT' && (
                       <button
-                        onClick={() => handleRemoveClause(cc.id)}
+                        onClick={() => setRemovingClauseId(cc.id)}
                         className="rounded-lg p-1.5 text-gray-300 transition-colors hover:bg-red-50 hover:text-red-500"
                         title="Remove clause"
                       >
@@ -2436,7 +2521,7 @@ export default function ContractDetailPage() {
 
               <button
                 onClick={handleShareContract}
-                disabled={!shareEmail.trim() || shareIsInternal === false || suggestionsLoading}
+                disabled={!shareEmail.trim() || shareIsInternal === false || suggestionsLoading || sharing}
                 className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-primary-600 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
@@ -2472,7 +2557,8 @@ export default function ContractDetailPage() {
                       </div>
                       <button
                         onClick={() => handleRevokeShare(share.id)}
-                        className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-red-50 hover:text-red-500"
+                        disabled={revokingShareId === share.id}
+                        className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-red-50 hover:text-red-500 disabled:opacity-40"
                         title="Revoke access"
                       >
                         <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
@@ -2764,6 +2850,42 @@ export default function ContractDetailPage() {
           </div>
         </div>
       )}
+
+      {/* ── Remove Clause Confirmation Dialog ────────────────────── */}
+      {/* Shared ModalShell + danger Button, matching WhoHasAccessTab's
+          revoke-confirm. Removal hard-deletes the junction row server-side
+          and cannot be undone from the UI. */}
+      <ModalShell
+        isOpen={removingClauseId !== null}
+        onClose={() => {
+          if (!removingClause) setRemovingClauseId(null);
+        }}
+        title={t('contract.removeClauseConfirm.title')}
+        size="sm"
+        footer={
+          <>
+            <button
+              type="button"
+              onClick={() => setRemovingClauseId(null)}
+              disabled={removingClause}
+              className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            >
+              {t('common.cancel')}
+            </button>
+            <Button
+              variant="danger"
+              onClick={confirmRemoveClause}
+              isLoading={removingClause}
+            >
+              {t('contract.removeClauseConfirm.cta')}
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-gray-600" dir="auto">
+          {t('contract.removeClauseConfirm.body')}
+        </p>
+      </ModalShell>
 
       {/* ── Delete Comment Confirmation Dialog ───────────────────── */}
       {deletingCommentId && (
