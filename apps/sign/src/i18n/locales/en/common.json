@@ -1219,6 +1219,21 @@
         "noPermission": "You don't have permission to mark this contract as signed.",
         "generic": "Couldn't mark the contract as signed. Please try again."
       }
+    },
+    "errors": {
+      "generic": "Something went wrong. Please try again.",
+      "permission": "You don't have permission to do that.",
+      "locked": "This contract has been signed and its content is locked.",
+      "network": "Couldn't reach the server. Check your connection and try again.",
+      "shareFailed": "Couldn't grant access. No one was added — please try again.",
+      "revokeFailed": "Couldn't revoke access. It is still active. Only the person who shared it can revoke it.",
+      "signatureFailed": "Couldn't send the contract for signature. Nothing was sent.",
+      "exportFailed": "Couldn't produce the export. No file was downloaded."
+    },
+    "removeClauseConfirm": {
+      "title": "Remove this clause?",
+      "body": "This removes the clause from this contract. The clause stays in your library, but its position and any customizations here are lost. This cannot be undone.",
+      "cta": "Remove clause"
     }
   },
   "clause": {
