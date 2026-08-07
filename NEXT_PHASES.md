@@ -958,11 +958,31 @@ These are also the **first unit tests** for the ComplianceTab / override logic (
 
 ---
 
-### 7.31 — Expand Frontend Test Coverage
-**Owner:** Youssef | **Priority:** 🟡 MEDIUM | **Status:** ⚠️ PARTIAL
-- Grew from 2 test files / 8 tests to 10 test files / 44 tests through Phase 7.1
-- Add `ContractDetailPage.test.tsx`, `ClauseReviewPage.test.tsx`
-- Continue writing tests alongside new features as they are built
+### ✅ 7.31 — Frontend Test Coverage — CLOSED (2026-08-06)
+**Owner:** Youssef | **Priority:** 🟡 MEDIUM | **Status:** ✅ Closed — 2026-08-06
+**Suite:** 67 test files / 772 tests, measured at `694ac8d`. (Was 61 files / 641 tests at `e3892f5` when the task opened.)
+**Reconciliation:** Lesson #328 records 66/760 at `d3797a1`; the difference is PR #236 (`PartyRoleSelect.test.tsx` — +1 file, +12 tests: 66+1=67, 760+12=772). Both figures are correct at their own ref. #328 is a dated measurement and is deliberately NOT amended — rewriting it would erase the evidence for its own lesson.
+**Lessons:** #311–#328 recorded in `lessons.md`.
+
+**`ContractDetailPage.tsx`:** 0% → **45 of 94 functions (47.87%)** — signing, mark-signed, share, approval request/review, comments, clause add/remove.
+
+⚠️ **Use the FUNCTION figure.** The v8 branch number (74% overall) is inflated because v8 counts branches only inside functions that executed; the honest overall statement figure is **37.03%**.
+
+**Suite health:**
+- act() warnings 382 → 12 via a root-cause dependency fix (PR #218)
+- ImportContractModal CI race fixed with a deterministic reproduction (PR #226)
+- A suspected ContractPartiesEditor race disproved by measurement — no change made
+- erp-sync flake confirmed structurally fixed and its note closed
+- app-boot smoke flake identified as BACKEND — out of this lane
+
+**OPEN AND ACCEPTED (largest first):**
+- 60 of 76 page components have no test at all (measured at `d3797a1`)
+- 11 of ContractDetailPage's 13 tabs are never rendered by any test
+- `handleExport`, `handleRevokeShare` and both conflict handlers uncovered
+- 5 tests deliberately assert CURRENT BROKEN behaviour and must be **INVERTED, never deleted**, when those defects are fixed
+- `apps/sign` has **NO committed ESLint config**, so `npm run lint` has never run for anyone, on any PR, from any track. CI does not invoke it. **UNOWNED** — recommend its own PR before pilot, with `--max-warnings` at the current count.
+
+**⚠️ WATCH:** between two measurements four days apart, ContractDetailPage function coverage FELL from 49.45% to 47.87% with no test deleted — PR #236 added three untested functions. Coverage dropping while no test is removed is the earliest signal that features are outrunning their tests.
 
 ---
 
@@ -1641,7 +1661,7 @@ No new env vars required for existing local dev deployments.
 | 7.28 | ERP Integration (per-org connector registry, import-only; + v1.1 operator control) | ✅ Complete (v1 + v1.1, PRs #79–#83) | A+Y | 2026-06-21 |
 | 7.29 | Settlement Checkbox | ❌ Not started | Y | |
 | 7.30 | Clause Library | ✅ Complete | A | |
-| 7.31 | Frontend Tests | ⚠️ Partial (44) | Y | |
+| 7.31 | Frontend Tests | ✅ Closed — 67 / 772 @ 694ac8d | Y | 2026-08-06 |
 | 7.32 | Negotiation History | ❌ Not started | A+Y | |
 | 7.33 | Self-Service Generation | ❌ Not started | Y | |
 | 7.34 | Owner/Insurer Portal | ❌ Not started | Y+A | |
