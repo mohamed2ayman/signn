@@ -106,3 +106,91 @@ jobs:
       - name: Run pytest
         working-directory: ai-backend
         run: python -m pytest tests/ -v
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Job 4 — NestJS backend tests against a REAL Postgres + Redis (the DB-gated specs)
+  #
+  # ⚠️ INTENTIONALLY NOT A REQUIRED CHECK YET. 57 backend spec files
+  # (~674 test call-sites) gate on `!process.env.DATABASE_URL` and become
+  # `describe.skip` when it is unset — so the existing "Backend Tests" job, which
+  # has no database, has NEVER executed them. That hidden set includes the 14
+  # scoped-repository tenancy specs and the establish-identity deactivated-account
+  # security test. This job gives them a real Postgres + Redis so they actually
+  # run. Because the suite has never executed in CI, the FIRST runs are expected
+  # to be RED and will surface a backlog of long-hidden failures — that is the
+  # point, not a regression. Promote this to a required check (and add the
+  # fail-loud DATABASE_URL guard) only once it is reliably green.
+  # ─────────────────────────────────────────────────────────────────────────────
+  backend-realdb-tests:
+    name: Backend Tests (real DB)
+    runs-on: ubuntu-latest
+
+    # pgvector image (NOT plain postgres): the InitialSchema migration runs
+    # CREATE EXTENSION "vector", which plain postgres:15 does not ship.
+    services:
+      postgres:
+        image: pgvector/pgvector:pg15
+        env:
+          POSTGRES_USER: sign_user
+          # Throwaway CI-only password — NOT the real local docker-compose value.
+          POSTGRES_PASSWORD: ci_throwaway_pw_not_a_real_secret
+          POSTGRES_DB: sign_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sign_user -d sign_db"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      # Redis is MANDATORY: 8 DB-gated specs use Bull and would otherwise skip
+      # silently — the exact class of bug this job exists to catch.
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    # Throwaway CI values for an ephemeral DB — NOT real secrets. Every var here
+    # is Joi-.required() in backend/src/app.module.ts; specs that bootstrap the
+    # full AppModule fail Joi startup validation without them.
+    env:
+      DATABASE_URL: postgresql://sign_user:ci_throwaway_pw_not_a_real_secret@localhost:5432/sign_db
+      REDIS_URL: redis://localhost:6379
+      JWT_SECRET: ci_jwt_secret_min16_chars_padding
+      JWT_REFRESH_SECRET: ci_jwt_refresh_secret_min32_chars_padding_000000
+      NESTJS_INTERNAL_TOKEN: ci_internal_token_not_a_real_secret
+      FRONTEND_URL: http://localhost:5173
+      BASE_URL: http://localhost:3000
+      PORTFOLIO_EXPORT_DOWNLOAD_SECRET: ci_portfolio_export_secret_min32_chars_0
+      GUEST_INVITE_SECRET: ci_guest_invite_secret_min32_chars_00000
+      GUEST_VIEWER_SECRET: ci_guest_viewer_secret_min32_chars_00000
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: backend
+        run: npm ci
+
+      # Schema only — the raw typeorm CLI, NOT `npm run migration:run` (which
+      # chains seed:run and would drag in SEED_ADMIN_PASSWORD_*). The real-pg
+      # specs seed their own fixtures in beforeAll, so the seed is not needed.
+      - name: Run database migrations (schema only, no seed)
+        working-directory: backend
+        run: npm run typeorm -- migration:run -d src/config/data-source.ts
+
+      - name: Run tests
+        working-directory: backend
+        run: npm test
