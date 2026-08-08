@@ -18,6 +18,7 @@ import {
   RequestActor,
 } from './support-chat.service';
 import { validateChatAttachment } from './chat-attachment.validator';
+import { serializeSupportChatMessage } from './support-chat-message.serializer';
 
 const OPS_ROLES = new Set(['SYSTEM_ADMIN', 'OPERATIONS']);
 
@@ -91,7 +92,10 @@ export class SupportChatMessageService {
     });
     const saved = await this.messageRepo.save(message);
 
-    this.gateway.emitMessage(chatId, saved);
-    return saved;
+    // The gateway is the presign chokepoint for socket broadcasts (it mints
+    // from the raw message). The HTTP response is presigned here — both happen
+    // AFTER the getChatById permission gate above.
+    await this.gateway.emitMessage(chatId, saved);
+    return serializeSupportChatMessage(saved, this.storage);
   }
 }

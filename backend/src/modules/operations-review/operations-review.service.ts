@@ -6,31 +6,22 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import * as fs from 'fs/promises';
-import * as path from 'path';
 import {
   KnowledgeAsset,
   AssetReviewStatus,
+  OperationsSettings,
 } from '../../database/entities';
 import {
   BatchReviewAction,
   BatchReviewDto,
   QueueQueryDto,
 } from './dto';
+import { StorageService } from '../storage/storage.service';
 
 const AI_SOURCES = ['AI_EXTRACTED', 'AI_DRAFTED'];
 
-const CONFIG_PATH = path.resolve(
-  __dirname,
-  '../../config/operations-config.json',
-);
-
 const DEFAULT_THRESHOLD = 90;
 const DEFAULT_AI_ACCURACY = 94.2;
-
-interface OperationsConfig {
-  confidence_threshold: number;
-}
 
 function startOfToday(): Date {
   const d = new Date();
@@ -40,11 +31,17 @@ function startOfToday(): Date {
 
 @Injectable()
 export class OperationsReviewService {
+  /** The singleton `operations_settings` row id — mirrors SecurityPolicyService. */
+  private static readonly SETTINGS_SINGLETON_ID = 'global';
+
   private readonly logger = new Logger(OperationsReviewService.name);
 
   constructor(
     @InjectRepository(KnowledgeAsset)
     private readonly assetRepo: Repository<KnowledgeAsset>,
+    @InjectRepository(OperationsSettings)
+    private readonly settingsRepo: Repository<OperationsSettings>,
+    private readonly storage: StorageService,
   ) {}
 
   // ─── Stats ────────────────────────────────────────────────────────────────
@@ -146,7 +143,10 @@ export class OperationsReviewService {
 
     const [rows, total] = await qb.getManyAndCount();
 
-    const data = rows.map((a) => this.toQueueItem(a));
+    // Runs only after JwtAuthGuard + RolesGuard(@Roles SYSTEM_ADMIN, OPERATIONS)
+    // have authorized the caller, so the presigned URLs minted in toQueueItem
+    // are only ever generated for an authorized reviewer (mint-after-auth).
+    const data = await Promise.all(rows.map((a) => this.toQueueItem(a)));
 
     return {
       data,
@@ -157,7 +157,7 @@ export class OperationsReviewService {
     };
   }
 
-  private toQueueItem(a: KnowledgeAsset) {
+  private async toQueueItem(a: KnowledgeAsset) {
     const langs = a.detected_languages ?? null;
     const language = langs && langs.length > 0 ? langs[0] : 'English';
 
@@ -182,7 +182,13 @@ export class OperationsReviewService {
       jurisdiction: a.jurisdiction ?? null,
       confidence_score: confidence,
       created_at: a.created_at,
-      file_url: a.file_url ?? null,
+      // Presign so the "Open file" link works on a private S3 bucket; the local
+      // adapter returns the URL unchanged (local dev is unaffected). Default 1h
+      // TTL — a reviewer opens the file during the active review session. Skip
+      // the mint when there is no file.
+      file_url: a.file_url
+        ? await this.storage.getDownloadUrl(a.file_url)
+        : null,
       embedding_status: a.embedding_status,
       ocr_status: a.ocr_status,
       detected_languages: langs,
@@ -241,20 +247,24 @@ export class OperationsReviewService {
     };
   }
 
-  // ─── Confidence threshold (persisted to JSON file) ───────────────────────
+  // ─── Confidence threshold (persisted to the operations_settings singleton) ─
 
   async getConfidenceThreshold(): Promise<{ threshold: number }> {
     try {
-      const raw = await fs.readFile(CONFIG_PATH, 'utf8');
-      const parsed = JSON.parse(raw) as Partial<OperationsConfig>;
+      const row = await this.settingsRepo.findOne({
+        where: { id: OperationsReviewService.SETTINGS_SINGLETON_ID },
+      });
       const threshold =
-        typeof parsed.confidence_threshold === 'number'
-          ? parsed.confidence_threshold
+        row && typeof row.confidence_threshold === 'number'
+          ? row.confidence_threshold
           : DEFAULT_THRESHOLD;
       return { threshold };
     } catch (error) {
+      // A fresh/empty DB (missing seed row) or a transient read error must
+      // never break the admin screen — fall back to the default, exactly as
+      // the old file-based path did on any read failure.
       this.logger.warn(
-        `[getConfidenceThreshold] Failed to read confidence threshold config, using default ${DEFAULT_THRESHOLD}: ${(error as Error).message}`,
+        `[getConfidenceThreshold] Failed to read confidence threshold, using default ${DEFAULT_THRESHOLD}: ${(error as Error).message}`,
       );
       return { threshold: DEFAULT_THRESHOLD };
     }
@@ -267,21 +277,27 @@ export class OperationsReviewService {
       throw new BadRequestException('threshold must be between 0 and 100');
     }
 
-    const payload: OperationsConfig = { confidence_threshold: threshold };
-    const dir = path.dirname(CONFIG_PATH);
-
     try {
-      await fs.mkdir(dir, { recursive: true });
-      await fs.writeFile(CONFIG_PATH, JSON.stringify(payload, null, 2), 'utf8');
+      // Upsert by primary key. The migration seeds the 'global' row, but save()
+      // also creates it defensively if a fresh DB is missing the seed.
+      await this.settingsRepo.save({
+        id: OperationsReviewService.SETTINGS_SINGLETON_ID,
+        confidence_threshold: threshold,
+      });
+      const row = await this.settingsRepo.findOne({
+        where: { id: OperationsReviewService.SETTINGS_SINGLETON_ID },
+      });
+      return {
+        threshold,
+        updatedAt: (row?.updated_at ?? new Date()).toISOString(),
+      };
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      this.logger.error(`Failed to persist operations-config.json: ${msg}`);
+      this.logger.error(`Failed to persist confidence threshold: ${msg}`);
       throw new BadRequestException(
         'Could not persist confidence threshold: ' + msg,
       );
     }
-
-    return { threshold, updatedAt: new Date().toISOString() };
   }
 
   // ─── Helper (unused publicly, preserved for future expansion) ────────────
