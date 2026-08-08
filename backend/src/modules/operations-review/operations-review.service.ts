@@ -16,6 +16,7 @@ import {
   BatchReviewDto,
   QueueQueryDto,
 } from './dto';
+import { StorageService } from '../storage/storage.service';
 
 const AI_SOURCES = ['AI_EXTRACTED', 'AI_DRAFTED'];
 
@@ -40,6 +41,7 @@ export class OperationsReviewService {
     private readonly assetRepo: Repository<KnowledgeAsset>,
     @InjectRepository(OperationsSettings)
     private readonly settingsRepo: Repository<OperationsSettings>,
+    private readonly storage: StorageService,
   ) {}
 
   // ─── Stats ────────────────────────────────────────────────────────────────
@@ -141,7 +143,10 @@ export class OperationsReviewService {
 
     const [rows, total] = await qb.getManyAndCount();
 
-    const data = rows.map((a) => this.toQueueItem(a));
+    // Runs only after JwtAuthGuard + RolesGuard(@Roles SYSTEM_ADMIN, OPERATIONS)
+    // have authorized the caller, so the presigned URLs minted in toQueueItem
+    // are only ever generated for an authorized reviewer (mint-after-auth).
+    const data = await Promise.all(rows.map((a) => this.toQueueItem(a)));
 
     return {
       data,
@@ -152,7 +157,7 @@ export class OperationsReviewService {
     };
   }
 
-  private toQueueItem(a: KnowledgeAsset) {
+  private async toQueueItem(a: KnowledgeAsset) {
     const langs = a.detected_languages ?? null;
     const language = langs && langs.length > 0 ? langs[0] : 'English';
 
@@ -177,7 +182,13 @@ export class OperationsReviewService {
       jurisdiction: a.jurisdiction ?? null,
       confidence_score: confidence,
       created_at: a.created_at,
-      file_url: a.file_url ?? null,
+      // Presign so the "Open file" link works on a private S3 bucket; the local
+      // adapter returns the URL unchanged (local dev is unaffected). Default 1h
+      // TTL — a reviewer opens the file during the active review session. Skip
+      // the mint when there is no file.
+      file_url: a.file_url
+        ? await this.storage.getDownloadUrl(a.file_url)
+        : null,
       embedding_status: a.embedding_status,
       ocr_status: a.ocr_status,
       detected_languages: langs,

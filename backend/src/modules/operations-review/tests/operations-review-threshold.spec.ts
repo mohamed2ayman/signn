@@ -26,6 +26,8 @@ describe('OperationsReviewService — confidence threshold (unit)', () => {
     service = new OperationsReviewService(
       {} as unknown as Repository<KnowledgeAsset>,
       settingsRepo as unknown as Repository<OperationsSettings>,
+      // storage — unused by the confidence-threshold methods under test
+      {} as any,
     );
   });
 

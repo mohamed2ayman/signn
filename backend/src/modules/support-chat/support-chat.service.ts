@@ -17,6 +17,8 @@ import {
   AuditLog,
 } from '../../database/entities';
 import { SupportGateway } from './support.gateway';
+import { StorageService } from '../storage/storage.service';
+import { serializeSupportChatMessages } from './support-chat-message.serializer';
 
 const OPS_ROLES = new Set(['SYSTEM_ADMIN', 'OPERATIONS']);
 
@@ -53,6 +55,7 @@ export class SupportChatService {
     @InjectRepository(AuditLog)
     private readonly auditRepo: Repository<AuditLog>,
     private readonly gateway: SupportGateway,
+    private readonly storage: StorageService,
   ) {}
 
   // ─── Lookups ────────────────────────────────────────────────
@@ -76,7 +79,11 @@ export class SupportChatService {
       where: { chat_id: chatId },
       order: { created_at: 'ASC' },
     });
-    return { ...chat, messages };
+    // Presign attachment URLs AFTER the getChatById permission gate above.
+    return {
+      ...chat,
+      messages: await serializeSupportChatMessages(messages, this.storage),
+    };
   }
 
   async getMyChats(userId: string): Promise<SupportChat[]> {
@@ -424,7 +431,7 @@ export class SupportChatService {
       body,
     });
     const saved = await this.messageRepo.save(msg);
-    this.gateway.emitMessage(chatId, saved);
+    await this.gateway.emitMessage(chatId, saved);
     return saved;
   }
 

@@ -55,6 +55,8 @@ describeReal('operations_settings confidence threshold (real Postgres)', () => {
     new OperationsReviewService(
       dataSource.getRepository(KnowledgeAsset),
       dataSource.getRepository(OperationsSettings),
+      // storage — unused by the confidence-threshold methods under test
+      {} as any,
     );
 
   beforeAll(async () => {

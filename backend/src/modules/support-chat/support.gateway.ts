@@ -11,6 +11,8 @@ import { Logger } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 import { ConfigService } from '@nestjs/config';
 import * as jwt from 'jsonwebtoken';
+import { StorageService } from '../storage/storage.service';
+import { serializeSupportChatMessage } from './support-chat-message.serializer';
 
 interface AuthenticatedSocket extends Socket {
   user: {
@@ -56,7 +58,10 @@ export class SupportGateway
   /** chatId → set of socketIds in the support:{chatId} room */
   private chatRooms = new Map<string, Set<string>>();
 
-  constructor(private readonly configService: ConfigService) {}
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly storage: StorageService,
+  ) {}
 
   // ─── Connection Lifecycle ───────────────────────────────────
 
@@ -191,7 +196,23 @@ export class SupportGateway
 
   // ─── Event Emitters (called by services) ────────────────────
 
-  emitMessage(chatId: string, payload: any) {
+  /**
+   * The SINGLE chokepoint for `support:message` broadcasts — every caller
+   * (sendMessage, insertSystemMessage, and any future emitter) routes here, so
+   * the attachment presign can't be missed on a new path. Presigning happens
+   * AFTER the sender's chat-access gate (getChatById in the calling service).
+   * Never throws: a presign failure falls back to the raw message so the
+   * broadcast is never lost.
+   */
+  async emitMessage(chatId: string, message: any) {
+    let payload = message;
+    try {
+      payload = await serializeSupportChatMessage(message, this.storage);
+    } catch (err) {
+      this.logger.warn(
+        `Failed to presign support-chat attachment for emit; sending raw: ${(err as Error).message}`,
+      );
+    }
     this.server.to(this.chatRoom(chatId)).emit('support:message', payload);
   }
 
